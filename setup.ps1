@@ -15,7 +15,30 @@ if (Test-Path $EnvFile) {
     exit 0
 }
 
-Write-Host "=> Generating RedSecTools configuration..."
+Write-Host ""
+Write-Host "=== RedSecTools Setup ===" -ForegroundColor Cyan
+Write-Host ""
+
+# --- Port ---
+$PortInput = Read-Host "What port should the server listen on? [3000]"
+if ([string]::IsNullOrWhiteSpace($PortInput)) { $PortInput = "3000" }
+$Port = $PortInput
+
+# --- Host / Bind address ---
+Write-Host ""
+Write-Host "Bind address - controls which network interface the server listens on:"
+Write-Host "  1) 0.0.0.0   - All interfaces (Docker, Tailscale, LAN access)"
+Write-Host "  2) 127.0.0.1 - Localhost only (Cloudflare Tunnel, reverse proxy)"
+Write-Host ""
+$HostChoice = Read-Host "Choose [1]"
+if ($HostChoice -eq "2") {
+    $Host = "127.0.0.1"
+} else {
+    $Host = "0.0.0.0"
+}
+
+Write-Host ""
+Write-Host "=> Generating configuration..."
 
 # Generate random admin password (24 chars)
 $passwordBytes = [Security.Cryptography.RandomNumberGenerator]::GetBytes(18)
@@ -28,7 +51,8 @@ $CookieSecret = -join ($secretBytes | ForEach-Object { $_.ToString('x2') })
 
 $content = @"
 # Server configuration
-PORT=3000
+PORT=$Port
+HOST=$Host
 NODE_ENV=production
 
 # Admin dashboard password
@@ -54,9 +78,11 @@ Write-Host ""
 Write-Host "  Admin password: " -NoNewline
 Write-Host $AdminPassword -ForegroundColor Yellow
 Write-Host ""
-Write-Host "  Write this down -- you'll need it to log in"
-Write-Host "  at http://localhost:3000/admin"
+Write-Host "  Listening:      $Host`:$Port"
 Write-Host ""
-Write-Host "  To change it later: edit .env and restart"
+Write-Host "  Write this down -- you'll need it to log in"
+Write-Host "  at http://localhost`:$Port/admin"
+Write-Host ""
+Write-Host "  To change settings: edit .env and restart"
 Write-Host "============================================" -ForegroundColor Cyan
 Write-Host ""

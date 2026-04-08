@@ -22,6 +22,7 @@ const { pageRequireUser, pageRequireGuestOrUser } = require("./middleware/auth")
 
 const app = express();
 const PORT = parseInt(process.env.PORT, 10) || 3000;
+const HOST = process.env.HOST || "0.0.0.0";
 const COOKIE_SECRET = process.env.COOKIE_SECRET;
 if (!COOKIE_SECRET || COOKIE_SECRET === "default-secret-change-me") {
   console.error("FATAL: COOKIE_SECRET must be set in .env and must not be the default value");
@@ -123,8 +124,8 @@ setInterval(() => {
 // --- Start ---
 const server = http.createServer(app);
 initWebSocket(server);
-server.listen(PORT, () => {
-  console.log(JSON.stringify({ ts: new Date().toISOString(), action: "start", port: PORT, name: "RedSecTools" }));
+server.listen(PORT, HOST, () => {
+  console.log(JSON.stringify({ ts: new Date().toISOString(), action: "start", host: HOST, port: PORT, name: "RedSecTools" }));
 });
 
 module.exports = { server };

@@ -87,6 +87,7 @@ Configuration is managed through a `.env` file in the project root. The setup sc
 | `ADMIN_PASSWORD` | Yes | — | Password for the `/admin` dashboard |
 | `COOKIE_SECRET` | Yes | — | 32-byte hex string for signing cookies. Generate with: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
 | `PORT` | No | `3000` | HTTP port the server listens on |
+| `HOST` | No | `0.0.0.0` | Bind address. Use `0.0.0.0` for Docker/Tailscale/LAN access, `127.0.0.1` for Cloudflare Tunnel or reverse proxy |
 | `NODE_ENV` | No | `production` | Node environment (`production` or `development`) |
 | `DB_PATH` | No | `./data/pastes.db` | Path to the SQLite database file |
 
