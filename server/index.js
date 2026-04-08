@@ -38,7 +38,7 @@ app.use(
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'"],
+        scriptSrc: ["'self'", "https://static.cloudflareinsights.com"],
         styleSrc: ["'self'"],
         imgSrc: ["'self'", "data:"],
         connectSrc: ["'self'", "ws:", "wss:"],
