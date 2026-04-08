@@ -8,6 +8,7 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
+      - HOST=0.0.0.0
     volumes:
       - redsectools-data:/app/data
     restart: unless-stopped
