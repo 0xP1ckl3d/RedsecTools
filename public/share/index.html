@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <title>RedSecShare — Encrypted File Sharing</title>
+  <link rel="icon" href="/assets/favicon.ico" type="image/x-icon">
+  <script src="/js/theme-init.js"></script>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="page-wide py-12">
+    <header class="grid grid-cols-[1fr_3fr_1fr] items-center mb-10">
+      <div></div>
+      <div class="text-center">
+        <h1 class="text-3xl font-bold">
+          <span class="text-accent">RedSec</span><span class="text-secondary">Share</span>
+        </h1>
+        <p class="text-muted text-sm mt-1">Encrypted file sharing. Server never sees your content.</p>
+      </div>
+      <div class="flex items-center gap-2 justify-end">
+        <div class="relative">
+          <button id="burger-btn" class="burger-btn" aria-label="Menu" aria-expanded="false">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+          </button>
+          <nav id="burger-nav" class="burger-nav hidden">
+            <a href="/">Home</a>
+            <div class="burger-divider"></div>
+            <a href="/paste">RedSecPaste</a>
+            <a href="/share">RedSecShare</a>
+            <a href="/chat">RedSecTeam</a>
+            <div class="burger-divider"></div>
+            <a id="burger-about" href="/share/about">About this tool</a>
+          </nav>
+        </div>
+        <button type="button" class="theme-toggle" id="theme-toggle" title="Toggle theme">
+          <svg class="w-5 h-5 dark-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+          <svg class="w-5 h-5 light-icon hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Create Form -->
+    <div class="card" id="create-form">
+      <div class="space-y-5">
+        <!-- Drop zone -->
+        <div>
+          <label class="block text-sm font-medium mb-1.5">Your files</label>
+          <div class="drop-zone" id="drop-zone">
+            <div class="drop-zone-icon">
+              <svg class="w-10 h-10 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+            </div>
+            <p class="text-sm text-secondary mb-1">Drag and drop files here, or click to browse</p>
+            <p class="text-xs text-muted">Multiple files supported. Max total: 250MB</p>
+          </div>
+          <input type="file" id="file-input" class="hidden" multiple>
+        </div>
+
+        <!-- File list (shown after selection) -->
+        <div class="card hidden" id="file-list">
+          <div class="flex justify-between items-center mb-2">
+            <span class="text-sm font-medium" id="file-count">0 files</span>
+            <span class="text-xs text-muted" id="total-size">0 B</span>
+          </div>
+          <div id="file-list-body" class="max-h-48 overflow-y-auto"></div>
+        </div>
+
+        <!-- Password -->
+        <div>
+          <label for="password" class="block text-sm font-medium mb-1.5">
+            Password <span class="text-muted">(optional — adds a second encryption layer)</span>
+          </label>
+          <div class="flex gap-3 items-start">
+            <div class="relative flex-1">
+              <input type="password" id="password" class="input-field pr-10" placeholder="Leave empty for link-only encryption" autocomplete="new-password">
+              <button type="button" id="toggle-password" class="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-primary transition-colors" title="Toggle visibility">
+                <svg class="w-4 h-4 eye-open" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                <svg class="w-4 h-4 eye-closed hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.542-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L6.59 6.59m7.532 7.532l3.29 3.29M3 3l18 18"/></svg>
+              </button>
+            </div>
+            <label class="custom-checkbox gap-2 shrink-0 pt-2">
+              <input type="checkbox" id="burn">
+              <span class="checkmark">
+                <svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg>
+              </span>
+              <div>
+                <span class="text-sm font-medium">Burn after reading</span>
+                <p class="text-xs text-muted">Destroyed after first access</p>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Expiry -->
+        <div>
+          <label for="expires" class="block text-sm font-medium mb-1.5">Expires in</label>
+          <select id="expires" class="input-field">
+            <option value="3600">1 hour</option>
+            <option value="43200">12 hours</option>
+            <option value="86400" selected>24 hours</option>
+            <option value="259200">3 days</option>
+          </select>
+        </div>
+
+        <button type="button" id="create-btn" class="btn-primary w-full justify-center" disabled>Encrypt &amp; Share</button>
+      </div>
+    </div>
+
+    <!-- Result -->
+    <div class="card hidden" id="result">
+      <div class="text-center mb-4">
+        <svg class="w-10 h-10 text-accent mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+        <h2 class="text-lg font-semibold">Files Shared</h2>
+      </div>
+      <div id="burn-notice" class="burn-notice-box hidden mb-4">
+        <p class="text-warning text-sm text-center">This share will be destroyed after the first time it is accessed. Recipients should download all files before closing the page.</p>
+      </div>
+      <label class="block text-sm font-medium mb-1.5">Share this link</label>
+      <div class="flex gap-2">
+        <input type="text" id="share-url" class="input-field font-mono text-xs" readonly>
+        <button type="button" id="copy-btn" class="btn-secondary whitespace-nowrap">Copy</button>
+      </div>
+      <div id="email-link-section" class="hidden mt-3">
+        <div class="flex gap-2">
+          <input type="email" id="email-to" class="input-field flex-1" placeholder="Recipient email">
+          <button type="button" id="email-btn" class="btn-secondary whitespace-nowrap">Email Link</button>
+        </div>
+        <p id="email-result" class="text-sm mt-1 hidden"></p>
+      </div>
+      <div class="mt-4 text-center">
+        <button type="button" id="new-btn" class="text-accent hover:underline text-sm">Share more files</button>
+      </div>
+    </div>
+
+    <!-- Loading -->
+    <div class="hidden fixed inset-0 flex items-center justify-center z-50 overlay-bg" id="loading">
+      <div class="text-center">
+        <svg class="animate-spin h-8 w-8 mx-auto mb-3 text-accent" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+        <p class="text-secondary text-sm" id="loading-text">Encrypting files...</p>
+      </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="fixed bottom-6 right-6 hidden" id="toast">
+      <div class="card px-4 py-2.5 shadow-lg">
+        <p class="text-sm" id="toast-text"></p>
+      </div>
+    </div>
+
+    <footer class="footer">&copy; <span class="current-year"></span> RedSec Offensive Security</footer>
+  </div>
+  <script type="module" src="/js/share-create.js"></script>
+  <script type="module" src="/js/burger-menu.js"></script>
+  <script type="module" src="/js/theme.js"></script>
+</body>
+</html>

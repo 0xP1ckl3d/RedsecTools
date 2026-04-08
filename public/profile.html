@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <title>RedSecTools — Profile</title>
+  <link rel="icon" href="/assets/favicon.ico" type="image/x-icon">
+  <script src="/js/theme-init.js"></script>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+    <header class="grid grid-cols-[1fr_3fr_1fr] items-center mb-10">
+      <div></div>
+      <div class="text-center">
+        <h1 class="text-2xl font-bold">
+          <a href="/" class="hover:underline transition-colors">
+            <span class="text-accent">RedSec</span><span class="text-secondary">Tools</span>
+          </a>
+        </h1>
+      </div>
+      <div class="flex items-center gap-2 justify-end">
+        <div class="relative">
+          <button id="burger-btn" class="burger-btn" aria-label="Menu" aria-expanded="false">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+          </button>
+          <nav id="burger-nav" class="burger-nav hidden">
+            <a href="/">Home</a>
+            <div class="burger-divider"></div>
+            <a href="/paste">RedSecPaste</a>
+            <a href="/share">RedSecShare</a>
+            <a href="/chat">RedSecTeam</a>
+          </nav>
+        </div>
+        <button type="button" class="theme-toggle" id="theme-toggle" title="Toggle theme">
+          <svg class="w-5 h-5 dark-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+          <svg class="w-5 h-5 light-icon hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <div id="profile-content">
+      <div class="card mb-6">
+        <h2 class="text-lg font-semibold mb-4">Username</h2>
+        <div class="flex gap-3 items-start">
+          <input type="text" id="username-input" class="input-field flex-1" placeholder="Username" maxlength="30" autocomplete="off">
+          <button type="button" id="update-username-btn" class="btn-secondary whitespace-nowrap">Update</button>
+        </div>
+        <p id="username-error" class="text-sm mt-2 hidden text-error"></p>
+        <p id="username-success" class="text-sm mt-2 hidden text-accent"></p>
+      </div>
+
+      <div class="card mb-6">
+        <h2 class="text-lg font-semibold mb-4">Profile Photo</h2>
+        <div class="flex flex-col items-center gap-4">
+          <div class="w-32 h-32 rounded-full overflow-hidden bg-tertiary flex items-center justify-center" id="avatar-wrapper">
+            <img src="" id="avatar-preview" class="w-full h-full object-cover hidden" alt="Avatar">
+            <svg id="avatar-placeholder" class="w-12 h-12 text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+          </div>
+          <input type="file" id="avatar-input" accept="image/*" class="hidden">
+          <div class="flex gap-3">
+            <button type="button" id="upload-avatar-btn" class="btn-secondary whitespace-nowrap">Upload Photo</button>
+            <button type="button" id="remove-avatar-btn" class="btn-secondary whitespace-nowrap">Remove Photo</button>
+          </div>
+          <p id="avatar-error" class="text-sm hidden text-error"></p>
+          <p id="avatar-success" class="text-sm hidden text-accent"></p>
+        </div>
+      </div>
+
+      <div class="card mb-6">
+        <h2 class="text-lg font-semibold mb-4">Change Password</h2>
+        <div class="space-y-3">
+          <input type="password" id="current-password" class="input-field" placeholder="Current password">
+          <div class="relative">
+            <input type="password" id="new-password" class="input-field pr-10" placeholder="New password (min 12 characters)">
+            <button type="button" id="toggle-new-pw" class="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-primary transition-colors" title="Toggle visibility">
+              <svg class="w-4 h-4 eye-open" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+              <svg class="w-4 h-4 eye-closed hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.542-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L6.59 6.59m7.532 7.532l3.29 3.29M3 3l18 18"/></svg>
+            </button>
+          </div>
+          <input type="password" id="confirm-new-password" class="input-field" placeholder="Confirm new password">
+          <button type="button" id="change-password-btn" class="btn-primary w-full justify-center">Change Password</button>
+        </div>
+        <p id="password-error" class="text-sm mt-3 text-center hidden text-error"></p>
+        <p id="password-success" class="text-sm mt-3 text-center hidden text-accent"></p>
+      </div>
+
+      <div class="card">
+        <h2 class="text-lg font-semibold mb-4">Guest Links</h2>
+        <p class="text-muted text-sm mb-4">Generate single-use links that allow unauthenticated users to create content.</p>
+        <div class="space-y-3">
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-sm font-medium mb-1.5">Tool</label>
+              <select id="guest-tool" class="input-field">
+                <option value="paste">RedSecPaste</option>
+                <option value="share">RedSecShare</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1.5">Expires in</label>
+              <select id="guest-expiry" class="input-field">
+                <option value="3600">1 hour</option>
+                <option value="43200">12 hours</option>
+                <option value="86400">24 hours</option>
+              </select>
+            </div>
+          </div>
+          <button type="button" id="generate-guest-btn" class="btn-primary w-full justify-center">Generate Link</button>
+        </div>
+        <div id="guest-link-result" class="hidden mt-4">
+          <label class="block text-sm font-medium mb-1.5">Share this link</label>
+          <div class="flex gap-2">
+            <input type="text" id="guest-link-url" class="input-field font-mono text-xs" readonly>
+            <button type="button" id="copy-guest-btn" class="btn-secondary whitespace-nowrap">Copy</button>
+          </div>
+          <div id="guest-email-section" class="hidden mt-3">
+            <div class="flex gap-2">
+              <input type="email" id="guest-email-to" class="input-field flex-1" placeholder="Recipient email">
+              <button type="button" id="guest-email-btn" class="btn-secondary whitespace-nowrap">Email Link</button>
+            </div>
+            <p id="guest-email-result" class="text-sm mt-1 hidden"></p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="fixed bottom-6 right-6 hidden" id="toast">
+      <div class="card px-4 py-2.5 shadow-lg">
+        <p class="text-sm" id="toast-text"></p>
+      </div>
+    </div>
+
+    <footer class="footer">&copy; <span class="current-year"></span> RedSec Offensive Security</footer>
+  </div>
+  <script src="/js/chat-crypto.js"></script>
+  <script type="module" src="/js/profile.js"></script>
+  <script type="module" src="/js/burger-menu.js"></script>
+  <script type="module" src="/js/theme.js"></script>
+</body>
+</html>

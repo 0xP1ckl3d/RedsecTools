@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <title>RedSecPaste — Encrypted Pastebin</title>
+  <link rel="icon" href="/assets/favicon.ico" type="image/x-icon">
+  <script src="/js/theme-init.js"></script>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/highlight.css">
+</head>
+<body>
+  <div class="page-wide py-12">
+    <header class="grid grid-cols-[1fr_3fr_1fr] items-center mb-10">
+      <div></div>
+      <div class="text-center">
+        <h1 class="text-3xl font-bold">
+          <span class="text-accent">RedSec</span><span class="text-secondary">Paste</span>
+        </h1>
+        <p class="text-muted text-sm mt-1">End-to-end encrypted. Server never sees your content.</p>
+      </div>
+      <div class="flex items-center gap-2 justify-end">
+        <div class="relative">
+          <button id="burger-btn" class="burger-btn" aria-label="Menu" aria-expanded="false">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+          </button>
+          <nav id="burger-nav" class="burger-nav hidden">
+            <a href="/">Home</a>
+            <div class="burger-divider"></div>
+            <a href="/paste">RedSecPaste</a>
+            <a href="/share">RedSecShare</a>
+            <a href="/chat">RedSecTeam</a>
+            <div class="burger-divider"></div>
+            <a id="burger-about" href="/paste/about">About this tool</a>
+          </nav>
+        </div>
+        <button type="button" class="theme-toggle" id="theme-toggle" title="Toggle theme">
+          <svg class="w-5 h-5 dark-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+          <svg class="w-5 h-5 light-icon hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Create Form -->
+    <div class="card" id="create-form">
+      <div class="space-y-5">
+        <div>
+          <label for="content" class="block text-sm font-medium mb-1.5">Your note</label>
+          <div class="editor-wrapper">
+            <div class="editor-gutter" id="editor-gutter" aria-hidden="true"></div>
+            <textarea id="content" class="editor-textarea" placeholder="Type or paste your secret note here..." spellcheck="false"></textarea>
+          </div>
+          <p class="text-xs text-muted mt-1" id="char-count">0 characters</p>
+        </div>
+
+        <div>
+          <label for="password" class="block text-sm font-medium mb-1.5">
+            Password <span class="text-muted">(optional — adds a second encryption layer)</span>
+          </label>
+          <div class="flex gap-3 items-start">
+            <div class="relative flex-1">
+              <input type="password" id="password" class="input-field pr-10" placeholder="Leave empty for link-only encryption" autocomplete="new-password">
+              <button type="button" id="toggle-password" class="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-primary transition-colors" title="Toggle visibility">
+                <svg class="w-4 h-4 eye-open" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                <svg class="w-4 h-4 eye-closed hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.542-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L6.59 6.59m7.532 7.532l3.29 3.29M3 3l18 18"/></svg>
+              </button>
+            </div>
+            <label class="custom-checkbox gap-2 shrink-0 pt-2">
+              <input type="checkbox" id="burn">
+              <span class="checkmark">
+                <svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg>
+              </span>
+              <div>
+                <span class="text-sm font-medium">Burn after reading</span>
+                <p class="text-xs text-muted">Destroyed after first view</p>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label for="syntax" class="block text-sm font-medium mb-1.5">Syntax highlighting</label>
+            <select id="syntax" class="input-field">
+              <option value="plaintext">None (plain text)</option>
+              <optgroup label="Web">
+                <option value="css">CSS</option>
+                <option value="xml">HTML / XML</option>
+                <option value="javascript">JavaScript</option>
+                <option value="json">JSON</option>
+                <option value="typescript">TypeScript</option>
+                <option value="sql">SQL</option>
+              </optgroup>
+              <optgroup label="Programming">
+                <option value="bash">Bash / Shell</option>
+                <option value="c">C</option>
+                <option value="cpp">C++</option>
+                <option value="csharp">C#</option>
+                <option value="go">Go</option>
+                <option value="java">Java</option>
+                <option value="kotlin">Kotlin</option>
+                <option value="lua">Lua</option>
+                <option value="perl">Perl</option>
+                <option value="php">PHP</option>
+                <option value="powershell">PowerShell</option>
+                <option value="python">Python</option>
+                <option value="ruby">Ruby</option>
+                <option value="rust">Rust</option>
+                <option value="scala">Scala</option>
+                <option value="swift">Swift</option>
+                <option value="vim">Vim Script</option>
+              </optgroup>
+              <optgroup label="Data / Config">
+                <option value="diff">Diff</option>
+                <option value="dockerfile">Dockerfile</option>
+                <option value="ini">INI / Config</option>
+                <option value="markdown">Markdown</option>
+                <option value="yaml">YAML</option>
+              </optgroup>
+              <optgroup label="Science">
+                <option value="r">R</option>
+              </optgroup>
+            </select>
+          </div>
+          <div>
+            <label for="expires" class="block text-sm font-medium mb-1.5">Expires in</label>
+            <select id="expires" class="input-field">
+              <option value="3600">1 hour</option>
+              <option value="43200">12 hours</option>
+              <option value="86400" selected>24 hours</option>
+              <option value="259200">3 days</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="flex gap-3">
+          <button type="button" id="preview-btn" class="btn-secondary flex-1 justify-center">Preview</button>
+          <button type="button" id="create-btn" class="btn-primary flex-[2] justify-center">Create Secure Note</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Result -->
+    <div class="card hidden" id="result">
+      <div class="text-center mb-4">
+        <svg class="w-10 h-10 text-accent mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+        <h2 class="text-lg font-semibold">Note Created</h2>
+      </div>
+      <div id="burn-notice" class="burn-notice-box hidden mb-4">
+        <p class="text-warning text-sm text-center">This note will be destroyed after the first time it is viewed.</p>
+      </div>
+      <label class="block text-sm font-medium mb-1.5">Share this link</label>
+      <div class="flex gap-2">
+        <input type="text" id="share-url" class="input-field font-mono text-xs" readonly>
+        <button type="button" id="copy-btn" class="btn-secondary whitespace-nowrap">Copy</button>
+      </div>
+      <div id="email-link-section" class="hidden mt-3">
+        <div class="flex gap-2">
+          <input type="email" id="email-to" class="input-field flex-1" placeholder="Recipient email">
+          <button type="button" id="email-btn" class="btn-secondary whitespace-nowrap">Email Link</button>
+        </div>
+        <p id="email-result" class="text-sm mt-1 hidden"></p>
+      </div>
+      <div class="mt-4 text-center">
+        <button type="button" id="new-btn" class="text-accent hover:underline text-sm">Create another note</button>
+      </div>
+    </div>
+
+    <!-- Preview Modal -->
+    <div class="hidden fixed inset-0 z-50 flex items-center justify-center overlay-bg" id="preview-modal">
+      <div class="card w-11/12 max-h-[80vh] flex flex-col">
+        <div class="flex justify-between items-center mb-3">
+          <span class="text-xs text-muted uppercase tracking-wide">Preview — as recipient will see it</span>
+          <button type="button" id="close-preview" class="text-muted hover:text-primary transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="code-container overflow-auto flex-1">
+          <div class="code-gutter" id="preview-gutter" aria-hidden="true"></div>
+          <pre id="preview-content" class="code-content"></pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- Loading -->
+    <div class="hidden fixed inset-0 flex items-center justify-center z-50 overlay-bg" id="loading">
+      <div class="text-center">
+        <svg class="animate-spin h-8 w-8 mx-auto mb-3 text-accent" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+        <p class="text-secondary text-sm" id="loading-text">Encrypting your note...</p>
+      </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="fixed bottom-6 right-6 hidden" id="toast">
+      <div class="card px-4 py-2.5 shadow-lg">
+        <p class="text-sm" id="toast-text"></p>
+      </div>
+    </div>
+
+    <footer class="footer">&copy; <span class="current-year"></span> RedSec Offensive Security</footer>
+  </div>
+  <script type="module" src="/js/create.js"></script>
+  <script type="module" src="/js/burger-menu.js"></script>
+  <script type="module" src="/js/theme.js"></script>
+</body>
+</html>

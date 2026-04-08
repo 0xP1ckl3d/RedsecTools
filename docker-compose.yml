@@ -1,0 +1,16 @@
+services:
+  redsectools:
+    build: .
+    container_name: redsectools
+    ports:
+      - "${PORT:-3000}:3000"
+    env_file: .env
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    volumes:
+      - redsectools-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  redsectools-data:

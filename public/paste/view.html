@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <title>RedSecPaste — View Note</title>
+  <link rel="icon" href="/assets/favicon.ico" type="image/x-icon">
+  <script src="/js/theme-init.js"></script>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/highlight.css">
+</head>
+<body>
+  <div class="page-wide py-12">
+    <header class="grid grid-cols-[1fr_3fr_1fr] items-center mb-10">
+      <div></div>
+      <div class="text-center">
+        <h1 class="text-2xl font-bold">
+          <a href="/paste" class="hover:underline transition-colors">
+            <span class="text-accent">RedSec</span><span class="text-secondary">Paste</span>
+          </a>
+        </h1>
+      </div>
+      <div class="flex items-center gap-2 justify-end">
+        <div class="relative">
+          <button id="burger-btn" class="burger-btn" aria-label="Menu" aria-expanded="false">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+          </button>
+          <nav id="burger-nav" class="burger-nav hidden">
+            <a href="/">Home</a>
+            <div class="burger-divider"></div>
+            <a href="/paste">RedSecPaste</a>
+            <a href="/share">RedSecShare</a>
+            <a href="/chat">RedSecTeam</a>
+            <div class="burger-divider"></div>
+            <a id="burger-about" href="/paste/about">About this tool</a>
+          </nav>
+        </div>
+        <button type="button" class="theme-toggle" id="theme-toggle" title="Toggle theme">
+          <svg class="w-5 h-5 dark-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+          <svg class="w-5 h-5 light-icon hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Loading -->
+    <div id="loading-state" class="card text-center">
+      <svg class="animate-spin h-8 w-8 mx-auto mb-3 text-accent" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+      <p class="text-secondary text-sm">Loading encrypted note...</p>
+    </div>
+
+    <!-- Password prompt -->
+    <div id="password-prompt" class="card hidden">
+      <div class="text-center mb-5">
+        <svg class="w-10 h-10 mx-auto mb-2 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+        <h2 class="text-lg font-semibold">Password Required</h2>
+        <p class="text-muted text-sm mt-1">This note is password-protected.</p>
+      </div>
+      <div class="space-y-3">
+        <input type="password" id="password-input" class="input-field" placeholder="Enter password" autofocus>
+        <button type="button" id="decrypt-btn" class="btn-primary w-full justify-center">Decrypt Note</button>
+      </div>
+      <p id="password-error" class="text-sm mt-3 text-center hidden text-error">Incorrect password or corrupted data.</p>
+    </div>
+
+    <!-- Decrypted content -->
+    <div id="decrypted" class="hidden">
+      <div id="burn-notice" class="burn-notice-box hidden mb-4">
+        <div class="flex items-center gap-2">
+          <svg class="w-5 h-5 shrink-0 text-warning" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z"/></svg>
+          <p class="text-warning text-sm">This note has been destroyed and cannot be viewed again.</p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="flex justify-between items-center mb-3">
+          <span class="text-xs text-muted uppercase tracking-wide">Decrypted Note</span>
+          <button type="button" id="copy-content-btn" class="btn-secondary text-xs px-3 py-1">Copy</button>
+        </div>
+        <div class="code-container" id="code-container">
+          <div class="code-gutter" id="code-gutter" aria-hidden="true"></div>
+          <pre id="note-content" class="code-content"></pre>
+        </div>
+      </div>
+      <div class="mt-6 text-center">
+        <a href="/paste" class="text-accent hover:underline text-sm">Create a new note</a>
+      </div>
+    </div>
+
+    <!-- Error states -->
+    <div id="error-not-found" class="card text-center hidden">
+      <svg class="w-10 h-10 mx-auto mb-2 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
+      <h2 class="text-lg font-semibold mb-1">Note Not Found</h2>
+      <p class="text-muted text-sm">This note doesn't exist or has already been destroyed.</p>
+      <a href="/paste" class="inline-block mt-4 text-accent hover:underline text-sm">Create a new note</a>
+    </div>
+    <div id="error-expired" class="card text-center hidden">
+      <svg class="w-10 h-10 text-muted mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      <h2 class="text-lg font-semibold mb-1">Note Expired</h2>
+      <p class="text-muted text-sm">This note has expired and has been deleted.</p>
+      <a href="/paste" class="inline-block mt-4 text-accent hover:underline text-sm">Create a new note</a>
+    </div>
+    <div id="error-invalid" class="card text-center hidden">
+      <svg class="w-10 h-10 mx-auto mb-2 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
+      <h2 class="text-lg font-semibold mb-1">Invalid Link</h2>
+      <p class="text-muted text-sm">The decryption key is missing from this link. Make sure you copied the full URL.</p>
+      <a href="/paste" class="inline-block mt-4 text-accent hover:underline text-sm">Create a new note</a>
+    </div>
+    <div id="error-decrypt" class="card text-center hidden">
+      <svg class="w-10 h-10 mx-auto mb-2 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+      <h2 class="text-lg font-semibold mb-1">Decryption Failed</h2>
+      <p class="text-muted text-sm">The key or password is incorrect. The note may have been tampered with.</p>
+      <a href="/paste" class="inline-block mt-4 text-accent hover:underline text-sm">Create a new note</a>
+    </div>
+
+    <footer class="footer">&copy; <span class="current-year"></span> RedSec Offensive Security</footer>
+  </div>
+  <script type="module" src="/js/view.js"></script>
+  <script type="module" src="/js/burger-menu.js"></script>
+  <script type="module" src="/js/theme.js"></script>
+</body>
+</html>

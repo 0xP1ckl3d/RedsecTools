@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <title>RedSecPaste — About</title>
+  <link rel="icon" href="/assets/favicon.ico" type="image/x-icon">
+  <script src="/js/theme-init.js"></script>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="page-wide py-12">
+    <header class="grid grid-cols-[1fr_3fr_1fr] items-center mb-10">
+      <div></div>
+      <div class="text-center">
+        <h1 class="text-2xl font-bold">
+          <a href="/paste" class="hover:underline transition-colors">
+            <span class="text-accent">RedSec</span><span class="text-secondary">Paste</span>
+          </a>
+        </h1>
+      </div>
+      <div class="flex items-center gap-2 justify-end">
+        <div class="relative">
+          <button id="burger-btn" class="burger-btn" aria-label="Menu" aria-expanded="false">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+          </button>
+          <nav id="burger-nav" class="burger-nav hidden">
+            <a href="/">Home</a>
+            <div class="burger-divider"></div>
+            <a href="/paste">RedSecPaste</a>
+            <a href="/share">RedSecShare</a>
+            <a href="/chat">RedSecTeam</a>
+            <div class="burger-divider"></div>
+            <a id="burger-about" href="/paste/about">About this tool</a>
+          </nav>
+        </div>
+        <button type="button" class="theme-toggle" id="theme-toggle" title="Toggle theme">
+          <svg class="w-5 h-5 dark-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+          <svg class="w-5 h-5 light-icon hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- What is RedSecPaste -->
+    <div class="card mb-6">
+      <div class="flex items-center gap-3 mb-4">
+        <svg class="w-6 h-6 text-accent shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        <h2 class="text-lg font-semibold">What is RedSecPaste?</h2>
+      </div>
+      <p class="text-secondary text-sm leading-relaxed">
+        RedSecPaste is a privacy-first encrypted pastebin built by <span class="text-accent font-medium">RedSec Offensive Security</span>. It lets you share text, code snippets, and sensitive notes through end-to-end encrypted links that even the server cannot read. No accounts, no tracking, no plaintext ever touches our infrastructure.
+      </p>
+    </div>
+
+    <!-- How It Works -->
+    <div class="card mb-6">
+      <div class="flex items-center gap-3 mb-4">
+        <svg class="w-6 h-6 text-accent shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+        <h2 class="text-lg font-semibold">How Encryption Works</h2>
+      </div>
+      <div class="space-y-4">
+        <div>
+          <h3 class="text-sm font-semibold mb-1.5">Link-Only Encryption (default)</h3>
+          <div class="text-secondary text-sm leading-relaxed space-y-2">
+            <p>When you create a note without a password, your browser generates a random 256-bit AES key and encrypts your note locally using <span class="font-medium">AES-256-GCM</span> — a modern authenticated encryption algorithm. The key is never sent to the server.</p>
+            <p>The resulting share link contains the key in the URL fragment (after the <span class="font-mono text-xs">#</span>). URL fragments are never transmitted to the server by browsers, so the server only ever stores unreadable ciphertext. When the recipient opens the link, their browser extracts the key from the fragment and decrypts the note locally.</p>
+          </div>
+          <div class="info-box mt-3">
+            <p class="text-xs text-muted font-mono">
+              <span class="text-secondary">https://example.com/p/</span><span class="text-accent"> paste_id</span><span class="text-muted">#</span><span class="text-warning">encryption_key</span>
+            </p>
+            <p class="text-xs text-muted mt-1">The server only sees the paste ID. The key after # stays in the browser.</p>
+          </div>
+        </div>
+
+        <div class="border-t border-theme my-4"></div>
+
+        <div>
+          <h3 class="text-sm font-semibold mb-1.5">Password-Protected Notes (double encryption)</h3>
+          <div class="text-secondary text-sm leading-relaxed space-y-2">
+            <p>Adding a password applies a second layer of encryption on top of the link-based encryption:</p>
+            <ol class="list-decimal list-inside space-y-1 pl-1">
+              <li>Your note is encrypted with a random key <strong>K</strong> (stored in the URL fragment)</li>
+              <li>The resulting ciphertext is then <strong>re-encrypted</strong> with a key derived from your password using <span class="font-medium">PBKDF2</span> with 600,000 iterations and SHA-256</li>
+              <li>Only the doubly-encrypted ciphertext is sent to the server</li>
+            </ol>
+            <p>To decrypt, the recipient needs <strong>both</strong> the link (containing key K) <strong>and</strong> the password. Neither alone is sufficient — this is true two-factor encryption.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Features -->
+    <div class="card mb-6">
+      <div class="flex items-center gap-3 mb-4">
+        <svg class="w-6 h-6 text-accent shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+        <h2 class="text-lg font-semibold">Security Features</h2>
+      </div>
+      <ul class="space-y-3">
+        <li class="flex gap-3 text-sm text-secondary">
+          <svg class="w-4 h-4 text-accent shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+          <span><strong class="text-primary">Zero-knowledge server</strong> — the server never has access to your plaintext or encryption keys. All cryptographic operations happen in your browser using the native Web Crypto API.</span>
+        </li>
+        <li class="flex gap-3 text-sm text-secondary">
+          <svg class="w-4 h-4 text-accent shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+          <span><strong class="text-primary">Burn after reading</strong> — notes can be set to self-destruct immediately after the first viewing. The server atomically deletes the ciphertext the moment it's retrieved.</span>
+        </li>
+        <li class="flex gap-3 text-sm text-secondary">
+          <svg class="w-4 h-4 text-accent shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+          <span><strong class="text-primary">Auto-expiry</strong> — all notes automatically expire and are permanently deleted. Choose from 1 hour, 12 hours, 24 hours, or 3 days.</span>
+        </li>
+        <li class="flex gap-3 text-sm text-secondary">
+          <svg class="w-4 h-4 text-accent shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+          <span><strong class="text-primary">Strict CSP &amp; security headers</strong> — HTTP Strict Transport Security, Content Security Policy, no-referrer policy, and frame blocking all enforced at the server level.</span>
+        </li>
+        <li class="flex gap-3 text-sm text-secondary">
+          <svg class="w-4 h-4 text-accent shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+          <span><strong class="text-primary">No tracking</strong> — no cookies, no analytics, no accounts. Notes are completely anonymous.</span>
+        </li>
+        <li class="flex gap-3 text-sm text-secondary">
+          <svg class="w-4 h-4 text-accent shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+          <span><strong class="text-primary">Syntax highlighting</strong> — optional highlighting for 30+ programming and markup languages, applied client-side after decryption.</span>
+        </li>
+      </ul>
+    </div>
+
+    <!-- How to Use -->
+    <div class="card mb-6">
+      <div class="flex items-center gap-3 mb-4">
+        <svg class="w-6 h-6 text-accent shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+        <h2 class="text-lg font-semibold">How to Use</h2>
+      </div>
+      <ol class="space-y-4 text-sm text-secondary">
+        <li class="flex gap-3">
+          <span class="flex items-center justify-center w-6 h-6 rounded-full bg-accent text-white text-xs font-bold shrink-0">1</span>
+          <div>
+            <p class="font-medium text-primary">Write or paste your note</p>
+            <p class="text-muted text-xs mt-0.5">Type or paste the content you want to share. Optionally select a syntax highlighting language.</p>
+          </div>
+        </li>
+        <li class="flex gap-3">
+          <span class="flex items-center justify-center w-6 h-6 rounded-full bg-accent text-white text-xs font-bold shrink-0">2</span>
+          <div>
+            <p class="font-medium text-primary">Set your options</p>
+            <p class="text-muted text-xs mt-0.5">Add an optional password for two-factor encryption. Enable "Burn after reading" for one-time notes. Choose an expiry time (1h to 3 days).</p>
+          </div>
+        </li>
+        <li class="flex gap-3">
+          <span class="flex items-center justify-center w-6 h-6 rounded-full bg-accent text-white text-xs font-bold shrink-0">3</span>
+          <div>
+            <p class="font-medium text-primary">Share the link</p>
+            <p class="text-muted text-xs mt-0.5">Copy the generated link and send it to your recipient. The encryption key is embedded in the link — keep it safe.</p>
+          </div>
+        </li>
+        <li class="flex gap-3">
+          <span class="flex items-center justify-center w-6 h-6 rounded-full bg-accent text-white text-xs font-bold shrink-0">4</span>
+          <div>
+            <p class="font-medium text-primary">Recipient opens the link</p>
+            <p class="text-muted text-xs mt-0.5">Their browser automatically extracts the key and decrypts the note. If password-protected, they'll be prompted to enter it. Nothing is sent to the server during decryption.</p>
+          </div>
+        </li>
+      </ol>
+    </div>
+
+    <!-- Technical Details -->
+    <div class="card mb-6">
+      <div class="flex items-center gap-3 mb-4">
+        <svg class="w-6 h-6 text-accent shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+        <h2 class="text-lg font-semibold">Technical Details</h2>
+      </div>
+      <div class="grid grid-cols-2 gap-3 text-sm">
+        <div class="info-box">
+          <p class="text-xs text-muted uppercase tracking-wide mb-1">Encryption</p>
+          <p class="font-medium">AES-256-GCM</p>
+        </div>
+        <div class="info-box">
+          <p class="text-xs text-muted uppercase tracking-wide mb-1">Key Derivation</p>
+          <p class="font-medium">PBKDF2-SHA256</p>
+        </div>
+        <div class="info-box">
+          <p class="text-xs text-muted uppercase tracking-wide mb-1">PBKDF2 Iterations</p>
+          <p class="font-medium">600,000</p>
+        </div>
+        <div class="info-box">
+          <p class="text-xs text-muted uppercase tracking-wide mb-1">Crypto API</p>
+          <p class="font-medium">Web Crypto (native)</p>
+        </div>
+        <div class="info-box">
+          <p class="text-xs text-muted uppercase tracking-wide mb-1">Paste IDs</p>
+          <p class="font-medium">128-bit random</p>
+        </div>
+        <div class="info-box">
+          <p class="text-xs text-muted uppercase tracking-wide mb-1">Max Note Size</p>
+          <p class="font-medium">512 KB</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="text-center">
+      <a href="/paste" class="btn-primary inline-flex">Create a Secure Note</a>
+    </div>
+
+    <footer class="footer">&copy; <span class="current-year"></span> RedSec Offensive Security</footer>
+  </div>
+  <script type="module" src="/js/burger-menu.js"></script>
+  <script type="module" src="/js/theme.js"></script>
+</body>
+</html>

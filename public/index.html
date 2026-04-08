@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <title>RedSecTools</title>
+  <link rel="icon" href="/assets/favicon.ico" type="image/x-icon">
+  <script src="/js/theme-init.js"></script>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="page-wide py-12">
+    <header class="grid grid-cols-[1fr_3fr_1fr] items-center mb-12">
+      <div></div>
+      <div class="text-center">
+        <h1 class="text-3xl font-bold">
+          <span class="text-accent">RedSec</span><span class="text-secondary">Tools</span>
+        </h1>
+        <p class="text-muted text-sm mt-1">Privacy-first security tools by RedSec Offensive Security</p>
+      </div>
+      <div class="flex items-center gap-2 justify-end">
+        <div class="relative">
+          <button id="burger-btn" class="burger-btn" aria-label="Menu" aria-expanded="false">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+          </button>
+          <nav id="burger-nav" class="burger-nav hidden">
+            <a href="/">Home</a>
+            <div class="burger-divider"></div>
+            <a href="/paste">RedSecPaste</a>
+            <a href="/share">RedSecShare</a>
+            <a href="/chat">RedSecTeam</a>
+          </nav>
+        </div>
+        <button type="button" class="theme-toggle" id="theme-toggle" title="Toggle theme">
+          <svg class="w-5 h-5 dark-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+          <svg class="w-5 h-5 light-icon hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      <a href="/paste" class="tool-card">
+        <div class="card">
+          <svg class="w-12 h-12 text-accent mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m-6-4m6-4H9m0 0v6m6 0v-6M9 2h6a2 2 0 012 2v2a2 2 0 01-2 2H9a2 2 0 01-2-2V4a2 2 0 012-2z"/></svg>
+          <h2 class="text-lg font-bold mb-1"><span class="text-accent">RedSec</span><span class="text-secondary">Paste</span></h2>
+          <p class="text-muted text-sm">End-to-end encrypted text and code sharing. Server never sees your content.</p>
+          <div class="flex gap-2 mt-3">
+            <span class="badge badge-red">AES-256-GCM</span>
+            <span class="badge badge-gray">Zero-knowledge</span>
+          </div>
+        </div>
+      </a>
+      <a href="/share" class="tool-card">
+        <div class="card">
+          <svg class="w-12 h-12 text-accent mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.783A6 6 0 0011.41-4.283A6 6 0 01-4.283 5.717A4 4 0 017 16zm10-5a4 4 0 01-4.283 5.717A6 6 0 0111.717 4A4 4 0 017 6z"/></svg>
+          <h2 class="text-lg font-bold mb-1"><span class="text-accent">RedSec</span><span class="text-secondary">Share</span></h2>
+          <p class="text-muted text-sm">Encrypted file sharing up to 250MB. Client-side encryption, zero-knowledge server, self-destructing links.</p>
+          <div class="flex gap-2 mt-3">
+            <span class="badge badge-red">AES-256-GCM</span>
+            <span class="badge badge-gray">Zero-knowledge</span>
+          </div>
+        </div>
+      </a>
+      <a href="/chat" class="tool-card">
+        <div class="card">
+          <svg class="w-12 h-12 text-accent mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+          <h2 class="text-lg font-bold mb-1"><span class="text-accent">RedSec</span><span class="text-secondary">Team</span></h2>
+          <p class="text-muted text-sm">End-to-end encrypted team chat. Private messaging and group conversations with zero-knowledge server.</p>
+          <div class="flex gap-2 mt-3">
+            <span class="badge badge-red">E2E Encrypted</span>
+            <span class="badge badge-gray">Zero-knowledge</span>
+          </div>
+        </div>
+      </a>
+    </main>
+
+    <footer class="footer">&copy; <span class="current-year"></span> RedSec Offensive Security</footer>
+  </div>
+  <script type="module" src="/js/burger-menu.js"></script>
+  <script type="module" src="/js/theme.js"></script>
+</body>
+</html>

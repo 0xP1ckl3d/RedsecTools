@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <title>RedSecTeam</title>
+  <link rel="icon" href="/assets/favicon.ico" type="image/x-icon">
+  <script src="/js/theme-init.js"></script>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/highlight.css">
+</head>
+<body>
+  <div id="chat-app" class="hidden">
+    <!-- Compact header -->
+    <header class="flex items-center justify-between px-4 py-2 border-b chat-border-b">
+      <div class="flex items-center gap-2">
+        <h1 class="text-lg font-bold">
+          <span class="text-accent">RedSec</span><span class="text-secondary">Team</span>
+        </h1>
+      </div>
+      <div class="flex items-center gap-2">
+        <div class="relative">
+          <button id="burger-btn" class="burger-btn" aria-label="Menu" aria-expanded="false">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+          </button>
+          <nav id="burger-nav" class="burger-nav hidden">
+            <a href="/">Home</a>
+            <div class="burger-divider"></div>
+            <a href="/paste">RedSecPaste</a>
+            <a href="/share">RedSecShare</a>
+            <a href="/chat">RedSecTeam</a>
+          </nav>
+        </div>
+        <button type="button" class="theme-toggle" id="theme-toggle" title="Toggle theme">
+          <svg class="w-5 h-5 dark-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+          <svg class="w-5 h-5 light-icon hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main chat layout -->
+    <div class="flex flex-1 overflow-hidden">
+      <!-- Sidebar -->
+      <aside id="chat-sidebar" class="w-80 border-r flex flex-col chat-border-r chat-sidebar-bg">
+        <!-- New conversation button -->
+        <div class="p-3">
+          <button id="new-conversation-btn" class="btn-primary w-full">New Conversation</button>
+        </div>
+        <!-- Search -->
+        <div class="px-3 pb-2">
+          <input id="conversation-search" type="text" placeholder="Search conversations..." class="input-field text-sm">
+        </div>
+        <!-- Conversation list -->
+        <div id="conversation-list" class="flex-1 overflow-y-auto px-2">
+          <!-- Populated by JS -->
+        </div>
+      </aside>
+
+      <!-- Mobile sidebar toggle -->
+      <button id="sidebar-toggle" class="hidden">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+
+      <!-- Chat area -->
+      <main id="chat-main" class="flex-1 flex flex-col">
+        <!-- Empty state -->
+        <div id="chat-empty" class="flex-1 flex items-center justify-center">
+          <div class="text-center text-muted">
+            <svg class="w-16 h-16 mx-auto mb-4 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+            </svg>
+            <p>Select a conversation to start chatting</p>
+          </div>
+        </div>
+
+        <!-- Active conversation (hidden by default) -->
+        <div id="chat-active" class="hidden flex-1 flex flex-col min-h-0">
+          <!-- Conversation header -->
+          <div id="chat-header" class="flex items-center justify-between px-4 py-3 border-b chat-border-b">
+            <div class="flex items-center gap-3">
+              <button id="back-btn" class="hidden p-1 rounded hover:bg-[var(--bg-elevated)]">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+              </button>
+              <div>
+                <h2 id="chat-title" class="font-bold"></h2>
+                <p id="chat-subtitle" class="text-sm text-muted"></p>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <button id="chat-info-btn" class="p-2 rounded hover:bg-[var(--bg-elevated)]" title="Conversation info">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Messages area -->
+          <div id="messages-container" class="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+            <!-- Populated by JS -->
+          </div>
+
+          <!-- Typing indicator -->
+          <div id="typing-indicator" class="hidden px-4 py-1 text-sm text-muted">
+            <span id="typing-user"></span> is typing...
+          </div>
+
+          <!-- Message input -->
+          <div class="border-t relative chat-border-b">
+            <!-- Emoji picker (positioned above input) -->
+            <div id="emoji-picker" class="hidden absolute bottom-full left-4 mb-2 z-50">
+              <div class="card p-2 w-72 max-h-64 overflow-y-auto chat-shadow">
+                <div id="emoji-categories" class="flex gap-1 mb-2 border-b pb-2 flex-wrap chat-border-b">
+                </div>
+                <div id="emoji-grid" class="grid grid-cols-8 gap-0.5">
+                </div>
+              </div>
+            </div>
+            <!-- Formatting toolbar -->
+            <div id="format-toolbar" class="flex items-center gap-0.5 px-3 pt-2 pb-1 border-b chat-border-b">
+              <button type="button" id="fmt-bold" class="fmt-btn" title="Bold (Ctrl+B)"><b>B</b></button>
+              <button type="button" id="fmt-italic" class="fmt-btn" title="Italic (Ctrl+I)"><i>I</i></button>
+              <button type="button" id="fmt-underline" class="fmt-btn" title="Underline (Ctrl+U)"><u>U</u></button>
+              <button type="button" id="fmt-code" class="fmt-btn fmt-btn-code" title="Code">&lt;/&gt;</button>
+              <div class="w-px h-4 mx-1 chat-separator"></div>
+              <button type="button" id="fmt-ul" class="fmt-btn" title="Bullet list">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+              </button>
+              <button type="button" id="fmt-ol" class="fmt-btn" title="Numbered list">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h8m-8 6h16"/></svg>
+              </button>
+              <div class="flex-1"></div>
+              <button id="embed-paste-btn" class="p-1.5 rounded hover:bg-[var(--bg-elevated)]" title="Create paste">
+                <svg class="w-4 h-4 text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+              </button>
+              <button id="embed-share-btn" class="p-1.5 rounded hover:bg-[var(--bg-elevated)]" title="Share file">
+                <svg class="w-4 h-4 text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
+              </button>
+              <button id="emoji-btn" class="p-1.5 rounded hover:bg-[var(--bg-elevated)]" title="Emoji">
+                <svg class="w-4 h-4 text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              </button>
+            </div>
+            <!-- Rich text editor + send -->
+            <div class="flex gap-2 items-end p-3">
+              <div id="message-input" contenteditable="true" class="input-field flex-1 chat-editor" data-placeholder="Type a message..."></div>
+              <button id="send-btn" class="btn-primary px-4 shrink-0 chat-send-btn">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-7"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Auth required overlay (shown when not authenticated) -->
+  <div id="auth-required" class="hidden">
+    <div class="page-wide py-12 text-center">
+      <p class="text-muted mb-4">Authentication required</p>
+      <a href="/login" class="btn-primary">Login</a>
+    </div>
+  </div>
+
+  <!-- New Conversation Modal -->
+  <div id="new-conv-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center chat-overlay-bg">
+    <div class="card w-full max-w-md mx-4">
+      <h3 class="text-lg font-bold mb-4">New Conversation</h3>
+      <!-- Conversation type tabs -->
+      <div class="flex gap-2 mb-4">
+        <button id="direct-tab" class="btn-primary text-sm">Direct Message</button>
+        <button id="group-tab" class="btn-secondary text-sm">Group Chat</button>
+      </div>
+      <!-- Group name (hidden for direct) -->
+      <div id="group-name-section" class="hidden mb-4">
+        <input id="group-name-input" type="text" placeholder="Group name" class="input-field" maxlength="100">
+      </div>
+      <!-- User search -->
+      <div class="mb-4">
+        <input id="user-search-input" type="text" placeholder="Search users..." class="input-field">
+        <div id="user-search-results" class="mt-2 max-h-40 overflow-y-auto"></div>
+      </div>
+      <!-- Selected users -->
+      <div id="selected-users" class="mb-4 flex flex-wrap gap-2"></div>
+      <!-- Actions -->
+      <div class="flex justify-end gap-2">
+        <button id="cancel-conv-btn" class="btn-secondary">Cancel</button>
+        <button id="create-conv-btn" class="btn-primary">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Conversation Info Modal -->
+  <div id="info-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center chat-overlay-bg">
+    <div class="card w-full max-w-md mx-4">
+      <h3 class="text-lg font-bold mb-4" id="info-modal-title">Conversation Info</h3>
+      <!-- Members list -->
+      <div id="info-members" class="mb-4 space-y-2"></div>
+      <!-- Add member -->
+      <div id="info-add-member" class="hidden mb-4">
+        <input id="add-member-search" type="text" placeholder="Search users to add..." class="input-field">
+        <div id="add-member-results" class="mt-2 max-h-40 overflow-y-auto"></div>
+      </div>
+      <!-- Actions -->
+      <div class="flex justify-between">
+        <button id="leave-conv-btn" class="btn-secondary text-sm">Leave Conversation</button>
+        <button id="close-info-btn" class="btn-primary">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Paste Modal -->
+  <div id="paste-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center chat-overlay-bg">
+    <div class="card w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+      <h3 class="text-lg font-bold mb-4">Create Paste in Chat</h3>
+      <div class="mb-4">
+        <div class="editor-wrapper chat-paste-editor">
+          <div class="editor-gutter" id="embed-paste-gutter" aria-hidden="true"></div>
+          <textarea id="embed-paste-text" class="editor-textarea chat-paste-textarea" placeholder="Paste your text or code..." spellcheck="false"></textarea>
+        </div>
+        <p class="text-xs text-muted mt-1" id="embed-paste-char-count">0 characters</p>
+      </div>
+      <div class="mb-4">
+        <label class="block text-sm font-bold mb-1">Syntax highlighting</label>
+        <select id="embed-paste-syntax" class="input-field">
+          <option value="plaintext">None (plain text)</option>
+          <optgroup label="Web">
+            <option value="css">CSS</option>
+            <option value="xml">HTML / XML</option>
+            <option value="javascript">JavaScript</option>
+            <option value="json">JSON</option>
+            <option value="typescript">TypeScript</option>
+            <option value="sql">SQL</option>
+          </optgroup>
+          <optgroup label="Programming">
+            <option value="bash">Bash / Shell</option>
+            <option value="c">C</option>
+            <option value="cpp">C++</option>
+            <option value="csharp">C#</option>
+            <option value="go">Go</option>
+            <option value="java">Java</option>
+            <option value="kotlin">Kotlin</option>
+            <option value="lua">Lua</option>
+            <option value="perl">Perl</option>
+            <option value="php">PHP</option>
+            <option value="powershell">PowerShell</option>
+            <option value="python">Python</option>
+            <option value="ruby">Ruby</option>
+            <option value="rust">Rust</option>
+            <option value="scala">Scala</option>
+            <option value="swift">Swift</option>
+            <option value="vim">Vim Script</option>
+          </optgroup>
+          <optgroup label="Data / Config">
+            <option value="diff">Diff</option>
+            <option value="dockerfile">Dockerfile</option>
+            <option value="ini">INI / Config</option>
+            <option value="markdown">Markdown</option>
+            <option value="yaml">YAML</option>
+          </optgroup>
+          <optgroup label="Science">
+            <option value="r">R</option>
+          </optgroup>
+        </select>
+      </div>
+      <div class="grid grid-cols-2 gap-3 mb-4">
+        <div>
+          <label class="block text-sm font-bold mb-1">Expiry</label>
+          <select id="embed-paste-expiry" class="input-field">
+            <option value="3600">1 hour</option>
+            <option value="43200">12 hours</option>
+            <option value="86400" selected>24 hours</option>
+            <option value="259200">3 days</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-bold mb-1">Password (optional)</label>
+          <div class="relative">
+            <input id="embed-paste-password" type="password" class="input-field pr-10" placeholder="Optional" autocomplete="new-password">
+            <button type="button" id="embed-paste-toggle-pw" class="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-primary transition-colors" title="Toggle visibility">
+              <svg class="w-4 h-4 eye-open" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+              <svg class="w-4 h-4 eye-closed hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.542-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L6.59 6.59m7.532 7.532l3.29 3.29M3 3l18 18"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="mb-4">
+        <label class="custom-checkbox">
+          <input type="checkbox" id="embed-paste-burn">
+          <span class="checkmark"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
+          <span class="text-sm">Burn after reading</span>
+        </label>
+        <p class="text-xs text-muted mt-1 ml-6">Preview will not be available with this option</p>
+      </div>
+      <div id="embed-paste-error" class="hidden text-sm text-error mb-2"></div>
+      <div class="flex justify-end gap-2">
+        <button id="embed-paste-preview-btn" class="btn-secondary">Preview</button>
+        <button id="cancel-embed-paste" class="btn-secondary">Cancel</button>
+        <button id="create-embed-paste" class="btn-primary">Create &amp; Share</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Embed Paste Preview Modal -->
+  <div id="embed-paste-preview-modal" class="hidden fixed inset-0 z-[60] flex items-center justify-center chat-overlay-bg">
+    <div class="card w-11/12 max-w-lg mx-4 max-h-[80vh] flex flex-col">
+      <div class="flex justify-between items-center mb-3">
+        <span class="text-xs text-muted uppercase tracking-wide">Preview</span>
+        <button type="button" id="close-embed-paste-preview" class="text-muted hover:text-primary transition-colors">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="code-container overflow-auto flex-1">
+        <div class="code-gutter" id="embed-paste-preview-gutter" aria-hidden="true"></div>
+        <pre id="embed-paste-preview-content" class="code-content"></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Share Modal -->
+  <div id="share-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center chat-overlay-bg">
+    <div class="card w-full max-w-lg mx-4">
+      <h3 class="text-lg font-bold mb-4">Share File in Chat</h3>
+      <div class="mb-4">
+        <input id="embed-share-file" type="file" class="input-field">
+      </div>
+      <div class="grid grid-cols-2 gap-3 mb-4">
+        <div>
+          <label class="block text-sm font-bold mb-1">Expiry</label>
+          <select id="embed-share-expiry" class="input-field">
+            <option value="3600">1 hour</option>
+            <option value="43200">12 hours</option>
+            <option value="86400" selected>24 hours</option>
+            <option value="259200">3 days</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-bold mb-1">Password (optional)</label>
+          <div class="relative">
+            <input id="embed-share-password" type="password" class="input-field pr-10" placeholder="Optional" autocomplete="new-password">
+            <button type="button" id="embed-share-toggle-pw" class="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-primary transition-colors" title="Toggle visibility">
+              <svg class="w-4 h-4 eye-open" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+              <svg class="w-4 h-4 eye-closed hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.542-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L6.59 6.59m7.532 7.532l3.29 3.29M3 3l18 18"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="mb-4">
+        <label class="custom-checkbox">
+          <input type="checkbox" id="embed-share-burn">
+          <span class="checkmark"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
+          <span class="text-sm">Burn after reading</span>
+        </label>
+        <p class="text-xs text-muted mt-1 ml-6">Preview will not be available with this option</p>
+      </div>
+      <div id="embed-share-error" class="hidden text-sm text-error mb-2"></div>
+      <div class="flex justify-end gap-2">
+        <button id="cancel-embed-share" class="btn-secondary">Cancel</button>
+        <button id="create-embed-share" class="btn-primary">Upload &amp; Share</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="/js/chat-crypto.js"></script>
+  <script src="/js/chat-ws-client.js"></script>
+  <script src="/js/chat-state.js"></script>
+  <script src="/js/chat.js"></script>
+  <script type="module" src="/js/burger-menu.js"></script>
+  <script type="module" src="/js/theme.js"></script>
+</body>
+</html>
