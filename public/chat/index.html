@@ -24,13 +24,7 @@
           <button id="burger-btn" class="burger-btn" aria-label="Menu" aria-expanded="false">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
           </button>
-          <nav id="burger-nav" class="burger-nav hidden">
-            <a href="/">Home</a>
-            <div class="burger-divider"></div>
-            <a href="/paste">RedSecPaste</a>
-            <a href="/share">RedSecShare</a>
-            <a href="/chat">RedSecTeam</a>
-          </nav>
+          <nav id="burger-nav" class="burger-nav hidden"></nav>
         </div>
         <button type="button" class="theme-toggle" id="theme-toggle" title="Toggle theme">
           <svg class="w-5 h-5 dark-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
@@ -134,6 +128,9 @@
               </button>
               <button id="embed-share-btn" class="p-1.5 rounded hover:bg-[var(--bg-elevated)]" title="Share file">
                 <svg class="w-4 h-4 text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
+              </button>
+              <button id="embed-vault-btn" class="p-1.5 rounded hover:bg-[var(--bg-elevated)]" title="Share vault entry">
+                <svg class="w-4 h-4 text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
               </button>
               <button id="emoji-btn" class="p-1.5 rounded hover:bg-[var(--bg-elevated)]" title="Emoji">
                 <svg class="w-4 h-4 text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
@@ -361,6 +358,7 @@
 
   <!-- Scripts -->
   <script src="/js/chat-crypto.js"></script>
+  <script src="/js/vault-key-store.js"></script>
   <script src="/js/chat-ws-client.js"></script>
   <script src="/js/chat-state.js"></script>
   <script src="/js/chat.js"></script>

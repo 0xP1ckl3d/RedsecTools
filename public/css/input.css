@@ -23,6 +23,7 @@
   --accent-glow: rgba(229, 57, 53, 0.25);
   --accent-muted: rgba(229, 57, 53, 0.12);
   --overlay: rgba(0, 0, 0, 0.88);
+  --overlay-modal: rgba(0, 0, 0, 0.88);
   --shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
   --selection-bg: rgba(229, 57, 53, 0.3);
   --selection-text: #fff;
@@ -43,6 +44,7 @@ html.light {
   --accent-glow: rgba(198, 40, 40, 0.15);
   --accent-muted: rgba(198, 40, 40, 0.08);
   --overlay: rgba(0, 0, 0, 0.45);
+  --overlay-modal: rgba(0, 0, 0, 0.7);
   --shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
   --selection-bg: rgba(198, 40, 40, 0.2);
   --selection-text: #1a1815;
@@ -353,6 +355,7 @@ html.light {
     padding: 0.75rem;
   }
   .overlay-bg { background: var(--overlay); }
+  .overlay-modal-bg { background: var(--overlay-modal); }
 
   /* --- Page containers --- */
   .page-wide {
@@ -929,3 +932,37 @@ html.light {
   .chat-editor ol { list-style-type: decimal; }
   .chat-editor li { margin: 0.1rem 0; }
 }
+
+/* ============================================================ */
+/* Vault                                                         */
+/* ============================================================ */
+
+@layer components {
+  .vault-entry-icon {
+    @apply w-4 h-4 shrink-0 text-accent;
+  }
+
+  .secret-field {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+}
+
+/* TOTP progress bar — smooth CSS animation */
+@keyframes totp-countdown {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+.totp-bar {
+  width: 100%;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 9999px;
+  transform-origin: left center;
+}
+
+.totp-bar-animate { animation: totp-countdown 30s linear; }
+.totp-bar-animate-60 { animation: totp-countdown 60s linear; }
+
+/* Negative animation-delay offsets so the bar starts at the correct position mid-period */
+.totp-e0{animation-delay:0s}.totp-e1{animation-delay:-1s}.totp-e2{animation-delay:-2s}.totp-e3{animation-delay:-3s}.totp-e4{animation-delay:-4s}.totp-e5{animation-delay:-5s}.totp-e6{animation-delay:-6s}.totp-e7{animation-delay:-7s}.totp-e8{animation-delay:-8s}.totp-e9{animation-delay:-9s}.totp-e10{animation-delay:-10s}.totp-e11{animation-delay:-11s}.totp-e12{animation-delay:-12s}.totp-e13{animation-delay:-13s}.totp-e14{animation-delay:-14s}.totp-e15{animation-delay:-15s}.totp-e16{animation-delay:-16s}.totp-e17{animation-delay:-17s}.totp-e18{animation-delay:-18s}.totp-e19{animation-delay:-19s}.totp-e20{animation-delay:-20s}.totp-e21{animation-delay:-21s}.totp-e22{animation-delay:-22s}.totp-e23{animation-delay:-23s}.totp-e24{animation-delay:-24s}.totp-e25{animation-delay:-25s}.totp-e26{animation-delay:-26s}.totp-e27{animation-delay:-27s}.totp-e28{animation-delay:-28s}.totp-e29{animation-delay:-29s}.totp-e30{animation-delay:-30s}.totp-e31{animation-delay:-31s}.totp-e32{animation-delay:-32s}.totp-e33{animation-delay:-33s}.totp-e34{animation-delay:-34s}.totp-e35{animation-delay:-35s}.totp-e36{animation-delay:-36s}.totp-e37{animation-delay:-37s}.totp-e38{animation-delay:-38s}.totp-e39{animation-delay:-39s}.totp-e40{animation-delay:-40s}.totp-e41{animation-delay:-41s}.totp-e42{animation-delay:-42s}.totp-e43{animation-delay:-43s}.totp-e44{animation-delay:-44s}.totp-e45{animation-delay:-45s}.totp-e46{animation-delay:-46s}.totp-e47{animation-delay:-47s}.totp-e48{animation-delay:-48s}.totp-e49{animation-delay:-49s}.totp-e50{animation-delay:-50s}.totp-e51{animation-delay:-51s}.totp-e52{animation-delay:-52s}.totp-e53{animation-delay:-53s}.totp-e54{animation-delay:-54s}.totp-e55{animation-delay:-55s}.totp-e56{animation-delay:-56s}.totp-e57{animation-delay:-57s}.totp-e58{animation-delay:-58s}.totp-e59{animation-delay:-59s}

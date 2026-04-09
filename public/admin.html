@@ -23,15 +23,7 @@
           <button id="burger-btn" class="burger-btn" aria-label="Menu" aria-expanded="false">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
           </button>
-          <nav id="burger-nav" class="burger-nav hidden">
-            <a href="/">Home</a>
-            <div class="burger-divider"></div>
-            <a href="/paste">RedSecPaste</a>
-            <a href="/share">RedSecShare</a>
-            <a href="/chat">RedSecTeam</a>
-            <div class="burger-divider"></div>
-            <a href="/admin">Admin Panel</a>
-          </nav>
+          <nav id="burger-nav" class="burger-nav hidden"></nav>
         </div>
         <button type="button" class="theme-toggle" id="theme-toggle" title="Toggle theme">
           <svg class="w-5 h-5 dark-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
@@ -65,7 +57,9 @@
         <button type="button" class="admin-tab" data-tab="users">Users</button>
         <button type="button" class="admin-tab" data-tab="invites">Invites</button>
         <button type="button" class="admin-tab" data-tab="settings">Settings</button>
+        <button type="button" class="admin-tab" data-tab="security">Security</button>
         <button type="button" class="admin-tab" data-tab="chat">Chat</button>
+        <button type="button" class="admin-tab" data-tab="vaults">Vaults</button>
       </div>
 
       <!-- Pastes Tab -->
@@ -179,6 +173,7 @@
                 <th>Username</th>
                 <th>Email</th>
                 <th>Status</th>
+                <th>MFA</th>
                 <th>Created</th>
                 <th>Actions</th>
               </tr>
@@ -276,6 +271,59 @@
           </div>
         </div>
       </div>
+
+      <!-- Security Tab -->
+      <div id="security-tab" class="hidden">
+        <h2 class="text-lg font-semibold mb-4">Security Settings</h2>
+        <div class="card">
+          <div class="space-y-5">
+            <div>
+              <label class="block text-sm font-medium mb-1.5">Session Duration</label>
+              <select id="security-session-ttl" class="input-field max-w-xs">
+                <option value="1800">30 minutes</option>
+                <option value="3600">1 hour</option>
+                <option value="7200">2 hours</option>
+                <option value="14400">4 hours</option>
+                <option value="43200">12 hours</option>
+                <option value="86400">24 hours</option>
+              </select>
+              <p class="text-xs text-muted mt-1">How long a normal session lasts before requiring re-login.</p>
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1.5">Extended Session ("Keep me signed in")</label>
+              <select id="security-session-ttl-extended" class="input-field max-w-xs">
+                <option value="86400">1 day</option>
+                <option value="172800">2 days</option>
+                <option value="604800">7 days</option>
+                <option value="1209600">14 days</option>
+                <option value="2592000">30 days</option>
+              </select>
+              <p class="text-xs text-muted mt-1">Session duration when users check "Keep me signed in".</p>
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1.5">Trusted Browser Duration</label>
+              <select id="security-mfa-remember-days" class="input-field max-w-xs">
+                <option value="7">7 days</option>
+                <option value="14">14 days</option>
+                <option value="30">30 days</option>
+                <option value="60">60 days</option>
+                <option value="90">90 days</option>
+              </select>
+              <p class="text-xs text-muted mt-1">How long a browser stays trusted for MFA bypass after checking "Remember this browser".</p>
+            </div>
+            <label class="custom-checkbox gap-2">
+              <input type="checkbox" id="security-mfa-required">
+              <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+              <span class="text-sm">Require MFA for all users</span>
+            </label>
+            <div class="flex gap-3">
+              <button type="button" id="save-security-btn" class="btn-primary">Save Security Settings</button>
+            </div>
+            <p id="security-result" class="text-sm hidden"></p>
+          </div>
+        </div>
+      </div>
+
       <!-- Chat Tab -->
       <div id="chat-tab" class="hidden">
         <!-- Stats -->
@@ -324,6 +372,40 @@
               <button id="chat-prev-page" class="btn-secondary text-sm" disabled>Previous</button>
               <button id="chat-next-page" class="btn-secondary text-sm">Next</button>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Vaults Tab -->
+      <div id="vaults-tab" class="hidden">
+        <div class="grid grid-cols-3 gap-4 mb-8">
+          <div class="stat-card"><div class="stat-value" id="vault-stat-total">-</div><div class="stat-label">Total Vaults</div></div>
+          <div class="stat-card"><div class="stat-value" id="vault-stat-entries">-</div><div class="stat-label">Total Entries</div></div>
+          <div class="stat-card"><div class="stat-value" id="vault-stat-shares">-</div><div class="stat-label">Direct Entry Shares</div></div>
+        </div>
+        <div class="card overflow-hidden">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-[var(--border)]">
+                <th class="text-left py-2 px-3 font-medium">ID</th>
+                <th class="text-left py-2 px-3 font-medium">Type</th>
+                <th class="text-left py-2 px-3 font-medium">Owner</th>
+                <th class="text-left py-2 px-3 font-medium">Entries</th>
+                <th class="text-left py-2 px-3 font-medium">Members</th>
+                <th class="text-left py-2 px-3 font-medium">Created</th>
+                <th class="text-left py-2 px-3 font-medium"></th>
+              </tr>
+            </thead>
+            <tbody id="vault-table-body">
+              <tr><td colspan="7" class="py-4 text-center text-muted">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div id="vault-pagination" class="flex items-center justify-between mt-4">
+          <span id="vault-page-info" class="text-sm text-muted"></span>
+          <div class="flex gap-2">
+            <button id="vault-prev-page" class="btn-secondary text-sm" disabled>Previous</button>
+            <button id="vault-next-page" class="btn-secondary text-sm">Next</button>
           </div>
         </div>
       </div>

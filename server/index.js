@@ -11,12 +11,14 @@ const adminRouter = require("./routes/admin");
 const authRouter = require("./routes/auth");
 const chatRouter = require("./routes/chat");
 const avatarRouter = require("./routes/avatar");
+const vaultRouter = require("./routes/vault");
 const { initWebSocket } = require("./chat-ws");
 const {
   deleteExpired, deleteExpiredFiles,
   deleteExpiredSessions, deleteExpiredInvites,
   deleteExpiredGuestLinks, deleteExpiredPasswordResets,
-  deleteExpiredMessages,
+  deleteExpiredMessages, deleteExpiredVaultShares,
+  deleteExpiredPendingLogins, deleteExpiredTrustedDevices,
 } = require("./database");
 const { pageRequireUser, pageRequireGuestOrUser } = require("./middleware/auth");
 
@@ -41,12 +43,12 @@ app.use(
         scriptSrc: ["'self'", "https://static.cloudflareinsights.com"],
         styleSrc: ["'self'"],
         imgSrc: ["'self'", "data:"],
-        connectSrc: ["'self'", "ws:", "wss:"],
+        connectSrc: ["'self'", "ws:", "wss:", "https://api.open-meteo.com"],
         fontSrc: ["'none'"],
         objectSrc: ["'none'"],
         frameAncestors: ["'none'"],
         baseUri: ["'self'"],
-        formAction: ["'self'"],
+        formAction: ["'self'", "https://www.google.com"],
       },
     },
     referrerPolicy: { policy: "no-referrer" },
@@ -67,6 +69,7 @@ app.use("/api", shareRouter);
 app.use("/api", authRouter);
 app.use("/api/chat", chatRouter);
 app.use("/api", avatarRouter);
+app.use("/api", vaultRouter);
 
 // --- Admin routes ---
 app.use("/admin", adminRouter);
@@ -90,6 +93,9 @@ app.get("/profile", pageRequireUser, (req, res) => res.sendFile(page("profile.ht
 app.get("/paste", pageRequireGuestOrUser("paste"), (req, res) => res.sendFile(page("paste/index.html")));
 app.get("/share", pageRequireGuestOrUser("share"), (req, res) => res.sendFile(page("share/index.html")));
 app.get("/chat", pageRequireUser, (req, res) => res.sendFile(page("chat/index.html")));
+app.get("/chat/about", (req, res) => res.sendFile(page("chat/about.html")));
+app.get("/vault", pageRequireUser, (req, res) => res.sendFile(page("vault/index.html")));
+app.get("/vault/about", (req, res) => res.sendFile(page("vault/about.html")));
 app.get("/admin", (req, res) => res.sendFile(page("admin.html")));
 
 // Guest link redemption
@@ -114,10 +120,13 @@ setInterval(() => {
   const guestLinks = deleteExpiredGuestLinks();
   const passwordResets = deleteExpiredPasswordResets();
   const messages = deleteExpiredMessages();
+  const vaultShares = deleteExpiredVaultShares();
+  const pendingLogins = deleteExpiredPendingLogins();
+  const trustedDevices = deleteExpiredTrustedDevices();
   if (shareRouter.cleanupTmp) shareRouter.cleanupTmp();
-  const total = pastes + files + sessions + invites + guestLinks + passwordResets + messages;
+  const total = pastes + files + sessions + invites + guestLinks + passwordResets + messages + vaultShares + pendingLogins + trustedDevices;
   if (total > 0) {
-    console.log(JSON.stringify({ ts: new Date().toISOString(), action: "cleanup", pastes, files, sessions, invites, guestLinks, passwordResets, messages }));
+    console.log(JSON.stringify({ ts: new Date().toISOString(), action: "cleanup", pastes, files, sessions, invites, guestLinks, passwordResets, messages, vaultShares, pendingLogins, trustedDevices }));
   }
 }, 10 * 60 * 1000);
 

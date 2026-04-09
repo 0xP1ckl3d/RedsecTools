@@ -25,13 +25,7 @@
           <button id="burger-btn" class="burger-btn" aria-label="Menu" aria-expanded="false">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
           </button>
-          <nav id="burger-nav" class="burger-nav hidden">
-            <a href="/">Home</a>
-            <div class="burger-divider"></div>
-            <a href="/paste">RedSecPaste</a>
-            <a href="/share">RedSecShare</a>
-            <a href="/chat">RedSecTeam</a>
-          </nav>
+          <nav id="burger-nav" class="burger-nav hidden"></nav>
         </div>
         <button type="button" class="theme-toggle" id="theme-toggle" title="Toggle theme">
           <svg class="w-5 h-5 dark-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
@@ -124,6 +118,106 @@
           </div>
         </div>
       </div>
+
+      <!-- MFA Management -->
+      <div class="card mt-6">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-lg font-semibold">Two-Factor Authentication</h2>
+          <span id="mfa-status-badge" class="text-xs font-medium px-2.5 py-1 rounded-full"></span>
+        </div>
+
+        <!-- MFA disabled state -->
+        <div id="mfa-disabled-section">
+          <p class="text-muted text-sm mb-4">Add an extra layer of security to your account with TOTP-based two-factor authentication.</p>
+          <button type="button" id="mfa-setup-btn" class="btn-primary">Enable Two-Factor Auth</button>
+        </div>
+
+        <!-- MFA enabled state -->
+        <div id="mfa-enabled-section" class="hidden">
+          <div class="space-y-4">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-sm font-medium">Recovery Codes</p>
+                <p class="text-xs text-secondary" id="mfa-recovery-count"></p>
+              </div>
+              <button type="button" id="mfa-regenerate-btn" class="btn-secondary text-sm">Regenerate Codes</button>
+            </div>
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-sm font-medium">Trusted Browsers</p>
+                <p class="text-xs text-secondary" id="mfa-trusted-count"></p>
+              </div>
+              <button type="button" id="mfa-revoke-trusted-btn" class="btn-secondary text-sm">Revoke All</button>
+            </div>
+            <div class="pt-3 border-t border-tertiary">
+              <button type="button" id="mfa-disable-btn" class="btn-secondary text-error hover:text-error">Disable Two-Factor Auth</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- MFA setup flow (shown during setup) -->
+        <div id="mfa-setup-flow" class="hidden">
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium mb-1.5">Confirm your password</label>
+              <input type="password" id="mfa-setup-password" class="input-field" placeholder="Current password">
+            </div>
+            <button type="button" id="mfa-setup-start-btn" class="btn-primary w-full justify-center">Begin Setup</button>
+          </div>
+          <p id="mfa-setup-error" class="text-sm mt-3 text-center hidden text-error"></p>
+        </div>
+
+        <!-- MFA setup QR step -->
+        <div id="mfa-setup-qr" class="hidden">
+          <p class="text-sm text-secondary mb-3">Scan this QR code with your authenticator app (Google Authenticator, Authy, etc.).</p>
+          <div id="mfa-qr-container" class="flex justify-center mb-4"></div>
+          <div id="mfa-secret-display" class="text-center mb-4 hidden">
+            <p class="text-xs text-secondary mb-1">Manual entry key:</p>
+            <code id="mfa-secret-text" class="text-sm font-mono break-all select-all"></code>
+          </div>
+          <button type="button" id="mfa-show-secret-btn" class="text-xs text-accent hover:underline block mx-auto mb-4">Can't scan? Show manual key</button>
+
+          <div id="mfa-new-recovery-codes" class="mb-4 hidden">
+            <p class="text-sm text-secondary mb-2 font-medium">Save these recovery codes in a safe place:</p>
+            <div id="mfa-recovery-codes-list" class="grid grid-cols-2 gap-1 text-sm font-mono p-3 bg-secondary/10 rounded"></div>
+          </div>
+
+          <div class="space-y-3">
+            <input type="text" id="mfa-verify-code" class="input-field text-center tracking-widest text-lg" placeholder="000000" maxlength="6" inputmode="numeric" pattern="[0-9]*">
+            <button type="button" id="mfa-verify-setup-btn" class="btn-primary w-full justify-center">Verify &amp; Enable</button>
+            <button type="button" id="mfa-cancel-setup-btn" class="btn-secondary w-full justify-center">Cancel</button>
+          </div>
+          <p id="mfa-verify-error" class="text-sm mt-3 text-center hidden text-error"></p>
+        </div>
+
+        <!-- Regenerate codes modal -->
+        <div id="mfa-regenerate-modal" class="hidden">
+          <p class="text-sm text-secondary mb-3">Enter your password to generate new recovery codes. Old codes will be invalidated.</p>
+          <div class="space-y-3">
+            <input type="password" id="mfa-regen-password" class="input-field" placeholder="Current password">
+            <button type="button" id="mfa-regen-confirm-btn" class="btn-primary w-full justify-center">Generate New Codes</button>
+            <button type="button" id="mfa-regen-cancel-btn" class="btn-secondary w-full justify-center">Cancel</button>
+          </div>
+          <div id="mfa-regen-codes-result" class="hidden mt-4">
+            <p class="text-sm text-secondary mb-2 font-medium">Save these new recovery codes:</p>
+            <div id="mfa-regen-codes-list" class="grid grid-cols-2 gap-1 text-sm font-mono p-3 bg-secondary/10 rounded"></div>
+          </div>
+          <p id="mfa-regen-error" class="text-sm mt-3 text-center hidden text-error"></p>
+        </div>
+
+        <!-- Disable MFA modal -->
+        <div id="mfa-disable-modal" class="hidden">
+          <p class="text-sm text-secondary mb-3">Enter your password to disable two-factor authentication.</p>
+          <div class="space-y-3">
+            <input type="password" id="mfa-disable-password" class="input-field" placeholder="Current password">
+            <button type="button" id="mfa-disable-confirm-btn" class="btn-primary w-full justify-center">Disable Two-Factor Auth</button>
+            <button type="button" id="mfa-disable-cancel-btn" class="btn-secondary w-full justify-center">Cancel</button>
+          </div>
+          <p id="mfa-disable-error" class="text-sm mt-3 text-center hidden text-error"></p>
+        </div>
+
+        <p id="mfa-status-msg" class="text-sm mt-3 text-center hidden"></p>
+      </div>
     </div>
 
     <!-- Toast -->
@@ -135,6 +229,7 @@
 
     <footer class="footer">&copy; <span class="current-year"></span> RedSec Offensive Security</footer>
   </div>
+  <script src="/js/vendor/qrcode.min.js"></script>
   <script src="/js/chat-crypto.js"></script>
   <script type="module" src="/js/profile.js"></script>
   <script type="module" src="/js/burger-menu.js"></script>

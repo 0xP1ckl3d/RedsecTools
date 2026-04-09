@@ -110,7 +110,7 @@ logoutBtn.addEventListener("click", async () => {
 // --- Tabs ---
 
 const tabBtns = document.querySelectorAll(".admin-tab[data-tab]");
-const tabs = ["pastes", "files", "users", "invites", "settings", "chat"];
+const tabs = ["pastes", "files", "users", "invites", "settings", "security", "chat", "vaults"];
 
 tabBtns.forEach((btn) => {
   btn.addEventListener("click", () => {
@@ -123,6 +123,13 @@ tabBtns.forEach((btn) => {
     if (tab === "chat") {
       loadChatStats();
       loadChatConversations();
+    }
+    if (tab === "vaults") {
+      loadVaultStats();
+      loadVaultsAdmin();
+    }
+    if (tab === "security") {
+      loadSecuritySettings();
     }
   });
 });
@@ -384,7 +391,7 @@ async function loadUsers() {
     usersBody.innerHTML = "";
 
     if (data.users.length === 0) {
-      usersBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-8">No users found.</td></tr>';
+      usersBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-8">No users found.</td></tr>';
     } else {
       for (const u of data.users) {
         const tr = document.createElement("tr");
@@ -392,12 +399,14 @@ async function loadUsers() {
           <td class="text-sm font-medium">${escapeHtml(u.username)}</td>
           <td class="text-xs">${escapeHtml(u.email)}</td>
           <td>${u.suspended ? '<span class="badge badge-red">Suspended</span>' : '<span class="badge badge-green">Active</span>'}</td>
+          <td id="mfa-${u.id}"><span class="text-xs text-muted">Loading...</span></td>
           <td class="text-xs">${formatTime(u.createdAt)}</td>
           <td class="flex gap-2 flex-wrap">
             ${u.suspended
               ? `<button class="user-unsuspend-btn text-xs hover:underline" data-id="${u.id}">Unsuspend</button>`
               : `<button class="user-suspend-btn text-xs text-amber hover:underline" data-id="${u.id}">Suspend</button>`
             }
+            <button class="user-reset-mfa-btn text-xs text-amber hover:underline hidden" data-id="${u.id}">Reset MFA</button>
             <button class="user-reset-btn text-xs hover:underline" data-id="${u.id}">Reset PW</button>
             <button class="user-delete-btn text-error text-xs hover:underline" data-id="${u.id}">Delete</button>
           </td>
@@ -409,6 +418,11 @@ async function loadUsers() {
     userPageInfo.textContent = `Page ${data.page} of ${data.totalPages || 1}`;
     userPrevBtn.disabled = data.page <= 1;
     userNextBtn.disabled = data.page >= data.totalPages;
+
+    // Load MFA status for each user
+    for (const u of data.users) {
+      loadUserMFAStatus(u.id);
+    }
   } catch {}
 }
 
@@ -749,12 +763,175 @@ function formatDate(ts) {
   return new Date(ts * 1000).toLocaleDateString();
 }
 
+// ============================================================
+// USER MFA STATUS
+// ============================================================
+
+async function loadUserMFAStatus(userId) {
+  try {
+    const res = await api(`/api/users/${userId}`);
+    if (!res.ok) return;
+    const user = await res.json();
+    const td = document.getElementById(`mfa-${userId}`);
+    if (!td) return;
+
+    if (user.mfaEnabled) {
+      td.innerHTML = '<span class="badge badge-green">Enabled</span>';
+      // Show reset MFA button
+      const btn = document.querySelector(`.user-reset-mfa-btn[data-id="${userId}"]`);
+      if (btn) btn.classList.remove("hidden");
+    } else {
+      td.innerHTML = '<span class="badge badge-gray">Disabled</span>';
+    }
+  } catch {
+    const td = document.getElementById(`mfa-${userId}`);
+    if (td) td.innerHTML = '<span class="text-xs text-muted">-</span>';
+  }
+}
+
+// Add MFA reset handler to users body click
+usersBody.addEventListener("click", async (e) => {
+  const btn = e.target;
+  if (btn.classList.contains("user-reset-mfa-btn")) {
+    const id = btn.dataset.id;
+    if (!confirm("Reset this user's MFA? They will be logged out and need to set up MFA again.")) return;
+    try {
+      const res = await api(`/api/users/${id}/reset-mfa`, { method: "POST" });
+      if (res.ok) {
+        alert("MFA reset. User has been logged out.");
+        loadUsers();
+      } else {
+        const data = await res.json();
+        alert(data.error || "Failed to reset MFA");
+      }
+    } catch {}
+  }
+});
+
+// ============================================================
+// SECURITY SETTINGS
+// ============================================================
+
+const securitySessionTTL = document.getElementById("security-session-ttl");
+const securitySessionTTLExtended = document.getElementById("security-session-ttl-extended");
+const securityMfaRememberDays = document.getElementById("security-mfa-remember-days");
+const securityMfaRequired = document.getElementById("security-mfa-required");
+const saveSecurityBtn = document.getElementById("save-security-btn");
+const securityResult = document.getElementById("security-result");
+
+async function loadSecuritySettings() {
+  try {
+    const res = await api("/api/settings/security");
+    if (!res.ok) return;
+    const data = await res.json();
+    securitySessionTTL.value = data.sessionTTL || 43200;
+    securitySessionTTLExtended.value = data.sessionTTLExtended || 604800;
+    securityMfaRememberDays.value = data.mfaRememberDays || 30;
+    securityMfaRequired.checked = data.mfaRequired || false;
+  } catch {}
+}
+
+saveSecurityBtn.addEventListener("click", async () => {
+  saveSecurityBtn.disabled = true;
+  securityResult.classList.add("hidden");
+
+  try {
+    const res = await api("/api/settings/security", {
+      method: "POST",
+      body: JSON.stringify({
+        sessionTTL: parseInt(securitySessionTTL.value, 10),
+        sessionTTLExtended: parseInt(securitySessionTTLExtended.value, 10),
+        mfaRememberDays: parseInt(securityMfaRememberDays.value, 10),
+        mfaRequired: securityMfaRequired.checked,
+      }),
+    });
+
+    if (res.ok) {
+      securityResult.textContent = "Security settings saved";
+      securityResult.className = "text-sm text-accent";
+      securityResult.classList.remove("hidden");
+    } else {
+      const data = await res.json();
+      securityResult.textContent = data.error || "Failed to save";
+      securityResult.className = "text-sm text-error";
+      securityResult.classList.remove("hidden");
+    }
+  } catch {
+    securityResult.textContent = "Network error";
+    securityResult.className = "text-sm text-error";
+    securityResult.classList.remove("hidden");
+  } finally {
+    saveSecurityBtn.disabled = false;
+  }
+});
+
 // --- Utility ---
 function escapeHtml(str) {
   const div = document.createElement("div");
   div.textContent = str;
   return div.innerHTML;
 }
+
+// ============================================================
+// VAULTS
+// ============================================================
+
+let vaultAdminPage = 1;
+
+async function loadVaultStats() {
+  try {
+    const res = await api("/api/vault/stats");
+    if (!res.ok) return;
+    const data = await res.json();
+    document.getElementById("vault-stat-total").textContent = data.totalVaults || 0;
+    document.getElementById("vault-stat-entries").textContent = data.totalEntries || 0;
+    document.getElementById("vault-stat-shares").textContent = data.totalShares || 0;
+  } catch {}
+}
+
+async function loadVaultsAdmin(page = 1) {
+  vaultAdminPage = page;
+  try {
+    const res = await api(`/api/vaults?page=${page}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const tbody = document.getElementById("vault-table-body");
+    const vaults = data.vaults || [];
+    if (!vaults.length) {
+      tbody.innerHTML = `<tr><td colspan="7" class="py-4 text-center text-muted">No vaults</td></tr>`;
+    } else {
+      tbody.innerHTML = vaults.map(v => `<tr class="border-b border-[var(--border)]">
+        <td class="py-2 px-3 font-mono text-xs">${escapeHtml(v.id)}</td>
+        <td class="py-2 px-3"><span class="badge badge-gray capitalize">${v.type}</span></td>
+        <td class="py-2 px-3">${escapeHtml(v.ownerUsername || v.ownerId)}</td>
+        <td class="py-2 px-3">${v.entryCount || 0}</td>
+        <td class="py-2 px-3">${v.memberCount || 0}</td>
+        <td class="py-2 px-3 text-muted">${v.createdAt ? new Date(v.createdAt * 1000).toLocaleDateString() : "-"}</td>
+        <td class="py-2 px-3"><button class="vault-delete-btn text-error text-xs hover:underline" data-vault-id="${escapeHtml(v.id)}">Delete</button></td>
+      </tr>`).join("");
+    }
+    document.getElementById("vault-page-info").textContent = `Page ${page}`;
+    document.getElementById("vault-prev-page").disabled = page <= 1;
+    document.getElementById("vault-next-page").disabled = vaults.length < 20;
+  } catch {}
+}
+
+document.getElementById("vault-table-body").addEventListener("click", async (e) => {
+  const btn = e.target.closest(".vault-delete-btn");
+  if (!btn) return;
+  const id = btn.dataset.vaultId;
+  if (!confirm("Delete this vault and all its entries? This cannot be undone.")) return;
+  try {
+    const res = await api(`/api/vaults/${id}`, { method: "DELETE" });
+    if (res.ok) {
+      loadVaultsAdmin(vaultAdminPage);
+      loadVaultStats();
+    }
+  } catch {}
+});
+
+document.getElementById("vault-prev-page").addEventListener("click", () => loadVaultsAdmin(vaultAdminPage - 1));
+document.getElementById("vault-next-page").addEventListener("click", () => loadVaultsAdmin(vaultAdminPage + 1));
 
 // --- Init ---
 checkAuth();

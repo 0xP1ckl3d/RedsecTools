@@ -1,5 +1,23 @@
 // Burger menu — shared across all pages
-// Each page includes the burger HTML in its header; this module wires up behavior.
+// All links injected dynamically. Adding a new tool only requires changing TOOL_LINKS below.
+// HTML pages only need: <nav id="burger-nav" class="burger-nav hidden"></nav>
+
+const TOOL_LINKS = [
+  { href: "/", label: "Home", dividerAfter: true },
+  { href: "/paste", label: "RedSecPaste" },
+  { href: "/share", label: "RedSecShare" },
+  { href: "/chat", label: "RedSecTeam" },
+  { href: "/vault", label: "RedSecVault" },
+];
+
+// Contextual about links based on current page path
+const ABOUT_LINKS = [
+  { pathPrefix: "/vault", href: "/vault/about", label: "About this tool" },
+  { pathPrefix: "/chat", href: "/chat/about", label: "About this tool" },
+  { pathPrefix: "/share", href: "/share/about", label: "About this tool" },
+  { pathPrefix: "/paste", href: "/paste/about", label: "About this tool" },
+  { pathPrefix: "/p/", href: "/paste/about", label: "About this tool" },
+];
 
 export function initBurgerMenu() {
   const btn = document.getElementById("burger-btn");
@@ -7,18 +25,8 @@ export function initBurgerMenu() {
 
   if (!btn || !nav) return;
 
-  // Set contextual "About" link based on current path
-  const aboutLink = document.getElementById("burger-about");
-  if (aboutLink) {
-    const path = window.location.pathname;
-    if (path.startsWith("/share")) {
-      aboutLink.href = "/share/about";
-    } else if (path.startsWith("/p/") || path.startsWith("/paste")) {
-      aboutLink.href = "/paste/about";
-    } else {
-      aboutLink.href = "/paste/about";
-    }
-  }
+  // Always inject links (clear any existing static content)
+  injectLinks(nav);
 
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -41,8 +49,30 @@ export function initBurgerMenu() {
     }
   });
 
-  // Add auth-aware links
+  // Add auth-aware links after tool links
   addAuthLinks(nav);
+}
+
+function injectLinks(nav) {
+  let html = "";
+
+  // Standard tool links
+  for (const link of TOOL_LINKS) {
+    html += `<a href="${link.href}">${link.label}</a>`;
+    if (link.dividerAfter) {
+      html += `<div class="burger-divider"></div>`;
+    }
+  }
+
+  // Contextual "About" link for tool pages
+  const path = window.location.pathname;
+  const aboutMatch = ABOUT_LINKS.find(a => path.startsWith(a.pathPrefix));
+  if (aboutMatch) {
+    html += `<div class="burger-divider"></div>`;
+    html += `<a href="${aboutMatch.href}">${aboutMatch.label}</a>`;
+  }
+
+  nav.innerHTML = html;
 }
 
 async function addAuthLinks(nav) {

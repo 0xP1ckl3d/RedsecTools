@@ -190,10 +190,155 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_messages_conv_created ON messages(conversation_id, created_at);
   CREATE INDEX IF NOT EXISTS idx_messages_expires ON messages(expires_at);
+
+  -- Vault: Personal and team vaults
+  CREATE TABLE IF NOT EXISTS vaults (
+    id TEXT PRIMARY KEY,
+    name_encrypted BLOB NOT NULL,
+    name_iv BLOB NOT NULL,
+    type TEXT NOT NULL CHECK(type IN ('personal', 'team')),
+    owner_id TEXT NOT NULL,
+    encrypted_master_key BLOB,
+    master_key_iv BLOB,
+    master_key_salt BLOB,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+  CREATE INDEX IF NOT EXISTS idx_vaults_owner ON vaults(owner_id);
+
+  -- Vault: Team vault membership
+  CREATE TABLE IF NOT EXISTS vault_members (
+    id TEXT PRIMARY KEY,
+    vault_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'member' CHECK(role IN ('admin', 'member')),
+    encrypted_master_key TEXT NOT NULL,
+    joined_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    UNIQUE(vault_id, user_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_vault_members_vault ON vault_members(vault_id);
+  CREATE INDEX IF NOT EXISTS idx_vault_members_user ON vault_members(user_id);
+
+  -- Vault: Encrypted entries
+  CREATE TABLE IF NOT EXISTS vault_entries (
+    id TEXT PRIMARY KEY,
+    vault_id TEXT NOT NULL,
+    type TEXT NOT NULL CHECK(type IN ('password', 'note', 'api_key', 'ssh_key', 'totp', 'custom')),
+    title_encrypted BLOB NOT NULL,
+    title_iv BLOB NOT NULL,
+    data_encrypted BLOB NOT NULL,
+    data_iv BLOB NOT NULL,
+    folder_encrypted BLOB,
+    folder_iv BLOB,
+    favorite INTEGER NOT NULL DEFAULT 0,
+    version INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+  CREATE INDEX IF NOT EXISTS idx_vault_entries_vault ON vault_entries(vault_id);
+
+  -- Vault: Entry version history
+  CREATE TABLE IF NOT EXISTS vault_entry_history (
+    id TEXT PRIMARY KEY,
+    entry_id TEXT NOT NULL,
+    data_encrypted BLOB NOT NULL,
+    data_iv BLOB NOT NULL,
+    version INTEGER NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+  CREATE INDEX IF NOT EXISTS idx_vault_entry_history_entry ON vault_entry_history(entry_id);
+
+  -- Vault: Cross-vault entry sharing
+  CREATE TABLE IF NOT EXISTS vault_entry_shares (
+    id TEXT PRIMARY KEY,
+    entry_id TEXT NOT NULL,
+    from_user_id TEXT NOT NULL,
+    to_user_id TEXT NOT NULL,
+    encrypted_entry_key TEXT NOT NULL,
+    title_encrypted BLOB NOT NULL,
+    title_iv BLOB NOT NULL,
+    data_encrypted BLOB NOT NULL,
+    data_iv BLOB NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    expires_at INTEGER,
+    UNIQUE(entry_id, to_user_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_vault_entry_shares_to ON vault_entry_shares(to_user_id);
+  CREATE INDEX IF NOT EXISTS idx_vault_entry_shares_expires ON vault_entry_shares(expires_at);
+
+  -- Vault: Audit log
+  CREATE TABLE IF NOT EXISTS vault_audit_log (
+    id TEXT PRIMARY KEY,
+    vault_id TEXT NOT NULL,
+    entry_id TEXT,
+    user_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+  CREATE INDEX IF NOT EXISTS idx_vault_audit_vault ON vault_audit_log(vault_id);
+
+  -- MFA: User TOTP configuration
+  CREATE TABLE IF NOT EXISTS user_mfa (
+    user_id TEXT NOT NULL PRIMARY KEY,
+    totp_secret_encrypted TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 0,
+    recovery_codes TEXT NOT NULL DEFAULT '[]',
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+
+  -- MFA: Pending login tokens (password verified, TOTP pending)
+  CREATE TABLE IF NOT EXISTS mfa_pending_logins (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    ip_address TEXT,
+    user_agent TEXT,
+    keep_signed_in INTEGER NOT NULL DEFAULT 0,
+    remember_browser INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+  CREATE INDEX IF NOT EXISTS idx_mfa_pending_expires ON mfa_pending_logins(expires_at);
+
+  -- MFA: Trusted devices ("remember this browser")
+  CREATE TABLE IF NOT EXISTS mfa_trusted_devices (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    token_hash TEXT NOT NULL,
+    device_name TEXT,
+    expires_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+  CREATE INDEX IF NOT EXISTS idx_mfa_trusted_user ON mfa_trusted_devices(user_id);
+  CREATE INDEX IF NOT EXISTS idx_mfa_trusted_expires ON mfa_trusted_devices(expires_at);
+
+  -- Homepage: User shortcuts
+  CREATE TABLE IF NOT EXISTS homepage_shortcuts (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'personal',
+    title TEXT NOT NULL,
+    url TEXT NOT NULL,
+    icon TEXT,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+  CREATE INDEX IF NOT EXISTS idx_shortcuts_user_cat ON homepage_shortcuts(user_id, category);
+
+  -- Homepage: User layout preferences
+  CREATE TABLE IF NOT EXISTS homepage_settings (
+    user_id TEXT NOT NULL PRIMARY KEY,
+    layout TEXT NOT NULL DEFAULT '{"showWeather":true,"showSearch":true,"showShortcuts":true}',
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
 `);
 
 // Add avatar column to users table (safe migration)
 try { db.exec("ALTER TABLE users ADD COLUMN avatar_updated_at INTEGER"); } catch {}
+
+// Add needs_rekey column to vault_members (safe migration)
+try { db.exec("ALTER TABLE vault_members ADD COLUMN needs_rekey INTEGER NOT NULL DEFAULT 0"); } catch {}
+try { db.exec("ALTER TABLE mfa_pending_logins ADD COLUMN failed_attempts INTEGER NOT NULL DEFAULT 0"); } catch {}
 
 const VALID_SYNTAX_OPTIONS = [
   "plaintext", "python", "javascript", "typescript", "bash",
@@ -445,7 +590,159 @@ const stmts = {
   // --- Avatar ---
   updateAvatarTimestamp: db.prepare("UPDATE users SET avatar_updated_at = unixepoch() WHERE id = ?"),
   clearAvatarTimestamp: db.prepare("UPDATE users SET avatar_updated_at = NULL WHERE id = ?"),
+
+  // --- Vault: Vaults ---
+  createVault: db.prepare(`
+    INSERT INTO vaults (id, name_encrypted, name_iv, type, owner_id, encrypted_master_key, master_key_iv, master_key_salt)
+    VALUES (@id, @nameEncrypted, @nameIv, @type, @ownerId, @encryptedMasterKey, @masterKeyIv, @masterKeySalt)
+  `),
+  getVaultById: db.prepare("SELECT * FROM vaults WHERE id = ?"),
+  getVaultsByOwner: db.prepare("SELECT * FROM vaults WHERE owner_id = ? ORDER BY created_at DESC"),
+  getVaultsByMembership: db.prepare(`
+    SELECT v.* FROM vaults v JOIN vault_members vm ON v.id = vm.vault_id
+    WHERE vm.user_id = ? ORDER BY v.created_at DESC
+  `),
+  updateVaultName: db.prepare("UPDATE vaults SET name_encrypted = @nameEncrypted, name_iv = @nameIv, updated_at = unixepoch() WHERE id = @id"),
+  deleteVaultById: db.prepare("DELETE FROM vaults WHERE id = ?"),
+
+  // --- Vault: Members ---
+  addVaultMember: db.prepare(`
+    INSERT INTO vault_members (id, vault_id, user_id, role, encrypted_master_key)
+    VALUES (@id, @vaultId, @userId, @role, @encryptedMasterKey)
+  `),
+  getVaultMembers: db.prepare("SELECT vm.*, u.username, u.avatar_updated_at FROM vault_members vm JOIN users u ON vm.user_id = u.id WHERE vm.vault_id = ?"),
+  getVaultMember: db.prepare("SELECT * FROM vault_members WHERE vault_id = ? AND user_id = ?"),
+  removeVaultMember: db.prepare("DELETE FROM vault_members WHERE vault_id = ? AND user_id = ?"),
+  deleteMembersByVault: db.prepare("DELETE FROM vault_members WHERE vault_id = ?"),
+
+  // --- Vault: Entries ---
+  createVaultEntry: db.prepare(`
+    INSERT INTO vault_entries (id, vault_id, type, title_encrypted, title_iv, data_encrypted, data_iv, folder_encrypted, folder_iv, favorite)
+    VALUES (@id, @vaultId, @type, @titleEncrypted, @titleIv, @dataEncrypted, @dataIv, @folderEncrypted, @folderIv, @favorite)
+  `),
+  getVaultEntries: db.prepare("SELECT * FROM vault_entries WHERE vault_id = ? ORDER BY created_at DESC"),
+  getVaultEntryById: db.prepare("SELECT * FROM vault_entries WHERE id = ?"),
+  updateVaultEntry: db.prepare(`
+    UPDATE vault_entries SET title_encrypted = @titleEncrypted, title_iv = @titleIv,
+      data_encrypted = @dataEncrypted, data_iv = @dataIv, folder_encrypted = @folderEncrypted,
+      folder_iv = @folderIv, favorite = @favorite, version = version + 1, updated_at = unixepoch()
+    WHERE id = @id
+  `),
+  deleteVaultEntryById: db.prepare("DELETE FROM vault_entries WHERE id = ?"),
+  deleteEntriesByVault: db.prepare("DELETE FROM vault_entries WHERE vault_id = ?"),
+  countVaultEntries: db.prepare("SELECT COUNT(*) as total FROM vault_entries WHERE vault_id = ?"),
+
+  // --- Vault: Entry history ---
+  createVaultEntryHistory: db.prepare(`
+    INSERT INTO vault_entry_history (id, entry_id, data_encrypted, data_iv, version)
+    VALUES (@id, @entryId, @dataEncrypted, @dataIv, @version)
+  `),
+  getVaultEntryHistory: db.prepare("SELECT * FROM vault_entry_history WHERE entry_id = ? ORDER BY version DESC LIMIT ?"),
+  deleteHistoryByEntry: db.prepare("DELETE FROM vault_entry_history WHERE entry_id = ?"),
+
+  // --- Vault: Entry shares ---
+  createVaultEntryShare: db.prepare(`
+    INSERT INTO vault_entry_shares (id, entry_id, from_user_id, to_user_id, encrypted_entry_key, title_encrypted, title_iv, data_encrypted, data_iv, expires_at)
+    VALUES (@id, @entryId, @fromUserId, @toUserId, @encryptedEntryKey, @titleEncrypted, @titleIv, @dataEncrypted, @dataIv, @expiresAt)
+  `),
+  getSharesForUser: db.prepare("SELECT ves.*, u.username as from_username, ve.type as entry_type FROM vault_entry_shares ves JOIN users u ON ves.from_user_id = u.id JOIN vault_entries ve ON ves.entry_id = ve.id WHERE ves.to_user_id = ? ORDER BY ves.created_at DESC"),
+  getSharesByEntry: db.prepare("SELECT ves.*, u.username as to_username FROM vault_entry_shares ves JOIN users u ON ves.to_user_id = u.id WHERE ves.entry_id = ?"),
+  getVaultShareById: db.prepare("SELECT * FROM vault_entry_shares WHERE id = ?"),
+  getShareById: db.prepare("SELECT * FROM vault_entry_shares WHERE id = ?"),
+  deleteShareById: db.prepare("DELETE FROM vault_entry_shares WHERE id = ?"),
+  deleteSharesByEntry: db.prepare("DELETE FROM vault_entry_shares WHERE entry_id = ?"),
+  deleteExpiredVaultShares: db.prepare("DELETE FROM vault_entry_shares WHERE expires_at < unixepoch()"),
+  deleteSharesByUser: db.prepare("DELETE FROM vault_entry_shares WHERE to_user_id = ?"),
+
+  // --- Vault: Audit log ---
+  createVaultAudit: db.prepare(`
+    INSERT INTO vault_audit_log (id, vault_id, entry_id, user_id, action)
+    VALUES (@id, @vaultId, @entryId, @userId, @action)
+  `),
+  getVaultAuditLog: db.prepare("SELECT val.*, u.username FROM vault_audit_log val JOIN users u ON val.user_id = u.id WHERE val.vault_id = ? ORDER BY val.created_at DESC LIMIT ? OFFSET ?"),
+  deleteAuditByVault: db.prepare("DELETE FROM vault_audit_log WHERE vault_id = ?"),
+
+  // --- Vault: Admin ---
+  countAllVaults: db.prepare("SELECT COUNT(*) as total FROM vaults"),
+  countAllVaultEntries: db.prepare("SELECT COUNT(*) as total FROM vault_entries"),
+  countAllVaultShares: db.prepare("SELECT COUNT(*) as total FROM vault_entry_shares"),
+  listVaultsAdmin: db.prepare(`
+    SELECT v.id, v.type, v.owner_id, v.created_at, v.updated_at, u.username as owner_username,
+      (SELECT COUNT(*) FROM vault_members WHERE vault_id = v.id) + 1 as member_count,
+      (SELECT COUNT(*) FROM vault_entries WHERE vault_id = v.id) as entry_count
+    FROM vaults v LEFT JOIN users u ON v.owner_id = u.id
+    ORDER BY v.created_at DESC LIMIT ? OFFSET ?
+  `),
+
+  // --- MFA: User TOTP config ---
+  getUserMFA: db.prepare("SELECT * FROM user_mfa WHERE user_id = ?"),
+  setUserMFA: db.prepare(`
+    INSERT INTO user_mfa (user_id, totp_secret_encrypted, recovery_codes)
+    VALUES (@userId, @totpSecretEncrypted, @recoveryCodes)
+    ON CONFLICT(user_id) DO UPDATE SET totp_secret_encrypted = @totpSecretEncrypted, recovery_codes = @recoveryCodes, updated_at = unixepoch()
+  `),
+  enableUserMFA: db.prepare("UPDATE user_mfa SET enabled = 1, updated_at = unixepoch() WHERE user_id = ?"),
+  disableUserMFA: db.prepare("DELETE FROM user_mfa WHERE user_id = ?"),
+  updateRecoveryCodes: db.prepare("UPDATE user_mfa SET recovery_codes = @recoveryCodes, updated_at = unixepoch() WHERE user_id = @userId"),
+
+  // --- MFA: Pending logins ---
+  createPendingLogin: db.prepare(`
+    INSERT INTO mfa_pending_logins (id, user_id, expires_at, ip_address, user_agent, keep_signed_in, remember_browser)
+    VALUES (@id, @userId, @expiresAt, @ipAddress, @userAgent, @keepSignedIn, @rememberBrowser)
+  `),
+  getPendingLogin: db.prepare("SELECT * FROM mfa_pending_logins WHERE id = ?"),
+  deletePendingLogin: db.prepare("DELETE FROM mfa_pending_logins WHERE id = ?"),
+  incrementFailedAttempts: db.prepare("UPDATE mfa_pending_logins SET failed_attempts = failed_attempts + 1 WHERE id = ?"),
+  deleteExpiredPendingLogins: db.prepare("DELETE FROM mfa_pending_logins WHERE expires_at < unixepoch()"),
+
+  // --- MFA: Trusted devices ---
+  createTrustedDevice: db.prepare(`
+    INSERT INTO mfa_trusted_devices (id, user_id, token_hash, device_name, expires_at)
+    VALUES (@id, @userId, @tokenHash, @deviceName, @expiresAt)
+  `),
+  getTrustedDevicesByUser: db.prepare("SELECT * FROM mfa_trusted_devices WHERE user_id = ?"),
+  getTrustedDeviceByTokenHash: db.prepare("SELECT * FROM mfa_trusted_devices WHERE token_hash = ?"),
+  deleteTrustedDevice: db.prepare("DELETE FROM mfa_trusted_devices WHERE id = ?"),
+  deleteTrustedDevicesByUser: db.prepare("DELETE FROM mfa_trusted_devices WHERE user_id = ?"),
+  deleteExpiredTrustedDevices: db.prepare("DELETE FROM mfa_trusted_devices WHERE expires_at < unixepoch()"),
+  countTrustedDevicesByUser: db.prepare("SELECT COUNT(*) as total FROM mfa_trusted_devices WHERE user_id = ?"),
+
+  // --- Vault: Re-key support ---
+  updateVaultMemberKey: db.prepare("UPDATE vault_members SET encrypted_master_key = @encryptedMasterKey, needs_rekey = 0 WHERE vault_id = @vaultId AND user_id = @userId"),
+  flagVaultMembersForRekey: db.prepare("UPDATE vault_members SET needs_rekey = 1 WHERE user_id = ? AND vault_id IN (SELECT id FROM vaults WHERE type = 'team')"),
+  deleteUserKeyBackup: db.prepare("DELETE FROM user_keys WHERE user_id = ?"),
+
+  // --- Homepage: Shortcuts ---
+  getShortcutsByUser: db.prepare("SELECT * FROM homepage_shortcuts WHERE user_id = ? ORDER BY category, sort_order, created_at"),
+  createShortcut: db.prepare(`
+    INSERT INTO homepage_shortcuts (id, user_id, category, title, url, icon, sort_order)
+    VALUES (@id, @userId, @category, @title, @url, @icon, @sortOrder)
+  `),
+  updateShortcut: db.prepare(`
+    UPDATE homepage_shortcuts SET title = @title, url = @url, icon = @icon, category = @category, sort_order = @sortOrder
+    WHERE id = @id AND user_id = @userId
+  `),
+  deleteShortcut: db.prepare("DELETE FROM homepage_shortcuts WHERE id = @id AND user_id = @userId"),
+  getShortcutById: db.prepare("SELECT * FROM homepage_shortcuts WHERE id = ? AND user_id = ?"),
+
+  // --- Homepage: Settings ---
+  getHomepageSettings: db.prepare("SELECT * FROM homepage_settings WHERE user_id = ?"),
+  setHomepageSettings: db.prepare(`
+    INSERT INTO homepage_settings (user_id, layout) VALUES (@userId, @layout)
+    ON CONFLICT(user_id) DO UPDATE SET layout = @layout, updated_at = unixepoch()
+  `),
 };
+
+// Default security settings (must be after stmts initialization)
+const DEFAULTS = {
+  session_ttl: "43200",
+  session_ttl_extended: "604800",
+  mfa_remember_days: "30",
+  mfa_required: "false",
+};
+for (const [key, value] of Object.entries(DEFAULTS)) {
+  if (!getSetting(key)) setSetting(key, value);
+}
 
 // ============================================================
 // Paste functions
@@ -1218,6 +1515,340 @@ function listConversationsAdmin(page = 1, limit = 50) {
   };
 }
 
+// ============================================================
+// Vault functions
+// ============================================================
+
+function createVault({ id, nameEncrypted, nameIv, type, ownerId, encryptedMasterKey, masterKeyIv, masterKeySalt }) {
+  stmts.createVault.run({
+    id, nameEncrypted: Buffer.from(nameEncrypted, "base64"), nameIv: Buffer.from(nameIv, "base64"),
+    type, ownerId,
+    encryptedMasterKey: encryptedMasterKey ? Buffer.from(encryptedMasterKey, "base64") : null,
+    masterKeyIv: masterKeyIv ? Buffer.from(masterKeyIv, "base64") : null,
+    masterKeySalt: masterKeySalt ? Buffer.from(masterKeySalt, "base64") : null,
+  });
+  return { id };
+}
+
+function getVault(id) {
+  return stmts.getVaultById.get(id) || null;
+}
+
+function getUserVaults(userId) {
+  const owned = stmts.getVaultsByOwner.all(userId);
+  const memberOf = stmts.getVaultsByMembership.all(userId);
+  // Deduplicate: user may own a team vault they're also a member of
+  const seen = new Set(owned.map((v) => v.id));
+  const all = [...owned];
+  for (const v of memberOf) {
+    if (!seen.has(v.id)) { all.push(v); seen.add(v.id); }
+  }
+  return all.sort((a, b) => b.created_at - a.created_at);
+}
+
+function updateVault({ id, nameEncrypted, nameIv }) {
+  stmts.updateVaultName.run({ id, nameEncrypted: Buffer.from(nameEncrypted, "base64"), nameIv: Buffer.from(nameIv, "base64") });
+}
+
+function deleteVault(id) {
+  const del = db.transaction(() => {
+    const entries = stmts.getVaultEntries.all(id);
+    for (const e of entries) {
+      stmts.deleteHistoryByEntry.run(e.id);
+      stmts.deleteSharesByEntry.run(e.id);
+    }
+    stmts.deleteEntriesByVault.run(id);
+    stmts.deleteMembersByVault.run(id);
+    stmts.deleteAuditByVault.run(id);
+    stmts.deleteVaultById.run(id);
+  });
+  del();
+}
+
+function addVaultMember({ id, vaultId, userId, role, encryptedMasterKey }) {
+  stmts.addVaultMember.run({ id, vaultId, userId, role, encryptedMasterKey });
+}
+
+function getVaultMembersList(vaultId) {
+  return stmts.getVaultMembers.all(vaultId);
+}
+
+function getVaultMemberShip(vaultId, userId) {
+  return stmts.getVaultMember.get(vaultId, userId) || null;
+}
+
+function removeVaultMember(vaultId, userId) {
+  stmts.removeVaultMember.run(vaultId, userId);
+}
+
+function createVaultEntry({ id, vaultId, type, titleEncrypted, titleIv, dataEncrypted, dataIv, folderEncrypted, folderIv, favorite }) {
+  stmts.createVaultEntry.run({
+    id, vaultId, type,
+    titleEncrypted: Buffer.from(titleEncrypted, "base64"), titleIv: Buffer.from(titleIv, "base64"),
+    dataEncrypted: Buffer.from(dataEncrypted, "base64"), dataIv: Buffer.from(dataIv, "base64"),
+    folderEncrypted: folderEncrypted ? Buffer.from(folderEncrypted, "base64") : null,
+    folderIv: folderIv ? Buffer.from(folderIv, "base64") : null,
+    favorite: favorite ? 1 : 0,
+  });
+  return { id };
+}
+
+function getVaultEntriesList(vaultId) {
+  return stmts.getVaultEntries.all(vaultId);
+}
+
+function getVaultEntry(id) {
+  return stmts.getVaultEntryById.get(id) || null;
+}
+
+function updateVaultEntry({ id, titleEncrypted, titleIv, dataEncrypted, dataIv, folderEncrypted, folderIv, favorite }) {
+  const existing = stmts.getVaultEntryById.get(id);
+  if (!existing) return null;
+  // Save current version to history
+  const histId = crypto.randomBytes(16).toString("base64url");
+  stmts.createVaultEntryHistory.run({
+    id: histId, entryId: id,
+    dataEncrypted: existing.data_encrypted, dataIv: existing.data_iv,
+    version: existing.version,
+  });
+  stmts.updateVaultEntry.run({
+    id,
+    titleEncrypted: Buffer.from(titleEncrypted, "base64"), titleIv: Buffer.from(titleIv, "base64"),
+    dataEncrypted: Buffer.from(dataEncrypted, "base64"), dataIv: Buffer.from(dataIv, "base64"),
+    folderEncrypted: folderEncrypted ? Buffer.from(folderEncrypted, "base64") : null,
+    folderIv: folderIv ? Buffer.from(folderIv, "base64") : null,
+    favorite: favorite ? 1 : 0,
+  });
+  return { id };
+}
+
+function deleteVaultEntry(id) {
+  const del = db.transaction(() => {
+    stmts.deleteHistoryByEntry.run(id);
+    stmts.deleteSharesByEntry.run(id);
+    stmts.deleteVaultEntryById.run(id);
+  });
+  del();
+}
+
+function getVaultEntryHistoryList(entryId, limit = 10) {
+  return stmts.getVaultEntryHistory.all(entryId, limit);
+}
+
+function createVaultEntryShare({ id, entryId, fromUserId, toUserId, encryptedEntryKey, titleEncrypted, titleIv, dataEncrypted, dataIv, expiresAt }) {
+  stmts.createVaultEntryShare.run({
+    id, entryId, fromUserId, toUserId, encryptedEntryKey,
+    titleEncrypted: Buffer.from(titleEncrypted, "base64"), titleIv: Buffer.from(titleIv, "base64"),
+    dataEncrypted: Buffer.from(dataEncrypted, "base64"), dataIv: Buffer.from(dataIv, "base64"),
+    expiresAt: expiresAt || null,
+  });
+  return { id };
+}
+
+function getSharesForUser(userId) {
+  return stmts.getSharesForUser.all(userId);
+}
+
+function getSharesByEntryId(entryId) {
+  return stmts.getSharesByEntry.all(entryId);
+}
+
+function getVaultShare(id) {
+  return stmts.getVaultShareById.get(id);
+}
+
+function deleteVaultShare(id) {
+  return stmts.deleteShareById.run(id).changes > 0;
+}
+
+function deleteExpiredVaultShares() {
+  return stmts.deleteExpiredVaultShares.run().changes;
+}
+
+function createVaultAudit({ id, vaultId, entryId, userId, action }) {
+  stmts.createVaultAudit.run({ id, vaultId, entryId: entryId || null, userId, action });
+}
+
+function getVaultAuditLog(vaultId, page = 1, limit = 50) {
+  const offset = (page - 1) * limit;
+  const rows = stmts.getVaultAuditLog.all(vaultId, limit, offset);
+  return rows.map((r) => ({
+    id: r.id, entryId: r.entry_id, userId: r.user_id,
+    username: r.username, action: r.action, createdAt: r.created_at,
+  }));
+}
+
+function getVaultStats() {
+  return {
+    totalVaults: stmts.countAllVaults.get().total,
+    totalEntries: stmts.countAllVaultEntries.get().total,
+    totalShares: stmts.countAllVaultShares.get().total,
+  };
+}
+
+function listVaultsAdmin(page = 1, limit = 50) {
+  const offset = (page - 1) * limit;
+  const rows = stmts.listVaultsAdmin.all(limit, offset);
+  const total = stmts.countAllVaults.get().total;
+  return {
+    vaults: rows.map((r) => ({
+      id: r.id, type: r.type, ownerId: r.owner_id, ownerUsername: r.owner_username,
+      memberCount: r.member_count, entryCount: r.entry_count,
+      createdAt: r.created_at, updatedAt: r.updated_at,
+    })),
+    total, page, totalPages: Math.ceil(total / limit),
+  };
+}
+
+// ============================================================
+// MFA functions
+// ============================================================
+
+function getUserMFA(userId) {
+  return stmts.getUserMFA.get(userId) || null;
+}
+
+function setUserMFA(userId, { totpSecretEncrypted, recoveryCodes }) {
+  stmts.setUserMFA.run({ userId, totpSecretEncrypted, recoveryCodes });
+}
+
+function enableUserMFA(userId) {
+  stmts.enableUserMFA.run(userId);
+}
+
+function disableUserMFA(userId) {
+  stmts.disableUserMFA.run(userId);
+}
+
+function updateRecoveryCodes(userId, codes) {
+  stmts.updateRecoveryCodes.run({ userId, recoveryCodes: JSON.stringify(codes) });
+}
+
+// ============================================================
+// MFA: Pending login functions
+// ============================================================
+
+function createPendingLogin({ id, userId, expiresIn, ipAddress, userAgent, keepSignedIn, rememberBrowser }) {
+  const expiresAt = Math.floor(Date.now() / 1000) + expiresIn;
+  stmts.createPendingLogin.run({ id, userId, expiresAt, ipAddress, userAgent, keepSignedIn: keepSignedIn ? 1 : 0, rememberBrowser: rememberBrowser ? 1 : 0 });
+  return { id, expiresAt };
+}
+
+function getPendingLogin(id) {
+  return stmts.getPendingLogin.get(id) || null;
+}
+
+function deletePendingLogin(id) {
+  stmts.deletePendingLogin.run(id);
+}
+
+function incrementPendingLoginAttempts(id) {
+  stmts.incrementFailedAttempts.run(id);
+  const pending = stmts.getPendingLogin.get(id);
+  return pending ? pending.failed_attempts : -1;
+}
+
+function deleteExpiredPendingLogins() {
+  return stmts.deleteExpiredPendingLogins.run().changes;
+}
+
+// ============================================================
+// MFA: Trusted device functions
+// ============================================================
+
+function createTrustedDevice({ id, userId, tokenHash, deviceName, expiresIn }) {
+  const expiresAt = Math.floor(Date.now() / 1000) + expiresIn;
+  stmts.createTrustedDevice.run({ id, userId, tokenHash, deviceName, expiresAt });
+  return { id, expiresAt };
+}
+
+function getTrustedDevicesByUser(userId) {
+  return stmts.getTrustedDevicesByUser.all(userId);
+}
+
+function getTrustedDeviceByTokenHash(tokenHash) {
+  return stmts.getTrustedDeviceByTokenHash.get(tokenHash) || null;
+}
+
+function deleteTrustedDevice(id) {
+  stmts.deleteTrustedDevice.run(id);
+}
+
+function deleteTrustedDevicesByUser(userId) {
+  stmts.deleteTrustedDevicesByUser.run(userId);
+}
+
+function deleteExpiredTrustedDevices() {
+  return stmts.deleteExpiredTrustedDevices.run().changes;
+}
+
+function countTrustedDevicesByUser(userId) {
+  return stmts.countTrustedDevicesByUser.get(userId).total;
+}
+
+// ============================================================
+// Vault: Re-key functions
+// ============================================================
+
+function deletePersonalVaultsByUser(userId) {
+  const vaults = stmts.getVaultsByOwner.all(userId);
+  for (const v of vaults) {
+    if (v.type === "personal") {
+      deleteVault(v.id);
+    }
+  }
+}
+
+function deleteUserKeyBackup(userId) {
+  stmts.deleteUserKeyBackup.run(userId);
+}
+
+function flagVaultMembersForRekey(userId) {
+  stmts.flagVaultMembersForRekey.run(userId);
+}
+
+function updateVaultMemberKey(vaultId, userId, encryptedMasterKey) {
+  stmts.updateVaultMemberKey.run({ vaultId, userId, encryptedMasterKey });
+}
+
+// ============================================================
+// Homepage functions
+// ============================================================
+
+function getShortcutsByUser(userId) {
+  return stmts.getShortcutsByUser.all(userId).map((r) => ({
+    id: r.id, category: r.category, title: r.title, url: r.url, icon: r.icon, sortOrder: r.sort_order, createdAt: r.created_at,
+  }));
+}
+
+function createShortcut({ id, userId, category, title, url, icon, sortOrder }) {
+  stmts.createShortcut.run({ id, userId, category: category || "personal", title, url, icon: icon || null, sortOrder: sortOrder || 0 });
+  return { id };
+}
+
+function updateShortcutById({ id, userId, category, title, url, icon, sortOrder }) {
+  const result = stmts.updateShortcut.run({ id, userId, category: category || "personal", title, url, icon: icon || null, sortOrder: sortOrder || 0 });
+  return result.changes > 0;
+}
+
+function deleteShortcutById(id, userId) {
+  const result = stmts.deleteShortcut.run({ id, userId });
+  return result.changes > 0;
+}
+
+function getShortcutById(id, userId) {
+  return stmts.getShortcutById.get(id, userId) || null;
+}
+
+function getHomepageSettings(userId) {
+  const row = stmts.getHomepageSettings.get(userId);
+  return row ? JSON.parse(row.layout) : { showWeather: true, showSearch: true, showShortcuts: true };
+}
+
+function setHomepageSettings(userId, layout) {
+  stmts.setHomepageSettings.run({ userId, layout: JSON.stringify(layout) });
+}
+
 module.exports = {
   // Paste
   createPaste,
@@ -1280,6 +1911,8 @@ module.exports = {
   setSetting,
   getSmtpConfig,
   setSmtpConfig,
+  encryptValue,
+  decryptValue,
   // Chat: User keys
   createUserKey,
   getUserKey,
@@ -1315,6 +1948,63 @@ module.exports = {
   // Chat: Admin
   getChatStats,
   listConversationsAdmin,
+  // Vault
+  createVault,
+  getVault,
+  getUserVaults,
+  updateVault,
+  deleteVault,
+  addVaultMember,
+  getVaultMembersList,
+  getVaultMemberShip,
+  removeVaultMember,
+  createVaultEntry,
+  getVaultEntriesList,
+  getVaultEntry,
+  updateVaultEntry,
+  deleteVaultEntry,
+  getVaultEntryHistoryList,
+  createVaultEntryShare,
+  getSharesForUser,
+  getSharesByEntryId,
+  getVaultShare,
+  deleteVaultShare,
+  deleteExpiredVaultShares,
+  createVaultAudit,
+  getVaultAuditLog,
+  getVaultStats,
+  listVaultsAdmin,
+  // MFA
+  getUserMFA,
+  setUserMFA,
+  enableUserMFA,
+  disableUserMFA,
+  updateRecoveryCodes,
+  createPendingLogin,
+  getPendingLogin,
+  deletePendingLogin,
+  incrementPendingLoginAttempts,
+  deleteExpiredPendingLogins,
+  createTrustedDevice,
+  getTrustedDevicesByUser,
+  getTrustedDeviceByTokenHash,
+  deleteTrustedDevice,
+  deleteTrustedDevicesByUser,
+  deleteExpiredTrustedDevices,
+  countTrustedDevicesByUser,
+  // Vault re-key
+  deletePersonalVaultsByUser,
+  deleteUserKeyBackup,
+  flagVaultMembersForRekey,
+  updateVaultMemberKey,
+  // Homepage
+  getShortcutsByUser,
+  createShortcut,
+  updateShortcutById,
+  deleteShortcutById,
+  getShortcutById,
+  getHomepageSettings,
+  setHomepageSettings,
   // Shared
   VALID_EXPIRY_OPTIONS,
   VALID_GUEST_EXPIRY,

@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <title>RedSecVault — Password Manager</title>
+  <link rel="icon" href="/assets/favicon.ico" type="image/x-icon">
+  <script src="/js/theme-init.js"></script>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="page-wide py-8" id="vault-app">
+    <header class="grid grid-cols-[1fr_3fr_1fr] items-center mb-8">
+      <div></div>
+      <div class="text-center">
+        <h1 class="text-3xl font-bold">
+          <span class="text-accent">RedSec</span><span class="text-secondary">Vault</span>
+        </h1>
+        <p class="text-muted text-sm mt-1">Encrypted credential manager. Server never sees your secrets.</p>
+      </div>
+      <div class="flex items-center gap-2 justify-end">
+        <div class="relative">
+          <button id="burger-btn" class="burger-btn" aria-label="Menu" aria-expanded="false">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+          </button>
+          <nav id="burger-nav" class="burger-nav hidden"></nav>
+        </div>
+        <button type="button" class="theme-toggle" id="theme-toggle" title="Toggle theme">
+          <svg class="w-5 h-5 dark-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+          <svg class="w-5 h-5 light-icon hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Vault content hidden until auth confirmed -->
+    <div id="vault-content" class="hidden">
+
+      <!-- Toolbar -->
+      <div class="flex items-center gap-3 mb-4">
+        <button id="create-vault-btn" class="btn-primary text-sm">Create Vault</button>
+        <button id="create-entry-btn" class="btn-secondary text-sm hidden">Add Entry</button>
+        <div class="flex-1"></div>
+        <input type="text" id="search-input" class="input-field max-w-xs text-sm" placeholder="Search entries...">
+      </div>
+
+      <!-- Main layout: vaults sidebar + entry list + entry detail -->
+      <div class="grid grid-cols-[240px_1fr] gap-4 min-h-[60vh]">
+
+        <!-- Sidebar: Vault list -->
+        <div class="card p-3">
+          <h3 class="text-xs font-bold uppercase text-muted tracking-wide mb-2">Vaults</h3>
+          <div id="vault-list" class="space-y-1"></div>
+          <div id="shared-section" class="mt-4 pt-3 border-t border-[var(--border)]">
+            <h3 class="text-xs font-bold uppercase text-muted tracking-wide mb-2">Shared with me</h3>
+            <div id="shared-list" class="space-y-1"></div>
+          </div>
+        </div>
+
+        <!-- Main area: Entry list + detail -->
+        <div>
+          <!-- Entry list -->
+          <div id="entry-list-panel" class="card p-0 hidden">
+            <div class="flex items-center justify-between p-4 border-b border-[var(--border)]">
+              <h2 id="current-vault-name" class="font-bold text-sm"></h2>
+              <div class="flex items-center gap-3">
+                <span id="entry-count" class="text-xs text-muted"></span>
+                <button id="delete-vault-btn" class="text-xs text-error hover:underline hidden">Delete Vault</button>
+              </div>
+            </div>
+            <div id="entry-list" class="divide-y divide-[var(--border)]"></div>
+            <div id="empty-entries" class="hidden p-8 text-center text-muted text-sm">
+              No entries yet. Click "Add Entry" to get started.
+            </div>
+          </div>
+
+          <!-- Entry detail view -->
+          <div id="entry-detail-panel" class="card hidden">
+            <div class="flex items-center justify-between mb-4">
+              <button id="back-to-list" class="text-sm text-accent hover:underline">Back to list</button>
+              <div class="flex gap-2">
+                <button id="share-entry-btn" class="btn-secondary text-xs">Share</button>
+                <button id="edit-entry-btn" class="btn-secondary text-xs">Edit</button>
+                <button id="delete-entry-btn" class="btn-danger text-xs">Delete</button>
+              </div>
+            </div>
+            <div id="entry-detail-content"></div>
+          </div>
+
+          <!-- No vault selected -->
+          <div id="no-vault-selected" class="card p-12 text-center">
+            <svg class="w-12 h-12 text-muted mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+            <p class="text-muted">Select a vault or create one to get started</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Auth required -->
+    <div id="auth-required" class="hidden card p-12 text-center">
+      <svg class="w-12 h-12 text-muted mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+      <p class="text-muted">You must be logged in to access RedSecVault.</p>
+      <a href="/login" class="btn-primary inline-block mt-4 text-sm">Sign In</a>
+    </div>
+
+    <!-- ============ MODALS ============ -->
+
+    <!-- Create Vault Modal -->
+    <div class="hidden fixed inset-0 z-50 flex items-center justify-center overlay-bg" id="create-vault-modal">
+      <div class="card w-full max-w-md">
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="font-bold">Create Vault</h2>
+          <button class="modal-close text-muted hover:text-primary">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium mb-1.5">Vault Name</label>
+            <input type="text" id="new-vault-name" class="input-field" placeholder="e.g. Team Credentials" maxlength="100">
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1.5">Vault Type</label>
+            <div class="grid grid-cols-2 gap-3">
+              <label class="card cursor-pointer text-center p-3 border-2 border-transparent has-[:checked]:border-accent">
+                <input type="radio" name="vault-type" value="personal" class="hidden" checked>
+                <svg class="w-6 h-6 mx-auto mb-1 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+                <span class="text-sm font-medium">Personal</span>
+                <p class="text-xs text-muted mt-0.5">Encrypted with your password</p>
+              </label>
+              <label class="card cursor-pointer text-center p-3 border-2 border-transparent has-[:checked]:border-accent">
+                <input type="radio" name="vault-type" value="team" class="hidden">
+                <svg class="w-6 h-6 mx-auto mb-1 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                <span class="text-sm font-medium">Team</span>
+                <p class="text-xs text-muted mt-0.5">Shared with team members</p>
+              </label>
+            </div>
+          </div>
+          <div id="team-members-section" class="hidden">
+            <label class="block text-sm font-medium mb-1.5">Team Members</label>
+            <div id="member-chips" class="flex flex-wrap gap-2 mb-2"></div>
+            <div class="flex gap-2">
+              <input type="text" id="member-search" class="input-field flex-1 text-sm" placeholder="Search by username...">
+              <button id="add-member-btn" class="btn-secondary text-sm" disabled>Add</button>
+            </div>
+            <div id="member-search-results" class="mt-1 space-y-1 max-h-32 overflow-y-auto"></div>
+          </div>
+          <button id="save-vault-btn" class="btn-primary w-full">Create Vault</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Create/Edit Entry Modal -->
+    <div class="hidden fixed inset-0 z-50 flex items-center justify-center overlay-bg" id="entry-modal">
+      <div class="card w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div class="flex justify-between items-center mb-4">
+          <h2 id="entry-modal-title" class="font-bold">New Entry</h2>
+          <button class="modal-close text-muted hover:text-primary">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium mb-1.5">Title</label>
+            <input type="text" id="entry-title" class="input-field" placeholder="e.g. AWS Console" maxlength="200">
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1.5">Type</label>
+            <select id="entry-type" class="input-field">
+              <option value="password">Password</option>
+              <option value="note">Secure Note</option>
+              <option value="api_key">API Key</option>
+              <option value="ssh_key">SSH Key</option>
+              <option value="totp">TOTP / 2FA</option>
+              <option value="custom">Custom</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1.5">Folder <span class="text-muted">(optional)</span></label>
+            <input type="text" id="entry-folder" class="input-field" placeholder="e.g. Infrastructure" maxlength="100">
+          </div>
+
+          <!-- Dynamic fields by type -->
+          <div id="fields-password" class="space-y-3">
+            <div>
+              <label class="block text-sm font-medium mb-1">Username / Email</label>
+              <input type="text" id="f-username" class="input-field" placeholder="user@example.com">
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1">Password</label>
+              <div class="flex gap-2">
+                <input type="password" id="f-password" class="input-field flex-1" placeholder="Enter password" autocomplete="new-password">
+                <button id="gen-pw-btn" class="btn-secondary text-xs whitespace-nowrap">Generate</button>
+              </div>
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1">URL</label>
+              <input type="url" id="f-url" class="input-field" placeholder="https://...">
+            </div>
+          </div>
+          <div id="fields-note" class="hidden">
+            <label class="block text-sm font-medium mb-1">Note Content</label>
+            <textarea id="f-content" class="input-field min-h-[120px]" placeholder="Your secure note..."></textarea>
+          </div>
+          <div id="fields-api_key" class="hidden space-y-3">
+            <div>
+              <label class="block text-sm font-medium mb-1">API Key</label>
+              <input type="text" id="f-key" class="input-field font-mono text-xs" placeholder="Enter API key">
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1">Service</label>
+              <input type="text" id="f-service" class="input-field" placeholder="e.g. AWS, GitHub">
+            </div>
+          </div>
+          <div id="fields-ssh_key" class="hidden space-y-3">
+            <div>
+              <label class="block text-sm font-medium mb-1">Private Key</label>
+              <textarea id="f-private-key" class="input-field font-mono text-xs min-h-[100px]" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"></textarea>
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1">Public Key</label>
+              <input type="text" id="f-public-key" class="input-field font-mono text-xs" placeholder="ssh-ed25519 ...">
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1">Passphrase <span class="text-muted">(optional)</span></label>
+              <input type="password" id="f-passphrase" class="input-field" placeholder="Key passphrase" autocomplete="new-password">
+            </div>
+          </div>
+          <div id="fields-totp" class="hidden space-y-3">
+            <div>
+              <label class="block text-sm font-medium mb-1">Secret Key (base32)</label>
+              <input type="text" id="f-totp-secret" class="input-field font-mono uppercase" placeholder="JBSWY3DPEHPK3PXP">
+            </div>
+            <div class="grid grid-cols-3 gap-3">
+              <div>
+                <label class="block text-sm font-medium mb-1">Issuer</label>
+                <input type="text" id="f-totp-issuer" class="input-field" placeholder="Google">
+              </div>
+              <div>
+                <label class="block text-sm font-medium mb-1">Account</label>
+                <input type="text" id="f-totp-account" class="input-field" placeholder="user@email.com">
+              </div>
+              <div>
+                <label class="block text-sm font-medium mb-1">Digits</label>
+                <select id="f-totp-digits" class="input-field">
+                  <option value="6" selected>6</option>
+                  <option value="8">8</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <div id="fields-custom" class="hidden">
+            <label class="block text-sm font-medium mb-1">Custom Fields</label>
+            <div id="custom-fields-list" class="space-y-2 mb-2"></div>
+            <button id="add-custom-field" class="text-sm text-accent hover:underline">+ Add field</button>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium mb-1">Notes <span class="text-muted">(optional)</span></label>
+            <textarea id="f-notes" class="input-field text-sm" rows="2" placeholder="Additional notes..."></textarea>
+          </div>
+          <label class="custom-checkbox gap-2">
+            <input type="checkbox" id="entry-favorite">
+            <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+            <span class="text-sm">Add to favorites</span>
+          </label>
+          <button id="save-entry-btn" class="btn-primary w-full">Save Entry</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Password Generator Modal -->
+    <div class="hidden fixed inset-0 z-50 flex items-center justify-center overlay-bg" id="pwgen-modal">
+      <div class="card w-full max-w-sm">
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="font-bold">Password Generator</h2>
+          <button class="modal-close text-muted hover:text-primary">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="space-y-4">
+          <div class="card bg-[var(--bg-elevated)] p-3">
+            <p id="generated-pw" class="font-mono text-sm break-all select-all"></p>
+            <p id="pw-entropy" class="text-xs text-muted mt-1"></p>
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1">Length: <span id="pw-length-val">24</span></label>
+            <input type="range" id="pw-length" min="8" max="128" value="24" class="w-full">
+          </div>
+          <div class="space-y-2">
+            <label class="custom-checkbox gap-2"><input type="checkbox" id="pw-upper" checked><span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span><span class="text-sm">Uppercase (A-Z)</span></label>
+            <label class="custom-checkbox gap-2"><input type="checkbox" id="pw-lower" checked><span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span><span class="text-sm">Lowercase (a-z)</span></label>
+            <label class="custom-checkbox gap-2"><input type="checkbox" id="pw-digits" checked><span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span><span class="text-sm">Digits (0-9)</span></label>
+            <label class="custom-checkbox gap-2"><input type="checkbox" id="pw-symbols" checked><span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span><span class="text-sm">Symbols (!@#$...)</span></label>
+            <label class="custom-checkbox gap-2"><input type="checkbox" id="pw-no-ambiguous"><span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span><span class="text-sm">Exclude ambiguous (0O1lI)</span></label>
+          </div>
+          <div class="flex gap-2">
+            <button id="regen-pw-btn" class="btn-secondary flex-1">Regenerate</button>
+            <button id="copy-pw-btn" class="btn-primary flex-1">Copy &amp; Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Share Entry Modal -->
+    <div class="hidden fixed inset-0 z-50 flex items-center justify-center overlay-bg" id="share-modal">
+      <div class="card w-full max-w-md">
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="font-bold">Share Entry</h2>
+          <button class="modal-close text-muted hover:text-primary">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="space-y-4">
+          <p class="text-sm text-muted">Share <strong id="share-entry-name" class="text-primary"></strong> with another user.</p>
+          <div>
+            <label class="block text-sm font-medium mb-1.5">Search user</label>
+            <input type="text" id="share-user-search" class="input-field" placeholder="Search by username...">
+            <div id="share-search-results" class="mt-1 space-y-1 max-h-32 overflow-y-auto"></div>
+          </div>
+          <div id="share-target-info" class="hidden card p-3 text-sm"></div>
+          <div>
+            <label class="block text-sm font-medium mb-1.5">Share expires after</label>
+            <select id="share-expiry" class="input-field">
+              <option value="3600">1 hour</option>
+              <option value="86400" selected>1 day</option>
+              <option value="604800">7 days</option>
+              <option value="2592000">30 days</option>
+              <option value="0">Never</option>
+            </select>
+          </div>
+          <button id="confirm-share-btn" class="btn-primary w-full" disabled>Share Entry</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Vault Unlock Modal -->
+    <div class="hidden fixed inset-0 z-50 flex items-center justify-center overlay-bg" id="unlock-modal">
+      <div class="card w-full max-w-sm">
+        <h2 class="font-bold mb-4">Unlock Vault</h2>
+        <div class="space-y-4">
+          <p class="text-sm text-muted">Enter your password to unlock this vault. Your password is used locally to decrypt the vault key.</p>
+          <div>
+            <label class="block text-sm font-medium mb-1">Password</label>
+            <input type="password" id="unlock-password" class="input-field" placeholder="Your login password" autocomplete="current-password">
+          </div>
+          <p id="unlock-error" class="text-sm text-error hidden">Incorrect password. Try again.</p>
+          <button id="unlock-submit-btn" class="btn-primary w-full">Unlock</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Loading -->
+    <div class="hidden fixed inset-0 flex items-center justify-center z-50 overlay-bg" id="loading">
+      <div class="text-center">
+        <svg class="animate-spin h-8 w-8 mx-auto mb-3 text-accent" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+        <p class="text-secondary text-sm" id="loading-text">Loading...</p>
+      </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="fixed bottom-6 right-6 hidden" id="toast">
+      <div class="card px-4 py-2.5 shadow-lg">
+        <p class="text-sm" id="toast-text"></p>
+      </div>
+    </div>
+
+    <footer class="footer">&copy; <span class="current-year"></span> RedSec Offensive Security</footer>
+  </div>
+
+  <script src="/js/chat-crypto.js"></script>
+  <script src="/js/vault-key-store.js"></script>
+  <script type="module" src="/js/vault.js"></script>
+  <script type="module" src="/js/burger-menu.js"></script>
+  <script type="module" src="/js/theme.js"></script>
+</body>
+</html>

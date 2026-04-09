@@ -598,7 +598,7 @@
     if (msg.decrypted && msg.decrypted.charAt(0) === "{") {
       try {
         var parsed = JSON.parse(msg.decrypted);
-        if (parsed.type === "paste" || parsed.type === "share") {
+        if (parsed.type === "paste" || parsed.type === "share" || parsed.type === "vault") {
           embedData = parsed;
         }
       } catch (e) {
@@ -612,11 +612,20 @@
 
     var contentHtml;
     if (embedData) {
-      contentHtml =
-        '<a href="' + escapeHtml(embedData.url) + '" class="chat-embed-card block p-3 rounded border" target="_blank">' +
-        '<div class="text-xs font-bold mb-1 text-accent">' + (embedData.type === "paste" ? "RedSecPaste" : "RedSecShare") + '</div>' +
-        '<div class="text-sm truncate">' + escapeHtml(embedData.content) + '</div>' +
-        '</a>';
+      if (embedData.type === "vault") {
+        contentHtml =
+          '<a href="' + escapeHtml(embedData.url) + '" class="chat-embed-card block p-3 rounded border" target="_blank">' +
+          '<div class="text-xs font-bold mb-1 text-accent">RedSecVault</div>' +
+          '<div class="text-sm truncate">' + escapeHtml(embedData.content) + '</div>' +
+          '<div class="text-xs text-muted mt-1">Encrypted vault entry — click to view</div>' +
+          '</a>';
+      } else {
+        contentHtml =
+          '<a href="' + escapeHtml(embedData.url) + '" class="chat-embed-card block p-3 rounded border" target="_blank">' +
+          '<div class="text-xs font-bold mb-1 text-accent">' + (embedData.type === "paste" ? "RedSecPaste" : "RedSecShare") + '</div>' +
+          '<div class="text-sm truncate">' + escapeHtml(embedData.content) + '</div>' +
+          '</a>';
+      }
     } else if (msg.decrypted) {
       contentHtml = formatMessageText(msg.decrypted);
     } else {
@@ -1671,6 +1680,328 @@
     }
   }
 
+  // ── Embed: Vault Entry Picker ──────────────────────────────────────────
+
+  var vaultPickerEntries = [];
+  var vaultPickerSelected = null;
+
+  function showVaultPickerModal() {
+    var existing = document.getElementById("vault-picker-modal");
+    if (existing) { existing.remove(); }
+
+    vaultPickerSelected = null;
+
+    var modal = document.createElement("div");
+    modal.id = "vault-picker-modal";
+    modal.className = "hidden fixed inset-0 z-50 flex items-center justify-center overlay-bg";
+    modal.innerHTML =
+      '<div class="card w-full max-w-md max-h-[80vh] flex flex-col">' +
+        '<div class="flex justify-between items-center mb-3">' +
+          '<h2 class="font-bold">Share Vault Entry</h2>' +
+          '<button id="vault-picker-close" class="text-muted hover:text-primary">' +
+            '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>' +
+          '</button>' +
+        '</div>' +
+        '<input type="text" id="vault-picker-search" class="input-field text-sm mb-3" placeholder="Search entries...">' +
+        '<div id="vault-picker-list" class="space-y-1 overflow-y-auto flex-1 min-h-0 mb-3"><p class="text-sm text-muted text-center py-4">Loading vault entries...</p></div>' +
+        '<div id="vault-share-options" class="border-t border-[var(--border)] pt-3 space-y-3 hidden">' +
+          '<div class="text-sm font-medium">Share: <span id="vault-share-selected-name" class="text-accent"></span></div>' +
+          '<div class="flex items-center gap-3">' +
+            '<label class="text-sm font-medium whitespace-nowrap">Expire after</label>' +
+            '<select id="vault-share-expiry" class="input-field text-sm flex-1">' +
+              '<option value="3600">1 hour</option>' +
+              '<option value="86400" selected>1 day</option>' +
+              '<option value="604800">7 days</option>' +
+              '<option value="2592000">30 days</option>' +
+            '</select>' +
+          '</div>' +
+          '<div class="flex items-center gap-3">' +
+            '<label class="text-sm font-medium whitespace-nowrap">Password</label>' +
+            '<input type="text" id="vault-share-password" class="input-field text-sm flex-1" placeholder="Optional">' +
+          '</div>' +
+          '<label class="custom-checkbox gap-2"><input type="checkbox" id="vault-share-burn"><span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span><span class="text-sm">Burn after reading</span></label>' +
+          '<button id="vault-share-confirm" class="btn-primary w-full">Share Entry</button>' +
+        '</div>' +
+      '</div>';
+
+    document.body.appendChild(modal);
+    modal.classList.remove("hidden");
+
+    document.getElementById("vault-picker-close").addEventListener("click", function () {
+      modal.classList.add("hidden");
+    });
+    modal.addEventListener("click", function (e) {
+      if (e.target === modal) modal.classList.add("hidden");
+    });
+
+    document.getElementById("vault-picker-search").addEventListener("input", function () {
+      renderVaultPickerList(this.value.toLowerCase());
+    });
+
+    document.getElementById("vault-share-confirm").addEventListener("click", function () {
+      if (vaultPickerSelected) sendVaultEmbed(vaultPickerSelected);
+    });
+
+    loadVaultEntriesForPicker();
+  }
+
+  function renderVaultPickerList(query) {
+    var listEl = document.getElementById("vault-picker-list");
+    if (!listEl) return;
+
+    var filtered = vaultPickerEntries;
+    if (query) {
+      filtered = vaultPickerEntries.filter(function (e) {
+        return e.title.toLowerCase().indexOf(query) !== -1 ||
+               e.vaultName.toLowerCase().indexOf(query) !== -1 ||
+               e.type.toLowerCase().indexOf(query) !== -1;
+      });
+    }
+
+    if (!filtered.length) {
+      listEl.innerHTML = '<p class="text-sm text-muted text-center py-4">' + (vaultPickerEntries.length ? "No matching entries" : "No accessible vault entries") + '</p>';
+      return;
+    }
+
+    listEl.innerHTML = filtered.map(function (e, i) {
+      return '<button data-vault-idx="' + e.idx + '" class="w-full text-left px-3 py-2 rounded hover:bg-[var(--bg-elevated)] transition-colors">' +
+        '<div class="flex items-center gap-2">' +
+          '<svg class="w-4 h-4 text-accent shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>' +
+          '<span class="flex-1 truncate text-sm">' + escapeHtml(e.title) + '</span>' +
+          '<span class="text-xs text-muted capitalize shrink-0">' + e.type.replace("_", " ") + '</span>' +
+        '</div>' +
+        '<div class="text-xs text-muted ml-6 truncate">' + escapeHtml(e.vaultName) + '</div>' +
+      '</button>';
+    }).join("");
+
+    listEl.querySelectorAll("[data-vault-idx]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var idx = parseInt(btn.dataset.vaultIdx, 10);
+        var entryData = vaultPickerEntries.find(function (e) { return e.idx === idx; });
+        if (!entryData) return;
+
+        // Block TOTP entries — they cannot be shared via paste
+        if (entryData.type === "totp") {
+          showVaultTotpBlockModal();
+          return;
+        }
+
+        // Select entry and show share options
+        vaultPickerSelected = entryData;
+        var nameEl = document.getElementById("vault-share-selected-name");
+        if (nameEl) nameEl.textContent = entryData.title + " (" + entryData.type.replace("_", " ") + ")";
+        var optionsPanel = document.getElementById("vault-share-options");
+        if (optionsPanel) optionsPanel.classList.remove("hidden");
+
+        // Highlight selected row
+        listEl.querySelectorAll("[data-vault-idx]").forEach(function (b) {
+          b.classList.remove("bg-accent/10", "text-accent");
+        });
+        btn.classList.add("bg-accent/10", "text-accent");
+      });
+    });
+  }
+
+  async function loadVaultEntriesForPicker() {
+    var listEl = document.getElementById("vault-picker-list");
+    try {
+      var vaultsRes = await fetch("/api/vault/vaults");
+      if (!vaultsRes.ok) { listEl.innerHTML = '<p class="text-sm text-muted text-center py-4">Could not load vaults.</p>'; return; }
+      var vaultsData = await vaultsRes.json();
+      var allVaults = vaultsData.vaults || [];
+
+      vaultPickerEntries = [];
+      var idx = 0;
+
+      for (var v of allVaults) {
+        // Decrypt vault name
+        var vaultName = "Vault";
+        var masterKey = null;
+
+        if (window.VaultKeyStore) {
+          masterKey = await VaultKeyStore.getKey(v.id);
+        }
+        if (!masterKey && v.type === "team" && window.ChatCrypto) {
+          try {
+            var privateKey = await ChatCrypto.getKeyFromIndexedDB(ChatState.getUser().id);
+            if (privateKey) {
+              var mkRes = await fetch("/api/vault/vaults/" + v.id + "/master-key");
+              if (mkRes.ok) {
+                var mkData = await mkRes.json();
+                var vc2 = await import("/js/vault-crypto.js");
+                masterKey = await vc2.unlockTeamVault(mkData.encryptedMasterKey, privateKey);
+                if (masterKey && window.VaultKeyStore) await VaultKeyStore.storeKey(v.id, masterKey);
+              }
+            }
+          } catch (e) { /* skip */ }
+        }
+
+        if (masterKey) {
+          try {
+            var vcName = await import("/js/vault-crypto.js");
+            var cryptoMod = await import("/js/crypto.js");
+            vaultName = await cryptoMod.decrypt(v.nameEncrypted, masterKey, v.nameIv);
+          } catch (e) { /* use default */ }
+        }
+
+        // Load and decrypt entries
+        var entriesRes = await fetch("/api/vault/vaults/" + v.id + "/entries");
+        if (!entriesRes.ok) continue;
+        var entriesData = await entriesRes.json();
+        var vaultEntries = entriesData.entries || [];
+
+        if (masterKey) {
+          for (var entry of vaultEntries) {
+            try {
+              var vc3 = await import("/js/vault-crypto.js");
+              var dec = await vc3.decryptEntry(entry, masterKey);
+              var formatted = formatVaultEntryForShare(dec);
+              vaultPickerEntries.push({
+                idx: idx++,
+                title: dec.title,
+                type: dec.type,
+                vaultName: vaultName,
+                formatted: formatted,
+              });
+            } catch (e) { /* skip */ }
+          }
+        }
+      }
+
+      // Sort alphabetically
+      vaultPickerEntries.sort(function (a, b) { return a.title.localeCompare(b.title); });
+      renderVaultPickerList("");
+    } catch (err) {
+      console.error("Vault picker load failed:", err);
+      listEl.innerHTML = '<p class="text-sm text-muted text-center py-4">Failed to load entries.</p>';
+    }
+  }
+
+  function formatVaultEntryForShare(entry) {
+    var d = entry.data || {};
+    var lines = [];
+    lines.push("Title: " + entry.title);
+    lines.push("Type: " + entry.type.replace("_", " "));
+    if (entry.folder) lines.push("Folder: " + entry.folder);
+    lines.push("");
+
+    switch (entry.type) {
+      case "password":
+        if (d.username) lines.push("Username: " + d.username);
+        if (d.password) lines.push("Password: " + d.password);
+        if (d.url) lines.push("URL: " + d.url);
+        break;
+      case "note":
+        if (d.content) lines.push(d.content);
+        break;
+      case "api_key":
+        if (d.service) lines.push("Service: " + d.service);
+        if (d.key) lines.push("API Key: " + d.key);
+        break;
+      case "ssh_key":
+        if (d.public_key) lines.push("Public Key:\n" + d.public_key);
+        if (d.private_key) lines.push("Private Key:\n" + d.private_key);
+        if (d.passphrase) lines.push("Passphrase: " + d.passphrase);
+        break;
+      case "totp":
+        if (d.issuer) lines.push("Issuer: " + d.issuer);
+        if (d.account) lines.push("Account: " + d.account);
+        if (d.secret) lines.push("Secret: " + d.secret);
+        break;
+      case "custom":
+        if (d.fields && d.fields.length) {
+          for (var i = 0; i < d.fields.length; i++) {
+            lines.push(d.fields[i].label + ": " + d.fields[i].value);
+          }
+        }
+        break;
+    }
+    if (d.notes) { lines.push(""); lines.push("Notes: " + d.notes); }
+    return lines.join("\n");
+  }
+
+  function showVaultTotpBlockModal() {
+    var existing = document.getElementById("totp-block-modal");
+    if (existing) existing.remove();
+
+    var overlay = document.createElement("div");
+    overlay.id = "totp-block-modal";
+    overlay.className = "fixed inset-0 z-[60] flex items-center justify-center chat-overlay-bg";
+    overlay.innerHTML =
+      '<div class="card w-full max-w-sm mx-4">' +
+        '<h2 class="text-lg font-bold mb-3">Cannot Share TOTP Entry</h2>' +
+        '<p class="text-sm text-muted mb-4">TOTP entries are time-based codes that change every 30 seconds. Sharing the static secret via an encrypted paste would not provide the recipient with a working authenticator experience. Instead, share the TOTP secret directly through a secure channel.</p>' +
+        '<div class="flex justify-end">' +
+          '<button id="totp-block-close" class="px-4 py-2 rounded bg-[var(--accent)] text-white hover:opacity-90">Got it</button>' +
+        '</div>' +
+      '</div>';
+
+    document.body.appendChild(overlay);
+
+    document.getElementById("totp-block-close").addEventListener("click", function () {
+      overlay.remove();
+    });
+    overlay.addEventListener("click", function (e) {
+      if (e.target === overlay) overlay.remove();
+    });
+  }
+
+  async function sendVaultEmbed(entryData) {
+    var modal = document.getElementById("vault-picker-modal");
+    if (modal) modal.classList.add("hidden");
+
+    var currentConv = ChatState.getCurrentConversation();
+    if (!currentConv) return;
+
+    // Read share options from modal
+    var expiresIn = document.getElementById("vault-share-expiry") ? parseInt(document.getElementById("vault-share-expiry").value, 10) : 86400;
+    var password = document.getElementById("vault-share-password") ? document.getElementById("vault-share-password").value : "";
+    var burnAfterReading = document.getElementById("vault-share-burn") ? document.getElementById("vault-share-burn").checked : false;
+    var hasPassword = password.length > 0;
+
+    try {
+      // Create an encrypted paste with the vault entry data (same pattern as embed-paste)
+      var mods = await loadCryptoModules();
+      var result = await mods.createEncryptedPaste(entryData.formatted, hasPassword ? password : null);
+
+      var res = await fetch("/api/paste", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ciphertext: result.ciphertext,
+          iv: result.iv,
+          ivPassword: result.ivPassword,
+          salt: result.salt,
+          hasPassword: hasPassword,
+          burnAfterReading: burnAfterReading,
+          expiresIn: expiresIn,
+          syntax: "plaintext",
+        }),
+      });
+
+      if (!res.ok) {
+        var errData = await res.json();
+        throw new Error(errData.error || "Failed to create vault share");
+      }
+
+      var data = await res.json();
+      var shareUrl = window.location.origin + "/p/" + data.id + "#" + result.keyBase64;
+
+      // Send embed message with vault type
+      var previewText = (!burnAfterReading && !hasPassword) ? entryData.title + " (" + entryData.type.replace("_", " ") + ")" : "Protected vault entry (click to view)";
+      var embedContent = previewText;
+      if (hasPassword) embedContent += " (password protected)";
+      var embedMsg = JSON.stringify({
+        type: "vault",
+        content: embedContent,
+        url: shareUrl,
+      });
+      await ChatState.sendMessage(currentConv.id, embedMsg);
+    } catch (err) {
+      console.error("Vault share creation failed:", err);
+    }
+  }
+
   // ── Event Listeners ─────────────────────────────────────────────────────
 
   function setupEventListeners() {
@@ -1864,6 +2195,14 @@
     if (elements.embedShareBtn) {
       elements.embedShareBtn.addEventListener("click", function () {
         showShareModal();
+      });
+    }
+
+    // Embed vault button
+    var embedVaultBtn = document.getElementById("embed-vault-btn");
+    if (embedVaultBtn) {
+      embedVaultBtn.addEventListener("click", function () {
+        showVaultPickerModal();
       });
     }
 

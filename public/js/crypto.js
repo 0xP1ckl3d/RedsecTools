@@ -143,6 +143,7 @@ export {
   decryptPaste,
   decryptPasteWithPassword,
   importKey,
+  encrypt,
   decrypt,
   generateKey,
   exportKey,

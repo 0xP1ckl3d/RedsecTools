@@ -9,6 +9,8 @@ const {
   createInvite, listInvites, markInviteUsed, revokeInvite,
   createPasswordReset,
   getSmtpConfig, setSmtpConfig,
+  getSetting, setSetting,
+  getUserMFA, disableUserMFA, deleteSessionsByUserId, deleteTrustedDevicesByUser,
 } = require("../database");
 const { sendInviteEmail, sendPasswordResetEmail, sendTestEmail } = require("../email");
 
@@ -220,11 +222,13 @@ router.get("/api/users/:id", requireAdmin, (req, res) => {
 
   const user = getUserById(req.params.id);
   if (!user) return res.status(404).json({ error: "User not found" });
+  const mfaConfig = getUserMFA(user.id);
   res.json({
     id: user.id,
     email: user.email,
     username: user.username,
     suspended: !!user.suspended,
+    mfaEnabled: !!(mfaConfig && mfaConfig.enabled),
     createdAt: user.created_at,
     updatedAt: user.updated_at,
   });
@@ -474,6 +478,115 @@ router.delete("/api/conversations/:id", requireAdmin, (req, res) => {
   const { deleteConversation } = require("../database");
   deleteConversation(id);
   console.log(JSON.stringify({ ts: new Date().toISOString(), action: "admin:delete_conversation", ip: req.ip, conversationId: id }));
+  res.json({ success: true });
+});
+
+// ============================================================
+// VAULTS
+// ============================================================
+
+router.get("/api/vault/stats", requireAdmin, (req, res) => {
+  const { getVaultStats } = require("../database");
+  const stats = getVaultStats();
+  res.json(stats);
+});
+
+router.get("/api/vaults", requireAdmin, (req, res) => {
+  const { listVaultsAdmin } = require("../database");
+  const page = parseInt(req.query.page, 10) || 1;
+  const result = listVaultsAdmin(page);
+  res.json(result);
+});
+
+router.delete("/api/vaults/:id", requireAdmin, (req, res) => {
+  const { deleteVault, getVault } = require("../database");
+  const { id } = req.params;
+  const vault = getVault(id);
+  if (!vault) return res.status(404).json({ error: "Vault not found" });
+
+  try {
+    deleteVault(id);
+    console.log(JSON.stringify({ ts: new Date().toISOString(), action: "admin:vault_delete", ip: req.ip, vaultId: id }));
+    res.json({ success: true });
+  } catch (err) {
+    console.error(JSON.stringify({ ts: new Date().toISOString(), action: "admin:vault_delete_error", ip: req.ip, error: err.message }));
+    res.status(500).json({ error: "Failed to delete vault" });
+  }
+});
+
+// ============================================================
+// Security settings (MFA, session TTL)
+// ============================================================
+
+// GET /admin/api/settings/security
+router.get("/api/settings/security", requireAdmin, (req, res) => {
+  res.json({
+    sessionTTL: parseInt(getSetting("session_ttl"), 10) || 43200,
+    sessionTTLExtended: parseInt(getSetting("session_ttl_extended"), 10) || 604800,
+    mfaRememberDays: parseInt(getSetting("mfa_remember_days"), 10) || 30,
+    mfaRequired: getSetting("mfa_required") === "true",
+  });
+});
+
+// POST /admin/api/settings/security
+router.post("/api/settings/security", requireAdmin, (req, res) => {
+  const { sessionTTL, sessionTTLExtended, mfaRememberDays, mfaRequired } = req.body || {};
+
+  const VALID_SESSION_TTL = [1800, 3600, 7200, 14400, 43200, 86400];
+  const VALID_EXTENDED_TTL = [86400, 172800, 604800, 1209600, 2592000];
+  const VALID_MFA_DAYS = [7, 14, 30, 60, 90];
+
+  if (sessionTTL !== undefined) {
+    const ttl = parseInt(sessionTTL, 10);
+    if (!VALID_SESSION_TTL.includes(ttl)) {
+      return res.status(400).json({ error: "Invalid session TTL value" });
+    }
+    setSetting("session_ttl", String(ttl));
+  }
+
+  if (sessionTTLExtended !== undefined) {
+    const ttl = parseInt(sessionTTLExtended, 10);
+    if (!VALID_EXTENDED_TTL.includes(ttl)) {
+      return res.status(400).json({ error: "Invalid extended session TTL value" });
+    }
+    setSetting("session_ttl_extended", String(ttl));
+  }
+
+  if (mfaRememberDays !== undefined) {
+    const days = parseInt(mfaRememberDays, 10);
+    if (!VALID_MFA_DAYS.includes(days)) {
+      return res.status(400).json({ error: "Invalid MFA remember days value" });
+    }
+    setSetting("mfa_remember_days", String(days));
+  }
+
+  if (mfaRequired !== undefined) {
+    setSetting("mfa_required", mfaRequired ? "true" : "false");
+  }
+
+  console.log(JSON.stringify({ ts: new Date().toISOString(), action: "admin:update_security", ip: req.ip }));
+  res.json({ success: true });
+});
+
+// POST /admin/api/users/:id/reset-mfa — admin resets user's MFA (account recovery)
+router.post("/api/users/:id/reset-mfa", requireAdmin, (req, res) => {
+  const idErr = validateId(req.params.id, "User ID");
+  if (idErr) return res.status(400).json({ error: idErr });
+
+  const user = getUserById(req.params.id);
+  if (!user) return res.status(404).json({ error: "User not found" });
+
+  const mfaConfig = getUserMFA(user.id);
+  if (!mfaConfig) {
+    return res.status(400).json({ error: "User does not have MFA configured" });
+  }
+
+  // Disable MFA and kill all sessions + trusted devices
+  disableUserMFA(user.id);
+  deleteSessionsByUserId(user.id);
+  deleteTrustedDevicesByUser(user.id);
+
+  console.log(JSON.stringify({ ts: new Date().toISOString(), action: "admin:reset_mfa", ip: req.ip, userId: user.id }));
   res.json({ success: true });
 });
 
