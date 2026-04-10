@@ -2,6 +2,8 @@
 
 A multi-tool security platform by [RedSec Offensive Security](https://github.com/0xP1ckl3d). All encryption and decryption happens entirely in the browser — the server never sees plaintext content.
 
+<img width="1098" height="825" alt="image" src="https://github.com/user-attachments/assets/38ff31a6-c9b7-4851-b116-34977bff41f7" />
+
 ## Features
 
 | Tool | Description |
