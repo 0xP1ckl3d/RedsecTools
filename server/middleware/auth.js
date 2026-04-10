@@ -77,7 +77,7 @@ function requireGuestOrUser(req, res, next) {
   res.status(401).json({ error: "Login required" });
 }
 
-module.exports = { requireUser, optionalUser, requireGuestOrUser };
+// Placeholder — final export at end of file
 
 // --- Page-level auth (server-side redirects, not JSON responses) ---
 
@@ -121,4 +121,18 @@ function pageRequireGuestOrUser(tool) {
   };
 }
 
-module.exports = { requireUser, optionalUser, requireGuestOrUser, pageRequireUser, pageRequireGuestOrUser };
+/**
+ * Check if a valid user session exists on the request.
+ * Returns { id, username } or null. Does NOT send responses.
+ */
+function getActiveUserSession(req) {
+  const sessionId = req.signedCookies.redsec_session;
+  if (!sessionId) return null;
+  const session = getSession(sessionId);
+  if (!session) return null;
+  if (session.expires_at < Math.floor(Date.now() / 1000)) return null;
+  if (session.suspended) return null;
+  return { id: session.user_id, username: session.username };
+}
+
+module.exports = { requireUser, optionalUser, requireGuestOrUser, pageRequireUser, pageRequireGuestOrUser, getActiveUserSession };

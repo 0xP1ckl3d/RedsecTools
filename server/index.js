@@ -12,6 +12,7 @@ const authRouter = require("./routes/auth");
 const chatRouter = require("./routes/chat");
 const avatarRouter = require("./routes/avatar");
 const vaultRouter = require("./routes/vault");
+const { router: homepageRouter } = require("./routes/homepage");
 const { initWebSocket } = require("./chat-ws");
 const {
   deleteExpired, deleteExpiredFiles,
@@ -43,7 +44,7 @@ app.use(
         scriptSrc: ["'self'", "https://static.cloudflareinsights.com"],
         styleSrc: ["'self'"],
         imgSrc: ["'self'", "data:"],
-        connectSrc: ["'self'", "ws:", "wss:", "https://api.open-meteo.com"],
+        connectSrc: ["'self'", "ws:", "wss:", "https://api.open-meteo.com", "https://geocoding-api.open-meteo.com"],
         fontSrc: ["'none'"],
         objectSrc: ["'none'"],
         frameAncestors: ["'none'"],
@@ -70,6 +71,7 @@ app.use("/api", authRouter);
 app.use("/api/chat", chatRouter);
 app.use("/api", avatarRouter);
 app.use("/api", vaultRouter);
+app.use("/api/homepage", homepageRouter);
 
 // --- Admin routes ---
 app.use("/admin", adminRouter);

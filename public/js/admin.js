@@ -89,9 +89,16 @@ loginBtn.addEventListener("click", async () => {
       adminPassword.value = "";
       showDashboard();
     } else {
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 403) {
+        loginError.textContent = "Admin access requires an active user session. Please log in to your account first.";
+      } else {
+        loginError.textContent = "Invalid password.";
+      }
       loginError.classList.remove("hidden");
     }
   } catch {
+    loginError.textContent = "Login failed.";
     loginError.classList.remove("hidden");
   } finally {
     loginBtn.disabled = false;
@@ -110,7 +117,7 @@ logoutBtn.addEventListener("click", async () => {
 // --- Tabs ---
 
 const tabBtns = document.querySelectorAll(".admin-tab[data-tab]");
-const tabs = ["pastes", "files", "users", "invites", "settings", "security", "chat", "vaults"];
+const tabs = ["settings", "security", "weather", "team-shortcuts", "invites", "users", "chat", "pastes", "files", "vaults"];
 
 tabBtns.forEach((btn) => {
   btn.addEventListener("click", () => {
@@ -130,6 +137,12 @@ tabBtns.forEach((btn) => {
     }
     if (tab === "security") {
       loadSecuritySettings();
+    }
+    if (tab === "weather") {
+      loadWeatherLocations();
+    }
+    if (tab === "team-shortcuts") {
+      loadTeamShortcuts();
     }
   });
 });
@@ -932,6 +945,353 @@ document.getElementById("vault-table-body").addEventListener("click", async (e) 
 
 document.getElementById("vault-prev-page").addEventListener("click", () => loadVaultsAdmin(vaultAdminPage - 1));
 document.getElementById("vault-next-page").addEventListener("click", () => loadVaultsAdmin(vaultAdminPage + 1));
+
+// ============================================================
+// WEATHER ADMIN
+// ============================================================
+
+let weatherLocations = [];
+
+async function loadWeatherLocations() {
+  try {
+    const res = await api("/api/settings/weather");
+    if (!res.ok) return;
+    const data = await res.json();
+    weatherLocations = data.locations || [];
+    renderWeatherLocations();
+  } catch {}
+}
+
+function renderWeatherLocations() {
+  const list = document.getElementById("weather-locations-list");
+  const count = document.getElementById("weather-count");
+  count.textContent = weatherLocations.length;
+
+  if (weatherLocations.length === 0) {
+    list.innerHTML = '<p class="text-sm text-muted">No locations configured.</p>';
+    return;
+  }
+
+  list.innerHTML = weatherLocations.map((loc, i) => `
+    <div class="weather-loc-row" draggable="true" data-index="${i}">
+      <span class="weather-loc-drag" title="Drag to reorder">
+        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"/></svg>
+      </span>
+      <span class="text-sm weather-loc-name">${escapeHtml(loc.name)}</span>
+      <button type="button" class="weather-remove-btn text-error text-xs hover:underline" data-index="${i}">Remove</button>
+    </div>
+  `).join("");
+
+  list.querySelectorAll(".weather-remove-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const idx = parseInt(btn.dataset.index, 10);
+      weatherLocations.splice(idx, 1);
+      await saveWeatherLocations();
+      renderWeatherLocations();
+    });
+  });
+
+  // Drag-to-reorder
+  let dragIdx = null;
+  list.querySelectorAll(".weather-loc-row").forEach((row) => {
+    row.addEventListener("dragstart", (e) => {
+      dragIdx = parseInt(row.dataset.index, 10);
+      row.classList.add("weather-loc-dragging");
+      e.dataTransfer.effectAllowed = "move";
+    });
+    row.addEventListener("dragend", () => {
+      row.classList.remove("weather-loc-dragging");
+      dragIdx = null;
+      list.querySelectorAll(".weather-loc-row").forEach((r) => r.classList.remove("weather-loc-drop-over"));
+    });
+    row.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      row.classList.add("weather-loc-drop-over");
+    });
+    row.addEventListener("dragleave", () => {
+      row.classList.remove("weather-loc-drop-over");
+    });
+    row.addEventListener("drop", async (e) => {
+      e.preventDefault();
+      const targetIdx = parseInt(row.dataset.index, 10);
+      if (dragIdx === null || dragIdx === targetIdx) return;
+      const [moved] = weatherLocations.splice(dragIdx, 1);
+      weatherLocations.splice(targetIdx, 0, moved);
+      await saveWeatherLocations();
+      renderWeatherLocations();
+    });
+  });
+}
+
+async function saveWeatherLocations() {
+  await api("/api/settings/weather", {
+    method: "POST",
+    body: JSON.stringify({ locations: weatherLocations }),
+  });
+}
+
+// Search
+document.getElementById("weather-search-btn").addEventListener("click", async () => {
+  const input = document.getElementById("weather-search-input");
+  const q = input.value.trim();
+  if (!q) return;
+
+  const resultsEl = document.getElementById("weather-search-results");
+  resultsEl.classList.remove("hidden");
+  resultsEl.innerHTML = '<p class="text-xs text-muted">Searching...</p>';
+
+  try {
+    const res = await api(`/api/settings/weather/search?q=${encodeURIComponent(q)}`);
+    const data = await res.json();
+    const results = data.results || [];
+
+    if (results.length === 0) {
+      resultsEl.innerHTML = '<p class="text-xs text-muted">No results found.</p>';
+      return;
+    }
+
+    resultsEl.innerHTML = results.map((r) => `
+      <button type="button" class="weather-add-btn flex items-center justify-between w-full p-2 rounded-lg text-sm text-left cursor-pointer weather-search-result" data-name="${escapeHtml(r.name)}" data-lat="${r.lat}" data-lon="${r.lon}">
+        <span>${escapeHtml(r.name)}</span>
+        <span class="text-xs text-accent">+ Add</span>
+      </button>
+    `).join("");
+
+    resultsEl.querySelectorAll(".weather-add-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (weatherLocations.length >= 5) {
+          alert("Maximum 5 locations allowed");
+          return;
+        }
+        weatherLocations.push({ name: btn.dataset.name, lat: parseFloat(btn.dataset.lat), lon: parseFloat(btn.dataset.lon) });
+        await saveWeatherLocations();
+        renderWeatherLocations();
+        resultsEl.classList.add("hidden");
+        input.value = "";
+      });
+    });
+  } catch {
+    resultsEl.innerHTML = '<p class="text-xs text-muted">Search failed.</p>';
+  }
+});
+
+document.getElementById("weather-search-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") document.getElementById("weather-search-btn").click();
+});
+
+document.getElementById("weather-refresh-btn").addEventListener("click", () => loadWeatherLocations());
+
+// ============================================================
+// TEAM SHORTCUTS ADMIN
+// ============================================================
+
+const EMOJI_DATA_ADMIN = {
+  Smileys: ["😀","😃","😄","😁","😆","😅","🤣","😂","🙂","😉","😊","😇","🥰","😍","🤩","😘","😗","😚","😙","🥲","😋","😛","😜","🤪","😝","🤑","🤗","🤭","🤫","🤔","😐","😑","😶","😏","😒","🙄","😬","😮‍💨","🤥","😌","😔","😪","🤤","😴","😷","🤒","🤕","🤢","🤮","🥵","🥶","🥴","😵","🤯","🤠","🥳","🥸","😎","🤓","🧐"],
+  Gestures: ["👍","👎","👊","✊","🤛","🤜","👏","🙌","👐","🤲","🤝","🙏","✌️","🤞","🤟","🤘","🤙","👈","👉","👆","👇","☝️","✋","🤚","🖐","🖖","👋","🤏","💪","🦾","🖕"],
+  Hearts: ["❤️","🧡","💛","💚","💙","💜","🖤","🤍","🤎","💔","❣️","💕","💞","💓","💗","💖","💘","💝","♥️","❤️‍🔥","❤️‍🩹","💟"],
+  Animals: ["🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼","🐨","🐯","🦁","🐮","🐷","🐸","🐵","🐔","🐧","🐦","🦅","🦆","🦉","🐺","🐗","🐴","🦄","🐝","🐛","🦋","🐌","🐞","🐜","🪲","🐢","🐍","🦎","🦖","🦕","🐙","🦑","🦐","🦞","🦀","🐡","🐠","🐟","🐬","🐳","🐋","🦈","🐊","🐅","🐆","🦓","🦍","🐘","🦏","🐫"],
+  Objects: ["💻","⌨️","🖥","🖨","📱","☎️","📞","📟","📠","🔋","🔌","💡","🔦","🕯","📷","📸","📹","🎥","📽","🎬","📺","📻","📡","🔍","🔎","🔬","🔭","🧲","⚙️","🔧","🔨","⚒","🛠","⛏","🔩","🗜","💡","🔑","🗝","🚪","🪑","🛋","🛏","🧸","🖼","🪞","🪟","📦","📫","📝","🖊","🖋","✒️","📌","📎","✂️","📋","📁","📂","🗂","📆","📅","📇","📈","📉","📊","📋"],
+  Symbols: ["✅","❌","⭕","❗","❓","‼️","⁉️","💯","🔴","🟠","🟡","🟢","🔵","🟣","⚫","⚪","🟤","🔺","🔻","💠","🔲","🔳","♻️","✝️","☪️","🕉","☸️","✡️","🔯","🕎","☯️","☦️","🛐","⛎","♈","♉","♊","♋","♌","♍","♎","♏","♐","♑","♒","♓","🆔","⚛️","🉑","☢️","☣️","📴","📳","🈶","🈚","🈸","🈺","🈷️","✴️","🆚","💮","🉐","㊙️","㊗️","🈴","🈵","🈹","🈲","🅰️","🅱️","🆎","🆑","🅾️","🆘","⛔","📛","🚫","❤️‍🔥","🎶","🎵","🎤","🎧","🎸","🎹","🎺","🥁","🔔","🔕","📣","📢","💬","💭","🗯"],
+};
+
+let teamShortcutEditingId = null;
+let teamSelectedEmoji = "🔗";
+let teamUploadedIconUrl = null;
+let teamCurrentEmojiCat = "Smileys";
+
+async function loadTeamShortcuts() {
+  try {
+    const res = await api("/api/shortcuts/team");
+    if (!res.ok) return;
+    const data = await res.json();
+    renderTeamShortcuts(data.shortcuts || []);
+  } catch {}
+}
+
+function renderTeamShortcuts(shortcuts) {
+  const list = document.getElementById("team-shortcuts-list");
+  if (!list) return;
+
+  if (shortcuts.length === 0) {
+    list.innerHTML = '<p class="text-sm text-muted">No team shortcuts configured.</p>';
+    return;
+  }
+
+  list.innerHTML = shortcuts.map((s) => {
+    const iconHtml = s.iconUrl
+      ? '<img src="' + escapeHtml(s.iconUrl) + '" class="w-5 h-5 rounded" alt="">'
+      : '<span>' + (s.icon || "🔗") + '</span>';
+    return '<div class="flex items-center justify-between p-3 card">' +
+      '<div class="flex items-center gap-3">' +
+        '<span class="text-lg">' + iconHtml + '</span>' +
+        '<div>' +
+          '<div class="text-sm font-semibold">' + escapeHtml(s.title) + '</div>' +
+          '<div class="text-xs text-muted">' + escapeHtml(s.url) + '</div>' +
+          (s.description ? '<div class="text-xs text-muted">' + escapeHtml(s.description) + '</div>' : '') +
+        '</div>' +
+      '</div>' +
+      '<div class="flex gap-2">' +
+        '<button type="button" class="btn-secondary text-xs team-sc-edit" data-id="' + escapeHtml(s.id) + '">Edit</button>' +
+        '<button type="button" class="btn-danger text-xs team-sc-delete" data-id="' + escapeHtml(s.id) + '">Delete</button>' +
+      '</div>' +
+    '</div>';
+  }).join("");
+
+  list.querySelectorAll(".team-sc-edit").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const sc = shortcuts.find((s) => s.id === btn.dataset.id);
+      if (sc) openTeamShortcutModal(sc);
+    });
+  });
+
+  list.querySelectorAll(".team-sc-delete").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!confirm("Delete this team shortcut?")) return;
+      await api("/api/shortcuts/team/" + btn.dataset.id, { method: "DELETE" });
+      loadTeamShortcuts();
+    });
+  });
+}
+
+function openTeamShortcutModal(existing) {
+  teamShortcutEditingId = existing ? existing.id : null;
+  document.getElementById("team-shortcut-modal-title").value = existing ? existing.title : "";
+  document.getElementById("team-shortcut-modal-url").value = existing ? existing.url : "";
+  const descEl = document.getElementById("team-shortcut-modal-desc");
+  if (descEl) descEl.value = existing ? (existing.description || "") : "";
+  teamSelectedEmoji = existing ? (existing.icon || "🔗") : "🔗";
+  teamUploadedIconUrl = existing ? (existing.iconUrl || null) : null;
+  document.getElementById("team-shortcut-emoji-trigger").innerHTML = teamUploadedIconUrl
+    ? '<img src="' + escapeHtml(teamUploadedIconUrl) + '" class="shortcut-emoji-preview" alt="">'
+    : teamSelectedEmoji;
+  document.getElementById("team-shortcut-image-upload").value = "";
+  document.getElementById("team-shortcut-modal-heading").textContent = existing ? "Edit Team Shortcut" : "Add Team Shortcut";
+  document.getElementById("team-shortcut-modal").classList.remove("hidden");
+}
+
+function closeTeamShortcutModal() {
+  document.getElementById("team-shortcut-modal").classList.add("hidden");
+  document.getElementById("team-shortcut-emoji-picker").classList.add("hidden");
+  teamShortcutEditingId = null;
+  teamUploadedIconUrl = null;
+}
+
+// Team shortcut modal events
+document.getElementById("team-shortcut-add-btn").addEventListener("click", () => openTeamShortcutModal(null));
+document.getElementById("team-shortcut-modal-close").addEventListener("click", closeTeamShortcutModal);
+document.getElementById("team-shortcut-modal").addEventListener("click", (e) => { if (e.target.id === "team-shortcut-modal") closeTeamShortcutModal(); });
+
+// Team image upload
+document.getElementById("team-shortcut-image-upload").addEventListener("change", async function () {
+  const file = this.files[0];
+  if (!file) return;
+  if (file.size > 2 * 1024 * 1024) { alert("Image must be under 2MB"); return; }
+  const formData = new FormData();
+  formData.append("image", file);
+  try {
+    const res = await api("/api/shortcuts/team/upload-icon", { method: "POST", body: formData, headers: {} });
+    if (!res.ok) { alert("Upload failed"); return; }
+    const data = await res.json();
+    teamUploadedIconUrl = data.url;
+    teamSelectedEmoji = null;
+    document.getElementById("team-shortcut-emoji-trigger").innerHTML = '<img src="' + escapeHtml(teamUploadedIconUrl) + '" class="shortcut-emoji-preview" alt="">';
+    document.getElementById("team-shortcut-emoji-picker").classList.add("hidden");
+  } catch { alert("Upload failed"); }
+});
+
+// Team emoji picker
+document.getElementById("team-shortcut-emoji-trigger").addEventListener("click", () => {
+  const picker = document.getElementById("team-shortcut-emoji-picker");
+  if (picker.classList.contains("hidden")) {
+    // Init categories
+    const cats = Object.keys(EMOJI_DATA_ADMIN);
+    const catContainer = document.getElementById("team-shortcut-emoji-categories");
+    catContainer.innerHTML = "";
+    cats.forEach((cat) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "emoji-category-tab" + (cat === teamCurrentEmojiCat ? " active" : "");
+      btn.textContent = cat;
+      btn.addEventListener("click", () => {
+        teamCurrentEmojiCat = cat;
+        catContainer.querySelectorAll(".emoji-category-tab").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        renderTeamEmojiCategory(cat);
+      });
+      catContainer.appendChild(btn);
+    });
+    renderTeamEmojiCategory(teamCurrentEmojiCat);
+    picker.classList.remove("hidden");
+  } else {
+    picker.classList.add("hidden");
+  }
+});
+
+function renderTeamEmojiCategory(cat) {
+  const grid = document.getElementById("team-shortcut-emoji-grid");
+  const emojis = EMOJI_DATA_ADMIN[cat] || [];
+  grid.innerHTML = "";
+  emojis.forEach((emoji) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "emoji-item";
+    btn.textContent = emoji;
+    btn.addEventListener("click", () => {
+      teamSelectedEmoji = emoji;
+      teamUploadedIconUrl = null;
+      document.getElementById("team-shortcut-emoji-trigger").textContent = emoji;
+      document.getElementById("team-shortcut-emoji-picker").classList.add("hidden");
+    });
+    grid.appendChild(btn);
+  });
+}
+
+document.addEventListener("click", (e) => {
+  const picker = document.getElementById("team-shortcut-emoji-picker");
+  const trigger = document.getElementById("team-shortcut-emoji-trigger");
+  if (picker && trigger && !picker.contains(e.target) && e.target !== trigger && !trigger.contains(e.target)) {
+    picker.classList.add("hidden");
+  }
+});
+
+// Team shortcut save
+document.getElementById("team-shortcut-modal-save").addEventListener("click", async () => {
+  const title = document.getElementById("team-shortcut-modal-title").value.trim();
+  const url = document.getElementById("team-shortcut-modal-url").value.trim();
+  const descEl = document.getElementById("team-shortcut-modal-desc");
+  const description = descEl ? descEl.value.trim() : "";
+  if (!title || !url) return;
+
+  const body = {
+    title,
+    url,
+    icon: teamUploadedIconUrl ? null : teamSelectedEmoji,
+    icon_url: teamUploadedIconUrl,
+    description,
+  };
+
+  let res;
+  if (teamShortcutEditingId) {
+    res = await api("/api/shortcuts/team/" + teamShortcutEditingId, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    });
+  } else {
+    res = await api("/api/shortcuts/team", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  if (res.ok) {
+    closeTeamShortcutModal();
+    loadTeamShortcuts();
+  } else {
+    const data = await res.json().catch(() => ({}));
+    alert(data.error || "Failed to save");
+  }
+});
 
 // --- Init ---
 checkAuth();

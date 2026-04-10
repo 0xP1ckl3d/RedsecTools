@@ -339,6 +339,16 @@ try { db.exec("ALTER TABLE users ADD COLUMN avatar_updated_at INTEGER"); } catch
 // Add needs_rekey column to vault_members (safe migration)
 try { db.exec("ALTER TABLE vault_members ADD COLUMN needs_rekey INTEGER NOT NULL DEFAULT 0"); } catch {}
 try { db.exec("ALTER TABLE mfa_pending_logins ADD COLUMN failed_attempts INTEGER NOT NULL DEFAULT 0"); } catch {}
+try { db.exec("ALTER TABLE homepage_shortcuts ADD COLUMN description TEXT"); } catch {}
+try { db.exec("ALTER TABLE homepage_shortcuts ADD COLUMN icon_url TEXT"); } catch {}
+
+// Per-user favourite shortcuts (junction table — works for personal AND team shortcuts)
+db.exec(`CREATE TABLE IF NOT EXISTS user_favourite_shortcuts (
+  user_id TEXT NOT NULL,
+  shortcut_id TEXT NOT NULL,
+  added_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  PRIMARY KEY (user_id, shortcut_id)
+)`);
 
 const VALID_SYNTAX_OPTIONS = [
   "plaintext", "python", "javascript", "typescript", "bash",
@@ -714,16 +724,27 @@ const stmts = {
 
   // --- Homepage: Shortcuts ---
   getShortcutsByUser: db.prepare("SELECT * FROM homepage_shortcuts WHERE user_id = ? ORDER BY category, sort_order, created_at"),
+  getShortcutsByCategory: db.prepare("SELECT * FROM homepage_shortcuts WHERE category = ? ORDER BY sort_order, created_at"),
   createShortcut: db.prepare(`
-    INSERT INTO homepage_shortcuts (id, user_id, category, title, url, icon, sort_order)
-    VALUES (@id, @userId, @category, @title, @url, @icon, @sortOrder)
+    INSERT INTO homepage_shortcuts (id, user_id, category, title, url, icon, icon_url, description, sort_order)
+    VALUES (@id, @userId, @category, @title, @url, @icon, @iconUrl, @description, @sortOrder)
   `),
   updateShortcut: db.prepare(`
-    UPDATE homepage_shortcuts SET title = @title, url = @url, icon = @icon, category = @category, sort_order = @sortOrder
+    UPDATE homepage_shortcuts SET title = @title, url = @url, icon = @icon, icon_url = @iconUrl, description = @description, category = @category, sort_order = @sortOrder
     WHERE id = @id AND user_id = @userId
   `),
   deleteShortcut: db.prepare("DELETE FROM homepage_shortcuts WHERE id = @id AND user_id = @userId"),
+  deleteShortcutById: db.prepare("DELETE FROM homepage_shortcuts WHERE id = ?"),
   getShortcutById: db.prepare("SELECT * FROM homepage_shortcuts WHERE id = ? AND user_id = ?"),
+  getShortcutByIdAny: db.prepare("SELECT * FROM homepage_shortcuts WHERE id = ?"),
+
+  // Favourite shortcuts (junction table)
+  addFavourite: db.prepare("INSERT OR IGNORE INTO user_favourite_shortcuts (user_id, shortcut_id) VALUES (?, ?)"),
+  removeFavourite: db.prepare("DELETE FROM user_favourite_shortcuts WHERE user_id = ? AND shortcut_id = ?"),
+  getUserFavouriteIds: db.prepare("SELECT shortcut_id FROM user_favourite_shortcuts WHERE user_id = ? ORDER BY added_at"),
+  countFavourites: db.prepare("SELECT COUNT(*) as count FROM user_favourite_shortcuts WHERE user_id = ?"),
+  isFavourite: db.prepare("SELECT 1 FROM user_favourite_shortcuts WHERE user_id = ? AND shortcut_id = ?"),
+  deleteFavouritesByShortcut: db.prepare("DELETE FROM user_favourite_shortcuts WHERE shortcut_id = ?"),
 
   // --- Homepage: Settings ---
   getHomepageSettings: db.prepare("SELECT * FROM homepage_settings WHERE user_id = ?"),
@@ -1817,17 +1838,23 @@ function updateVaultMemberKey(vaultId, userId, encryptedMasterKey) {
 
 function getShortcutsByUser(userId) {
   return stmts.getShortcutsByUser.all(userId).map((r) => ({
-    id: r.id, category: r.category, title: r.title, url: r.url, icon: r.icon, sortOrder: r.sort_order, createdAt: r.created_at,
+    id: r.id, category: r.category, title: r.title, url: r.url, icon: r.icon, iconUrl: r.icon_url, description: r.description, sortOrder: r.sort_order, createdAt: r.created_at,
   }));
 }
 
-function createShortcut({ id, userId, category, title, url, icon, sortOrder }) {
-  stmts.createShortcut.run({ id, userId, category: category || "personal", title, url, icon: icon || null, sortOrder: sortOrder || 0 });
+function getShortcutsByCategory(category) {
+  return stmts.getShortcutsByCategory.all(category).map((r) => ({
+    id: r.id, category: r.category, title: r.title, url: r.url, icon: r.icon, iconUrl: r.icon_url, description: r.description, sortOrder: r.sort_order, createdAt: r.created_at,
+  }));
+}
+
+function createShortcut({ id, userId, category, title, url, icon, iconUrl, description, sortOrder }) {
+  stmts.createShortcut.run({ id, userId, category: category || "personal", title, url, icon: icon || null, iconUrl: iconUrl || null, description: description || null, sortOrder: sortOrder || 0 });
   return { id };
 }
 
-function updateShortcutById({ id, userId, category, title, url, icon, sortOrder }) {
-  const result = stmts.updateShortcut.run({ id, userId, category: category || "personal", title, url, icon: icon || null, sortOrder: sortOrder || 0 });
+function updateShortcutById({ id, userId, category, title, url, icon, iconUrl, description, sortOrder }) {
+  const result = stmts.updateShortcut.run({ id, userId, category: category || "personal", title, url, icon: icon || null, iconUrl: iconUrl || null, description: description || null, sortOrder: sortOrder || 0 });
   return result.changes > 0;
 }
 
@@ -1836,8 +1863,42 @@ function deleteShortcutById(id, userId) {
   return result.changes > 0;
 }
 
+function addUserFavourite(userId, shortcutId) {
+  stmts.addFavourite.run(userId, shortcutId);
+}
+
+function removeUserFavourite(userId, shortcutId) {
+  stmts.removeFavourite.run(userId, shortcutId);
+}
+
+function isUserFavourite(userId, shortcutId) {
+  return !!stmts.isFavourite.get(userId, shortcutId);
+}
+
+function getUserFavouriteIds(userId) {
+  return stmts.getUserFavouriteIds.all(userId).map((r) => r.shortcut_id);
+}
+
+function countUserFavourites(userId) {
+  const row = stmts.countFavourites.get(userId);
+  return row ? row.count : 0;
+}
+
+function deleteFavouritesByShortcut(shortcutId) {
+  stmts.deleteFavouritesByShortcut.run(shortcutId);
+}
+
+function deleteShortcutByIdAdmin(id) {
+  const result = stmts.deleteShortcutById.run(id);
+  return result.changes > 0;
+}
+
 function getShortcutById(id, userId) {
   return stmts.getShortcutById.get(id, userId) || null;
+}
+
+function getShortcutByIdAny(id) {
+  return stmts.getShortcutByIdAny.get(id) || null;
 }
 
 function getHomepageSettings(userId) {
@@ -1999,10 +2060,19 @@ module.exports = {
   updateVaultMemberKey,
   // Homepage
   getShortcutsByUser,
+  getShortcutsByCategory,
   createShortcut,
   updateShortcutById,
   deleteShortcutById,
+  deleteShortcutByIdAdmin,
+  addUserFavourite,
+  removeUserFavourite,
+  isUserFavourite,
+  getUserFavouriteIds,
+  countUserFavourites,
+  deleteFavouritesByShortcut,
   getShortcutById,
+  getShortcutByIdAny,
   getHomepageSettings,
   setHomepageSettings,
   // Shared

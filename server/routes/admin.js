@@ -1,6 +1,11 @@
 const { Router } = require("express");
 const rateLimit = require("express-rate-limit");
 const crypto = require("crypto");
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
+const { httpGetJSON } = require("../http-helper");
+const { getActiveUserSession } = require("../middleware/auth");
 const {
   getPasteStats, listPastes, deletePaste, bulkDeletePastes,
   getFileStats, listFiles, deleteFile, bulkDeleteFiles,
@@ -11,6 +16,9 @@ const {
   getSmtpConfig, setSmtpConfig,
   getSetting, setSetting,
   getUserMFA, disableUserMFA, deleteSessionsByUserId, deleteTrustedDevicesByUser,
+  countAllUsers,
+  getShortcutsByCategory, getShortcutByIdAny, deleteShortcutByIdAdmin,
+  getShortcutsByUser, deleteShortcutById, deleteFavouritesByShortcut, AVATARS_DIR,
 } = require("../database");
 const { sendInviteEmail, sendPasswordResetEmail, sendTestEmail } = require("../email");
 
@@ -73,6 +81,15 @@ router.post("/login", adminLoginLimiter, (req, res) => {
   const { password } = req.body;
   if (!password || typeof password !== "string") {
     return res.status(400).json({ error: "Password required" });
+  }
+
+  // After first user exists, require an active user session for admin access
+  const userCount = countAllUsers();
+  if (userCount > 0) {
+    const userSession = getActiveUserSession(req);
+    if (!userSession) {
+      return res.status(403).json({ error: "Admin access requires an active user session. Please log in to your account first." });
+    }
   }
 
   // Timing-safe comparison
@@ -301,6 +318,16 @@ router.delete("/api/users/:id", requireAdmin, (req, res) => {
 
   const user = getUserById(req.params.id);
   if (!user) return res.status(404).json({ error: "User not found" });
+
+  // Clean up avatar file
+  const avatarPath = path.join(AVATARS_DIR, `${req.params.id}.webp`);
+  try { if (fs.existsSync(avatarPath)) fs.unlinkSync(avatarPath); } catch {}
+
+  // Clean up personal shortcut icons
+  const userShortcuts = getShortcutsByUser(req.params.id);
+  for (const sc of userShortcuts) {
+    if (sc.iconUrl) deleteShortcutIconFile(sc.iconUrl);
+  }
 
   deleteUserById(req.params.id);
   console.log(JSON.stringify({ ts: new Date().toISOString(), action: "admin:delete_user", ip: req.ip, userId: req.params.id }));
@@ -588,6 +615,206 @@ router.post("/api/users/:id/reset-mfa", requireAdmin, (req, res) => {
 
   console.log(JSON.stringify({ ts: new Date().toISOString(), action: "admin:reset_mfa", ip: req.ip, userId: user.id }));
   res.json({ success: true });
+});
+
+// ============================================================
+// Weather locations
+// ============================================================
+
+// GET /admin/api/settings/weather
+router.get("/api/settings/weather", requireAdmin, (req, res) => {
+  const raw = getSetting("weather_locations");
+  const locations = raw ? JSON.parse(raw) : [];
+  res.json({ locations });
+});
+
+// POST /admin/api/settings/weather
+router.post("/api/settings/weather", requireAdmin, (req, res) => {
+  const { locations } = req.body || {};
+
+  if (!Array.isArray(locations) || locations.length > 5) {
+    return res.status(400).json({ error: "Maximum 5 locations allowed" });
+  }
+
+  const cleaned = locations.map((loc) => ({
+    name: String(loc.name || "").substring(0, 100),
+    lat: parseFloat(loc.lat) || 0,
+    lon: parseFloat(loc.lon) || 0,
+  })).filter((loc) => loc.name && loc.lat !== 0 && loc.lon !== 0);
+
+  setSetting("weather_locations", JSON.stringify(cleaned));
+
+  // Invalidate weather cache so homepage picks up new locations
+  const { clearWeatherCache } = require("../routes/homepage");
+  clearWeatherCache();
+
+  console.log(JSON.stringify({ ts: new Date().toISOString(), action: "admin:update_weather", ip: req.ip }));
+  res.json({ success: true, locations: cleaned });
+});
+
+// GET /admin/api/settings/weather/search?q=city
+router.get("/api/settings/weather/search", requireAdmin, async (req, res) => {
+  const q = (req.query.q || "").trim();
+  if (!q || q.length < 2) {
+    return res.json({ results: [] });
+  }
+
+  try {
+    const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=5&language=en`;
+    const data = await httpGetJSON(geoUrl);
+    const results = (data.results || []).map((r) => ({
+      name: [r.name, r.admin1, r.country].filter(Boolean).join(", "),
+      lat: r.latitude,
+      lon: r.longitude,
+    }));
+    res.json({ results });
+  } catch (err) {
+    console.error(JSON.stringify({ ts: new Date().toISOString(), action: "weather:search_error", error: err.message }));
+    res.json({ results: [] });
+  }
+});
+
+// ============================================================
+// Team Shortcuts (Admin)
+// ============================================================
+
+const { createShortcut: dbCreateShortcut, updateShortcutById: dbUpdateShortcutById } = require("../database");
+
+// Delete an orphaned shortcut icon file from disk
+function deleteShortcutIconFile(iconUrl) {
+  if (!iconUrl || !iconUrl.startsWith("/api/homepage/shortcut-icon/")) return;
+  const iconId = iconUrl.replace("/api/homepage/shortcut-icon/", "").replace(/\.webp$/, "");
+  if (!/^[A-Za-z0-9_-]+$/.test(iconId)) return;
+  const iconPath = path.join(__dirname, "..", "data", "shortcut-icons", `${iconId}.webp`);
+  try { if (fs.existsSync(iconPath)) fs.unlinkSync(iconPath); } catch {}
+}
+
+// GET /admin/api/shortcuts/team
+router.get("/api/shortcuts/team", requireAdmin, (req, res) => {
+  const shortcuts = getShortcutsByCategory("team");
+  res.json({ shortcuts });
+});
+
+// POST /admin/api/shortcuts/team
+router.post("/api/shortcuts/team", requireAdmin, (req, res) => {
+  const { title, url, icon, icon_url, description } = req.body || {};
+
+  if (!title || typeof title !== "string" || title.length > 100) {
+    return res.status(400).json({ error: "Title is required (max 100 chars)" });
+  }
+  if (!url || typeof url !== "string" || url.length > 500) {
+    return res.status(400).json({ error: "URL is required (max 500 chars)" });
+  }
+  if (!url.startsWith("/") && !/^https?:\/\//i.test(url)) {
+    return res.status(400).json({ error: "URL must start with / or http(s)://" });
+  }
+
+  const id = crypto.randomBytes(16).toString("base64url");
+  const safeIcon = (typeof icon === "string" && icon.length <= 20) ? icon : null;
+  const safeIconUrl = (typeof icon_url === "string" && icon_url.startsWith("/api/homepage/shortcut-icon/")) ? icon_url : null;
+  const safeDescription = (typeof description === "string" && description.length <= 200) ? description.trim() : null;
+
+  // Use "admin" as userId for team shortcuts (they're shared)
+  dbCreateShortcut({
+    id,
+    userId: "admin",
+    category: "team",
+    title: title.trim(),
+    url: url.trim(),
+    icon: safeIcon,
+    iconUrl: safeIconUrl,
+    description: safeDescription,
+    sortOrder: 0,
+  });
+
+  console.log(JSON.stringify({ ts: new Date().toISOString(), action: "admin:team_shortcut_create", ip: req.ip }));
+  res.json({ success: true, id });
+});
+
+// PUT /admin/api/shortcuts/team/:id
+router.put("/api/shortcuts/team/:id", requireAdmin, (req, res) => {
+  const { id } = req.params;
+  const { title, url, icon, icon_url, description } = req.body || {};
+
+  const existing = getShortcutByIdAny(id);
+  if (!existing || existing.category !== "team") {
+    return res.status(404).json({ error: "Team shortcut not found" });
+  }
+
+  const safeIcon = (typeof icon === "string" && icon.length <= 20) ? icon : existing.icon;
+  const oldIconUrl = existing.icon_url || null;
+  const safeIconUrl = (typeof icon_url === "string" && icon_url.startsWith("/api/homepage/shortcut-icon/")) ? icon_url : oldIconUrl;
+  const safeTitle = (typeof title === "string" && title.trim()) ? title.trim() : existing.title;
+  const safeDescription = (typeof description === "string") ? description.trim() : existing.description;
+  let safeUrl = existing.url;
+  if (typeof url === "string" && url.trim()) {
+    if (!url.trim().startsWith("/") && !/^https?:\/\//i.test(url.trim())) {
+      return res.status(400).json({ error: "URL must start with / or http(s)://" });
+    }
+    safeUrl = url.trim();
+  }
+
+  // Clean up old icon if it changed
+  if (oldIconUrl && oldIconUrl !== safeIconUrl) {
+    deleteShortcutIconFile(oldIconUrl);
+  }
+
+  // Use actual user_id from the existing row
+  const updated = dbUpdateShortcutById({
+    id,
+    userId: existing.user_id,
+    category: "team",
+    title: safeTitle,
+    url: safeUrl,
+    icon: safeIcon,
+    iconUrl: safeIconUrl,
+    description: safeDescription,
+    sortOrder: existing.sort_order || 0,
+  });
+
+  if (!updated) {
+    console.error(JSON.stringify({ ts: new Date().toISOString(), action: "admin:team_shortcut_update_failed", id, userId: existing.user_id }));
+    return res.status(404).json({ error: "Failed to update" });
+  }
+  console.log(JSON.stringify({ ts: new Date().toISOString(), action: "admin:team_shortcut_update", ip: req.ip, id }));
+  res.json({ success: true });
+});
+router.delete("/api/shortcuts/team/:id", requireAdmin, (req, res) => {
+  const existing = getShortcutByIdAny(req.params.id);
+  if (!existing || existing.category !== "team") {
+    return res.status(404).json({ error: "Team shortcut not found" });
+  }
+  // Clean up icon file and favourites
+  const iconUrl = existing.icon_url || null;
+  if (iconUrl) deleteShortcutIconFile(iconUrl);
+  deleteFavouritesByShortcut(req.params.id);
+  deleteShortcutByIdAdmin(req.params.id);
+  console.log(JSON.stringify({ ts: new Date().toISOString(), action: "admin:team_shortcut_delete", ip: req.ip, id: req.params.id }));
+  res.json({ success: true });
+});
+
+// POST /admin/api/shortcuts/team/upload-icon
+const teamIconUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024 },
+});
+
+router.post("/api/shortcuts/team/upload-icon", requireAdmin, teamIconUpload.single("image"), async (req, res) => {
+  const file = req.file;
+  if (!file) return res.status(400).json({ error: "No file uploaded" });
+  if (!file.mimetype.startsWith("image/")) return res.status(400).json({ error: "Only image files" });
+
+  try {
+    const id = crypto.randomBytes(16).toString("base64url");
+    const sharp = require("sharp");
+    const buffer = await sharp(file.buffer).resize(64, 64, { fit: "cover" }).webp({ quality: 85 }).toBuffer();
+    const iconsDir = path.join(__dirname, "..", "data", "shortcut-icons");
+    if (!fs.existsSync(iconsDir)) fs.mkdirSync(iconsDir, { recursive: true });
+    fs.writeFileSync(path.join(iconsDir, `${id}.webp`), buffer);
+    res.json({ url: `/api/homepage/shortcut-icon/${id}` });
+  } catch {
+    res.status(500).json({ error: "Failed to process image" });
+  }
 });
 
 module.exports = router;
