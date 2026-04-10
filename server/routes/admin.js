@@ -646,6 +646,7 @@ router.post("/api/settings/weather", requireAdmin, (req, res) => {
 
   // Invalidate weather cache so homepage picks up new locations
   const { clearWeatherCache } = require("../routes/homepage");
+
   clearWeatherCache();
 
   console.log(JSON.stringify({ ts: new Date().toISOString(), action: "admin:update_weather", ip: req.ip }));
@@ -683,10 +684,13 @@ const { createShortcut: dbCreateShortcut, updateShortcutById: dbUpdateShortcutBy
 // Delete an orphaned shortcut icon file from disk
 function deleteShortcutIconFile(iconUrl) {
   if (!iconUrl || !iconUrl.startsWith("/api/homepage/shortcut-icon/")) return;
-  const iconId = iconUrl.replace("/api/homepage/shortcut-icon/", "").replace(/\.webp$/, "");
-  if (!/^[A-Za-z0-9_-]+$/.test(iconId)) return;
-  const iconPath = path.join(__dirname, "..", "data", "shortcut-icons", `${iconId}.webp`);
-  try { if (fs.existsSync(iconPath)) fs.unlinkSync(iconPath); } catch {}
+  const rawId = iconUrl.replace("/api/homepage/shortcut-icon/", "");
+  const baseId = rawId.replace(/\.(webp|ico)$/, "");
+  if (!/^[A-Za-z0-9_-]+$/.test(baseId)) return;
+  for (const ext of ["webp", "ico"]) {
+    const iconPath = path.join(__dirname, "..", "..", "data", "shortcut-icons", `${baseId}.${ext}`);
+    try { if (fs.existsSync(iconPath)) fs.unlinkSync(iconPath); } catch {}
+  }
 }
 
 // GET /admin/api/shortcuts/team
@@ -696,7 +700,7 @@ router.get("/api/shortcuts/team", requireAdmin, (req, res) => {
 });
 
 // POST /admin/api/shortcuts/team
-router.post("/api/shortcuts/team", requireAdmin, (req, res) => {
+router.post("/api/shortcuts/team", requireAdmin, async (req, res) => {
   const { title, url, icon, icon_url, description } = req.body || {};
 
   if (!title || typeof title !== "string" || title.length > 100) {
@@ -711,8 +715,15 @@ router.post("/api/shortcuts/team", requireAdmin, (req, res) => {
 
   const id = crypto.randomBytes(16).toString("base64url");
   const safeIcon = (typeof icon === "string" && icon.length <= 20) ? icon : null;
-  const safeIconUrl = (typeof icon_url === "string" && icon_url.startsWith("/api/homepage/shortcut-icon/")) ? icon_url : null;
+  let safeIconUrl = (typeof icon_url === "string" && icon_url.startsWith("/api/homepage/shortcut-icon/")) ? icon_url : null;
   const safeDescription = (typeof description === "string" && description.length <= 200) ? description.trim() : null;
+
+  // If no icon provided, try fetching the site's favicon
+  if (!safeIcon && !safeIconUrl) {
+    const { fetchFavicon } = require("../routes/homepage");
+    const faviconUrl = await fetchFavicon(url.trim());
+    if (faviconUrl) safeIconUrl = faviconUrl;
+  }
 
   // Use "admin" as userId for team shortcuts (they're shared)
   dbCreateShortcut({
@@ -732,7 +743,7 @@ router.post("/api/shortcuts/team", requireAdmin, (req, res) => {
 });
 
 // PUT /admin/api/shortcuts/team/:id
-router.put("/api/shortcuts/team/:id", requireAdmin, (req, res) => {
+router.put("/api/shortcuts/team/:id", requireAdmin, async (req, res) => {
   const { id } = req.params;
   const { title, url, icon, icon_url, description } = req.body || {};
 
@@ -743,7 +754,7 @@ router.put("/api/shortcuts/team/:id", requireAdmin, (req, res) => {
 
   const safeIcon = (typeof icon === "string" && icon.length <= 20) ? icon : existing.icon;
   const oldIconUrl = existing.icon_url || null;
-  const safeIconUrl = (typeof icon_url === "string" && icon_url.startsWith("/api/homepage/shortcut-icon/")) ? icon_url : oldIconUrl;
+  let safeIconUrl = (typeof icon_url === "string" && icon_url.startsWith("/api/homepage/shortcut-icon/")) ? icon_url : oldIconUrl;
   const safeTitle = (typeof title === "string" && title.trim()) ? title.trim() : existing.title;
   const safeDescription = (typeof description === "string") ? description.trim() : existing.description;
   let safeUrl = existing.url;
@@ -752,6 +763,13 @@ router.put("/api/shortcuts/team/:id", requireAdmin, (req, res) => {
       return res.status(400).json({ error: "URL must start with / or http(s)://" });
     }
     safeUrl = url.trim();
+  }
+
+  // If no icon and no icon URL, try fetching favicon
+  if (!safeIcon && !safeIconUrl) {
+    const { fetchFavicon } = require("../routes/homepage");
+    const faviconUrl = await fetchFavicon(safeUrl);
+    if (faviconUrl) safeIconUrl = faviconUrl;
   }
 
   // Clean up old icon if it changed
@@ -808,7 +826,7 @@ router.post("/api/shortcuts/team/upload-icon", requireAdmin, teamIconUpload.sing
     const id = crypto.randomBytes(16).toString("base64url");
     const sharp = require("sharp");
     const buffer = await sharp(file.buffer).resize(64, 64, { fit: "cover" }).webp({ quality: 85 }).toBuffer();
-    const iconsDir = path.join(__dirname, "..", "data", "shortcut-icons");
+    const iconsDir = path.join(__dirname, "..", "..", "data", "shortcut-icons");
     if (!fs.existsSync(iconsDir)) fs.mkdirSync(iconsDir, { recursive: true });
     fs.writeFileSync(path.join(iconsDir, `${id}.webp`), buffer);
     res.json({ url: `/api/homepage/shortcut-icon/${id}` });

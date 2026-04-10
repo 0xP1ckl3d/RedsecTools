@@ -25,10 +25,14 @@ if (!fs.existsSync(SHORTCUT_ICONS_DIR)) fs.mkdirSync(SHORTCUT_ICONS_DIR, { recur
 // Delete an orphaned shortcut icon file from disk
 function deleteShortcutIconFile(iconUrl) {
   if (!iconUrl || !iconUrl.startsWith("/api/homepage/shortcut-icon/")) return;
-  const iconId = iconUrl.replace("/api/homepage/shortcut-icon/", "").replace(/\.webp$/, "");
-  if (!/^[A-Za-z0-9_-]+$/.test(iconId)) return;
-  const iconPath = path.join(SHORTCUT_ICONS_DIR, `${iconId}.webp`);
-  try { if (fs.existsSync(iconPath)) fs.unlinkSync(iconPath); } catch {}
+  const rawId = iconUrl.replace("/api/homepage/shortcut-icon/", "");
+  const baseId = rawId.replace(/\.(webp|ico)$/, "");
+  if (!/^[A-Za-z0-9_-]+$/.test(baseId)) return;
+  // Try both possible extensions
+  for (const ext of ["webp", "ico"]) {
+    const iconPath = path.join(SHORTCUT_ICONS_DIR, `${baseId}.${ext}`);
+    try { if (fs.existsSync(iconPath)) fs.unlinkSync(iconPath); } catch {}
+  }
 }
 
 // Rate limit for shortcut operations
@@ -52,6 +56,260 @@ const iconUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 2 * 1024 * 1024 },
 });
+
+// ============================================================
+// Favicon fetcher — fetches site favicon by parsing <link> tags,
+// falls back to /favicon.ico. All server-side (CSP-safe).
+// ============================================================
+
+async function fetchFavicon(pageUrl) {
+  try {
+    // Only for external URLs
+    if (!/^https?:\/\//i.test(pageUrl)) return null;
+
+    console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_fetch_start", url: pageUrl }));
+
+    // Fetch the page HTML (limit to first 100KB)
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+
+    const response = await fetch(pageUrl, {
+      signal: controller.signal,
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; RedSecTools/1.0)" },
+      redirect: "follow",
+    });
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_fetch_page_fail", url: pageUrl, status: response.status }));
+      return null;
+    }
+
+    // Read HTML — use text() for reliability across Node fetch implementations
+    const html = await response.text();
+    const trimmedHtml = html.substring(0, 100 * 1024);
+
+    console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_html_fetched", url: pageUrl, htmlLen: trimmedHtml.length }));
+
+    // Extract favicon URLs from <link> tags
+    const candidates = extractFaviconCandidates(trimmedHtml, pageUrl);
+
+    console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_candidates", url: pageUrl, count: candidates.length, urls: candidates.map((c) => c.url) }));
+
+    // Also add /favicon.ico as last resort
+    const parsed = new URL(pageUrl);
+    candidates.push({ url: `${parsed.origin}/favicon.ico`, isIco: true });
+
+    // Try each candidate — prefer non-ICO first (sharp can't handle ICO)
+    const sortedCandidates = candidates.sort((a, b) => {
+      if (a.isIco && !b.isIco) return 1;
+      if (!a.isIco && b.isIco) return -1;
+      return 0;
+    });
+
+    for (const candidate of sortedCandidates) {
+      const result = await tryFetchIcon(candidate);
+      if (result) {
+        console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_fetch_success", url: pageUrl, faviconUrl: candidate.url }));
+        return result;
+      }
+    }
+
+    console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_fetch_all_failed", url: pageUrl }));
+    return null;
+  } catch (err) {
+    console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_fetch_error", url: pageUrl, error: err.message, stack: err.stack }));
+    return null;
+  }
+}
+
+function extractFaviconCandidates(html, baseUrl) {
+  const parsed = new URL(baseUrl);
+  const baseOrigin = parsed.origin;
+  const linkRegex = /<link\s[^>]*>/gi;
+  const iconRels = /rel=["'](?:apple-touch-icon(?:-precomposed)?|shortcut\s+icon|icon)["']/i;
+
+  const candidates = [];
+  let match;
+
+  while ((match = linkRegex.exec(html)) !== null) {
+    const tag = match[0];
+    if (!iconRels.test(tag)) continue;
+
+    const hrefMatch = tag.match(/href=["']([^"']+)["']/i);
+    if (!hrefMatch) continue;
+
+    let href;
+    try {
+      href = new URL(hrefMatch[1], baseUrl).href;
+    } catch {
+      continue;
+    }
+
+    const isApple = /apple-touch-icon/.test(tag);
+    const sizesMatch = tag.match(/sizes=["']([^"']+)["']/i);
+    const size = sizesMatch ? parseFaviconSize(sizesMatch[1]) : 0;
+    const isIco = /\.ico(\?|$)/i.test(href);
+
+    candidates.push({ url: href, isApple, size, isIco });
+  }
+
+  // Prefer apple-touch-icon (usually 180x180), then largest size, then non-ICO
+  candidates.sort((a, b) => {
+    if (a.isApple && !b.isApple) return -1;
+    if (!a.isApple && b.isApple) return 1;
+    return b.size - a.size;
+  });
+
+  return candidates;
+}
+
+// Extract the largest PNG embedded inside an ICO file
+function extractPngFromIco(buf) {
+  try {
+    if (buf.length < 6) return null;
+    const count = buf.readUInt16LE(4);
+    if (count === 0 || count > 20) return null;
+
+    let bestEntry = null;
+    let bestSize = 0;
+
+    for (let i = 0; i < count; i++) {
+      const entryOff = 6 + i * 16;
+      if (entryOff + 16 > buf.length) break;
+
+      const dataSize = buf.readUInt32LE(entryOff + 8);
+      const dataOff = buf.readUInt32LE(entryOff + 12);
+
+      if (dataOff + 4 > buf.length || dataSize < 10) continue;
+
+      // Check for PNG magic at the data offset
+      if (buf[dataOff] === 0x89 && buf[dataOff + 1] === 0x50 &&
+          buf[dataOff + 2] === 0x4E && buf[dataOff + 3] === 0x47) {
+        if (dataSize > bestSize) {
+          bestSize = dataSize;
+          bestEntry = { offset: dataOff, size: dataSize };
+        }
+      }
+    }
+
+    if (bestEntry) {
+      return buf.slice(bestEntry.offset, bestEntry.offset + bestEntry.size);
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// Save a raw icon file (e.g. ICO with no embedded PNG) to disk
+async function saveIconRaw(buf, ext) {
+  const id = crypto.randomBytes(16).toString("base64url");
+  const iconPath = path.join(SHORTCUT_ICONS_DIR, `${id}.${ext}`);
+  fs.writeFileSync(iconPath, buf);
+  console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_saved_raw", id, ext, size: buf.length }));
+  return `/api/homepage/shortcut-icon/${id}.${ext}`;
+}
+
+async function tryFetchIcon(candidate) {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+
+    const imgResponse = await fetch(candidate.url, {
+      signal: controller.signal,
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; RedSecTools/1.0)" },
+      redirect: "follow",
+    });
+    clearTimeout(timeout);
+
+    if (!imgResponse.ok) {
+      console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_icon_fail", url: candidate.url, status: imgResponse.status }));
+      return null;
+    }
+
+    const contentType = imgResponse.headers.get("content-type") || "";
+    console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_icon_response", url: candidate.url, contentType, isIco: !!candidate.isIco }));
+
+    const arrayBuf = await imgResponse.arrayBuffer();
+    if (arrayBuf.byteLength < 10 || arrayBuf.byteLength > 2 * 1024 * 1024) {
+      console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_icon_size", url: candidate.url, size: arrayBuf.byteLength }));
+      return null;
+    }
+
+    const buf = Buffer.from(arrayBuf);
+
+    // Check actual file format via magic bytes (more reliable than content-type)
+    // PNG: 89 50 4E 47
+    const isPng = buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47;
+    // JPEG: FF D8 FF
+    const isJpeg = buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF;
+    // WebP: 52 49 46 46 ... 57 45 42 50
+    const isWebp = buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46
+      && buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50;
+    // GIF: 47 49 46 38
+    const isGif = buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38;
+    // ICO: 00 00 01 00
+    const isIco = buf[0] === 0x00 && buf[1] === 0x00 && buf[2] === 0x01 && buf[3] === 0x00;
+    // SVG (text-based): starts with < or has <svg
+    const isSvg = contentType.includes("svg") || (buf[0] === 0x3C && buf.toString("utf8", 0, 200).includes("<svg"));
+
+    console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_icon_format", url: candidate.url, isPng, isJpeg, isWebp, isGif, isIco, isSvg }));
+
+    // sharp can process: PNG, JPEG, WebP, GIF, SVG
+    if (isPng || isJpeg || isWebp || isGif || isSvg) {
+      return await convertToWebpIcon(buf);
+    }
+
+    // ICO format — extract embedded PNG and convert, or save as-is
+    if (isIco) {
+      const pngBuf = extractPngFromIco(buf);
+      if (pngBuf) {
+        console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_ico_png_extracted", url: candidate.url, pngSize: pngBuf.length }));
+        return await convertToWebpIcon(pngBuf);
+      }
+      // No PNG inside ICO — save ICO directly (browsers display ICO in <img>)
+      console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_ico_save_raw", url: candidate.url }));
+      return await saveIconRaw(buf, "ico");
+    }
+
+    // Unknown format but looks like an image — try sharp anyway
+    if (contentType.startsWith("image/")) {
+      console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_icon_unknown_try", url: candidate.url, contentType }));
+      try {
+        return await convertToWebpIcon(buf);
+      } catch (sharpErr) {
+        console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_icon_unknown_fail", url: candidate.url, error: sharpErr.message }));
+        return null;
+      }
+    }
+
+    console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_icon_not_image", url: candidate.url, contentType }));
+    return null;
+  } catch (err) {
+    console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_icon_error", url: candidate.url, error: err.message }));
+    return null;
+  }
+}
+
+async function convertToWebpIcon(buffer) {
+  const id = crypto.randomBytes(16).toString("base64url");
+  try {
+    const webpBuffer = await sharp(buffer)
+      .resize(64, 64, { fit: "cover" })
+      .webp({ quality: 85 })
+      .toBuffer();
+
+    const iconPath = path.join(SHORTCUT_ICONS_DIR, `${id}.webp`);
+    fs.writeFileSync(iconPath, webpBuffer);
+
+    console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_converted", id, size: webpBuffer.length }));
+    return `/api/homepage/shortcut-icon/${id}`;
+  } catch (err) {
+    console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_convert_fail", id, error: err.message }));
+    throw err;
+  }
+}
 
 // ============================================================
 // Shortcuts
@@ -97,23 +355,37 @@ router.post("/shortcuts/upload-icon", uploadIconLimiter, iconUpload.single("imag
   }
 });
 
-// GET /api/homepage/shortcut-icon/:id — serve shortcut icon
+// GET /api/homepage/shortcut-icon/:id — serve shortcut icon (WebP or ICO)
 router.get("/shortcut-icon/:id", (req, res) => {
-  const iconId = req.params.id.replace(/\.webp$/, "");
-  if (!/^[A-Za-z0-9_-]+$/.test(iconId)) {
+  const rawId = req.params.id;
+  // Allow id.webp or id.ico extensions
+  if (!/^[A-Za-z0-9_-]+(\.(webp|ico))?$/.test(rawId)) {
     return res.status(400).json({ error: "Invalid icon ID" });
   }
-  const iconPath = path.join(SHORTCUT_ICONS_DIR, `${iconId}.webp`);
+
+  const ext = rawId.endsWith(".ico") ? "ico" : "webp";
+  const baseId = rawId.replace(/\.(webp|ico)$/, "");
+  const iconPath = path.join(SHORTCUT_ICONS_DIR, `${baseId}.${ext}`);
+
   if (!fs.existsSync(iconPath)) {
+    // Fallback: try the other extension
+    const fallbackExt = ext === "ico" ? "webp" : "ico";
+    const fallbackPath = path.join(SHORTCUT_ICONS_DIR, `${baseId}.${fallbackExt}`);
+    if (fs.existsSync(fallbackPath)) {
+      res.set("Content-Type", fallbackExt === "ico" ? "image/x-icon" : "image/webp");
+      res.set("Cache-Control", "public, max-age=86400");
+      return fs.createReadStream(fallbackPath).pipe(res);
+    }
     return res.status(404).json({ error: "Icon not found" });
   }
-  res.set("Content-Type", "image/webp");
+
+  res.set("Content-Type", ext === "ico" ? "image/x-icon" : "image/webp");
   res.set("Cache-Control", "public, max-age=86400");
   fs.createReadStream(iconPath).pipe(res);
 });
 
 // POST /api/homepage/shortcuts
-router.post("/shortcuts", shortcutLimiter, requireUser, (req, res) => {
+router.post("/shortcuts", shortcutLimiter, requireUser, async (req, res) => {
   const { title, url, icon, icon_url, description } = req.body || {};
 
   if (!title || typeof title !== "string" || title.length > 100) {
@@ -128,10 +400,16 @@ router.post("/shortcuts", shortcutLimiter, requireUser, (req, res) => {
 
   // Users can only create personal shortcuts
   const safeIcon = (typeof icon === "string" && icon.length <= 20) ? icon : null;
-  const safeIconUrl = (typeof icon_url === "string" && icon_url.startsWith("/api/homepage/shortcut-icon/")) ? icon_url : null;
+  let safeIconUrl = (typeof icon_url === "string" && icon_url.startsWith("/api/homepage/shortcut-icon/")) ? icon_url : null;
   const safeTitle = title.trim();
   const safeUrl = url.trim();
   const safeDescription = (typeof description === "string" && description.length <= 200) ? description.trim() : null;
+
+  // If no icon provided, try fetching the site's favicon
+  if (!safeIcon && !safeIconUrl) {
+    const faviconUrl = await fetchFavicon(safeUrl);
+    if (faviconUrl) safeIconUrl = faviconUrl;
+  }
 
   const id = crypto.randomBytes(16).toString("base64url");
 
@@ -217,7 +495,7 @@ router.put("/shortcuts/reorder", shortcutLimiter, requireUser, (req, res) => {
 });
 
 // PUT /api/homepage/shortcuts/:id
-router.put("/shortcuts/:id", shortcutLimiter, requireUser, (req, res) => {
+router.put("/shortcuts/:id", shortcutLimiter, requireUser, async (req, res) => {
   const { id } = req.params;
   const { title, url, icon, icon_url, sortOrder, description } = req.body || {};
 
@@ -232,7 +510,7 @@ router.put("/shortcuts/:id", shortcutLimiter, requireUser, (req, res) => {
 
   const safeIcon = (typeof icon === "string" && icon.length <= 20) ? icon : existing.icon;
   const oldIconUrl = existing.icon_url || existing.iconUrl || null;
-  const safeIconUrl = (typeof icon_url === "string" && icon_url.startsWith("/api/homepage/shortcut-icon/")) ? icon_url : oldIconUrl;
+  let safeIconUrl = (typeof icon_url === "string" && icon_url.startsWith("/api/homepage/shortcut-icon/")) ? icon_url : oldIconUrl;
   const safeTitle = (typeof title === "string" && title.trim()) ? title.trim() : existing.title;
   const safeDescription = (typeof description === "string") ? description.trim() : existing.description;
   let safeUrl = existing.url;
@@ -243,6 +521,12 @@ router.put("/shortcuts/:id", shortcutLimiter, requireUser, (req, res) => {
     safeUrl = url.trim();
   }
   const safeOrder = typeof sortOrder === "number" ? sortOrder : (existing.sort_order || existing.sortOrder || 0);
+
+  // If no icon and no icon URL, try fetching favicon for the (possibly new) URL
+  if (!safeIcon && !safeIconUrl) {
+    const faviconUrl = await fetchFavicon(safeUrl);
+    if (faviconUrl) safeIconUrl = faviconUrl;
+  }
 
   // Clean up old icon if it changed
   if (oldIconUrl && oldIconUrl !== safeIconUrl) {
@@ -380,4 +664,4 @@ function clearWeatherCache() {
   weatherCache = { data: null, ts: 0 };
 }
 
-module.exports = { router, clearWeatherCache };
+module.exports = { router, clearWeatherCache, fetchFavicon, SHORTCUT_ICONS_DIR };

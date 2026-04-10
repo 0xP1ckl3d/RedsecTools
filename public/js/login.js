@@ -1,5 +1,19 @@
 // RedSecTools — Login page logic (with MFA support)
 
+// Redirect to home if already logged in
+(async function checkAuth() {
+  try {
+    const res = await fetch("/api/auth/me");
+    if (res.ok) {
+      const data = await res.json();
+      if (data.authenticated && !data.guest) {
+        window.location.href = "/";
+        return;
+      }
+    }
+  } catch {}
+})();
+
 const emailInput = document.getElementById("email");
 const passwordInput = document.getElementById("password");
 const togglePwBtn = document.getElementById("toggle-password");

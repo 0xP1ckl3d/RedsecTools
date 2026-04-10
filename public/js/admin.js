@@ -1096,7 +1096,7 @@ const EMOJI_DATA_ADMIN = {
 };
 
 let teamShortcutEditingId = null;
-let teamSelectedEmoji = "🔗";
+let teamSelectedEmoji = null;
 let teamUploadedIconUrl = null;
 let teamCurrentEmojiCat = "Smileys";
 
@@ -1160,11 +1160,11 @@ function openTeamShortcutModal(existing) {
   document.getElementById("team-shortcut-modal-url").value = existing ? existing.url : "";
   const descEl = document.getElementById("team-shortcut-modal-desc");
   if (descEl) descEl.value = existing ? (existing.description || "") : "";
-  teamSelectedEmoji = existing ? (existing.icon || "🔗") : "🔗";
+  teamSelectedEmoji = existing ? (existing.icon || null) : null;
   teamUploadedIconUrl = existing ? (existing.iconUrl || null) : null;
   document.getElementById("team-shortcut-emoji-trigger").innerHTML = teamUploadedIconUrl
     ? '<img src="' + escapeHtml(teamUploadedIconUrl) + '" class="shortcut-emoji-preview" alt="">'
-    : teamSelectedEmoji;
+    : (teamSelectedEmoji || "🔗");
   document.getElementById("team-shortcut-image-upload").value = "";
   document.getElementById("team-shortcut-modal-heading").textContent = existing ? "Edit Team Shortcut" : "Add Team Shortcut";
   document.getElementById("team-shortcut-modal").classList.remove("hidden");

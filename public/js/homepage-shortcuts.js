@@ -228,7 +228,7 @@ export function initShortcutModal() {
 
   if (!addBtn || !modal) return;
 
-  let selectedEmoji = "🔗";
+  let selectedEmoji = null;
   let uploadedIconUrl = null;
 
   function openModal(existing) {
@@ -236,11 +236,11 @@ export function initShortcutModal() {
     titleInput.value = existing ? existing.title : "";
     urlInput.value = existing ? existing.url : "";
     if (descInput) descInput.value = existing ? (existing.description || "") : "";
-    selectedEmoji = existing ? (existing.icon || "🔗") : "🔗";
+    selectedEmoji = existing ? (existing.icon || null) : null;
     uploadedIconUrl = existing ? (existing.iconUrl || null) : null;
     emojiTrigger.innerHTML = uploadedIconUrl
       ? '<img src="' + escapeHtml(uploadedIconUrl) + '" class="shortcut-emoji-preview" alt="">'
-      : selectedEmoji;
+      : (selectedEmoji || "🔗");
     if (imageUpload) imageUpload.value = "";
     const heading = document.getElementById("shortcut-modal-heading");
     if (heading) heading.textContent = existing ? "Edit Shortcut" : "Add Shortcut";
