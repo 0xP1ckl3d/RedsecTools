@@ -19,7 +19,7 @@ const {
 const router = Router();
 
 // Shortcut icons directory
-const SHORTCUT_ICONS_DIR = path.join(__dirname, "..", "data", "shortcut-icons");
+const SHORTCUT_ICONS_DIR = path.join(__dirname, "..", "..", "data", "shortcut-icons");
 if (!fs.existsSync(SHORTCUT_ICONS_DIR)) fs.mkdirSync(SHORTCUT_ICONS_DIR, { recursive: true });
 
 // Delete an orphaned shortcut icon file from disk
