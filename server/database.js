@@ -658,8 +658,7 @@ const stmts = {
   getSharesForUser: db.prepare("SELECT ves.*, u.username as from_username, ve.type as entry_type FROM vault_entry_shares ves JOIN users u ON ves.from_user_id = u.id JOIN vault_entries ve ON ves.entry_id = ve.id WHERE ves.to_user_id = ? ORDER BY ves.created_at DESC"),
   getSharesByEntry: db.prepare("SELECT ves.*, u.username as to_username FROM vault_entry_shares ves JOIN users u ON ves.to_user_id = u.id WHERE ves.entry_id = ?"),
   getVaultShareById: db.prepare("SELECT * FROM vault_entry_shares WHERE id = ?"),
-  getShareById: db.prepare("SELECT * FROM vault_entry_shares WHERE id = ?"),
-  deleteShareById: db.prepare("DELETE FROM vault_entry_shares WHERE id = ?"),
+  deleteVaultShareById: db.prepare("DELETE FROM vault_entry_shares WHERE id = ?"),
   deleteSharesByEntry: db.prepare("DELETE FROM vault_entry_shares WHERE entry_id = ?"),
   deleteExpiredVaultShares: db.prepare("DELETE FROM vault_entry_shares WHERE expires_at < unixepoch()"),
   deleteSharesByUser: db.prepare("DELETE FROM vault_entry_shares WHERE to_user_id = ?"),
@@ -1679,7 +1678,7 @@ function getVaultShare(id) {
 }
 
 function deleteVaultShare(id) {
-  return stmts.deleteShareById.run(id).changes > 0;
+  return stmts.deleteVaultShareById.run(id).changes > 0;
 }
 
 function deleteExpiredVaultShares() {
