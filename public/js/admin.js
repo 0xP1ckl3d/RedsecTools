@@ -16,6 +16,12 @@ async function api(path, options = {}) {
     showLogin();
     throw new Error("Not authenticated");
   }
+  if (res.status === 403) {
+    showLogin();
+    loginError.textContent = "Admin access requires an active user session. Please log in to your account first.";
+    loginError.classList.remove("hidden");
+    throw new Error("Active user session required");
+  }
   return res;
 }
 
@@ -890,6 +896,98 @@ function escapeHtml(str) {
 // ============================================================
 
 let vaultAdminPage = 1;
+const expandedVaultIds = new Set();
+
+function formatVaultPermissionLabel(permission) {
+  if (permission === "owner") return "Owner";
+  if (permission === "viewer") return "Read only";
+  if (permission === "full") return "Full";
+  return "Read/write/edit";
+}
+
+function vaultMembersRow(vaultId) {
+  return `<tr class="vault-members-row hidden" data-vault-members-row="${escapeHtml(vaultId)}">
+    <td colspan="7" class="px-3 py-0">
+      <div class="py-3">
+        <div class="rounded-lg border border-[var(--border)] overflow-hidden">
+          <div class="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted bg-[var(--bg-elevated)]">Members</div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="border-b border-[var(--border)]">
+                  <th class="text-left py-2 px-3 font-medium">Username</th>
+                  <th class="text-left py-2 px-3 font-medium">User ID</th>
+                  <th class="text-left py-2 px-3 font-medium">Permission</th>
+                  <th class="text-left py-2 px-3 font-medium">Joined</th>
+                  <th class="text-left py-2 px-3 font-medium"></th>
+                </tr>
+              </thead>
+              <tbody data-vault-members-body="${escapeHtml(vaultId)}">
+                <tr><td colspan="5" class="py-3 px-3 text-sm text-muted">Loading members...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </td>
+  </tr>`;
+}
+
+async function loadVaultMembersAdmin(vaultId) {
+  const body = document.querySelector(`[data-vault-members-body="${CSS.escape(vaultId)}"]`);
+  if (!body) return;
+  body.innerHTML = `<tr><td colspan="5" class="py-3 px-3 text-sm text-muted">Loading members...</td></tr>`;
+  try {
+    const res = await api(`/api/vaults/${vaultId}/members`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      body.innerHTML = `<tr><td colspan="5" class="py-3 px-3 text-sm text-error">${escapeHtml(data.error || "Failed to load members")}</td></tr>`;
+      return;
+    }
+    const members = data.members || [];
+    if (!members.length) {
+      body.innerHTML = `<tr><td colspan="5" class="py-3 px-3 text-sm text-muted">No members found</td></tr>`;
+      return;
+    }
+    body.innerHTML = members.map((member) => {
+      const joinedAt = member.joinedAt ? formatTime(member.joinedAt) : "-";
+      const actions = member.isOwner
+        ? ""
+        : `<select class="input-field text-xs py-1 px-2 min-w-[11rem]" data-vault-member-permission="${escapeHtml(vaultId)}" data-user-id="${escapeHtml(member.userId)}">
+            <option value="viewer" ${member.permission === "viewer" ? "selected" : ""}>Read only</option>
+            <option value="editor" ${member.permission === "editor" ? "selected" : ""}>Read/write/edit</option>
+            <option value="full" ${member.permission === "full" ? "selected" : ""}>Full</option>
+          </select>
+          <button class="text-error text-xs hover:underline" data-vault-member-remove="${escapeHtml(vaultId)}" data-user-id="${escapeHtml(member.userId)}">Remove</button>`;
+      return `<tr class="border-b border-[var(--border)]">
+        <td class="py-2 px-3">${escapeHtml(member.username || member.userId)}</td>
+        <td class="py-2 px-3 font-mono text-xs">${escapeHtml(member.userId)}</td>
+        <td class="py-2 px-3">${member.isOwner ? '<span class="badge badge-amber">Owner</span>' : escapeHtml(formatVaultPermissionLabel(member.permission))}</td>
+        <td class="py-2 px-3 text-xs text-muted">${joinedAt}</td>
+        <td class="py-2 px-3"><div class="flex items-center gap-2 flex-wrap justify-end">${actions}</div></td>
+      </tr>`;
+    }).join("");
+  } catch {
+    body.innerHTML = `<tr><td colspan="5" class="py-3 px-3 text-sm text-error">Failed to load members</td></tr>`;
+  }
+}
+
+async function toggleVaultMembersAdmin(vaultId) {
+  const row = document.querySelector(`[data-vault-members-row="${CSS.escape(vaultId)}"]`);
+  if (!row) return;
+  const isExpanded = expandedVaultIds.has(vaultId);
+  const trigger = document.querySelector(`[data-vault-toggle="${CSS.escape(vaultId)}"]`);
+  if (isExpanded) {
+    expandedVaultIds.delete(vaultId);
+    row.classList.add("hidden");
+    if (trigger) trigger.setAttribute("aria-expanded", "false");
+    return;
+  }
+  expandedVaultIds.add(vaultId);
+  row.classList.remove("hidden");
+  if (trigger) trigger.setAttribute("aria-expanded", "true");
+  await loadVaultMembersAdmin(vaultId);
+}
 
 async function loadVaultStats() {
   try {
@@ -914,14 +1012,21 @@ async function loadVaultsAdmin(page = 1) {
       tbody.innerHTML = `<tr><td colspan="7" class="py-4 text-center text-muted">No vaults</td></tr>`;
     } else {
       tbody.innerHTML = vaults.map(v => `<tr class="border-b border-[var(--border)]">
-        <td class="py-2 px-3 font-mono text-xs">${escapeHtml(v.id)}</td>
+        <td class="py-2 px-3 font-mono text-xs"><button type="button" class="text-left hover:underline" data-vault-toggle="${escapeHtml(v.id)}" aria-expanded="${expandedVaultIds.has(v.id) ? "true" : "false"}">${escapeHtml(v.id)}</button></td>
         <td class="py-2 px-3"><span class="badge badge-gray capitalize">${v.type}</span></td>
         <td class="py-2 px-3">${escapeHtml(v.ownerUsername || v.ownerId)}</td>
         <td class="py-2 px-3">${v.entryCount || 0}</td>
         <td class="py-2 px-3">${v.memberCount || 0}</td>
         <td class="py-2 px-3 text-muted">${v.createdAt ? new Date(v.createdAt * 1000).toLocaleDateString() : "-"}</td>
         <td class="py-2 px-3"><button class="vault-delete-btn text-error text-xs hover:underline" data-vault-id="${escapeHtml(v.id)}">Delete</button></td>
-      </tr>`).join("");
+      </tr>${vaultMembersRow(v.id)}`).join("");
+      for (const vault of vaults) {
+        if (expandedVaultIds.has(vault.id)) {
+          const row = document.querySelector(`[data-vault-members-row="${CSS.escape(vault.id)}"]`);
+          if (row) row.classList.remove("hidden");
+          loadVaultMembersAdmin(vault.id);
+        }
+      }
     }
     document.getElementById("vault-page-info").textContent = `Page ${page}`;
     document.getElementById("vault-prev-page").disabled = page <= 1;
@@ -930,6 +1035,30 @@ async function loadVaultsAdmin(page = 1) {
 }
 
 document.getElementById("vault-table-body").addEventListener("click", async (e) => {
+  const toggle = e.target.closest("[data-vault-toggle]");
+  if (toggle) {
+    await toggleVaultMembersAdmin(toggle.dataset.vaultToggle);
+    return;
+  }
+
+  const removeBtn = e.target.closest("[data-vault-member-remove]");
+  if (removeBtn) {
+    if (!confirm("Remove this vault member?")) return;
+    try {
+      const res = await api(`/api/vaults/${removeBtn.dataset.vaultMemberRemove}/members/${removeBtn.dataset.userId}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(data.error || "Failed to remove member");
+        return;
+      }
+      await loadVaultMembersAdmin(removeBtn.dataset.vaultMemberRemove);
+      await loadVaultsAdmin(vaultAdminPage);
+    } catch {
+      alert("Failed to remove member");
+    }
+    return;
+  }
+
   const btn = e.target.closest(".vault-delete-btn");
   if (!btn) return;
   const id = btn.dataset.vaultId;
@@ -1073,6 +1202,27 @@ document.getElementById("weather-search-btn").addEventListener("click", async ()
     });
   } catch {
     resultsEl.innerHTML = '<p class="text-xs text-muted">Search failed.</p>';
+  }
+});
+
+document.getElementById("vault-table-body").addEventListener("change", async (e) => {
+  const select = e.target.closest("[data-vault-member-permission]");
+  if (!select) return;
+  try {
+    const res = await api(`/api/vaults/${select.dataset.vaultMemberPermission}/members/${select.dataset.userId}`, {
+      method: "PUT",
+      body: JSON.stringify({ permission: select.value }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert(data.error || "Failed to update member");
+      await loadVaultMembersAdmin(select.dataset.vaultMemberPermission);
+      return;
+    }
+    await loadVaultMembersAdmin(select.dataset.vaultMemberPermission);
+  } catch {
+    alert("Failed to update member");
+    await loadVaultMembersAdmin(select.dataset.vaultMemberPermission);
   }
 });
 

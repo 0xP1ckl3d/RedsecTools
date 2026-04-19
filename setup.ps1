@@ -40,6 +40,20 @@ if ($HostChoice -eq "2") {
 Write-Host ""
 Write-Host "=> Generating configuration..."
 
+$DefaultTrustedOrigins = "http://localhost:$Port,http://127.0.0.1:$Port"
+Write-Host ""
+Write-Host "Trusted public origins are used for invite, reset-password, and guest links."
+Write-Host "Enter any additional user-facing URLs now, comma-separated."
+Write-Host "Example: https://tools.example.com,https://tools.internal.example.com"
+$TrustedOriginsInput = Read-Host "Additional trusted origins [none]"
+$TrustedPublicOrigins = $DefaultTrustedOrigins
+if (-not [string]::IsNullOrWhiteSpace($TrustedOriginsInput)) {
+    $ExtraTrustedOrigins = (($TrustedOriginsInput -split ",") | ForEach-Object { $_.Trim() } | Where-Object { $_ }) -join ","
+    if (-not [string]::IsNullOrWhiteSpace($ExtraTrustedOrigins)) {
+        $TrustedPublicOrigins = "$TrustedPublicOrigins,$ExtraTrustedOrigins"
+    }
+}
+
 # Generate random admin password (24 chars)
 $passwordBytes = [Security.Cryptography.RandomNumberGenerator]::GetBytes(18)
 $AdminPassword = [Convert]::ToBase64String($passwordBytes) -replace '[/+=]', ''
@@ -63,6 +77,10 @@ COOKIE_SECRET=$CookieSecret
 
 # Database path (default: ./data/pastes.db)
 # DB_PATH=./data/pastes.db
+
+# Trusted public origins used for invite, reset-password, and guest links.
+# Includes local defaults plus any extra origins entered during setup.
+TRUSTED_PUBLIC_ORIGINS=$TrustedPublicOrigins
 
 # SMTP is configured via the Admin > Settings UI (stored in database).
 # No SMTP env vars are needed -- configure it after logging into /admin.

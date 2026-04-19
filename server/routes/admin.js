@@ -16,28 +16,82 @@ const {
   getSmtpConfig, setSmtpConfig,
   getSetting, setSetting,
   getUserMFA, disableUserMFA, deleteSessionsByUserId, deleteTrustedDevicesByUser,
+  createAdminSession, getAdminSession, deleteAdminSessionById,
+  getEmailSendState, setEmailSendState,
   countAllUsers,
   getShortcutsByCategory, getShortcutByIdAny, deleteShortcutByIdAdmin,
   getShortcutsByUser, deleteShortcutById, deleteFavouritesByShortcut, AVATARS_DIR,
+  getVault, getVaultMembersList, updateVaultMemberPermission, removeVaultMember,
 } = require("../database");
 const { sendInviteEmail, sendPasswordResetEmail, sendTestEmail } = require("../email");
+const { buildAbsoluteUrl } = require("../public-origin");
 
 const router = Router();
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
-// --- Admin session store (in-memory, single-process) ---
-const adminSessions = new Map(); // token → { createdAt, ip }
+function adminCookieOptions() {
+  return {
+    signed: true,
+    httpOnly: true,
+    sameSite: "strict",
+    maxAge: 24 * 60 * 60 * 1000,
+    path: "/admin",
+    secure: process.env.NODE_ENV === "production",
+  };
+}
 
-function isValidAdminSession(token) {
-  if (!token) return false;
-  const session = adminSessions.get(token);
-  if (!session) return false;
-  if (Date.now() - session.createdAt > 24 * 60 * 60 * 1000) {
-    adminSessions.delete(token);
-    return false;
+function clearAdminCookie(res) {
+  res.clearCookie("redsec_admin", { path: "/admin" });
+}
+
+function checkEmailSendThrottle(email, { limit, windowSeconds, blockSeconds }) {
+  const now = Math.floor(Date.now() / 1000);
+  const state = getEmailSendState(email);
+
+  if (state && state.blocked_until > now) {
+    return { allowed: false, retryAfter: state.blocked_until - now };
   }
-  return true;
+
+  let sentCount = 0;
+  let windowStartedAt = now;
+  if (state && state.window_started_at && (now - state.window_started_at) <= windowSeconds) {
+    sentCount = state.sent_count || 0;
+    windowStartedAt = state.window_started_at;
+  }
+
+  if (sentCount >= limit) {
+    const blockedUntil = now + blockSeconds;
+    setEmailSendState(email, { sentCount, windowStartedAt, blockedUntil });
+    return { allowed: false, retryAfter: blockSeconds };
+  }
+
+  setEmailSendState(email, {
+    sentCount: sentCount + 1,
+    windowStartedAt,
+    blockedUntil: 0,
+  });
+  return { allowed: true, retryAfter: 0 };
+}
+
+function getValidAdminSession(req) {
+  const token = req.signedCookies.redsec_admin;
+  if (!token) return null;
+
+  const session = getAdminSession(token);
+  if (!session) {
+    return { error: "missing", sessionId: token };
+  }
+
+  if (session.expires_at < Math.floor(Date.now() / 1000)) {
+    deleteAdminSessionById(token);
+    return { error: "expired", sessionId: token };
+  }
+
+  return {
+    sessionId: token,
+    session,
+  };
 }
 
 // Middleware: require admin session
@@ -46,9 +100,34 @@ function requireAdmin(req, res, next) {
     return res.status(503).json({ error: "Admin not configured. Set ADMIN_PASSWORD in .env" });
   }
 
-  const token = req.signedCookies.redsec_admin;
-  if (!token || !isValidAdminSession(token)) {
+  const adminResult = getValidAdminSession(req);
+  if (!adminResult) {
     return res.status(401).json({ error: "Not authenticated" });
+  }
+  if (adminResult.error) {
+    clearAdminCookie(res);
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+
+  if (countAllUsers() > 0) {
+    const userSession = getActiveUserSession(req);
+    if (!userSession) {
+      deleteAdminSessionById(adminResult.sessionId);
+      clearAdminCookie(res);
+      return res.status(403).json({ error: "Admin access requires an active user session. Please log in to your account first." });
+    }
+    const userSessionId = req.signedCookies.redsec_session;
+    const adminSession = adminResult.session;
+    if (
+      !adminSession.linked_session_id ||
+      adminSession.linked_session_id !== userSessionId ||
+      adminSession.user_id !== userSession.id
+    ) {
+      deleteAdminSessionById(adminResult.sessionId);
+      clearAdminCookie(res);
+      return res.status(401).json({ error: "Admin session expired" });
+    }
+    req.user = userSession;
   }
   next();
 }
@@ -70,6 +149,23 @@ function validateId(id, label = "ID") {
   return null;
 }
 
+function normalizeVaultPermission(rawPermission) {
+  const value = String(rawPermission || "editor").toLowerCase().trim();
+  if (["full", "admin", "manager"].includes(value)) {
+    return { permission: "full", role: "admin", canWrite: true, canManageMembers: true };
+  }
+  if (["viewer", "read-only", "read_only", "readonly", "read only"].includes(value)) {
+    return { permission: "viewer", role: "member", canWrite: false, canManageMembers: false };
+  }
+  return { permission: "editor", role: "member", canWrite: true, canManageMembers: false };
+}
+
+function membershipPermission(membership) {
+  if (membership?.can_manage_members) return "full";
+  if (membership?.can_write) return "editor";
+  return "viewer";
+}
+
 // --- Auth ---
 
 // POST /admin/login
@@ -85,9 +181,10 @@ router.post("/login", adminLoginLimiter, (req, res) => {
 
   // After first user exists, require an active user session for admin access
   const userCount = countAllUsers();
+  let linkedUserSession = null;
   if (userCount > 0) {
-    const userSession = getActiveUserSession(req);
-    if (!userSession) {
+    linkedUserSession = getActiveUserSession(req);
+    if (!linkedUserSession) {
       return res.status(403).json({ error: "Admin access requires an active user session. Please log in to your account first." });
     }
   }
@@ -105,16 +202,15 @@ router.post("/login", adminLoginLimiter, (req, res) => {
 
   // Create session
   const sessionToken = crypto.randomBytes(32).toString("base64url");
-  adminSessions.set(sessionToken, { createdAt: Date.now(), ip: req.ip });
-
-  res.cookie("redsec_admin", sessionToken, {
-    signed: true,
-    httpOnly: true,
-    sameSite: "strict",
-    maxAge: 24 * 60 * 60 * 1000,
-    path: "/admin",
-    secure: process.env.NODE_ENV === "production",
+  createAdminSession({
+    id: sessionToken,
+    userId: linkedUserSession ? linkedUserSession.id : null,
+    linkedSessionId: linkedUserSession ? req.signedCookies.redsec_session : null,
+    expiresIn: 24 * 60 * 60,
+    ipAddress: req.ip,
+    userAgent: req.get("user-agent"),
   });
+  res.cookie("redsec_admin", sessionToken, adminCookieOptions());
 
   console.log(JSON.stringify({ ts: new Date().toISOString(), action: "admin:login", ip: req.ip }));
   res.json({ success: true });
@@ -123,8 +219,8 @@ router.post("/login", adminLoginLimiter, (req, res) => {
 // POST /admin/logout
 router.post("/logout", (req, res) => {
   const token = req.signedCookies.redsec_admin;
-  if (token) adminSessions.delete(token);
-  res.clearCookie("redsec_admin", { path: "/admin" });
+  if (token) deleteAdminSessionById(token);
+  clearAdminCookie(res);
   res.json({ success: true });
 });
 
@@ -348,7 +444,21 @@ router.post("/api/users/:id/reset-password", requireAdmin, async (req, res) => {
 
   createPasswordReset({ id, userId: user.id, token, expiresAt });
 
-  const resetUrl = `${req.protocol}://${req.get("host")}/reset-password?token=${token}`;
+  const resetUrl = buildAbsoluteUrl(req, `/reset-password?token=${encodeURIComponent(token)}`);
+  if (!resetUrl) {
+    return res.status(503).json({ error: "Trusted public origin is not configured for password reset links" });
+  }
+  const emailThrottle = checkEmailSendThrottle(user.email.toLowerCase().trim(), {
+    limit: 5,
+    windowSeconds: 60 * 60,
+    blockSeconds: 60 * 30,
+  });
+  if (!emailThrottle.allowed) {
+    return res.status(429).json({
+      error: `Too many emails sent to this recipient. Try again in ${emailThrottle.retryAfter} seconds.`,
+      retryAfter: emailThrottle.retryAfter,
+    });
+  }
 
   try {
     const smtpInfo = await sendPasswordResetEmail(user.email, resetUrl);
@@ -396,7 +506,21 @@ router.post("/api/invites", requireAdmin, async (req, res) => {
     expiresAt,
   });
 
-  const registrationUrl = `${req.protocol}://${req.get("host")}/register?token=${token}`;
+  const registrationUrl = buildAbsoluteUrl(req, `/register?token=${encodeURIComponent(token)}`);
+  if (!registrationUrl) {
+    return res.status(503).json({ error: "Trusted public origin is not configured for invite links" });
+  }
+  const emailThrottle = checkEmailSendThrottle(email.toLowerCase().trim(), {
+    limit: 5,
+    windowSeconds: 60 * 60,
+    blockSeconds: 60 * 30,
+  });
+  if (!emailThrottle.allowed) {
+    return res.status(429).json({
+      error: `Too many emails sent to this recipient. Try again in ${emailThrottle.retryAfter} seconds.`,
+      retryAfter: emailThrottle.retryAfter,
+    });
+  }
 
   try {
     const smtpInfo = await sendInviteEmail(email, registrationUrl);
@@ -468,6 +592,17 @@ router.post("/api/settings/smtp/test", requireAdmin, async (req, res) => {
   if (!to || typeof to !== "string") {
     return res.status(400).json({ error: "Recipient email is required" });
   }
+  const emailThrottle = checkEmailSendThrottle(to.toLowerCase().trim(), {
+    limit: 5,
+    windowSeconds: 60 * 60,
+    blockSeconds: 60 * 30,
+  });
+  if (!emailThrottle.allowed) {
+    return res.status(429).json({
+      error: `Too many emails sent to this recipient. Try again in ${emailThrottle.retryAfter} seconds.`,
+      retryAfter: emailThrottle.retryAfter,
+    });
+  }
 
   try {
     const smtpInfo = await sendTestEmail(to);
@@ -523,6 +658,105 @@ router.get("/api/vaults", requireAdmin, (req, res) => {
   const page = parseInt(req.query.page, 10) || 1;
   const result = listVaultsAdmin(page);
   res.json(result);
+});
+
+router.get("/api/vaults/:id/members", requireAdmin, (req, res) => {
+  const idErr = validateId(req.params.id, "Vault ID");
+  if (idErr) return res.status(400).json({ error: idErr });
+
+  const vault = getVault(req.params.id);
+  if (!vault) return res.status(404).json({ error: "Vault not found" });
+
+  const rawMembers = getVaultMembersList(req.params.id);
+  const members = [];
+  const seenUserIds = new Set();
+  const ownerMembership = rawMembers.find((member) => member.user_id === vault.owner_id);
+
+  if (ownerMembership) {
+    members.push({
+      userId: ownerMembership.user_id,
+      username: ownerMembership.username,
+      permission: "owner",
+      canWrite: true,
+      canManageMembers: true,
+      isOwner: true,
+      joinedAt: ownerMembership.joined_at,
+    });
+    seenUserIds.add(ownerMembership.user_id);
+  } else {
+    const owner = getUserById(vault.owner_id);
+    members.push({
+      userId: vault.owner_id,
+      username: owner?.username || vault.owner_id,
+      permission: "owner",
+      canWrite: true,
+      canManageMembers: true,
+      isOwner: true,
+      joinedAt: vault.created_at,
+    });
+    seenUserIds.add(vault.owner_id);
+  }
+
+  for (const member of rawMembers) {
+    if (seenUserIds.has(member.user_id)) continue;
+    members.push({
+      userId: member.user_id,
+      username: member.username,
+      permission: membershipPermission(member),
+      canWrite: !!member.can_write,
+      canManageMembers: !!member.can_manage_members,
+      isOwner: false,
+      joinedAt: member.joined_at,
+    });
+  }
+
+  res.json({
+    vault: { id: vault.id, type: vault.type, ownerId: vault.owner_id },
+    members,
+  });
+});
+
+router.put("/api/vaults/:id/members/:userId", requireAdmin, (req, res) => {
+  const idErr = validateId(req.params.id, "Vault ID");
+  if (idErr) return res.status(400).json({ error: idErr });
+  const userIdErr = validateId(req.params.userId, "User ID");
+  if (userIdErr) return res.status(400).json({ error: userIdErr });
+
+  const vault = getVault(req.params.id);
+  if (!vault) return res.status(404).json({ error: "Vault not found" });
+  if (req.params.userId === vault.owner_id) {
+    return res.status(400).json({ error: "Owner permissions cannot be changed" });
+  }
+
+  const normalizedPermission = normalizeVaultPermission(req.body?.permission);
+  const updated = updateVaultMemberPermission({
+    vaultId: req.params.id,
+    userId: req.params.userId,
+    role: normalizedPermission.role,
+    canWrite: normalizedPermission.canWrite,
+    canManageMembers: normalizedPermission.canManageMembers,
+  });
+  if (!updated) return res.status(404).json({ error: "Member not found" });
+
+  console.log(JSON.stringify({ ts: new Date().toISOString(), action: "admin:vault_member_update", ip: req.ip, vaultId: req.params.id, userId: req.params.userId, permission: normalizedPermission.permission }));
+  res.json({ success: true });
+});
+
+router.delete("/api/vaults/:id/members/:userId", requireAdmin, (req, res) => {
+  const idErr = validateId(req.params.id, "Vault ID");
+  if (idErr) return res.status(400).json({ error: idErr });
+  const userIdErr = validateId(req.params.userId, "User ID");
+  if (userIdErr) return res.status(400).json({ error: userIdErr });
+
+  const vault = getVault(req.params.id);
+  if (!vault) return res.status(404).json({ error: "Vault not found" });
+  if (req.params.userId === vault.owner_id) {
+    return res.status(400).json({ error: "Owner cannot be removed from vault" });
+  }
+
+  removeVaultMember(req.params.id, req.params.userId);
+  console.log(JSON.stringify({ ts: new Date().toISOString(), action: "admin:vault_member_remove", ip: req.ip, vaultId: req.params.id, userId: req.params.userId }));
+  res.json({ success: true });
 });
 
 router.delete("/api/vaults/:id", requireAdmin, (req, res) => {

@@ -19,7 +19,7 @@ const {
   deleteExpiredSessions, deleteExpiredInvites,
   deleteExpiredGuestLinks, deleteExpiredPasswordResets,
   deleteExpiredMessages, deleteExpiredVaultShares,
-  deleteExpiredPendingLogins, deleteExpiredTrustedDevices,
+  deleteExpiredPendingLogins, deleteExpiredTrustedDevices, deleteExpiredAdminSessions,
 } = require("./database");
 const { pageRequireUser, pageRequireGuestOrUser } = require("./middleware/auth");
 
@@ -125,10 +125,11 @@ setInterval(() => {
   const vaultShares = deleteExpiredVaultShares();
   const pendingLogins = deleteExpiredPendingLogins();
   const trustedDevices = deleteExpiredTrustedDevices();
+  const adminSessions = deleteExpiredAdminSessions();
   if (shareRouter.cleanupTmp) shareRouter.cleanupTmp();
-  const total = pastes + files + sessions + invites + guestLinks + passwordResets + messages + vaultShares + pendingLogins + trustedDevices;
+  const total = pastes + files + sessions + invites + guestLinks + passwordResets + messages + vaultShares + pendingLogins + trustedDevices + adminSessions;
   if (total > 0) {
-    console.log(JSON.stringify({ ts: new Date().toISOString(), action: "cleanup", pastes, files, sessions, invites, guestLinks, passwordResets, messages, vaultShares, pendingLogins, trustedDevices }));
+    console.log(JSON.stringify({ ts: new Date().toISOString(), action: "cleanup", pastes, files, sessions, invites, guestLinks, passwordResets, messages, vaultShares, pendingLogins, trustedDevices, adminSessions }));
   }
 }, 10 * 60 * 1000);
 

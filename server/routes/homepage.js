@@ -5,6 +5,8 @@ const multer = require("multer");
 const sharp = require("sharp");
 const path = require("path");
 const fs = require("fs");
+const net = require("net");
+const dns = require("dns").promises;
 const { requireUser } = require("../middleware/auth");
 const { httpGetJSON } = require("../http-helper");
 const {
@@ -57,6 +59,119 @@ const iconUpload = multer({
   limits: { fileSize: 2 * 1024 * 1024 },
 });
 
+const MAX_ICON_REDIRECTS = 3;
+const ALLOWED_ICON_PORTS = new Set(["", "80", "443"]);
+
+function isPrivateIpv4(address) {
+  const parts = address.split(".").map((part) => parseInt(part, 10));
+  if (parts.length !== 4 || parts.some((part) => Number.isNaN(part) || part < 0 || part > 255)) {
+    return true;
+  }
+
+  const [a, b] = parts;
+  if (a === 0 || a === 10 || a === 127) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true;
+  if (a === 198 && (b === 18 || b === 19)) return true;
+  if (a >= 224) return true;
+  return false;
+}
+
+function isPrivateIpv6(address) {
+  const normalized = address.toLowerCase();
+  if (normalized === "::" || normalized === "::1") return true;
+  if (normalized.startsWith("fc") || normalized.startsWith("fd")) return true;
+  if (normalized.startsWith("fe8") || normalized.startsWith("fe9") || normalized.startsWith("fea") || normalized.startsWith("feb")) return true;
+  if (normalized.startsWith("ff")) return true;
+
+  const mappedMatch = normalized.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  if (mappedMatch) {
+    return isPrivateIpv4(mappedMatch[1]);
+  }
+
+  return false;
+}
+
+function isReservedIp(address) {
+  const family = net.isIP(address);
+  if (family === 4) return isPrivateIpv4(address);
+  if (family === 6) return isPrivateIpv6(address);
+  return true;
+}
+
+async function isPublicFetchTarget(targetUrl) {
+  let parsed;
+  try {
+    parsed = new URL(targetUrl);
+  } catch {
+    return false;
+  }
+
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return false;
+  }
+  if (parsed.username || parsed.password) {
+    return false;
+  }
+  if (!ALLOWED_ICON_PORTS.has(parsed.port)) {
+    return false;
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+  if (!hostname || hostname === "localhost") {
+    return false;
+  }
+  if (net.isIP(hostname)) {
+    return false;
+  }
+
+  let addresses;
+  try {
+    addresses = await dns.lookup(hostname, { all: true, verbatim: true });
+  } catch {
+    return false;
+  }
+
+  if (!addresses.length) {
+    return false;
+  }
+
+  return addresses.every((entry) => !isReservedIp(entry.address));
+}
+
+async function fetchWithValidatedRedirects(initialUrl, options = {}) {
+  let currentUrl = initialUrl;
+
+  for (let redirectCount = 0; redirectCount <= MAX_ICON_REDIRECTS; redirectCount++) {
+    if (!(await isPublicFetchTarget(currentUrl))) {
+      throw new Error("Blocked unsafe icon fetch target");
+    }
+
+    const response = await fetch(currentUrl, {
+      ...options,
+      redirect: "manual",
+    });
+
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get("location");
+      if (!location) {
+        throw new Error("Redirect missing location");
+      }
+      if (redirectCount === MAX_ICON_REDIRECTS) {
+        throw new Error("Too many redirects");
+      }
+      currentUrl = new URL(location, currentUrl).href;
+      continue;
+    }
+
+    return { response, finalUrl: currentUrl };
+  }
+
+  throw new Error("Too many redirects");
+}
+
 // ============================================================
 // Favicon fetcher — fetches site favicon by parsing <link> tags,
 // falls back to /favicon.ico. All server-side (CSP-safe).
@@ -64,19 +179,16 @@ const iconUpload = multer({
 
 async function fetchFavicon(pageUrl) {
   try {
-    // Only for external URLs
-    if (!/^https?:\/\//i.test(pageUrl)) return null;
+    if (!(await isPublicFetchTarget(pageUrl))) return null;
 
     console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_fetch_start", url: pageUrl }));
 
-    // Fetch the page HTML (limit to first 100KB)
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
 
-    const response = await fetch(pageUrl, {
+    const { response, finalUrl } = await fetchWithValidatedRedirects(pageUrl, {
       signal: controller.signal,
       headers: { "User-Agent": "Mozilla/5.0 (compatible; RedSecTools/1.0)" },
-      redirect: "follow",
     });
     clearTimeout(timeout);
 
@@ -92,12 +204,12 @@ async function fetchFavicon(pageUrl) {
     console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_html_fetched", url: pageUrl, htmlLen: trimmedHtml.length }));
 
     // Extract favicon URLs from <link> tags
-    const candidates = extractFaviconCandidates(trimmedHtml, pageUrl);
+    const candidates = extractFaviconCandidates(trimmedHtml, finalUrl);
 
     console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_candidates", url: pageUrl, count: candidates.length, urls: candidates.map((c) => c.url) }));
 
     // Also add /favicon.ico as last resort
-    const parsed = new URL(pageUrl);
+    const parsed = new URL(finalUrl);
     candidates.push({ url: `${parsed.origin}/favicon.ico`, isIco: true });
 
     // Try each candidate — prefer non-ICO first (sharp can't handle ICO)
@@ -213,13 +325,16 @@ async function saveIconRaw(buf, ext) {
 
 async function tryFetchIcon(candidate) {
   try {
+    if (!(await isPublicFetchTarget(candidate.url))) {
+      return null;
+    }
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
 
-    const imgResponse = await fetch(candidate.url, {
+    const { response: imgResponse } = await fetchWithValidatedRedirects(candidate.url, {
       signal: controller.signal,
       headers: { "User-Agent": "Mozilla/5.0 (compatible; RedSecTools/1.0)" },
-      redirect: "follow",
     });
     clearTimeout(timeout);
 
@@ -319,7 +434,16 @@ async function convertToWebpIcon(buffer) {
 router.get("/shortcuts", requireUser, (req, res) => {
   const shortcuts = getShortcutsByUser(req.user.id);
   const { getShortcutsByCategory } = require("../database");
-  const teamShortcuts = getShortcutsByCategory("team");
+  const settings = getHomepageSettings(req.user.id);
+  const teamOrder = Array.isArray(settings.teamShortcutOrder) ? settings.teamShortcutOrder : [];
+  const teamOrderIndex = new Map(teamOrder.map((id, index) => [id, index]));
+  const teamShortcuts = getShortcutsByCategory("team").sort((a, b) => {
+    const aIndex = teamOrderIndex.has(a.id) ? teamOrderIndex.get(a.id) : Number.MAX_SAFE_INTEGER;
+    const bIndex = teamOrderIndex.has(b.id) ? teamOrderIndex.get(b.id) : Number.MAX_SAFE_INTEGER;
+    if (aIndex !== bIndex) return aIndex - bIndex;
+    if ((a.sortOrder || 0) !== (b.sortOrder || 0)) return (a.sortOrder || 0) - (b.sortOrder || 0);
+    return (a.createdAt || 0) - (b.createdAt || 0);
+  });
   const all = [...teamShortcuts, ...shortcuts.filter((s) => s.category !== "team")];
 
   // Attach per-user favourite status
@@ -460,27 +584,28 @@ router.put("/shortcuts/reorder", shortcutLimiter, requireUser, (req, res) => {
     return res.status(400).json({ error: "Invalid reorder data" });
   }
 
+  const settings = getHomepageSettings(req.user.id);
+  const teamShortcutOrder = [];
+
   for (let i = 0; i < order.length; i++) {
     const id = order[i];
     if (typeof id !== "string") continue;
 
     // Check if user owns this shortcut
     let existing = getShortcutById(id, req.user.id);
-    let userId = req.user.id;
 
-    // If not owned, check if it's a team shortcut (users can reorder those for personal view)
+    // Team shortcuts are ordered per-user, not by mutating the shared shortcut row.
     if (!existing) {
       const any = getShortcutByIdAny(id);
       if (any && any.category === "team") {
-        existing = any;
-        userId = any.user_id;
+        teamShortcutOrder.push(id);
       }
+      continue;
     }
 
-    if (!existing) continue;
     updateShortcutById({
       id,
-      userId,
+      userId: req.user.id,
       category: existing.category,
       title: existing.title,
       url: existing.url,
@@ -490,6 +615,11 @@ router.put("/shortcuts/reorder", shortcutLimiter, requireUser, (req, res) => {
       sortOrder: i,
     });
   }
+
+  setHomepageSettings(req.user.id, {
+    ...settings,
+    teamShortcutOrder,
+  });
 
   res.json({ success: true });
 });

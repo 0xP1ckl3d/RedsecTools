@@ -1,7 +1,7 @@
 // RedSecVault — Main UI logic
 import {
   createPersonalVault, unlockPersonalVault,
-  createTeamVault, unlockTeamVault,
+  createTeamVault, unlockTeamVault, wrapTeamVaultKeyForMember,
   encryptEntry, decryptEntry, decryptSharedEntry,
   shareEntry, decryptSharedKey,
   generateTotpCode, generatePassword,
@@ -25,6 +25,123 @@ let totpInterval = null;
 let pwGenTargetField = null; // "f-password" or null
 let allUsersCache = []; // cached user list for member search
 let folderFilter = null; // null = show all, string = filter to folder
+let teamMemberUsersCache = [];
+let teamMemberSearchQuery = "";
+let entryFolderDraftOptions = [];
+
+function getCurrentVault() {
+  return vaults.find((vault) => vault.id === currentVaultId) || null;
+}
+
+function getVaultPermissions(vault) {
+  if (!vault) {
+    return { permission: "viewer", canWrite: false, canManageMembers: false, isOwner: false };
+  }
+  return vault.permissions || {
+    permission: vault.owner_id === currentUser?.id ? "full" : "editor",
+    canWrite: vault.owner_id === currentUser?.id,
+    canManageMembers: vault.owner_id === currentUser?.id,
+    isOwner: vault.owner_id === currentUser?.id,
+  };
+}
+
+function formatVaultPermissionLabel(member) {
+  if (member?.isOwner) return "Owner";
+  const permission = member?.permission || (member?.role === "admin" ? "full" : "editor");
+  if (permission === "viewer") return "Read only";
+  if (permission === "full") return "Full";
+  return "Read/write/edit";
+}
+
+function normalizeFolderName(value) {
+  return String(value || "").trim();
+}
+
+function getEntryFolderInput() {
+  return document.getElementById("entry-folder");
+}
+
+function getEntryFolderOptionsEl() {
+  return document.getElementById("entry-folder-options");
+}
+
+function getEntryFolderAddBtn() {
+  return document.getElementById("entry-folder-add");
+}
+
+function getAvailableFolders() {
+  const existing = decryptedEntries
+    .map((entry) => normalizeFolderName(entry.folder))
+    .filter(Boolean);
+  const combined = [...existing, ...entryFolderDraftOptions];
+  return [...new Set(combined)].sort((a, b) => a.localeCompare(b));
+}
+
+function setEntryFolderValue(value) {
+  const input = getEntryFolderInput();
+  if (!input) return;
+  input.value = normalizeFolderName(value);
+  renderEntryFolderOptions();
+}
+
+function addDraftFolderOption(value) {
+  const folder = normalizeFolderName(value);
+  if (!folder) return;
+  const existing = getAvailableFolders();
+  if (!existing.some((name) => name.toLowerCase() === folder.toLowerCase())) {
+    entryFolderDraftOptions.push(folder);
+  }
+  setEntryFolderValue(folder);
+}
+
+function hideEntryFolderOptions() {
+  const optionsEl = getEntryFolderOptionsEl();
+  if (optionsEl) optionsEl.classList.add("hidden");
+}
+
+function renderEntryFolderOptions(forceOpen = false) {
+  const input = getEntryFolderInput();
+  const optionsEl = getEntryFolderOptionsEl();
+  const addBtn = getEntryFolderAddBtn();
+  if (!input || !optionsEl || !addBtn) return;
+
+  const query = normalizeFolderName(input.value);
+  const folders = getAvailableFolders();
+  const filtered = query
+    ? folders.filter((folder) => folder.toLowerCase().includes(query.toLowerCase()))
+    : folders;
+  const exactMatch = query && folders.some((folder) => folder.toLowerCase() === query.toLowerCase());
+
+  addBtn.classList.toggle("hidden", !query || exactMatch);
+  addBtn.disabled = !query || exactMatch;
+
+  if (!filtered.length) {
+    optionsEl.innerHTML = query
+      ? `<div class="px-3 py-2 text-sm text-muted">No matching folders</div>`
+      : `<div class="px-3 py-2 text-sm text-muted">No folders yet</div>`;
+  } else {
+    optionsEl.innerHTML = filtered.map((folder) =>
+      `<button type="button" data-entry-folder-option="${escAttr(folder)}" class="w-full text-left px-3 py-2 text-sm hover:bg-[var(--bg-elevated)]">${escHtml(folder)}</button>`
+    ).join("");
+    optionsEl.querySelectorAll("[data-entry-folder-option]").forEach((button) => {
+      button.addEventListener("click", () => {
+        setEntryFolderValue(button.dataset.entryFolderOption);
+        hideEntryFolderOptions();
+      });
+    });
+  }
+
+  const shouldShow = forceOpen || document.activeElement === input;
+  optionsEl.classList.toggle("hidden", !shouldShow);
+}
+
+function resetEntryFolderPicker(value = "") {
+  entryFolderDraftOptions = [];
+  const input = getEntryFolderInput();
+  if (input) input.value = normalizeFolderName(value);
+  renderEntryFolderOptions(false);
+  hideEntryFolderOptions();
+}
 
 // ============================================================
 // Init
@@ -285,10 +402,11 @@ async function loadEntries(vaultId) {
 
 function showEntryListPanel(vault, entries, name) {
   const panel = document.getElementById("entry-list-panel");
+  const permissions = getVaultPermissions(vault);
   panel.classList.remove("hidden");
   document.getElementById("current-vault-name").textContent = name || "Vault";
   document.getElementById("entry-count").textContent = `${entries.length} entr${entries.length === 1 ? "y" : "ies"}`;
-  document.getElementById("create-entry-btn").classList.remove("hidden");
+  document.getElementById("create-entry-btn").classList.toggle("hidden", !permissions.canWrite);
 
   // Show delete vault button only for owner
   const deleteBtn = document.getElementById("delete-vault-btn");
@@ -306,26 +424,167 @@ async function loadTeamMembers(vaultId) {
     if (!res.ok) return;
     const data = await res.json();
     const members = data.members || [];
-    if (!members.length) return;
+    const permissions = getVaultPermissions(getCurrentVault());
 
     // Find or create member display area
     let memberArea = document.getElementById("vault-members-display");
     if (!memberArea) {
       memberArea = document.createElement("div");
       memberArea.id = "vault-members-display";
-      memberArea.className = "px-4 py-2 border-b border-[var(--border)] flex items-center gap-2 flex-wrap";
+      memberArea.className = "px-4 py-3 border-b border-[var(--border)] space-y-3";
       const header = document.querySelector("#entry-list-panel > div:first-child");
       if (header) header.after(memberArea);
     }
-    memberArea.innerHTML = members.map(m =>
-      `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[var(--bg-elevated)] text-xs text-muted">
-        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
-        ${escHtml(m.username)}
-        ${m.role === "admin" ? '<span class="text-accent">(admin)</span>' : ""}
-      </span>`
-    ).join("");
+    memberArea.innerHTML =
+      `<div class="flex items-center justify-between gap-3">
+        <div class="text-xs font-bold uppercase tracking-wide text-muted">Team Members</div>
+        ${permissions.canManageMembers ? '<div class="text-xs text-muted">Manage access</div>' : ""}
+      </div>` +
+      `<div class="flex flex-wrap gap-2">${members.map((m) => {
+        const permission = m.permission || (m.role === "admin" ? "full" : "editor");
+        const permissionLabel = formatVaultPermissionLabel(m);
+        const canManageThisMember = permissions.canManageMembers && !m.isOwner && m.userId !== currentUser.id;
+        return `<div class="inline-flex items-center gap-2 px-2 py-1 rounded bg-[var(--bg-elevated)] text-xs text-muted">
+          <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+          <span>${escHtml(m.username)}</span>
+          ${canManageThisMember
+            ? `<select data-team-member-permission="${m.userId}" class="text-xs bg-transparent border border-[var(--border)] rounded px-1 py-0.5">
+                <option value="viewer" ${permission === "viewer" ? "selected" : ""}>Read only</option>
+                <option value="editor" ${permission === "editor" ? "selected" : ""}>Read/write/edit</option>
+                <option value="full" ${permission === "full" ? "selected" : ""}>Full</option>
+              </select>
+              <button type="button" data-remove-team-member="${m.userId}" class="text-error hover:underline">Remove</button>`
+            : `<span class="text-accent">(${escHtml(permissionLabel)})</span>`}
+        </div>`;
+      }).join("")}</div>`;
+
+    if (permissions.canManageMembers) {
+      memberArea.innerHTML += `
+        <div class="pt-2 border-t border-[var(--border)] space-y-2">
+          <div class="text-xs font-bold uppercase tracking-wide text-muted">Add Member</div>
+          <div class="flex gap-2">
+            <input type="text" id="team-member-search" class="input-field flex-1 text-sm" placeholder="Search by username...">
+            <select id="team-member-permission-new" class="input-field text-sm w-40">
+              <option value="viewer">Read only</option>
+              <option value="editor" selected>Read/write/edit</option>
+              <option value="full">Full</option>
+            </select>
+          </div>
+          <div id="team-member-search-results" class="space-y-1 max-h-32 overflow-y-auto"></div>
+        </div>`;
+    }
+
+    memberArea.querySelectorAll("[data-team-member-permission]").forEach((select) => {
+      select.addEventListener("change", () => updateExistingTeamMemberPermission(vaultId, select.dataset.teamMemberPermission, select.value));
+    });
+    memberArea.querySelectorAll("[data-remove-team-member]").forEach((btn) => {
+      btn.addEventListener("click", () => removeExistingTeamMember(vaultId, btn.dataset.removeTeamMember));
+    });
+    const searchInput = memberArea.querySelector("#team-member-search");
+    if (searchInput) {
+      searchInput.value = teamMemberSearchQuery;
+      searchInput.addEventListener("input", async (e) => {
+        teamMemberSearchQuery = e.target.value.trim();
+        await renderTeamMemberSearchResults(vaultId, members);
+      });
+      await renderTeamMemberSearchResults(vaultId, members);
+    }
   } catch (err) {
     console.error("[vault] loadTeamMembers failed:", err);
+  }
+}
+
+async function loadTeamMemberUsers() {
+  if (teamMemberUsersCache.length) return teamMemberUsersCache;
+  const res = await fetch("/api/vault/users/search?q=");
+  if (!res.ok) return [];
+  const data = await res.json();
+  teamMemberUsersCache = (data.users || []).filter((user) => user.hasPublicKey);
+  return teamMemberUsersCache;
+}
+
+async function renderTeamMemberSearchResults(vaultId, members) {
+  const container = document.getElementById("team-member-search-results");
+  if (!container) return;
+  const users = await loadTeamMemberUsers();
+  const memberIds = new Set(members.map((member) => member.userId));
+  let filtered = users.filter((user) => !memberIds.has(user.id) && user.id !== currentUser.id);
+  if (teamMemberSearchQuery) {
+    const query = teamMemberSearchQuery.toLowerCase();
+    filtered = filtered.filter((user) => user.username.toLowerCase().includes(query));
+  }
+  container.innerHTML = filtered.slice(0, 20).map((user) =>
+    `<button type="button" data-add-team-member="${user.id}" data-add-team-member-name="${escAttr(user.username)}" class="w-full text-left px-3 py-2 rounded hover:bg-[var(--bg-elevated)] text-sm">${escHtml(user.username)}</button>`
+  ).join("") || '<div class="text-xs text-muted px-1 py-2">No matching users.</div>';
+  container.querySelectorAll("[data-add-team-member]").forEach((btn) => {
+    btn.addEventListener("click", () => addExistingTeamMember(vaultId, btn.dataset.addTeamMember, btn.dataset.addTeamMemberName));
+  });
+}
+
+async function addExistingTeamMember(vaultId, userId, username) {
+  if (!currentVaultMasterKey) { showToast("Vault must be unlocked"); return; }
+  try {
+    const keyRes = await fetch(`/api/chat/keys/${userId}`);
+    if (!keyRes.ok) { showToast("User has no encryption keys"); return; }
+    const keyData = await keyRes.json();
+    const encryptedMasterKey = await wrapTeamVaultKeyForMember(currentVaultMasterKey, keyData.publicKey);
+    const permission = document.getElementById("team-member-permission-new")?.value || "editor";
+    const res = await fetch(`/api/vault/vaults/${vaultId}/members`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, encryptedMasterKey, permission }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      showToast(data.error || "Failed to add member");
+      return;
+    }
+    teamMemberSearchQuery = "";
+    const searchInput = document.getElementById("team-member-search");
+    if (searchInput) searchInput.value = "";
+    await loadTeamMembers(vaultId);
+    showToast(`Added ${username}`);
+  } catch (err) {
+    console.error("[vault] addExistingTeamMember failed:", err);
+    showToast("Failed to add member");
+  }
+}
+
+async function updateExistingTeamMemberPermission(vaultId, userId, permission) {
+  try {
+    const res = await fetch(`/api/vault/vaults/${vaultId}/members/${userId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ permission }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      showToast(data.error || "Failed to update member");
+      await loadTeamMembers(vaultId);
+      return;
+    }
+    await loadTeamMembers(vaultId);
+    showToast("Member access updated");
+  } catch (err) {
+    console.error("[vault] updateExistingTeamMemberPermission failed:", err);
+    showToast("Failed to update member");
+  }
+}
+
+async function removeExistingTeamMember(vaultId, userId) {
+  if (!confirm("Remove this team member from the vault?")) return;
+  try {
+    const res = await fetch(`/api/vault/vaults/${vaultId}/members/${userId}`, { method: "DELETE" });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      showToast(data.error || "Failed to remove member");
+      return;
+    }
+    await loadTeamMembers(vaultId);
+    showToast("Member removed");
+  } catch (err) {
+    console.error("[vault] removeExistingTeamMember failed:", err);
+    showToast("Failed to remove member");
   }
 }
 
@@ -500,10 +759,10 @@ function showEntryDetail(entryId) {
   document.getElementById("entry-detail-content").innerHTML = html;
   bindDetailActions(entry);
   if (entry.type === "totp") startTotpTimer(entry);
-  // Show action buttons for own entries
-  document.getElementById("share-entry-btn").classList.remove("hidden");
-  document.getElementById("edit-entry-btn").classList.remove("hidden");
-  document.getElementById("delete-entry-btn").classList.remove("hidden");
+  const permissions = getVaultPermissions(getCurrentVault());
+  document.getElementById("share-entry-btn").classList.toggle("hidden", !permissions.canWrite);
+  document.getElementById("edit-entry-btn").classList.toggle("hidden", !permissions.canWrite);
+  document.getElementById("delete-entry-btn").classList.toggle("hidden", !permissions.canWrite);
   // Load shares for this entry
   loadEntryShares(entryId);
 }
@@ -709,7 +968,7 @@ function openEntryModal(entry = null) {
 
   document.getElementById("entry-title").value = entry ? entry.title : "";
   document.getElementById("entry-type").value = entry ? entry.type : "password";
-  document.getElementById("entry-folder").value = entry ? (entry.folder || "") : "";
+  resetEntryFolderPicker(entry ? (entry.folder || "") : "");
 
   const d = entry ? (entry.data || {}) : {};
   document.getElementById("f-username").value = d.username || "";
@@ -766,7 +1025,7 @@ function customFieldHtml(index, field = {}) {
 function getEntryFormData() {
   const type = document.getElementById("entry-type").value;
   const title = document.getElementById("entry-title").value.trim();
-  const folder = document.getElementById("entry-folder").value.trim() || null;
+  const folder = normalizeFolderName(document.getElementById("entry-folder").value) || null;
   const favorite = document.getElementById("entry-favorite").checked;
   const notes = document.getElementById("f-notes").value.trim();
 
@@ -878,7 +1137,7 @@ async function saveVault() {
       const members = [];
       for (const m of vaultMembers) {
         const pubKey = await ChatCrypto.importPublicKey(m.publicKey);
-        members.push({ userId: m.id, publicKey: pubKey, role: "member" });
+        members.push({ userId: m.id, publicKey: pubKey, permission: m.permission || "editor" });
       }
 
       // Include owner as admin member
@@ -887,7 +1146,7 @@ async function saveVault() {
         const ownerKeyData = await ownerPubKeyRes.json();
         if (ownerKeyData.publicKey) {
           const ownerPubKey = await ChatCrypto.importPublicKey(ownerKeyData.publicKey);
-          members.push({ userId: currentUser.id, publicKey: ownerPubKey, role: "admin" });
+          members.push({ userId: currentUser.id, publicKey: ownerPubKey, permission: "full" });
         }
       }
 
@@ -948,7 +1207,7 @@ async function addMemberChip(userId, username) {
     if (!res.ok) { showToast("User has no encryption keys"); return; }
     const data = await res.json();
     if (!data.publicKey) { showToast("User has no encryption keys"); return; }
-    vaultMembers.push({ id: userId, username, publicKey: data.publicKey });
+    vaultMembers.push({ id: userId, username, publicKey: data.publicKey, permission: "editor" });
     renderMemberChips();
     document.getElementById("member-search-results").innerHTML = "";
     document.getElementById("member-search").value = "";
@@ -961,9 +1220,20 @@ function renderMemberChips() {
   document.getElementById("member-chips").innerHTML = vaultMembers.map(m =>
     `<span class="inline-flex items-center gap-1 px-2 py-1 rounded bg-accent/10 text-accent text-xs">
       ${escHtml(m.username)}
+      <select data-member-permission="${m.id}" class="text-xs bg-transparent border border-current rounded px-1 py-0.5">
+        <option value="viewer" ${m.permission === "viewer" ? "selected" : ""}>Read only</option>
+        <option value="editor" ${m.permission === "editor" ? "selected" : ""}>Read/write/edit</option>
+        <option value="full" ${m.permission === "full" ? "selected" : ""}>Full</option>
+      </select>
       <button data-remove-member="${m.id}" class="hover:text-primary">&times;</button>
     </span>`
   ).join("");
+  document.querySelectorAll("[data-member-permission]").forEach((select) => {
+    select.addEventListener("change", () => {
+      const member = vaultMembers.find((m) => m.id === select.dataset.memberPermission);
+      if (member) member.permission = select.value;
+    });
+  });
   document.querySelectorAll("[data-remove-member]").forEach(btn => {
     btn.addEventListener("click", () => {
       vaultMembers = vaultMembers.filter(m => m.id !== btn.dataset.removeMember);
@@ -1234,6 +1504,34 @@ function bindEvents() {
   // Entry type change
   document.getElementById("entry-type").addEventListener("change", (e) => showTypeFields(e.target.value));
 
+  const folderInput = getEntryFolderInput();
+  const folderAddBtn = getEntryFolderAddBtn();
+  if (folderInput) {
+    folderInput.addEventListener("focus", () => renderEntryFolderOptions(true));
+    folderInput.addEventListener("input", () => renderEntryFolderOptions(true));
+    folderInput.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        hideEntryFolderOptions();
+      } else if (e.key === "Enter") {
+        const query = normalizeFolderName(folderInput.value);
+        const hasExactMatch = getAvailableFolders().some((folder) => folder.toLowerCase() === query.toLowerCase());
+        if (query && !hasExactMatch) {
+          e.preventDefault();
+          addDraftFolderOption(query);
+          hideEntryFolderOptions();
+        }
+      }
+    });
+  }
+  if (folderAddBtn) {
+    folderAddBtn.addEventListener("click", () => {
+      const query = normalizeFolderName(folderInput?.value);
+      if (!query) return;
+      addDraftFolderOption(query);
+      hideEntryFolderOptions();
+    });
+  }
+
   // Add custom field
   document.getElementById("add-custom-field").addEventListener("click", () => {
     const list = document.getElementById("custom-fields-list");
@@ -1298,6 +1596,15 @@ function bindEvents() {
     overlay.addEventListener("click", (e) => {
       if (e.target === overlay) overlay.classList.add("hidden");
     });
+  });
+
+  document.addEventListener("click", (e) => {
+    const input = getEntryFolderInput();
+    const optionsEl = getEntryFolderOptionsEl();
+    const addBtn = getEntryFolderAddBtn();
+    if (!input || !optionsEl || !addBtn) return;
+    if (input.contains(e.target) || optionsEl.contains(e.target) || addBtn.contains(e.target)) return;
+    hideEntryFolderOptions();
   });
 }
 

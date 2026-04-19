@@ -13,6 +13,9 @@ const {
   getUserMFA, setUserMFA, enableUserMFA, disableUserMFA, updateRecoveryCodes,
   createPendingLogin, getPendingLogin, deletePendingLogin, incrementPendingLoginAttempts,
   createTrustedDevice, getTrustedDeviceByTokenHash, deleteTrustedDevicesByUser, countTrustedDevicesByUser,
+  getMfaLoginState, setMfaLoginState, clearMfaLoginState,
+  getAuthLoginState, setAuthLoginState, clearAuthLoginState,
+  getEmailSendState, setEmailSendState,
   deletePersonalVaultsByUser, deleteUserKeyBackup, flagVaultMembersForRekey,
   getSetting, setSetting,
   encryptValue, decryptValue,
@@ -20,6 +23,7 @@ const {
 } = require("../database");
 const { sendInviteEmail, sendPasswordResetEmail, sendShareLinkEmail } = require("../email");
 const totp = require("../totp");
+const { buildAbsoluteUrl, isTrustedAbsoluteUrl } = require("../public-origin");
 
 const router = Router();
 
@@ -128,6 +132,165 @@ function sessionCookieOptions(ttl) {
   };
 }
 
+function createAuthenticatedSession(res, userId, ttl, reqContext) {
+  const sessionId = crypto.randomBytes(32).toString("base64url");
+  createSession({
+    id: sessionId,
+    userId,
+    expiresIn: ttl,
+    ipAddress: reqContext.ipAddress,
+    userAgent: reqContext.userAgent,
+  });
+  res.cookie("redsec_session", sessionId, sessionCookieOptions(ttl));
+}
+
+function createPendingMfaLogin(userId, req, options = {}) {
+  const tempToken = crypto.randomBytes(32).toString("base64url");
+  createPendingLogin({
+    id: tempToken,
+    userId,
+    expiresIn: 300,
+    ipAddress: req.ip,
+    userAgent: req.get("user-agent"),
+    keepSignedIn: !!options.keepSignedIn,
+    rememberBrowser: !!options.rememberBrowser,
+  });
+  return tempToken;
+}
+
+function getRemainingRecoveryCodes(mfaConfig) {
+  if (!mfaConfig) return 0;
+  try {
+    const codes = JSON.parse(mfaConfig.recovery_codes);
+    return codes.filter((code) => code !== null).length;
+  } catch {
+    return 0;
+  }
+}
+
+function getMfaThrottleStatus(userId) {
+  const state = getMfaLoginState(userId);
+  if (!state) {
+    return { failedAttempts: 0, blockedUntil: 0 };
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const windowSeconds = 60 * 60;
+  if (state.first_failed_at && (now - state.first_failed_at) > windowSeconds && state.blocked_until <= now) {
+    clearMfaLoginState(userId);
+    return { failedAttempts: 0, blockedUntil: 0 };
+  }
+
+  return {
+    failedAttempts: state.failed_attempts || 0,
+    blockedUntil: state.blocked_until || 0,
+  };
+}
+
+function recordMfaFailure(userId) {
+  const now = Math.floor(Date.now() / 1000);
+  const windowSeconds = 60 * 60;
+  const current = getMfaThrottleStatus(userId);
+  const prior = current.failedAttempts;
+  const existing = getMfaLoginState(userId);
+
+  let failedAttempts = 1;
+  let firstFailedAt = now;
+  if (existing && existing.first_failed_at && (now - existing.first_failed_at) <= windowSeconds) {
+    failedAttempts = prior + 1;
+    firstFailedAt = existing.first_failed_at;
+  }
+
+  let cooldownSeconds = 0;
+  if (failedAttempts >= 10) cooldownSeconds = 10 * 60;
+  else if (failedAttempts >= 7) cooldownSeconds = 2 * 60;
+  else if (failedAttempts >= 4) cooldownSeconds = 30;
+
+  const blockedUntil = cooldownSeconds > 0 ? now + cooldownSeconds : 0;
+  setMfaLoginState(userId, { failedAttempts, firstFailedAt, blockedUntil });
+
+  return { failedAttempts, blockedUntil, cooldownSeconds };
+}
+
+function clearMfaThrottle(userId) {
+  clearMfaLoginState(userId);
+}
+
+function getLoginThrottleStatus(email) {
+  const state = getAuthLoginState(email);
+  if (!state) {
+    return { failedAttempts: 0, blockedUntil: 0 };
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const windowSeconds = 60 * 60;
+  if (state.first_failed_at && (now - state.first_failed_at) > windowSeconds && state.blocked_until <= now) {
+    clearAuthLoginState(email);
+    return { failedAttempts: 0, blockedUntil: 0 };
+  }
+
+  return {
+    failedAttempts: state.failed_attempts || 0,
+    blockedUntil: state.blocked_until || 0,
+  };
+}
+
+function recordLoginFailure(email) {
+  const now = Math.floor(Date.now() / 1000);
+  const windowSeconds = 60 * 60;
+  const current = getLoginThrottleStatus(email);
+  const existing = getAuthLoginState(email);
+
+  let failedAttempts = 1;
+  let firstFailedAt = now;
+  if (existing && existing.first_failed_at && (now - existing.first_failed_at) <= windowSeconds) {
+    failedAttempts = current.failedAttempts + 1;
+    firstFailedAt = existing.first_failed_at;
+  }
+
+  let cooldownSeconds = 0;
+  if (failedAttempts >= 10) cooldownSeconds = 10 * 60;
+  else if (failedAttempts >= 7) cooldownSeconds = 2 * 60;
+  else if (failedAttempts >= 4) cooldownSeconds = 30;
+
+  const blockedUntil = cooldownSeconds > 0 ? now + cooldownSeconds : 0;
+  setAuthLoginState(email, { failedAttempts, firstFailedAt, blockedUntil });
+  return { failedAttempts, blockedUntil, cooldownSeconds };
+}
+
+function clearLoginThrottle(email) {
+  clearAuthLoginState(email);
+}
+
+function checkEmailSendThrottle(email, { limit, windowSeconds, blockSeconds }) {
+  const now = Math.floor(Date.now() / 1000);
+  const state = getEmailSendState(email);
+
+  if (state && state.blocked_until > now) {
+    return { allowed: false, retryAfter: state.blocked_until - now };
+  }
+
+  let sentCount = 0;
+  let windowStartedAt = now;
+  if (state && state.window_started_at && (now - state.window_started_at) <= windowSeconds) {
+    sentCount = state.sent_count || 0;
+    windowStartedAt = state.window_started_at;
+  }
+
+  if (sentCount >= limit) {
+    const blockedUntil = now + blockSeconds;
+    setEmailSendState(email, { sentCount, windowStartedAt, blockedUntil });
+    return { allowed: false, retryAfter: blockSeconds };
+  }
+
+  setEmailSendState(email, {
+    sentCount: sentCount + 1,
+    windowStartedAt,
+    blockedUntil: 0,
+  });
+  return { allowed: true, retryAfter: 0 };
+}
+
 // --- Trusted device cookie ---
 const TRUST_COOKIE_NAME = "redsec_mfa_trust";
 
@@ -178,27 +341,54 @@ function checkTrustedDevice(req, userId) {
 // POST /api/auth/login (modified for MFA)
 router.post("/auth/login", loginLimiter, async (req, res) => {
   const { email, password, keepSignedIn, rememberBrowser } = req.body || {};
+  const normalizedEmail = typeof email === "string" ? email.toLowerCase().trim() : "";
 
-  if (!email || !password) {
+  if (!normalizedEmail || !password) {
     return res.status(400).json({ error: "Email and password are required" });
   }
 
-  const user = getUserByEmail(email.toLowerCase().trim());
+  const throttle = getLoginThrottleStatus(normalizedEmail);
+  const now = Math.floor(Date.now() / 1000);
+  if (throttle.blockedUntil > now) {
+    return res.status(429).json({
+      error: `Too many login attempts. Try again in ${throttle.blockedUntil - now} seconds.`,
+      retryAfter: throttle.blockedUntil - now,
+    });
+  }
+
+  const user = getUserByEmail(normalizedEmail);
   if (!user) {
     logAction("auth:login_failed", req, { email, reason: "not_found" });
+    const failure = recordLoginFailure(normalizedEmail);
+    if (failure.cooldownSeconds > 0) {
+      return res.status(429).json({
+        error: `Too many login attempts. Try again in ${failure.cooldownSeconds} seconds.`,
+        retryAfter: failure.cooldownSeconds,
+      });
+    }
     return res.status(401).json({ error: "Invalid email or password" });
   }
 
   if (user.suspended) {
     logAction("auth:login_failed", req, { email, reason: "suspended" });
+    recordLoginFailure(normalizedEmail);
     return res.status(403).json({ error: "Account suspended" });
   }
 
   const match = await bcrypt.compare(password, user.password_hash).catch(() => false);
   if (!match) {
     logAction("auth:login_failed", req, { email, reason: "wrong_password" });
+    const failure = recordLoginFailure(normalizedEmail);
+    if (failure.cooldownSeconds > 0) {
+      return res.status(429).json({
+        error: `Too many login attempts. Try again in ${failure.cooldownSeconds} seconds.`,
+        retryAfter: failure.cooldownSeconds,
+      });
+    }
     return res.status(401).json({ error: "Invalid email or password" });
   }
+
+  clearLoginThrottle(normalizedEmail);
 
   // Check MFA status
   const mfaConfig = getUserMFA(user.id);
@@ -207,13 +397,7 @@ router.post("/auth/login", loginLimiter, async (req, res) => {
 
   // CASE: MFA required by admin but user hasn't set it up yet
   if (mfaRequired && !mfaEnabled) {
-    const tempToken = crypto.randomBytes(32).toString("base64url");
-    createPendingLogin({
-      id: tempToken,
-      userId: user.id,
-      expiresIn: 300, // 5 minutes
-      ipAddress: req.ip,
-      userAgent: req.get("user-agent"),
+    const tempToken = createPendingMfaLogin(user.id, req, {
       keepSignedIn: !!keepSignedIn,
       rememberBrowser: false,
     });
@@ -226,53 +410,38 @@ router.post("/auth/login", loginLimiter, async (req, res) => {
     if (checkTrustedDevice(req, user.id)) {
       // Trusted device — skip MFA
       const ttl = getSessionTTL(!!keepSignedIn);
-      const sessionId = crypto.randomBytes(32).toString("base64url");
-      createSession({
-        id: sessionId,
-        userId: user.id,
-        expiresIn: ttl,
+      createAuthenticatedSession(res, user.id, ttl, {
         ipAddress: req.ip,
         userAgent: req.get("user-agent"),
       });
-      res.cookie("redsec_session", sessionId, sessionCookieOptions(ttl));
       logAction("auth:login_trusted", req, { userId: user.id, username: user.username });
       return res.json({ success: true, user: { username: user.username } });
     }
 
     // MFA required — create pending login
-    const tempToken = crypto.randomBytes(32).toString("base64url");
-    createPendingLogin({
-      id: tempToken,
-      userId: user.id,
-      expiresIn: 300,
-      ipAddress: req.ip,
-      userAgent: req.get("user-agent"),
+    const tempToken = createPendingMfaLogin(user.id, req, {
       keepSignedIn: !!keepSignedIn,
       rememberBrowser: !!rememberBrowser,
     });
-
-    // Check if user has recovery codes
-    let hasRecoveryCodes = false;
-    try {
-      const codes = JSON.parse(mfaConfig.recovery_codes);
-      hasRecoveryCodes = codes.some((c) => c !== null);
-    } catch {}
+    const throttle = getMfaThrottleStatus(user.id);
 
     logAction("auth:mfa_required", req, { userId: user.id });
-    return res.json({ mfaRequired: true, tempToken, hasRecoveryCodes });
+    return res.json({
+      mfaRequired: true,
+      tempToken,
+      hasRecoveryCodes: getRemainingRecoveryCodes(mfaConfig) > 0,
+      cooldownSeconds: throttle.blockedUntil > Math.floor(Date.now() / 1000)
+        ? throttle.blockedUntil - Math.floor(Date.now() / 1000)
+        : 0,
+    });
   }
 
   // CASE: No MFA — create session directly
   const ttl = getSessionTTL(!!keepSignedIn);
-  const sessionId = crypto.randomBytes(32).toString("base64url");
-  createSession({
-    id: sessionId,
-    userId: user.id,
-    expiresIn: ttl,
+  createAuthenticatedSession(res, user.id, ttl, {
     ipAddress: req.ip,
     userAgent: req.get("user-agent"),
   });
-  res.cookie("redsec_session", sessionId, sessionCookieOptions(ttl));
 
   logAction("auth:login", req, { userId: user.id, username: user.username });
 
@@ -305,6 +474,15 @@ router.post("/auth/login/mfa", async (req, res) => {
     return res.status(400).json({ error: "MFA not configured for this account" });
   }
 
+  const now = Math.floor(Date.now() / 1000);
+  const throttle = getMfaThrottleStatus(pending.user_id);
+  if (throttle.blockedUntil > now) {
+    return res.status(429).json({
+      error: `Too many invalid MFA attempts. Try again in ${throttle.blockedUntil - now} seconds.`,
+      retryAfter: throttle.blockedUntil - now,
+    });
+  }
+
   // Decrypt TOTP secret
   const secret = decryptValue(mfaConfig.totp_secret_encrypted);
 
@@ -331,28 +509,38 @@ router.post("/auth/login/mfa", async (req, res) => {
 
   if (!verified) {
     const attempts = incrementPendingLoginAttempts(tempToken);
+    const mfaFailure = recordMfaFailure(pending.user_id);
     if (attempts >= 3 || attempts < 0) {
       deletePendingLogin(tempToken);
       logAction("auth:mfa_locked", req, { userId: pending.user_id });
+      if (mfaFailure.cooldownSeconds > 0) {
+        return res.status(429).json({
+          error: `Too many invalid MFA attempts. Try again in ${mfaFailure.cooldownSeconds} seconds.`,
+          restartLogin: true,
+          retryAfter: mfaFailure.cooldownSeconds,
+        });
+      }
       return res.status(401).json({ error: "Too many failed attempts. Please log in again.", restartLogin: true });
     }
     logAction("auth:mfa_failed", req, { userId: pending.user_id, attempts });
+    if (mfaFailure.cooldownSeconds > 0) {
+      return res.status(429).json({
+        error: `Invalid verification code. Please wait ${mfaFailure.cooldownSeconds} seconds before trying again.`,
+        retryAfter: mfaFailure.cooldownSeconds,
+      });
+    }
     return res.status(401).json({ error: `Invalid verification code (${3 - attempts} attempt${3 - attempts !== 1 ? "s" : ""} remaining)` });
   }
 
   // MFA verified — create session
+  clearMfaThrottle(pending.user_id);
   deletePendingLogin(tempToken);
 
   const ttl = getSessionTTL(!!pending.keep_signed_in);
-  const sessionId = crypto.randomBytes(32).toString("base64url");
-  createSession({
-    id: sessionId,
-    userId: pending.user_id,
-    expiresIn: ttl,
+  createAuthenticatedSession(res, pending.user_id, ttl, {
     ipAddress: pending.ip_address,
     userAgent: pending.user_agent,
   });
-  res.cookie("redsec_session", sessionId, sessionCookieOptions(ttl));
 
   // Set trusted device cookie if requested (value from MFA form, not login form)
   if (rememberBrowser) {
@@ -420,32 +608,51 @@ router.post("/auth/login/mfa/setup/verify", async (req, res) => {
     return res.status(400).json({ error: "MFA setup not initiated" });
   }
 
+  const now = Math.floor(Date.now() / 1000);
+  const throttle = getMfaThrottleStatus(pending.user_id);
+  if (throttle.blockedUntil > now) {
+    return res.status(429).json({
+      error: `Too many invalid MFA attempts. Try again in ${throttle.blockedUntil - now} seconds.`,
+      retryAfter: throttle.blockedUntil - now,
+    });
+  }
+
   const secret = decryptValue(mfaConfig.totp_secret_encrypted);
 
   if (!totp.verifyTOTP(secret, code)) {
     const attempts = incrementPendingLoginAttempts(tempToken);
+    const mfaFailure = recordMfaFailure(pending.user_id);
     if (attempts >= 3 || attempts < 0) {
       deletePendingLogin(tempToken);
       logAction("auth:mfa_setup_locked", req, { userId: pending.user_id });
+      if (mfaFailure.cooldownSeconds > 0) {
+        return res.status(429).json({
+          error: `Too many invalid MFA attempts. Try again in ${mfaFailure.cooldownSeconds} seconds.`,
+          restartLogin: true,
+          retryAfter: mfaFailure.cooldownSeconds,
+        });
+      }
       return res.status(401).json({ error: "Too many failed attempts. Please log in again.", restartLogin: true });
+    }
+    if (mfaFailure.cooldownSeconds > 0) {
+      return res.status(429).json({
+        error: `Invalid verification code. Please wait ${mfaFailure.cooldownSeconds} seconds before trying again.`,
+        retryAfter: mfaFailure.cooldownSeconds,
+      });
     }
     return res.status(401).json({ error: `Invalid verification code (${3 - attempts} attempt${3 - attempts !== 1 ? "s" : ""} remaining)` });
   }
 
   // Enable MFA and create session
+  clearMfaThrottle(pending.user_id);
   enableUserMFA(pending.user_id);
   deletePendingLogin(tempToken);
 
   const ttl = getSessionTTL(!!pending.keep_signed_in);
-  const sessionId = crypto.randomBytes(32).toString("base64url");
-  createSession({
-    id: sessionId,
-    userId: pending.user_id,
-    expiresIn: ttl,
+  createAuthenticatedSession(res, pending.user_id, ttl, {
     ipAddress: pending.ip_address,
     userAgent: pending.user_agent,
   });
-  res.cookie("redsec_session", sessionId, sessionCookieOptions(ttl));
 
   // Always trust browser during forced MFA setup (user just proved password + TOTP on this device)
   setTrustedDeviceCookie(res, pending.user_id, req);
@@ -519,18 +726,22 @@ router.post("/auth/register", registerLimiter, async (req, res) => {
 
     markInviteUsed(invite.id);
 
+    const mfaRequired = getSetting("mfa_required") === "true";
+    if (mfaRequired) {
+      const tempToken = createPendingMfaLogin(userId, req, {
+        keepSignedIn: false,
+        rememberBrowser: false,
+      });
+      logAction("auth:register_mfa_setup_required", req, { userId, username, email: invite.email });
+      return res.json({ success: true, mfaSetupRequired: true, tempToken });
+    }
+
     // Auto-login: create session
     const ttl = getSessionTTL(false);
-    const sessionId = crypto.randomBytes(32).toString("base64url");
-    createSession({
-      id: sessionId,
-      userId,
-      expiresIn: ttl,
+    createAuthenticatedSession(res, userId, ttl, {
       ipAddress: req.ip,
       userAgent: req.get("user-agent"),
     });
-
-    res.cookie("redsec_session", sessionId, sessionCookieOptions(ttl));
 
     logAction("auth:register", req, { userId, username, email: invite.email });
 
@@ -562,8 +773,8 @@ router.get("/auth/me", (req, res) => {
     }
     if (session) {
       deleteSessionById(sessionId);
-      res.clearCookie("redsec_session", { path: "/" });
     }
+    res.clearCookie("redsec_session", { path: "/" });
   }
 
   // Check guest cookie
@@ -663,6 +874,10 @@ router.get("/auth/smtp-status", (req, res) => {
       const config = getSmtpConfig();
       return res.json({ configured: !!config.smtpHost });
     }
+    if (session) {
+      deleteSessionById(sessionId);
+    }
+    res.clearCookie("redsec_session", { path: "/" });
   }
 
   const guest = req.signedCookies.redsec_guest;
@@ -702,7 +917,10 @@ router.post("/auth/guest-link", guestLinkLimiter, requireUser, (req, res) => {
     expiresAt,
   });
 
-  const url = `${req.protocol}://${req.get("host")}/guest/${token}`;
+  const url = buildAbsoluteUrl(req, `/guest/${token}`);
+  if (!url) {
+    return res.status(503).json({ error: "Unable to determine a trusted public URL for guest links" });
+  }
 
   logAction("auth:guest_link", req, { userId: req.user.id, tool, expiresAt });
 
@@ -721,13 +939,22 @@ router.post("/auth/email-link", guestLinkLimiter, requireUser, async (req, res) 
     return res.status(400).json({ error: "URL is required" });
   }
 
-  // Only allow links from our own host
-  const host = req.get("host");
-  if (!url.startsWith(`${req.protocol}://${host}/`)) {
+  if (!isTrustedAbsoluteUrl(url, req)) {
     return res.status(400).json({ error: "Invalid link URL" });
   }
 
   const safeToolName = typeof toolName === "string" && toolName.length <= 50 ? toolName : "RedSecTools";
+  const emailThrottle = checkEmailSendThrottle(email.toLowerCase().trim(), {
+    limit: 5,
+    windowSeconds: 60 * 60,
+    blockSeconds: 60 * 30,
+  });
+  if (!emailThrottle.allowed) {
+    return res.status(429).json({
+      error: `Too many emails sent to this recipient. Try again in ${emailThrottle.retryAfter} seconds.`,
+      retryAfter: emailThrottle.retryAfter,
+    });
+  }
 
   try {
     const smtpInfo = await sendShareLinkEmail(email, url, safeToolName);
@@ -746,8 +973,18 @@ router.post("/auth/forgot-password", passwordLimiter, async (req, res) => {
     // Always return success to prevent email enumeration
     return res.json({ success: true });
   }
+  const normalizedEmail = email.toLowerCase().trim();
+  const emailThrottle = checkEmailSendThrottle(normalizedEmail, {
+    limit: 5,
+    windowSeconds: 60 * 60,
+    blockSeconds: 60 * 30,
+  });
+  if (!emailThrottle.allowed) {
+    logAction("auth:forgot_password_throttled", req, { email: normalizedEmail, retryAfter: emailThrottle.retryAfter });
+    return res.json({ success: true });
+  }
 
-  const user = getUserByEmail(email.toLowerCase().trim());
+  const user = getUserByEmail(normalizedEmail);
   if (!user || user.suspended) {
     // Don't reveal whether email exists
     return res.json({ success: true });
@@ -760,7 +997,10 @@ router.post("/auth/forgot-password", passwordLimiter, async (req, res) => {
 
     createPasswordReset({ id, userId: user.id, token, expiresAt });
 
-    const resetUrl = `${req.protocol}://${req.get("host")}/reset-password?token=${token}`;
+    const resetUrl = buildAbsoluteUrl(req, `/reset-password?token=${encodeURIComponent(token)}`);
+    if (!resetUrl) {
+      return res.status(503).json({ error: "Trusted public origin is not configured for password reset links" });
+    }
 
     // Try to send email, but don't fail if SMTP not configured
     try {
@@ -888,6 +1128,7 @@ router.post("/auth/mfa/verify-setup", mfaLimiter, requireUser, (req, res) => {
   }
 
   enableUserMFA(req.user.id);
+  clearMfaThrottle(req.user.id);
 
   logAction("auth:mfa_enabled", req, { userId: req.user.id });
   res.json({ success: true });
@@ -906,6 +1147,7 @@ router.post("/auth/mfa/disable", passwordLimiter, requireUser, async (req, res) 
   if (!match) return res.status(401).json({ error: "Incorrect password" });
 
   disableUserMFA(req.user.id);
+  clearMfaThrottle(req.user.id);
 
   logAction("auth:mfa_disabled", req, { userId: req.user.id });
   res.json({ success: true });

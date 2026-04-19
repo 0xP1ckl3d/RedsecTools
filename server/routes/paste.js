@@ -2,7 +2,8 @@ const { Router } = require("express");
 const rateLimit = require("express-rate-limit");
 const crypto = require("crypto");
 const { createPaste, getPaste, VALID_EXPIRY_OPTIONS, VALID_SYNTAX_OPTIONS, redeemGuestLink } = require("../database");
-const { requireGuestOrUser } = require("../middleware/auth");
+const { requireGuestOrUserFor } = require("../middleware/auth");
+const { decodeBase64Strict } = require("../base64");
 
 const router = Router();
 
@@ -31,7 +32,7 @@ function validateBase64Field(value, name, requiredLength) {
   if (typeof value !== "string") return `${name} must be a string`;
   if (!value.length) return `${name} is empty`;
   try {
-    const decoded = Buffer.from(value, "base64");
+    const decoded = decodeBase64Strict(value);
     if (requiredLength && decoded.length !== requiredLength) {
       return `${name} must decode to ${requiredLength} bytes (got ${decoded.length})`;
     }
@@ -56,7 +57,7 @@ function logAction(action, req, extra = {}) {
 // --- Routes ---
 
 // POST /api/paste
-router.post("/paste", createLimiter, requireGuestOrUser, (req, res) => {
+router.post("/paste", createLimiter, requireGuestOrUserFor("paste"), (req, res) => {
   const { ciphertext, iv, ivPassword, salt, hasPassword, burnAfterReading, expiresIn, syntax } = req.body;
 
   // Validate required fields
@@ -79,7 +80,7 @@ router.post("/paste", createLimiter, requireGuestOrUser, (req, res) => {
   const ctErr = validateBase64Field(ciphertext, "ciphertext");
   if (ctErr) return res.status(400).json({ error: ctErr });
 
-  const ctDecoded = Buffer.from(ciphertext, "base64");
+  const ctDecoded = decodeBase64Strict(ciphertext);
   if (ctDecoded.length > MAX_CIPHERTEXT_SIZE) {
     return res.status(413).json({ error: "Ciphertext too large (max 512KB)" });
   }

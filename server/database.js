@@ -93,6 +93,19 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
   CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
 
+  CREATE TABLE IF NOT EXISTS admin_sessions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT,
+    linked_session_id TEXT,
+    expires_at INTEGER NOT NULL,
+    ip_address TEXT,
+    user_agent TEXT,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+  CREATE INDEX IF NOT EXISTS idx_admin_sessions_user_id ON admin_sessions(user_id);
+  CREATE INDEX IF NOT EXISTS idx_admin_sessions_linked_session_id ON admin_sessions(linked_session_id);
+  CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires_at ON admin_sessions(expires_at);
+
   CREATE TABLE IF NOT EXISTS invites (
     id TEXT PRIMARY KEY,
     email TEXT NOT NULL,
@@ -212,6 +225,8 @@ db.exec(`
     vault_id TEXT NOT NULL,
     user_id TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'member' CHECK(role IN ('admin', 'member')),
+    can_write INTEGER NOT NULL DEFAULT 1,
+    can_manage_members INTEGER NOT NULL DEFAULT 0,
     encrypted_master_key TEXT NOT NULL,
     joined_at INTEGER NOT NULL DEFAULT (unixepoch()),
     UNIQUE(vault_id, user_id)
@@ -312,6 +327,33 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_mfa_trusted_user ON mfa_trusted_devices(user_id);
   CREATE INDEX IF NOT EXISTS idx_mfa_trusted_expires ON mfa_trusted_devices(expires_at);
 
+  CREATE TABLE IF NOT EXISTS mfa_login_state (
+    user_id TEXT NOT NULL PRIMARY KEY,
+    failed_attempts INTEGER NOT NULL DEFAULT 0,
+    first_failed_at INTEGER,
+    blocked_until INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+  CREATE INDEX IF NOT EXISTS idx_mfa_login_state_blocked_until ON mfa_login_state(blocked_until);
+
+  CREATE TABLE IF NOT EXISTS auth_login_state (
+    email TEXT NOT NULL PRIMARY KEY,
+    failed_attempts INTEGER NOT NULL DEFAULT 0,
+    first_failed_at INTEGER,
+    blocked_until INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+  CREATE INDEX IF NOT EXISTS idx_auth_login_state_blocked_until ON auth_login_state(blocked_until);
+
+  CREATE TABLE IF NOT EXISTS email_send_state (
+    email TEXT NOT NULL PRIMARY KEY,
+    sent_count INTEGER NOT NULL DEFAULT 0,
+    window_started_at INTEGER,
+    blocked_until INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+  CREATE INDEX IF NOT EXISTS idx_email_send_state_blocked_until ON email_send_state(blocked_until);
+
   -- Homepage: User shortcuts
   CREATE TABLE IF NOT EXISTS homepage_shortcuts (
     id TEXT PRIMARY KEY,
@@ -338,6 +380,10 @@ try { db.exec("ALTER TABLE users ADD COLUMN avatar_updated_at INTEGER"); } catch
 
 // Add needs_rekey column to vault_members (safe migration)
 try { db.exec("ALTER TABLE vault_members ADD COLUMN needs_rekey INTEGER NOT NULL DEFAULT 0"); } catch {}
+try { db.exec("ALTER TABLE vault_members ADD COLUMN can_write INTEGER NOT NULL DEFAULT 1"); } catch {}
+try { db.exec("ALTER TABLE vault_members ADD COLUMN can_manage_members INTEGER NOT NULL DEFAULT 0"); } catch {}
+try { db.exec("UPDATE vault_members SET can_write = 1 WHERE can_write IS NULL"); } catch {}
+try { db.exec("UPDATE vault_members SET can_manage_members = CASE WHEN role = 'admin' THEN 1 ELSE 0 END WHERE can_manage_members IS NULL OR can_manage_members NOT IN (0, 1)"); } catch {}
 try { db.exec("ALTER TABLE mfa_pending_logins ADD COLUMN failed_attempts INTEGER NOT NULL DEFAULT 0"); } catch {}
 try { db.exec("ALTER TABLE homepage_shortcuts ADD COLUMN description TEXT"); } catch {}
 try { db.exec("ALTER TABLE homepage_shortcuts ADD COLUMN icon_url TEXT"); } catch {}
@@ -459,6 +505,15 @@ const stmts = {
   deleteSessionsByUserId: db.prepare("DELETE FROM sessions WHERE user_id = ?"),
   deleteOtherSessions: db.prepare("DELETE FROM sessions WHERE user_id = ? AND id != ?"),
 
+  createAdminSession: db.prepare(`
+    INSERT INTO admin_sessions (id, user_id, linked_session_id, expires_at, ip_address, user_agent)
+    VALUES (@id, @userId, @linkedSessionId, @expiresAt, @ipAddress, @userAgent)
+  `),
+  getAdminSessionById: db.prepare("SELECT * FROM admin_sessions WHERE id = ?"),
+  deleteAdminSession: db.prepare("DELETE FROM admin_sessions WHERE id = ?"),
+  deleteExpiredAdminSessions: db.prepare("DELETE FROM admin_sessions WHERE expires_at < unixepoch()"),
+  deleteAdminSessionsByUserId: db.prepare("DELETE FROM admin_sessions WHERE user_id = ?"),
+
   // --- Invite statements ---
   createInvite: db.prepare(`
     INSERT INTO invites (id, email, token, created_by, expires_at)
@@ -536,7 +591,7 @@ const stmts = {
   `),
   getConversationById: db.prepare("SELECT * FROM conversations WHERE id = ?"),
   updateConversationTimestamp: db.prepare("UPDATE conversations SET updated_at = unixepoch() WHERE id = ?"),
-  incrementKeyVersion: db.prepare("UPDATE conversations SET key_version = key_version + 1, updated_at = unixepoch() WHERE id = ?"),
+  setConversationKeyVersion: db.prepare("UPDATE conversations SET key_version = ?, updated_at = unixepoch() WHERE id = ?"),
   deleteConversationById: db.prepare("DELETE FROM conversations WHERE id = ?"),
   findDirectConversation: db.prepare(`
     SELECT c.* FROM conversations c
@@ -617,11 +672,16 @@ const stmts = {
 
   // --- Vault: Members ---
   addVaultMember: db.prepare(`
-    INSERT INTO vault_members (id, vault_id, user_id, role, encrypted_master_key)
-    VALUES (@id, @vaultId, @userId, @role, @encryptedMasterKey)
+    INSERT INTO vault_members (id, vault_id, user_id, role, can_write, can_manage_members, encrypted_master_key)
+    VALUES (@id, @vaultId, @userId, @role, @canWrite, @canManageMembers, @encryptedMasterKey)
   `),
   getVaultMembers: db.prepare("SELECT vm.*, u.username, u.avatar_updated_at FROM vault_members vm JOIN users u ON vm.user_id = u.id WHERE vm.vault_id = ?"),
   getVaultMember: db.prepare("SELECT * FROM vault_members WHERE vault_id = ? AND user_id = ?"),
+  updateVaultMemberPermissions: db.prepare(`
+    UPDATE vault_members
+    SET role = @role, can_write = @canWrite, can_manage_members = @canManageMembers
+    WHERE vault_id = @vaultId AND user_id = @userId
+  `),
   removeVaultMember: db.prepare("DELETE FROM vault_members WHERE vault_id = ? AND user_id = ?"),
   deleteMembersByVault: db.prepare("DELETE FROM vault_members WHERE vault_id = ?"),
 
@@ -677,7 +737,13 @@ const stmts = {
   countAllVaultShares: db.prepare("SELECT COUNT(*) as total FROM vault_entry_shares"),
   listVaultsAdmin: db.prepare(`
     SELECT v.id, v.type, v.owner_id, v.created_at, v.updated_at, u.username as owner_username,
-      (SELECT COUNT(*) FROM vault_members WHERE vault_id = v.id) + 1 as member_count,
+      (
+        SELECT COUNT(*) FROM (
+          SELECT v.owner_id AS user_id
+          UNION
+          SELECT vm.user_id FROM vault_members vm WHERE vm.vault_id = v.id
+        )
+      ) as member_count,
       (SELECT COUNT(*) FROM vault_entries WHERE vault_id = v.id) as entry_count
     FROM vaults v LEFT JOIN users u ON v.owner_id = u.id
     ORDER BY v.created_at DESC LIMIT ? OFFSET ?
@@ -715,6 +781,39 @@ const stmts = {
   deleteTrustedDevicesByUser: db.prepare("DELETE FROM mfa_trusted_devices WHERE user_id = ?"),
   deleteExpiredTrustedDevices: db.prepare("DELETE FROM mfa_trusted_devices WHERE expires_at < unixepoch()"),
   countTrustedDevicesByUser: db.prepare("SELECT COUNT(*) as total FROM mfa_trusted_devices WHERE user_id = ?"),
+  getMfaLoginState: db.prepare("SELECT * FROM mfa_login_state WHERE user_id = ?"),
+  upsertMfaLoginState: db.prepare(`
+    INSERT INTO mfa_login_state (user_id, failed_attempts, first_failed_at, blocked_until, updated_at)
+    VALUES (@userId, @failedAttempts, @firstFailedAt, @blockedUntil, unixepoch())
+    ON CONFLICT(user_id) DO UPDATE SET
+      failed_attempts = excluded.failed_attempts,
+      first_failed_at = excluded.first_failed_at,
+      blocked_until = excluded.blocked_until,
+      updated_at = unixepoch()
+  `),
+  clearMfaLoginState: db.prepare("DELETE FROM mfa_login_state WHERE user_id = ?"),
+  getAuthLoginState: db.prepare("SELECT * FROM auth_login_state WHERE email = ?"),
+  upsertAuthLoginState: db.prepare(`
+    INSERT INTO auth_login_state (email, failed_attempts, first_failed_at, blocked_until, updated_at)
+    VALUES (@email, @failedAttempts, @firstFailedAt, @blockedUntil, unixepoch())
+    ON CONFLICT(email) DO UPDATE SET
+      failed_attempts = excluded.failed_attempts,
+      first_failed_at = excluded.first_failed_at,
+      blocked_until = excluded.blocked_until,
+      updated_at = unixepoch()
+  `),
+  clearAuthLoginState: db.prepare("DELETE FROM auth_login_state WHERE email = ?"),
+  getEmailSendState: db.prepare("SELECT * FROM email_send_state WHERE email = ?"),
+  upsertEmailSendState: db.prepare(`
+    INSERT INTO email_send_state (email, sent_count, window_started_at, blocked_until, updated_at)
+    VALUES (@email, @sentCount, @windowStartedAt, @blockedUntil, unixepoch())
+    ON CONFLICT(email) DO UPDATE SET
+      sent_count = excluded.sent_count,
+      window_started_at = excluded.window_started_at,
+      blocked_until = excluded.blocked_until,
+      updated_at = unixepoch()
+  `),
+  clearEmailSendState: db.prepare("DELETE FROM email_send_state WHERE email = ?"),
 
   // --- Vault: Re-key support ---
   updateVaultMemberKey: db.prepare("UPDATE vault_members SET encrypted_master_key = @encryptedMasterKey, needs_rekey = 0 WHERE vault_id = @vaultId AND user_id = @userId"),
@@ -1116,6 +1215,7 @@ function updateUserDetails({ id, email, username }) {
 function suspendUserById(id) {
   stmts.suspendUser.run(id);
   stmts.deleteUserSessions.run(id);
+  stmts.deleteAdminSessionsByUserId.run(id);
 }
 
 function unsuspendUserById(id) {
@@ -1124,6 +1224,7 @@ function unsuspendUserById(id) {
 
 function deleteUserById(id) {
   stmts.deleteUserSessions.run(id);
+  stmts.deleteAdminSessionsByUserId.run(id);
   stmts.deleteUser.run(id);
 }
 
@@ -1186,6 +1287,29 @@ function deleteSessionsByUserId(userId) {
 
 function deleteOtherSessions(userId, currentSessionId) {
   stmts.deleteOtherSessions.run(userId, currentSessionId);
+}
+
+function createAdminSession({ id, userId = null, linkedSessionId = null, expiresIn, ipAddress, userAgent }) {
+  const expiresAt = Math.floor(Date.now() / 1000) + expiresIn;
+  stmts.createAdminSession.run({ id, userId, linkedSessionId, expiresAt, ipAddress, userAgent });
+  return { id, expiresAt };
+}
+
+function getAdminSession(id) {
+  return stmts.getAdminSessionById.get(id) || null;
+}
+
+function deleteAdminSessionById(id) {
+  stmts.deleteAdminSession.run(id);
+}
+
+function deleteExpiredAdminSessions() {
+  const result = stmts.deleteExpiredAdminSessions.run();
+  return result.changes;
+}
+
+function deleteAdminSessionsByUserId(userId) {
+  stmts.deleteAdminSessionsByUserId.run(userId);
 }
 
 // ============================================================
@@ -1452,7 +1576,7 @@ function getKeyEpochsForUser(conversationId, userId) {
 
 function rekeyConversation(conversationId, newKeyVersion, encryptedKeys) {
   const doRekey = db.transaction(() => {
-    stmts.incrementKeyVersion.run(conversationId);
+    stmts.setConversationKeyVersion.run(newKeyVersion, conversationId);
     for (const ek of encryptedKeys) {
       const id = crypto.randomBytes(16).toString("base64url");
       stmts.createKeyEpoch.run({ id, conversationId, userId: ek.userId, keyVersion: newKeyVersion, encryptedKey: ek.encryptedKey });
@@ -1585,8 +1709,16 @@ function deleteVault(id) {
   del();
 }
 
-function addVaultMember({ id, vaultId, userId, role, encryptedMasterKey }) {
-  stmts.addVaultMember.run({ id, vaultId, userId, role, encryptedMasterKey });
+function addVaultMember({ id, vaultId, userId, role, canWrite, canManageMembers, encryptedMasterKey }) {
+  stmts.addVaultMember.run({
+    id,
+    vaultId,
+    userId,
+    role,
+    canWrite: canWrite ? 1 : 0,
+    canManageMembers: canManageMembers ? 1 : 0,
+    encryptedMasterKey,
+  });
 }
 
 function getVaultMembersList(vaultId) {
@@ -1595,6 +1727,17 @@ function getVaultMembersList(vaultId) {
 
 function getVaultMemberShip(vaultId, userId) {
   return stmts.getVaultMember.get(vaultId, userId) || null;
+}
+
+function updateVaultMemberPermission({ vaultId, userId, role, canWrite, canManageMembers }) {
+  const result = stmts.updateVaultMemberPermissions.run({
+    vaultId,
+    userId,
+    role,
+    canWrite: canWrite ? 1 : 0,
+    canManageMembers: canManageMembers ? 1 : 0,
+  });
+  return result.changes > 0;
 }
 
 function removeVaultMember(vaultId, userId) {
@@ -1806,6 +1949,57 @@ function countTrustedDevicesByUser(userId) {
   return stmts.countTrustedDevicesByUser.get(userId).total;
 }
 
+function getMfaLoginState(userId) {
+  return stmts.getMfaLoginState.get(userId) || null;
+}
+
+function setMfaLoginState(userId, { failedAttempts, firstFailedAt, blockedUntil }) {
+  stmts.upsertMfaLoginState.run({
+    userId,
+    failedAttempts,
+    firstFailedAt: firstFailedAt || null,
+    blockedUntil: blockedUntil || 0,
+  });
+}
+
+function clearMfaLoginState(userId) {
+  stmts.clearMfaLoginState.run(userId);
+}
+
+function getAuthLoginState(email) {
+  return stmts.getAuthLoginState.get(email) || null;
+}
+
+function setAuthLoginState(email, { failedAttempts, firstFailedAt, blockedUntil }) {
+  stmts.upsertAuthLoginState.run({
+    email,
+    failedAttempts,
+    firstFailedAt: firstFailedAt || null,
+    blockedUntil: blockedUntil || 0,
+  });
+}
+
+function clearAuthLoginState(email) {
+  stmts.clearAuthLoginState.run(email);
+}
+
+function getEmailSendState(email) {
+  return stmts.getEmailSendState.get(email) || null;
+}
+
+function setEmailSendState(email, { sentCount, windowStartedAt, blockedUntil }) {
+  stmts.upsertEmailSendState.run({
+    email,
+    sentCount,
+    windowStartedAt: windowStartedAt || null,
+    blockedUntil: blockedUntil || 0,
+  });
+}
+
+function clearEmailSendState(email) {
+  stmts.clearEmailSendState.run(email);
+}
+
 // ============================================================
 // Vault: Re-key functions
 // ============================================================
@@ -1949,6 +2143,11 @@ module.exports = {
   deleteExpiredSessions,
   deleteSessionsByUserId,
   deleteOtherSessions,
+  createAdminSession,
+  getAdminSession,
+  deleteAdminSessionById,
+  deleteExpiredAdminSessions,
+  deleteAdminSessionsByUserId,
   // Invite
   createInvite,
   getInviteByToken,
@@ -2017,6 +2216,7 @@ module.exports = {
   addVaultMember,
   getVaultMembersList,
   getVaultMemberShip,
+  updateVaultMemberPermission,
   removeVaultMember,
   createVaultEntry,
   getVaultEntriesList,
@@ -2052,6 +2252,15 @@ module.exports = {
   deleteTrustedDevicesByUser,
   deleteExpiredTrustedDevices,
   countTrustedDevicesByUser,
+  getMfaLoginState,
+  setMfaLoginState,
+  clearMfaLoginState,
+  getAuthLoginState,
+  setAuthLoginState,
+  clearAuthLoginState,
+  getEmailSendState,
+  setEmailSendState,
+  clearEmailSendState,
   // Vault re-key
   deletePersonalVaultsByUser,
   deleteUserKeyBackup,

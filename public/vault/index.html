@@ -177,7 +177,13 @@
           </div>
           <div>
             <label class="block text-sm font-medium mb-1.5">Folder <span class="text-muted">(optional)</span></label>
-            <input type="text" id="entry-folder" class="input-field" placeholder="e.g. Infrastructure" maxlength="100">
+            <div class="relative">
+              <div class="flex gap-2">
+                <input type="text" id="entry-folder" class="input-field flex-1" placeholder="Select or type a folder" maxlength="100" autocomplete="off">
+                <button type="button" id="entry-folder-add" class="btn-secondary px-3 hidden" aria-label="Add folder">+</button>
+              </div>
+              <div id="entry-folder-options" class="absolute z-20 mt-1 w-full rounded-xl border border-[var(--border)] bg-[var(--bg-card)] shadow-lg hidden max-h-48 overflow-y-auto"></div>
+            </div>
           </div>
 
           <!-- Dynamic fields by type -->

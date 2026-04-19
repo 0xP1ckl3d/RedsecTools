@@ -110,7 +110,7 @@ async function createTeamVault(vaultName, members) {
     memberEntries.push({
       userId: m.userId,
       encryptedMasterKey: encryptedMasterKey,
-      role: m.role || "member",
+      permission: m.permission || (m.role === "admin" ? "full" : "editor"),
     });
   }
 
@@ -134,6 +134,14 @@ async function unlockTeamVault(encryptedMasterKeyB64, privateKey) {
   return crypto.subtle.importKey(
     "raw", masterKeyRaw, { name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"],
   );
+}
+
+async function wrapTeamVaultKeyForMember(masterKey, publicKeyOrBase64) {
+  const publicKey = publicKeyOrBase64 instanceof CryptoKey
+    ? publicKeyOrBase64
+    : await importRsaPublicKey(publicKeyOrBase64);
+  const masterKeyRaw = await crypto.subtle.exportKey("raw", masterKey);
+  return encryptWithRsa(masterKeyRaw, publicKey);
 }
 
 // ============================================================
@@ -361,6 +369,7 @@ export {
   // Team vault
   createTeamVault,
   unlockTeamVault,
+  wrapTeamVaultKeyForMember,
   // Entry encryption
   encryptEntry,
   decryptEntry,

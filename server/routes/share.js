@@ -5,7 +5,8 @@ const crypto = require("crypto");
 const path = require("path");
 const fs = require("fs");
 const { createShare, getShare, getShareFile, deleteShareFile, VALID_EXPIRY_OPTIONS, TMP_DIR, FILES_DIR, redeemGuestLink } = require("../database");
-const { requireGuestOrUser } = require("../middleware/auth");
+const { requireGuestOrUserFor } = require("../middleware/auth");
+const { decodeBase64Strict } = require("../base64");
 
 const router = Router();
 
@@ -44,7 +45,7 @@ function validateBase64Field(value, name, requiredLength) {
   if (typeof value !== "string") return `${name} must be a string`;
   if (!value.length) return `${name} is empty`;
   try {
-    const decoded = Buffer.from(value, "base64");
+    const decoded = decodeBase64Strict(value);
     if (requiredLength && decoded.length !== requiredLength) {
       return `${name} must decode to ${requiredLength} bytes (got ${decoded.length})`;
     }
@@ -86,7 +87,7 @@ function cleanupTmp() {
 // --- Routes ---
 
 // POST /api/share — multi-file upload
-router.post("/share", uploadLimiter, upload.array("files", 20), requireGuestOrUser, (req, res) => {
+router.post("/share", uploadLimiter, requireGuestOrUserFor("share"), upload.array("files", 20), (req, res) => {
   const uploadedFiles = req.files;
   const metadataStr = req.body.metadata;
 
@@ -143,7 +144,7 @@ router.post("/share", uploadLimiter, upload.array("files", 20), requireGuestOrUs
 
     // Validate encrypted filename — just check it's valid base64, minimum 17 bytes (1 byte plaintext + 16 GCM tag)
     try {
-      const decoded = Buffer.from(fm.encryptedFilename, "base64");
+      const decoded = decodeBase64Strict(fm.encryptedFilename);
       if (decoded.length < 17 || decoded.length > 512) {
         cleanupFiles(uploadedFiles);
         return res.status(400).json({ error: `file[${i}].encryptedFilename decoded size must be 17-512 bytes (got ${decoded.length})` });

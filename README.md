@@ -123,8 +123,27 @@ Configuration is managed through a `.env` file in the project root. The setup sc
 | `HOST` | No | `0.0.0.0` | Bind address. Use `0.0.0.0` for Docker/Tailscale/LAN access, `127.0.0.1` for Cloudflare Tunnel or reverse proxy |
 | `NODE_ENV` | No | `production` | Node environment (`production` or `development`) |
 | `DB_PATH` | No | `./data/pastes.db` | Path to the SQLite database file |
+| `TRUSTED_PUBLIC_ORIGINS` | Yes for production email/share links | Localhost defaults plus any extra origins entered during setup | Comma-separated allowlist of public origins used for invite links, password-reset links, and guest links |
 
 SMTP email settings are configured in the Admin > Settings UI (stored encrypted in the database) — not via environment variables.
+
+### Trusted Public Origins
+
+Security-sensitive links are now generated only for trusted public origins. This prevents host-header poisoning while still supporting multiple valid deployment URLs.
+
+Examples:
+
+```env
+TRUSTED_PUBLIC_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+TRUSTED_PUBLIC_ORIGINS=https://tools.example.com,https://tools.internal.example.com
+```
+
+Guidance:
+- Add every URL users or admins will actually use to access the app.
+- Keep ports in the value when they are part of the user-facing URL.
+- The setup scripts now prompt for additional trusted origins during bootstrap, so Docker and proxy deployments can be configured without editing `.env` afterward.
+- For Docker deployments, update `.env` and restart the container with `docker compose up -d`.
+- For npm deployments, update `.env` and restart the Node process.
 
 ---
 
@@ -214,6 +233,8 @@ Users can enable TOTP-based MFA from their profile page. Supports:
 - "Remember this browser" — skip MFA for trusted devices (configurable duration)
 - "Keep me signed in" — extended session duration
 - Admin can enforce MFA for all users, or reset a user's MFA for account recovery
+
+When MFA is required by admin policy, new registrations must complete MFA setup before they receive a normal authenticated session.
 
 ---
 

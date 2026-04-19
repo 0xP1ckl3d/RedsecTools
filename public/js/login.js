@@ -14,6 +14,8 @@
   } catch {}
 })();
 
+const REGISTER_MFA_STORAGE_KEY = "pendingRegistrationMfa";
+
 const emailInput = document.getElementById("email");
 const passwordInput = document.getElementById("password");
 const togglePwBtn = document.getElementById("toggle-password");
@@ -56,6 +58,8 @@ togglePwBtn.addEventListener("click", () => {
 
 // State held in closure for MFA flow
 let pendingTempToken = null;
+let pendingPassword = "";
+let pendingRegistration = false;
 
 // Login
 loginBtn.addEventListener("click", async () => {
@@ -69,6 +73,8 @@ loginBtn.addEventListener("click", async () => {
 
   loginBtn.disabled = true;
   loginError.classList.add("hidden");
+  pendingPassword = password;
+  pendingRegistration = false;
 
   try {
     const res = await fetch("/api/auth/login", {
@@ -90,8 +96,7 @@ loginBtn.addEventListener("click", async () => {
 
     // CASE 1: Direct login success (no MFA or trusted device)
     if (data.success) {
-      await restoreKeys(password);
-      window.location.href = "/";
+      await finalizeAuthenticatedUser();
       return;
     }
 
@@ -161,9 +166,7 @@ async function verifyMFA(code, recoveryCode) {
     }
 
     pendingTempToken = null;
-    // Password is still in the login click handler's closure via restoreKeys
-    await restoreKeys(passwordInput.value);
-    window.location.href = "/";
+    await finalizeAuthenticatedUser();
   } catch {
     showMFAError("Network error");
   } finally {
@@ -236,7 +239,7 @@ setupVerifyBtn.addEventListener("click", async () => {
 
     if (!res.ok) {
       if (data.restartLogin) {
-        pendingTempToken = null;
+        resetPendingAuthState();
         mfaSetupSection.classList.add("hidden");
         loginSection.classList.remove("hidden");
         showError(data.error);
@@ -247,8 +250,7 @@ setupVerifyBtn.addEventListener("click", async () => {
     }
 
     pendingTempToken = null;
-    await restoreKeys(passwordInput.value);
-    window.location.href = "/";
+    await finalizeAuthenticatedUser();
   } catch {
     showSetupError("Network error");
   } finally {
@@ -261,6 +263,97 @@ showSecretBtn.addEventListener("click", () => {
   setupSecret.classList.remove("hidden");
   showSecretBtn.classList.add("hidden");
 });
+
+const storedRegistrationState = loadPendingRegistrationState();
+if (storedRegistrationState?.tempToken) {
+  pendingTempToken = storedRegistrationState.tempToken;
+  pendingPassword = storedRegistrationState.password || "";
+  pendingRegistration = true;
+  showForcedMFASetup();
+}
+
+async function finalizeAuthenticatedUser() {
+  try {
+    if (pendingRegistration) {
+      await initializeNewAccount(pendingPassword);
+    } else if (pendingPassword) {
+      await restoreKeys(pendingPassword);
+    }
+  } finally {
+    resetPendingAuthState();
+  }
+
+  window.location.href = "/";
+}
+
+function loadPendingRegistrationState() {
+  try {
+    const raw = sessionStorage.getItem(REGISTER_MFA_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    sessionStorage.removeItem(REGISTER_MFA_STORAGE_KEY);
+    return null;
+  }
+}
+
+function resetPendingAuthState() {
+  pendingTempToken = null;
+  pendingPassword = "";
+  pendingRegistration = false;
+  sessionStorage.removeItem(REGISTER_MFA_STORAGE_KEY);
+}
+
+async function initializeNewAccount(password) {
+  if (!window.ChatCrypto) {
+    console.error("[chat] window.ChatCrypto not available — chat-crypto.js may have failed to load");
+    return;
+  }
+
+  try {
+    const existingBackupRes = await fetch("/api/chat/keys/backup");
+    if (existingBackupRes.ok) {
+      const existingBackup = await existingBackupRes.json();
+      if (existingBackup.encryptedPrivateKey) {
+        await restoreKeys(password);
+        return;
+      }
+    }
+  } catch (err) {
+    console.error("[chat] Unable to check existing backup before initialization:", err);
+  }
+
+  try {
+    const keyPair = await ChatCrypto.generateKeyPair();
+    const backup = await ChatCrypto.encryptPrivateKey(keyPair.privateKey, password);
+    if (!backup) throw new Error("encryptPrivateKey returned null");
+
+    const publicKey = await ChatCrypto.exportPublicKey(keyPair.publicKey);
+    const keyRes = await fetch("/api/chat/keys", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        publicKey,
+        encryptedPrivateKey: backup.encryptedPrivateKey,
+        privateKeyIv: backup.iv,
+        privateKeySalt: backup.salt,
+      }),
+    });
+
+    if (!keyRes.ok) {
+      const errorData = await keyRes.json().catch(() => ({}));
+      console.error("[chat] Key upload failed:", keyRes.status, errorData);
+      return;
+    }
+
+    const meRes = await fetch("/api/auth/me");
+    const meData = await meRes.json();
+    if (meData.user) {
+      await ChatCrypto.storeKeyInIndexedDB(meData.user.id, keyPair.privateKey);
+    }
+  } catch (err) {
+    console.error("[chat] Account initialization failed:", err);
+  }
+}
 
 // Key restoration (shared between all login paths)
 async function restoreKeys(password) {

@@ -42,6 +42,21 @@ esac
 echo ""
 echo "=> Generating configuration..."
 
+DEFAULT_TRUSTED_ORIGINS="http://localhost:${PORT},http://127.0.0.1:${PORT}"
+echo ""
+echo "Trusted public origins are used for invite, reset-password, and guest links."
+echo "Enter any additional user-facing URLs now, comma-separated."
+echo "Example: https://tools.example.com,https://tools.internal.example.com"
+read -rp "Additional trusted origins [none]: " TRUSTED_ORIGINS_INPUT
+
+TRUSTED_PUBLIC_ORIGINS="$DEFAULT_TRUSTED_ORIGINS"
+if [ -n "$TRUSTED_ORIGINS_INPUT" ]; then
+    EXTRA_TRUSTED_ORIGINS=$(printf '%s' "$TRUSTED_ORIGINS_INPUT" | tr -d '[:space:]')
+    if [ -n "$EXTRA_TRUSTED_ORIGINS" ]; then
+        TRUSTED_PUBLIC_ORIGINS="${TRUSTED_PUBLIC_ORIGINS},${EXTRA_TRUSTED_ORIGINS}"
+    fi
+fi
+
 # Generate random admin password (24 chars, base64)
 ADMIN_PASSWORD=$(openssl rand -base64 18 | tr -d '=/+' | head -c 24)
 
@@ -62,6 +77,10 @@ COOKIE_SECRET=${COOKIE_SECRET}
 
 # Database path (default: ./data/pastes.db)
 # DB_PATH=./data/pastes.db
+
+# Trusted public origins used for invite, reset-password, and guest links.
+# Includes local defaults plus any extra origins entered during setup.
+TRUSTED_PUBLIC_ORIGINS=${TRUSTED_PUBLIC_ORIGINS}
 
 # SMTP is configured via the Admin > Settings UI (stored in database).
 # No SMTP env vars are needed — configure it after logging into /admin.

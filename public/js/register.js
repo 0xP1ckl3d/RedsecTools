@@ -8,6 +8,7 @@ const confirmPasswordInput = document.getElementById("confirm-password");
 const togglePwBtn = document.getElementById("toggle-password");
 const registerBtn = document.getElementById("register-btn");
 const registerError = document.getElementById("register-error");
+const REGISTER_MFA_STORAGE_KEY = "pendingRegistrationMfa";
 
 // Extract token from URL
 const params = new URLSearchParams(window.location.search);
@@ -60,6 +61,15 @@ registerBtn.addEventListener("click", async () => {
     const data = await res.json();
 
     if (res.ok) {
+      if (data.mfaSetupRequired && data.tempToken) {
+        sessionStorage.setItem(
+          REGISTER_MFA_STORAGE_KEY,
+          JSON.stringify({ tempToken: data.tempToken, password })
+        );
+        window.location.href = "/login?mfa_setup=1";
+        return;
+      }
+
       // Generate RSA key pair for chat, encrypt backup with password, upload
       try {
         if (window.ChatCrypto) {

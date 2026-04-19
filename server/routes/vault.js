@@ -3,7 +3,7 @@ const rateLimit = require("express-rate-limit");
 const crypto = require("crypto");
 const {
   createVault, getVault, getUserVaults, updateVault, deleteVault,
-  addVaultMember, getVaultMembersList, getVaultMemberShip, removeVaultMember,
+  addVaultMember, getVaultMembersList, getVaultMemberShip, updateVaultMemberPermission, removeVaultMember,
   createVaultEntry, getVaultEntriesList, getVaultEntry, updateVaultEntry, deleteVaultEntry,
   getVaultEntryHistoryList,
   createVaultEntryShare, getSharesForUser, getSharesByEntryId, getVaultShare, deleteVaultShare,
@@ -11,6 +11,7 @@ const {
   getUserKey, searchUsersWithKeys,
 } = require("../database");
 const { requireUser } = require("../middleware/auth");
+const { decodeBase64Strict } = require("../base64");
 
 const router = Router();
 
@@ -52,7 +53,7 @@ function validateBase64(value, name, requiredLength) {
   if (typeof value !== "string") return `${name} must be a string`;
   if (!value.length) return `${name} is empty`;
   try {
-    const decoded = Buffer.from(value, "base64");
+    const decoded = decodeBase64Strict(value);
     if (requiredLength && decoded.length !== requiredLength) {
       return `${name} must decode to ${requiredLength} bytes (got ${decoded.length})`;
     }
@@ -75,14 +76,54 @@ const VALID_ENTRY_TYPES = ["password", "note", "api_key", "ssh_key", "totp", "cu
 const VALID_VAULT_TYPES = ["personal", "team"];
 const MAX_ENCRYPTED_SIZE = 256 * 1024; // 256KB per encrypted field
 
+function normalizeVaultPermission(rawPermission) {
+  const value = String(rawPermission || "editor").toLowerCase().trim();
+  if (["full", "admin", "manager"].includes(value)) {
+    return { permission: "full", role: "admin", canWrite: true, canManageMembers: true };
+  }
+  if (["viewer", "read-only", "read_only", "readonly", "read only"].includes(value)) {
+    return { permission: "viewer", role: "member", canWrite: false, canManageMembers: false };
+  }
+  return { permission: "editor", role: "member", canWrite: true, canManageMembers: false };
+}
+
+function membershipPermission(membership) {
+  if (!membership) {
+    return normalizeVaultPermission("viewer");
+  }
+  if (membership.can_manage_members) {
+    return normalizeVaultPermission("full");
+  }
+  if (membership.can_write) {
+    return normalizeVaultPermission("editor");
+  }
+  return normalizeVaultPermission("viewer");
+}
+
 // Check user owns or is member of vault
 function userHasVaultAccess(vaultId, userId) {
   const vault = getVault(vaultId);
   if (!vault) return { error: "not_found" };
-  if (vault.owner_id === userId) return { vault };
+  if (vault.owner_id === userId) {
+    return {
+      vault,
+      permission: "full",
+      canWrite: true,
+      canManageMembers: true,
+      isOwner: true,
+    };
+  }
   const membership = getVaultMemberShip(vaultId, userId);
   if (!membership) return { error: "forbidden" };
-  return { vault, membership };
+  const permission = membershipPermission(membership);
+  return {
+    vault,
+    membership,
+    permission: permission.permission,
+    canWrite: permission.canWrite,
+    canManageMembers: permission.canManageMembers,
+    isOwner: false,
+  };
 }
 
 // ============================================================
@@ -102,6 +143,18 @@ router.get("/vault/vaults", readLimiter, requireUser, (req, res) => {
       encryptedMasterKey: toBase64(v.encrypted_master_key),
       masterKeyIv: toBase64(v.master_key_iv),
       masterKeySalt: toBase64(v.master_key_salt),
+      permissions: v.owner_id === req.user.id
+        ? { permission: "full", canWrite: true, canManageMembers: true, isOwner: true }
+        : (() => {
+          const membership = getVaultMemberShip(v.id, req.user.id);
+          const permission = membershipPermission(membership);
+          return {
+            permission: permission.permission,
+            canWrite: permission.canWrite,
+            canManageMembers: permission.canManageMembers,
+            isOwner: false,
+          };
+        })(),
       createdAt: v.created_at,
       updatedAt: v.updated_at,
     })),
@@ -122,7 +175,7 @@ router.post("/vault/vaults", createVaultLimiter, requireUser, (req, res) => {
   if (nameIvErr) return res.status(400).json({ error: nameIvErr });
   const nameErr = validateBase64(nameEncrypted, "nameEncrypted");
   if (nameErr) return res.status(400).json({ error: nameErr });
-  if (Buffer.from(nameEncrypted, "base64").length > MAX_ENCRYPTED_SIZE) {
+  if (decodeBase64Strict(nameEncrypted).length > MAX_ENCRYPTED_SIZE) {
     return res.status(413).json({ error: "Encrypted name too large" });
   }
   if (encryptedMasterKey) {
@@ -143,9 +196,18 @@ router.post("/vault/vaults", createVaultLimiter, requireUser, (req, res) => {
     if (!Array.isArray(members) || members.length === 0) {
       return res.status(400).json({ error: "Team vaults require at least one member" });
     }
+    const seenUserIds = new Set();
     for (const m of members) {
       if (!m.userId || !m.encryptedMasterKey) {
         return res.status(400).json({ error: "Each member must have userId and encryptedMasterKey" });
+      }
+      if (seenUserIds.has(m.userId)) {
+        return res.status(400).json({ error: "Duplicate team member" });
+      }
+      seenUserIds.add(m.userId);
+      const targetKey = getUserKey(m.userId);
+      if (!targetKey) {
+        return res.status(400).json({ error: "Each team member must have encryption keys set up" });
       }
     }
   }
@@ -160,7 +222,10 @@ router.post("/vault/vaults", createVaultLimiter, requireUser, (req, res) => {
       for (const m of members) {
         addVaultMember({
           id: generateId(), vaultId: id, userId: m.userId,
-          role: m.role || "member", encryptedMasterKey: m.encryptedMasterKey,
+          role: normalizeVaultPermission(m.permission || m.role).role,
+          canWrite: normalizeVaultPermission(m.permission || m.role).canWrite,
+          canManageMembers: normalizeVaultPermission(m.permission || m.role).canManageMembers,
+          encryptedMasterKey: m.encryptedMasterKey,
         });
       }
     }
@@ -182,6 +247,7 @@ router.put("/vault/vaults/:id", readLimiter, requireUser, (req, res) => {
   const access = userHasVaultAccess(id, req.user.id);
   if (access.error === "not_found") return res.status(404).json({ error: "Vault not found" });
   if (access.error === "forbidden") return res.status(403).json({ error: "Access denied" });
+  if (!access.canWrite) return res.status(403).json({ error: "Write access required" });
 
   if (!nameEncrypted || !nameIv) {
     return res.status(400).json({ error: "Missing required fields: nameEncrypted, nameIv" });
@@ -262,6 +328,10 @@ router.get("/vault/vaults/:id/members", readLimiter, requireUser, (req, res) => 
     members: members.map((m) => ({
       id: m.id, userId: m.user_id, username: m.username,
       role: m.role, joinedAt: m.joined_at,
+      isOwner: m.user_id === access.vault.owner_id,
+      permission: membershipPermission(m).permission,
+      canWrite: !!m.can_write,
+      canManageMembers: !!m.can_manage_members,
       avatarUpdatedAt: m.avatar_updated_at,
     })),
   });
@@ -270,12 +340,14 @@ router.get("/vault/vaults/:id/members", readLimiter, requireUser, (req, res) => 
 // POST /api/vault/vaults/:id/members
 router.post("/vault/vaults/:id/members", memberLimiter, requireUser, (req, res) => {
   const { id } = req.params;
-  const { userId, role, encryptedMasterKey } = req.body;
+  const { userId, role, permission, encryptedMasterKey } = req.body;
 
-  const vault = getVault(id);
-  if (!vault) return res.status(404).json({ error: "Vault not found" });
+  const access = userHasVaultAccess(id, req.user.id);
+  if (access.error === "not_found") return res.status(404).json({ error: "Vault not found" });
+  if (access.error === "forbidden") return res.status(403).json({ error: "Access denied" });
+  const vault = access.vault;
   if (vault.type !== "team") return res.status(400).json({ error: "Only team vaults support members" });
-  if (vault.owner_id !== req.user.id) return res.status(403).json({ error: "Only the owner can add members" });
+  if (!access.canManageMembers) return res.status(403).json({ error: "Member management access required" });
   if (!userId || !encryptedMasterKey) return res.status(400).json({ error: "Missing userId and encryptedMasterKey" });
 
   // Verify the target user has RSA keys (needed for key wrapping)
@@ -283,7 +355,16 @@ router.post("/vault/vaults/:id/members", memberLimiter, requireUser, (req, res) 
   if (!targetKey) return res.status(400).json({ error: "Target user has no encryption keys set up" });
 
   try {
-    addVaultMember({ id: generateId(), vaultId: id, userId, role: role || "member", encryptedMasterKey });
+    const normalizedPermission = normalizeVaultPermission(permission || role);
+    addVaultMember({
+      id: generateId(),
+      vaultId: id,
+      userId,
+      role: normalizedPermission.role,
+      canWrite: normalizedPermission.canWrite,
+      canManageMembers: normalizedPermission.canManageMembers,
+      encryptedMasterKey,
+    });
     createVaultAudit({ id: generateId(), vaultId: id, userId: req.user.id, action: "add_member", entryId: userId });
     logAction("vault:add_member", req, { vaultId: id, memberId: userId });
     res.status(201).json({ success: true });
@@ -296,13 +377,47 @@ router.post("/vault/vaults/:id/members", memberLimiter, requireUser, (req, res) 
   }
 });
 
+// PUT /api/vault/vaults/:id/members/:userId
+router.put("/vault/vaults/:id/members/:userId", memberLimiter, requireUser, (req, res) => {
+  const { id, userId } = req.params;
+  const { role, permission } = req.body || {};
+
+  const access = userHasVaultAccess(id, req.user.id);
+  if (access.error === "not_found") return res.status(404).json({ error: "Vault not found" });
+  if (access.error === "forbidden") return res.status(403).json({ error: "Access denied" });
+  if (access.vault.type !== "team") return res.status(400).json({ error: "Only team vaults support members" });
+  if (!access.canManageMembers) return res.status(403).json({ error: "Member management access required" });
+  if (userId === access.vault.owner_id) return res.status(400).json({ error: "Owner permissions cannot be changed" });
+
+  const membership = getVaultMemberShip(id, userId);
+  if (!membership) return res.status(404).json({ error: "Member not found" });
+
+  const normalizedPermission = normalizeVaultPermission(permission || role);
+  const updated = updateVaultMemberPermission({
+    vaultId: id,
+    userId,
+    role: normalizedPermission.role,
+    canWrite: normalizedPermission.canWrite,
+    canManageMembers: normalizedPermission.canManageMembers,
+  });
+
+  if (!updated) {
+    return res.status(404).json({ error: "Member not found" });
+  }
+
+  createVaultAudit({ id: generateId(), vaultId: id, userId: req.user.id, action: "update_member", entryId: userId });
+  logAction("vault:update_member", req, { vaultId: id, memberId: userId, permission: normalizedPermission.permission });
+  res.json({ success: true });
+});
+
 // DELETE /api/vault/vaults/:id/members/:userId
 router.delete("/vault/vaults/:id/members/:userId", memberLimiter, requireUser, (req, res) => {
   const { id, userId } = req.params;
-  const vault = getVault(id);
-  if (!vault) return res.status(404).json({ error: "Vault not found" });
-  if (vault.owner_id !== req.user.id) return res.status(403).json({ error: "Only the owner can remove members" });
-  if (userId === req.user.id) return res.status(400).json({ error: "Owner cannot be removed from vault" });
+  const access = userHasVaultAccess(id, req.user.id);
+  if (access.error === "not_found") return res.status(404).json({ error: "Vault not found" });
+  if (access.error === "forbidden") return res.status(403).json({ error: "Access denied" });
+  if (!access.canManageMembers) return res.status(403).json({ error: "Member management access required" });
+  if (userId === access.vault.owner_id) return res.status(400).json({ error: "Owner cannot be removed from vault" });
 
   try {
     removeVaultMember(id, userId);
@@ -347,6 +462,7 @@ router.post("/vault/vaults/:id/entries", createEntryLimiter, requireUser, (req, 
   const access = userHasVaultAccess(id, req.user.id);
   if (access.error === "not_found") return res.status(404).json({ error: "Vault not found" });
   if (access.error === "forbidden") return res.status(403).json({ error: "Access denied" });
+  if (!access.canWrite) return res.status(403).json({ error: "Write access required" });
 
   if (!type || !titleEncrypted || !titleIv || !dataEncrypted || !dataIv) {
     return res.status(400).json({ error: "Missing required fields: type, titleEncrypted, titleIv, dataEncrypted, dataIv" });
@@ -363,7 +479,7 @@ router.post("/vault/vaults/:id/entries", createEntryLimiter, requireUser, (req, 
   for (const field of ["titleEncrypted", "dataEncrypted"]) {
     const err = validateBase64(req.body[field], field);
     if (err) return res.status(400).json({ error: err });
-    if (Buffer.from(req.body[field], "base64").length > MAX_ENCRYPTED_SIZE) {
+    if (decodeBase64Strict(req.body[field]).length > MAX_ENCRYPTED_SIZE) {
       return res.status(413).json({ error: `${field} too large (max 256KB)` });
     }
   }
@@ -403,6 +519,7 @@ router.put("/vault/entries/:id", createEntryLimiter, requireUser, (req, res) => 
 
   const access = userHasVaultAccess(entry.vault_id, req.user.id);
   if (access.error) return res.status(access.error === "not_found" ? 404 : 403).json({ error: "Access denied" });
+  if (!access.canWrite) return res.status(403).json({ error: "Write access required" });
 
   if (!titleEncrypted || !titleIv || !dataEncrypted || !dataIv) {
     return res.status(400).json({ error: "Missing required fields" });
@@ -439,6 +556,7 @@ router.delete("/vault/entries/:id", readLimiter, requireUser, (req, res) => {
 
   const access = userHasVaultAccess(entry.vault_id, req.user.id);
   if (access.error) return res.status(access.error === "not_found" ? 404 : 403).json({ error: "Access denied" });
+  if (!access.canWrite) return res.status(403).json({ error: "Write access required" });
 
   try {
     deleteVaultEntry(id);
@@ -484,6 +602,7 @@ router.post("/vault/entries/:id/share", shareLimiter, requireUser, (req, res) =>
 
   const access = userHasVaultAccess(entry.vault_id, req.user.id);
   if (access.error) return res.status(403).json({ error: "Access denied" });
+  if (!access.canWrite) return res.status(403).json({ error: "Write access required" });
 
   if (!toUserId || !encryptedEntryKey || !titleEncrypted || !titleIv || !dataEncrypted || !dataIv) {
     return res.status(400).json({ error: "Missing required fields" });

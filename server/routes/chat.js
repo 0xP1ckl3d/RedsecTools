@@ -232,6 +232,12 @@ router.post("/conversations", conversationCreateLimiter, requireUser, (req, res)
       return res.status(400).json({ error: `Invalid member ID: ${mid}` });
     }
   }
+  if (new Set(memberIds).size !== memberIds.length) {
+    return res.status(400).json({ error: "memberIds must not contain duplicates" });
+  }
+  if (memberIds.includes(req.user.id)) {
+    return res.status(400).json({ error: "memberIds must not include the requesting user" });
+  }
 
   // Validate keyEpochs
   if (!Array.isArray(keyEpochs) || keyEpochs.length === 0) {
@@ -247,8 +253,12 @@ router.post("/conversations", conversationCreateLimiter, requireUser, (req, res)
       return res.status(400).json({ error: `Missing key epoch for user ${pid}` });
     }
   }
+  if (epochUserIds.size !== allParticipantIds.length) {
+    return res.status(400).json({ error: "keyEpochs must include exactly one entry for each conversation participant" });
+  }
 
   // Validate each key epoch entry
+  const seenEpochUserIds = new Set();
   for (const ke of keyEpochs) {
     if (!isValidId(ke.userId)) {
       return res.status(400).json({ error: `Invalid userId in keyEpochs: ${ke.userId}` });
@@ -259,6 +269,10 @@ router.post("/conversations", conversationCreateLimiter, requireUser, (req, res)
     if (!ke.encryptedKey || typeof ke.encryptedKey !== "string") {
       return res.status(400).json({ error: "encryptedKey is required and must be a string" });
     }
+    if (seenEpochUserIds.has(ke.userId)) {
+      return res.status(400).json({ error: `Duplicate key epoch for user ${ke.userId}` });
+    }
+    seenEpochUserIds.add(ke.userId);
   }
 
   // For direct conversations, check if one already exists
@@ -484,6 +498,12 @@ router.post("/conversations/:id/members", requireUser, (req, res) => {
   }
   if (typeof keyVersion !== "number" || keyVersion < 1 || !Number.isInteger(keyVersion)) {
     return res.status(400).json({ error: "keyVersion must be an integer >= 1" });
+  }
+  if (keyVersion !== conversation.key_version) {
+    return res.status(400).json({ error: "keyVersion must match the current conversation key_version" });
+  }
+  if (role !== undefined && role !== "member" && role !== "admin") {
+    return res.status(400).json({ error: "role must be either 'member' or 'admin'" });
   }
 
   // Check user is not already a member
@@ -786,14 +806,22 @@ router.post("/conversations/:id/rekey", requireUser, (req, res) => {
   const { newKeyVersion, encryptedKeys } = req.body || {};
 
   // Validate newKeyVersion
-  if (typeof newKeyVersion !== "number" || newKeyVersion <= conversation.key_version || !Number.isInteger(newKeyVersion)) {
-    return res.status(400).json({ error: "newKeyVersion must be an integer greater than the current key_version" });
+  if (
+    typeof newKeyVersion !== "number" ||
+    !Number.isInteger(newKeyVersion) ||
+    newKeyVersion !== conversation.key_version + 1
+  ) {
+    return res.status(400).json({ error: "newKeyVersion must be exactly one greater than the current key_version" });
   }
 
   // Validate encryptedKeys
   if (!Array.isArray(encryptedKeys) || encryptedKeys.length === 0) {
     return res.status(400).json({ error: "encryptedKeys array is required" });
   }
+
+  const members = getConversationMembers(id);
+  const requiredUserIds = new Set(members.map((member) => member.user_id));
+  const seenUserIds = new Set();
 
   for (const ek of encryptedKeys) {
     if (!isValidId(ek.userId)) {
@@ -802,6 +830,17 @@ router.post("/conversations/:id/rekey", requireUser, (req, res) => {
     if (!ek.encryptedKey || typeof ek.encryptedKey !== "string") {
       return res.status(400).json({ error: "encryptedKey is required and must be a string for each entry" });
     }
+    if (!requiredUserIds.has(ek.userId)) {
+      return res.status(400).json({ error: `encryptedKeys contains a non-member user: ${ek.userId}` });
+    }
+    if (seenUserIds.has(ek.userId)) {
+      return res.status(400).json({ error: `encryptedKeys contains duplicate userId: ${ek.userId}` });
+    }
+    seenUserIds.add(ek.userId);
+  }
+
+  if (seenUserIds.size !== requiredUserIds.size) {
+    return res.status(400).json({ error: "encryptedKeys must include exactly one entry for every current conversation member" });
   }
 
   try {
