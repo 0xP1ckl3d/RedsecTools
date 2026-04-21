@@ -59,6 +59,17 @@ If the server was updated too, restart the RedSecTools server before reloading t
 
 ---
 
+## API Documentation
+
+Repository-only API documentation is available in:
+
+- `docs/api/openapi.json` — OpenAPI 3.1 spec for the current HTTP API
+- `docs/api/README.md` — how to view the spec locally and auth notes
+
+These docs are not exposed by the live app. The server does not mount anything under `docs/`.
+
+---
+
 ## Homepage Dashboard
 
 The landing page (`/`) is a fully featured dashboard with:

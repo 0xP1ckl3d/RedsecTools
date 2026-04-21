@@ -1,8 +1,8 @@
 {
-  "name": "redsecpaste",
+  "name": "redsectools",
   "version": "2.0.0",
   "private": true,
-  "description": "RedSecPaste — Encrypted pastebin by RedSec Offensive Security",
+  "description": "RedSecTools — Encrypted collaboration, sharing, chat, and vault platform by RedSec Offensive Security",
   "scripts": {
     "dev": "concurrently \"nodemon server/index.js\" \"npx tailwindcss -i ./public/css/input.css -o ./public/css/style.css --watch\"",
     "build": "npx tailwindcss -i ./public/css/input.css -o ./public/css/style.css --minify",

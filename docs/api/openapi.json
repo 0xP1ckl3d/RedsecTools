@@ -1,0 +1,3821 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "RedSecTools API",
+    "version": "2.0.0",
+    "description": "Repository-only OpenAPI documentation for RedSecTools. This file is not served by the live application. It documents the current HTTP API, including auth requirements for main app, guest-link, extension, and admin routes."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000",
+      "description": "Local development server"
+    }
+  ],
+  "tags": [
+    { "name": "Auth", "description": "Main web app authentication and account management" },
+    { "name": "Paste", "description": "Encrypted paste creation and retrieval" },
+    { "name": "Share", "description": "Encrypted file sharing" },
+    { "name": "Avatar", "description": "User avatar upload and retrieval" },
+    { "name": "Homepage", "description": "Homepage shortcuts and user homepage settings" },
+    { "name": "Vault", "description": "Vaults, vault entries, sharing, and audit" },
+    { "name": "Chat", "description": "Encrypted chat keys, conversations, and messages" },
+    { "name": "Extension", "description": "Chrome extension bearer-token API" },
+    { "name": "Admin", "description": "Admin dashboard API" }
+  ],
+  "components": {
+    "securitySchemes": {
+      "UserSessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "redsec_session",
+        "description": "Signed user session cookie for the main web app."
+      },
+      "GuestSessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "redsec_guest",
+        "description": "Signed guest cookie created from /guest/{token}. Tool-scoped for paste or share."
+      },
+      "ExtensionBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "opaque token",
+        "description": "Bearer token returned by /api/ext/auth/login or /api/ext/auth/login/mfa."
+      },
+      "AdminCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "redsec_admin",
+        "description": "Signed admin session cookie for /admin/api routes."
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": { "type": "string" },
+          "retryAfter": { "type": "integer" },
+          "restartLogin": { "type": "boolean" }
+        },
+        "required": ["error"]
+      },
+      "Success": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" }
+        },
+        "required": ["success"]
+      },
+      "UserSummary": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "username": { "type": "string" },
+          "avatarUpdatedAt": { "type": ["integer", "null"] }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "format": "email" },
+          "password": { "type": "string", "format": "password" },
+          "keepSignedIn": { "type": "boolean" },
+          "rememberBrowser": { "type": "boolean" }
+        },
+        "required": ["email", "password"]
+      },
+      "LoginResponse": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "success": { "const": true },
+              "user": { "$ref": "#/components/schemas/UserSummary" }
+            },
+            "required": ["success", "user"]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "mfaRequired": { "const": true },
+              "tempToken": { "type": "string" },
+              "hasRecoveryCodes": { "type": "boolean" },
+              "cooldownSeconds": { "type": "integer" }
+            },
+            "required": ["mfaRequired", "tempToken"]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "mfaSetupRequired": { "const": true },
+              "tempToken": { "type": "string" }
+            },
+            "required": ["mfaSetupRequired", "tempToken"]
+          }
+        ]
+      },
+      "ExtensionLoginResponse": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "success": { "const": true },
+              "token": { "type": "string" },
+              "expiresAt": { "type": "integer" },
+              "user": { "$ref": "#/components/schemas/UserSummary" }
+            },
+            "required": ["success", "token", "expiresAt", "user"]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "mfaRequired": { "const": true },
+              "tempToken": { "type": "string" },
+              "hasRecoveryCodes": { "type": "boolean" },
+              "cooldownSeconds": { "type": "integer" }
+            },
+            "required": ["mfaRequired", "tempToken"]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "mfaSetupRequired": { "const": true },
+              "tempToken": { "type": "string" }
+            },
+            "required": ["mfaSetupRequired", "tempToken"]
+          }
+        ]
+      },
+      "MfaLoginRequest": {
+        "type": "object",
+        "properties": {
+          "tempToken": { "type": "string" },
+          "code": { "type": "string" },
+          "recoveryCode": { "type": "string" },
+          "rememberBrowser": { "type": "boolean" }
+        },
+        "required": ["tempToken"]
+      },
+      "RegisterRequest": {
+        "type": "object",
+        "properties": {
+          "token": { "type": "string" },
+          "username": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_]{3,30}$"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 12,
+            "maxLength": 128
+          }
+        },
+        "required": ["token", "username", "password"]
+      },
+      "PasteCreateRequest": {
+        "type": "object",
+        "properties": {
+          "ciphertext": { "type": "string", "description": "Base64 ciphertext payload." },
+          "iv": { "type": "string", "description": "Base64 12-byte AES-GCM IV." },
+          "ivPassword": { "type": ["string", "null"], "description": "Base64 12-byte IV used by the password re-encryption layer when hasPassword is true." },
+          "salt": { "type": ["string", "null"], "description": "Base64 16-byte PBKDF2 salt when hasPassword is true." },
+          "hasPassword": { "type": "boolean" },
+          "burnAfterReading": { "type": "boolean" },
+          "expiresIn": { "type": "integer", "description": "Configured expiry option in seconds." },
+          "syntax": { "type": "string", "description": "Syntax highlighting mode." }
+        },
+        "required": ["ciphertext", "iv", "hasPassword", "burnAfterReading", "expiresIn", "syntax"]
+      },
+      "PasteCreateResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" }
+        },
+        "required": ["id"]
+      },
+      "PasteReadResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "ciphertext": { "type": "string" },
+          "iv": { "type": "string" },
+          "ivPassword": { "type": ["string", "null"] },
+          "salt": { "type": ["string", "null"] },
+          "hasPassword": { "type": "boolean" },
+          "burnAfterReading": { "type": "boolean" },
+          "expiresAt": { "type": "integer" },
+          "syntax": { "type": "string" }
+        }
+      },
+      "ShareFileMetadata": {
+        "type": "object",
+        "properties": {
+          "iv": { "type": "string", "description": "Base64 12-byte file IV." },
+          "filenameIv": { "type": "string", "description": "Base64 12-byte IV for encrypted filename." },
+          "encryptedFilename": { "type": "string" },
+          "fileSize": { "type": "integer" },
+          "mimeType": { "type": "string" },
+          "ivPassword": { "type": ["string", "null"] }
+        },
+        "required": ["iv", "filenameIv", "encryptedFilename", "fileSize", "mimeType"]
+      },
+      "ShareMetadata": {
+        "type": "object",
+        "properties": {
+          "expiresIn": { "type": "integer" },
+          "hasPassword": { "type": "boolean" },
+          "burnAfterReading": { "type": "boolean" },
+          "salt": { "type": ["string", "null"] },
+          "files": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ShareFileMetadata" }
+          }
+        },
+        "required": ["expiresIn", "hasPassword", "burnAfterReading", "files"]
+      },
+      "ShareCreateResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" }
+        },
+        "required": ["id"]
+      },
+      "ShareReadResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "hasPassword": { "type": "boolean" },
+          "burnAfterReading": { "type": "boolean" },
+          "salt": { "type": ["string", "null"] },
+          "expiresAt": { "type": "integer" },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "encryptedFilename": { "type": "string" },
+                "filenameIv": { "type": "string" },
+                "fileSize": { "type": "integer" },
+                "encryptedSize": { "type": "integer" },
+                "iv": { "type": "string" },
+                "ivPassword": { "type": ["string", "null"] },
+                "mimeType": { "type": "string" }
+              }
+            }
+          }
+        }
+      },
+      "AvatarUploadResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "avatarUrl": { "type": "string" }
+        }
+      },
+      "VaultCreateRequest": {
+        "type": "object",
+        "properties": {
+          "nameEncrypted": { "type": "string" },
+          "nameIv": { "type": "string" },
+          "type": {
+            "type": "string",
+            "enum": ["personal", "team"]
+          },
+          "encryptedMasterKey": { "type": ["string", "null"] },
+          "masterKeyIv": { "type": ["string", "null"] },
+          "masterKeySalt": { "type": ["string", "null"] },
+          "members": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "userId": { "type": "string" },
+                "role": { "type": "string" },
+                "permission": { "type": "string" },
+                "encryptedMasterKey": { "type": "string" }
+              }
+            }
+          }
+        },
+        "required": ["nameEncrypted", "nameIv", "type"]
+      },
+      "VaultRenameRequest": {
+        "type": "object",
+        "properties": {
+          "nameEncrypted": { "type": "string" },
+          "nameIv": { "type": "string" }
+        },
+        "required": ["nameEncrypted", "nameIv"]
+      },
+      "VaultMemberCreateRequest": {
+        "type": "object",
+        "properties": {
+          "userId": { "type": "string" },
+          "role": { "type": "string" },
+          "permission": { "type": "string" },
+          "encryptedMasterKey": { "type": "string" }
+        },
+        "required": ["userId", "encryptedMasterKey"]
+      },
+      "VaultMemberUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "role": { "type": "string" },
+          "permission": { "type": "string" }
+        }
+      },
+      "VaultEntryCreateRequest": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["password", "note", "api_key", "ssh_key", "totp", "custom"]
+          },
+          "titleEncrypted": { "type": "string" },
+          "titleIv": { "type": "string" },
+          "dataEncrypted": { "type": "string" },
+          "dataIv": { "type": "string" },
+          "folderEncrypted": { "type": ["string", "null"] },
+          "folderIv": { "type": ["string", "null"] },
+          "favorite": { "type": "boolean" }
+        },
+        "required": ["type", "titleEncrypted", "titleIv", "dataEncrypted", "dataIv"]
+      },
+      "VaultEntryUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "titleEncrypted": { "type": "string" },
+          "titleIv": { "type": "string" },
+          "dataEncrypted": { "type": "string" },
+          "dataIv": { "type": "string" },
+          "folderEncrypted": { "type": ["string", "null"] },
+          "folderIv": { "type": ["string", "null"] },
+          "favorite": { "type": "boolean" }
+        },
+        "required": ["titleEncrypted", "titleIv", "dataEncrypted", "dataIv"]
+      },
+      "VaultEntryShareRequest": {
+        "type": "object",
+        "properties": {
+          "toUserId": { "type": "string" },
+          "encryptedEntryKey": { "type": "string" },
+          "titleEncrypted": { "type": "string" },
+          "titleIv": { "type": "string" },
+          "dataEncrypted": { "type": "string" },
+          "dataIv": { "type": "string" },
+          "expiresAt": { "type": ["integer", "null"] }
+        },
+        "required": ["toUserId", "encryptedEntryKey", "titleEncrypted", "titleIv", "dataEncrypted", "dataIv"]
+      },
+      "ChatKeysRequest": {
+        "type": "object",
+        "properties": {
+          "publicKey": { "type": "string" },
+          "encryptedPrivateKey": { "type": ["string", "null"] },
+          "privateKeyIv": { "type": ["string", "null"] },
+          "privateKeySalt": { "type": ["string", "null"] }
+        },
+        "required": ["publicKey"]
+      },
+      "ChatKeyBackupRequest": {
+        "type": "object",
+        "properties": {
+          "encryptedPrivateKey": { "type": "string" },
+          "privateKeyIv": { "type": "string" },
+          "privateKeySalt": { "type": "string" }
+        },
+        "required": ["encryptedPrivateKey", "privateKeyIv", "privateKeySalt"]
+      },
+      "ConversationCreateRequest": {
+        "type": "object",
+        "properties": {
+          "type": { "type": "string", "enum": ["direct", "group"] },
+          "name": { "type": ["string", "null"] },
+          "memberIds": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "keyEpochs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "userId": { "type": "string" },
+                "keyVersion": { "type": "integer" },
+                "encryptedKey": { "type": "string" }
+              },
+              "required": ["userId", "keyVersion", "encryptedKey"]
+            }
+          }
+        },
+        "required": ["type", "memberIds", "keyEpochs"]
+      },
+      "ConversationMemberAddRequest": {
+        "type": "object",
+        "properties": {
+          "userId": { "type": "string" },
+          "encryptedKey": { "type": "string" },
+          "keyVersion": { "type": "integer" },
+          "role": { "type": "string" }
+        },
+        "required": ["userId", "encryptedKey", "keyVersion"]
+      },
+      "ConversationMessageRequest": {
+        "type": "object",
+        "properties": {
+          "ciphertext": { "type": "string" },
+          "iv": { "type": "string" },
+          "keyVersion": { "type": "integer" }
+        },
+        "required": ["ciphertext", "iv", "keyVersion"]
+      },
+      "ConversationRekeyRequest": {
+        "type": "object",
+        "properties": {
+          "newKeyVersion": { "type": "integer" },
+          "encryptedKeys": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "userId": { "type": "string" },
+                "encryptedKey": { "type": "string" }
+              },
+              "required": ["userId", "encryptedKey"]
+            }
+          }
+        },
+        "required": ["newKeyVersion", "encryptedKeys"]
+      },
+      "ShortcutRequest": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "url": { "type": "string" },
+          "icon": { "type": ["string", "null"] },
+          "icon_url": { "type": ["string", "null"] },
+          "description": { "type": ["string", "null"] }
+        },
+        "required": ["title", "url"]
+      },
+      "ShortcutUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "url": { "type": "string" },
+          "icon": { "type": ["string", "null"] },
+          "icon_url": { "type": ["string", "null"] },
+          "sortOrder": { "type": ["integer", "null"] },
+          "description": { "type": ["string", "null"] }
+        },
+        "required": ["title", "url"]
+      },
+      "HomepageSettingsRequest": {
+        "type": "object",
+        "properties": {
+          "showWeather": { "type": "boolean" },
+          "showSearch": { "type": "boolean" },
+          "showShortcuts": { "type": "boolean" }
+        }
+      },
+      "AdminSecuritySettingsRequest": {
+        "type": "object",
+        "properties": {
+          "sessionTTL": { "type": "integer" },
+          "sessionTTLExtended": { "type": "integer" },
+          "mfaRememberDays": { "type": "integer" },
+          "mfaRequired": { "type": "boolean" }
+        }
+      },
+      "AdminSmtpSettingsRequest": {
+        "type": "object",
+        "properties": {
+          "host": { "type": ["string", "null"] },
+          "port": { "type": ["integer", "null"] },
+          "user": { "type": ["string", "null"] },
+          "pass": { "type": ["string", "null"] },
+          "from": { "type": ["string", "null"] },
+          "secure": { "type": "boolean" }
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Bad request",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Authentication required or expired",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Authenticated but not permitted",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      },
+      "TooManyRequests": {
+        "description": "Rate limit or auth cooldown triggered",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/api/auth/login": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Log in to the main web app",
+        "description": "Authenticates a user with email and password. Depending on account state, this either creates a signed redsec_session cookie, starts MFA verification, or starts mandatory MFA setup.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LoginRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login result",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/LoginResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" }
+        }
+      }
+    },
+    "/api/auth/login/mfa": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Complete MFA login",
+        "description": "Completes an MFA challenge using either a TOTP code or a recovery code. On success this creates the signed redsec_session cookie.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/MfaLoginRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Session created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "const": true },
+                    "user": { "$ref": "#/components/schemas/UserSummary" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" }
+        }
+      }
+    },
+    "/api/auth/login/mfa/setup": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Create MFA setup challenge during login",
+        "description": "Used when MFA is required by policy but not yet configured for the user. Returns provisioning details and recovery codes for first-time setup.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "tempToken": { "type": "string" }
+                },
+                "required": ["tempToken"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Provisioning data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "provisioningURI": { "type": "string" },
+                    "recoveryCodes": {
+                      "type": "array",
+                      "items": { "type": "string" }
+                    },
+                    "secret": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" }
+        }
+      }
+    },
+    "/api/auth/login/mfa/setup/verify": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Verify MFA setup during login",
+        "description": "Verifies the initial TOTP code for MFA setup during login and creates the user session cookie on success.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "tempToken": { "type": "string" },
+                  "code": { "type": "string" }
+                },
+                "required": ["tempToken", "code"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Session created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "const": true },
+                    "user": { "$ref": "#/components/schemas/UserSummary" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" }
+        }
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Log out",
+        "description": "Clears the main user session cookie if present.",
+        "responses": {
+          "200": {
+            "description": "Logged out",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/register": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Register with an invite token",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RegisterRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Registration complete",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" }
+        }
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "tags": ["Auth"],
+        "summary": "Get current login state",
+        "description": "Returns whether the request currently has an active user session.",
+        "responses": {
+          "200": {
+            "description": "Current auth state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "authenticated": { "type": "boolean" },
+                    "user": { "$ref": "#/components/schemas/UserSummary" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/change-password": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Change password",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "currentPassword": { "type": "string" },
+                  "newPassword": { "type": "string", "minLength": 12, "maxLength": 128 }
+                },
+                "required": ["currentPassword", "newPassword"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Password changed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/auth/verify-password": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Verify current password",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "password": { "type": "string" }
+                },
+                "required": ["password"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Password verified",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/auth/update-username": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Update username",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "username": { "type": "string", "pattern": "^[a-zA-Z0-9_]{3,30}$" }
+                },
+                "required": ["username"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Username updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/auth/smtp-status": {
+      "get": {
+        "tags": ["Auth"],
+        "summary": "Get SMTP availability for user-facing email actions",
+        "responses": {
+          "200": {
+            "description": "SMTP status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "configured": { "type": "boolean" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/guest-link": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Create a guest link",
+        "description": "Creates a time-limited guest token for one tool. The token is redeemed later by visiting /guest/{token} and then consuming it on create.",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "tool": { "type": "string", "enum": ["paste", "share"] },
+                  "expiresIn": { "type": "integer" }
+                },
+                "required": ["tool", "expiresIn"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Guest link created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "token": { "type": "string" },
+                    "url": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" }
+        }
+      }
+    },
+    "/api/auth/email-link": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Email a paste/share link",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": { "type": "string", "format": "email" },
+                  "url": { "type": "string" },
+                  "toolName": { "type": "string" }
+                },
+                "required": ["email", "url", "toolName"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Email queued or sent",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/auth/forgot-password": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Start password reset",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": { "type": "string", "format": "email" }
+                },
+                "required": ["email"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Request accepted",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/api/auth/reset-password": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Complete password reset",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": { "type": "string" },
+                  "newPassword": { "type": "string", "minLength": 12, "maxLength": 128 }
+                },
+                "required": ["token", "newPassword"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Password reset complete",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/api/auth/mfa/status": {
+      "get": {
+        "tags": ["Auth"],
+        "summary": "Get MFA status for the logged-in user",
+        "security": [{ "UserSessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "MFA state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": { "type": "boolean" },
+                    "trustedDeviceCount": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/auth/mfa/setup": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Start MFA setup for a logged-in user",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "password": { "type": "string" }
+                },
+                "required": ["password"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Provisioning data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "provisioningURI": { "type": "string" },
+                    "recoveryCodes": {
+                      "type": "array",
+                      "items": { "type": "string" }
+                    },
+                    "secret": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/auth/mfa/verify-setup": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Verify MFA setup for a logged-in user",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": { "type": "string" }
+                },
+                "required": ["code"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "MFA enabled",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/auth/mfa/disable": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Disable MFA",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "password": { "type": "string" }
+                },
+                "required": ["password"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "MFA disabled",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/auth/mfa/regenerate-codes": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Regenerate MFA recovery codes",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "password": { "type": "string" }
+                },
+                "required": ["password"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "New recovery codes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "recoveryCodes": {
+                      "type": "array",
+                      "items": { "type": "string" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/auth/mfa/trusted-devices": {
+      "delete": {
+        "tags": ["Auth"],
+        "summary": "Clear remembered MFA devices",
+        "security": [{ "UserSessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "Trusted devices cleared",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/paste": {
+      "post": {
+        "tags": ["Paste"],
+        "summary": "Create an encrypted paste",
+        "description": "Requires either a logged-in user session or a guest cookie issued for the paste tool.",
+        "security": [
+          { "UserSessionCookie": [] },
+          { "GuestSessionCookie": [] }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PasteCreateRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Paste created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PasteCreateResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" }
+        }
+      }
+    },
+    "/api/paste/{id}": {
+      "get": {
+        "tags": ["Paste"],
+        "summary": "Get encrypted paste payload",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Encrypted paste record",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PasteReadResponse" }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/BadRequest" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" }
+        }
+      }
+    },
+    "/api/share": {
+      "post": {
+        "tags": ["Share"],
+        "summary": "Create an encrypted file share",
+        "description": "Requires either a logged-in user session or a guest cookie issued for the share tool. Upload uses multipart/form-data with binary files and a metadata JSON string.",
+        "security": [
+          { "UserSessionCookie": [] },
+          { "GuestSessionCookie": [] }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "metadata": {
+                    "type": "string",
+                    "description": "JSON-encoded ShareMetadata object."
+                  },
+                  "files": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "binary"
+                    }
+                  }
+                },
+                "required": ["metadata", "files"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Share created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ShareCreateResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" }
+        }
+      }
+    },
+    "/api/share/{id}": {
+      "get": {
+        "tags": ["Share"],
+        "summary": "Get encrypted share metadata",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Encrypted share record",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ShareReadResponse" }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/BadRequest" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" }
+        }
+      }
+    },
+    "/api/share/{shareId}/file/{fileId}": {
+      "get": {
+        "tags": ["Share"],
+        "summary": "Download an encrypted file payload",
+        "parameters": [
+          {
+            "name": "shareId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "fileId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Encrypted file bytes",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/BadRequest" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" }
+        }
+      }
+    },
+    "/api/avatar": {
+      "post": {
+        "tags": ["Avatar"],
+        "summary": "Upload avatar",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "avatar": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                },
+                "required": ["avatar"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Avatar updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AvatarUploadResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" }
+        }
+      },
+      "delete": {
+        "tags": ["Avatar"],
+        "summary": "Delete avatar",
+        "security": [{ "UserSessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "Avatar deleted",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/avatar/{id}": {
+      "get": {
+        "tags": ["Avatar"],
+        "summary": "Fetch a user avatar",
+        "description": "Requires a logged-in user session.",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Avatar image",
+            "content": {
+              "image/webp": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/api/homepage/shortcuts": {
+      "get": {
+        "tags": ["Homepage"],
+        "summary": "List personal shortcuts",
+        "security": [{ "UserSessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "Shortcut list",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "type": "object" } }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "post": {
+        "tags": ["Homepage"],
+        "summary": "Create personal shortcut",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ShortcutRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Shortcut created",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/homepage/shortcuts/upload-icon": {
+      "post": {
+        "tags": ["Homepage"],
+        "summary": "Upload custom shortcut icon",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "image": { "type": "string", "format": "binary" }
+                },
+                "required": ["image"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Icon uploaded",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/homepage/shortcut-icon/{id}": {
+      "get": {
+        "tags": ["Homepage"],
+        "summary": "Fetch shortcut icon",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Icon image",
+            "content": {
+              "image/*": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/api/homepage/shortcuts/{id}/favourite": {
+      "put": {
+        "tags": ["Homepage"],
+        "summary": "Toggle shortcut favourite state",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Favourite state updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/homepage/shortcuts/reorder": {
+      "put": {
+        "tags": ["Homepage"],
+        "summary": "Reorder shortcuts",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "order": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  }
+                },
+                "required": ["order"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Order updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/homepage/shortcuts/{id}": {
+      "put": {
+        "tags": ["Homepage"],
+        "summary": "Update shortcut",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ShortcutUpdateRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Shortcut updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "delete": {
+        "tags": ["Homepage"],
+        "summary": "Delete shortcut",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Shortcut deleted",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/homepage/settings": {
+      "get": {
+        "tags": ["Homepage"],
+        "summary": "Get homepage settings",
+        "security": [{ "UserSessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "User homepage settings",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "put": {
+        "tags": ["Homepage"],
+        "summary": "Update homepage settings",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/HomepageSettingsRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Settings updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/homepage/weather": {
+      "get": {
+        "tags": ["Homepage"],
+        "summary": "Get homepage weather data",
+        "security": [{ "UserSessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "Weather data for configured locations",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/vault/vaults": {
+      "get": {
+        "tags": ["Vault"],
+        "summary": "List vaults visible to the current user",
+        "security": [{ "UserSessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "Visible vaults",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "type": "object" } }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "post": {
+        "tags": ["Vault"],
+        "summary": "Create vault",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/VaultCreateRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Vault created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/vault/vaults/{id}": {
+      "put": {
+        "tags": ["Vault"],
+        "summary": "Rename vault",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/VaultRenameRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Vault renamed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "delete": {
+        "tags": ["Vault"],
+        "summary": "Delete vault",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Vault deleted",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/vault/vaults/{id}/master-key": {
+      "get": {
+        "tags": ["Vault"],
+        "summary": "Get encrypted vault master key material for the current user",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Wrapped master key data",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/vault/vaults/{id}/members": {
+      "get": {
+        "tags": ["Vault"],
+        "summary": "List team vault members",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Member list",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "type": "object" } }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "post": {
+        "tags": ["Vault"],
+        "summary": "Add team vault member",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/VaultMemberCreateRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Member added",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/vault/vaults/{id}/members/{userId}": {
+      "put": {
+        "tags": ["Vault"],
+        "summary": "Update team vault member permission",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "userId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/VaultMemberUpdateRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Member updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "delete": {
+        "tags": ["Vault"],
+        "summary": "Remove team vault member",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "userId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Member removed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/vault/vaults/{id}/entries": {
+      "get": {
+        "tags": ["Vault"],
+        "summary": "List vault entries",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Encrypted entries",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "type": "object" } }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "post": {
+        "tags": ["Vault"],
+        "summary": "Create vault entry",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/VaultEntryCreateRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Entry created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/vault/entries/{id}": {
+      "put": {
+        "tags": ["Vault"],
+        "summary": "Update vault entry",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/VaultEntryUpdateRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Entry updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "delete": {
+        "tags": ["Vault"],
+        "summary": "Delete vault entry",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Entry deleted",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/vault/entries/{id}/history": {
+      "get": {
+        "tags": ["Vault"],
+        "summary": "Get entry history",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Historical encrypted versions",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "type": "object" } }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/vault/entries/{id}/share": {
+      "post": {
+        "tags": ["Vault"],
+        "summary": "Share a vault entry with another user",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/VaultEntryShareRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Entry shared",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/vault/shared": {
+      "get": {
+        "tags": ["Vault"],
+        "summary": "List entries shared with the current user",
+        "security": [{ "UserSessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "Shared entries",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "type": "object" } }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/vault/shared/{id}": {
+      "delete": {
+        "tags": ["Vault"],
+        "summary": "Remove a shared entry from the recipient side",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Shared entry removed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/vault/entries/{id}/shares": {
+      "get": {
+        "tags": ["Vault"],
+        "summary": "List share recipients for an entry",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Share recipients",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "type": "object" } }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/vault/vaults/{id}/audit": {
+      "get": {
+        "tags": ["Vault"],
+        "summary": "Get vault audit log",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "page", "in": "query", "required": false, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Audit events",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/vault/users/search": {
+      "get": {
+        "tags": ["Vault"],
+        "summary": "Search users for team vault membership or sharing",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "q", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "User search results",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "type": "object" } }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/chat/keys": {
+      "post": {
+        "tags": ["Chat"],
+        "summary": "Create chat keypair metadata",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ChatKeysRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Keys saved",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/chat/keys/backup": {
+      "get": {
+        "tags": ["Chat"],
+        "summary": "Get encrypted private key backup",
+        "security": [{ "UserSessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "Encrypted key backup",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "put": {
+        "tags": ["Chat"],
+        "summary": "Update encrypted private key backup",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ChatKeyBackupRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Backup updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/chat/keys/replace": {
+      "post": {
+        "tags": ["Chat"],
+        "summary": "Replace chat keypair metadata",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ChatKeysRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Keys replaced",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/chat/keys/{userId}": {
+      "get": {
+        "tags": ["Chat"],
+        "summary": "Get another user's chat public key",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "userId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public key record",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/chat/conversations": {
+      "post": {
+        "tags": ["Chat"],
+        "summary": "Create conversation",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ConversationCreateRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Conversation created",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "get": {
+        "tags": ["Chat"],
+        "summary": "List conversations",
+        "security": [{ "UserSessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "Conversation list",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "type": "object" } }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/chat/conversations/{id}": {
+      "get": {
+        "tags": ["Chat"],
+        "summary": "Get conversation details",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conversation details",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "delete": {
+        "tags": ["Chat"],
+        "summary": "Delete conversation",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conversation deleted",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/chat/conversations/{id}/members": {
+      "post": {
+        "tags": ["Chat"],
+        "summary": "Add member to conversation",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ConversationMemberAddRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Member added",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/chat/conversations/{id}/members/{userId}": {
+      "delete": {
+        "tags": ["Chat"],
+        "summary": "Remove member from conversation",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "userId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Member removed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/chat/conversations/{id}/messages": {
+      "post": {
+        "tags": ["Chat"],
+        "summary": "Create message",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ConversationMessageRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Message created",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "get": {
+        "tags": ["Chat"],
+        "summary": "List messages",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "before", "in": "query", "required": false, "schema": { "type": "integer" } },
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "default": 50 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Message page",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "type": "object" } }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/chat/conversations/{id}/key-epochs": {
+      "get": {
+        "tags": ["Chat"],
+        "summary": "Get conversation key epochs",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Key epochs",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "type": "object" } }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/chat/conversations/{id}/rekey": {
+      "post": {
+        "tags": ["Chat"],
+        "summary": "Create a new conversation key epoch",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ConversationRekeyRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Conversation rekeyed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/chat/users/search": {
+      "get": {
+        "tags": ["Chat"],
+        "summary": "Search users for chat",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "q", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "User search results",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "type": "object" } }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/ext/auth/login": {
+      "post": {
+        "tags": ["Extension"],
+        "summary": "Log in from the Chrome extension",
+        "description": "Authenticates with email and password and returns a bearer token instead of a cookie. May return MFA-required or MFA-setup-required states.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LoginRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Extension login result",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ExtensionLoginResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" }
+        }
+      }
+    },
+    "/api/ext/auth/login/mfa": {
+      "post": {
+        "tags": ["Extension"],
+        "summary": "Complete extension MFA login",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/MfaLoginRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Extension session created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "const": true },
+                    "token": { "type": "string" },
+                    "expiresAt": { "type": "integer" },
+                    "user": { "$ref": "#/components/schemas/UserSummary" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" }
+        }
+      }
+    },
+    "/api/ext/auth/me": {
+      "get": {
+        "tags": ["Extension"],
+        "summary": "Get current extension session state",
+        "security": [{ "ExtensionBearer": [] }],
+        "responses": {
+          "200": {
+            "description": "Extension auth state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "authenticated": { "type": "boolean" },
+                    "expiresAt": { "type": "integer" },
+                    "user": { "$ref": "#/components/schemas/UserSummary" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/ext/auth/logout": {
+      "post": {
+        "tags": ["Extension"],
+        "summary": "Log out extension session",
+        "security": [{ "ExtensionBearer": [] }],
+        "responses": {
+          "200": {
+            "description": "Extension session deleted",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/ext/chat/keys/backup": {
+      "get": {
+        "tags": ["Extension"],
+        "summary": "Get encrypted chat private-key backup for the extension",
+        "security": [{ "ExtensionBearer": [] }],
+        "responses": {
+          "200": {
+            "description": "Encrypted key backup",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/ext/vault/vaults": {
+      "get": {
+        "tags": ["Extension"],
+        "summary": "List vaults visible to the extension user",
+        "security": [{ "ExtensionBearer": [] }],
+        "responses": {
+          "200": {
+            "description": "Visible vaults",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "type": "object" } }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/ext/vault/vaults/{id}/master-key": {
+      "get": {
+        "tags": ["Extension"],
+        "summary": "Get wrapped master key material for one vault",
+        "security": [{ "ExtensionBearer": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Wrapped key data",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/ext/vault/vaults/{id}/entries": {
+      "get": {
+        "tags": ["Extension"],
+        "summary": "List vault entries for the extension",
+        "security": [{ "ExtensionBearer": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Encrypted entries",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "type": "object" } }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "post": {
+        "tags": ["Extension"],
+        "summary": "Create vault entry from the extension",
+        "security": [{ "ExtensionBearer": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/VaultEntryCreateRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Entry created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/ext/vault/entries/{id}": {
+      "get": {
+        "tags": ["Extension"],
+        "summary": "Get one vault entry for extension detail view",
+        "security": [{ "ExtensionBearer": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Encrypted entry",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "put": {
+        "tags": ["Extension"],
+        "summary": "Update vault entry from the extension",
+        "security": [{ "ExtensionBearer": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/VaultEntryUpdateRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Entry updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/ext/vault/shared": {
+      "get": {
+        "tags": ["Extension"],
+        "summary": "List entries shared with the extension user",
+        "security": [{ "ExtensionBearer": [] }],
+        "responses": {
+          "200": {
+            "description": "Shared entries",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "type": "object" } }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/ext/paste": {
+      "post": {
+        "tags": ["Extension"],
+        "summary": "Create an encrypted paste from the extension",
+        "security": [{ "ExtensionBearer": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PasteCreateRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Paste created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PasteCreateResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/ext/share": {
+      "post": {
+        "tags": ["Extension"],
+        "summary": "Create an encrypted file share from the extension",
+        "security": [{ "ExtensionBearer": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "metadata": {
+                    "type": "string",
+                    "description": "JSON-encoded ShareMetadata object."
+                  },
+                  "files": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "binary"
+                    }
+                  }
+                },
+                "required": ["metadata", "files"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Share created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ShareCreateResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/admin/login": {
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Create admin session",
+        "description": "Creates the signed redsec_admin cookie. After the first user exists, admin login also requires an active redsec_session user cookie and links the admin session to that user session.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "password": { "type": "string" }
+                },
+                "required": ["password"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Admin session created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "503": {
+            "description": "Admin password not configured",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/logout": {
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Log out admin session",
+        "responses": {
+          "200": {
+            "description": "Admin session cleared",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Success" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/api/paste-stats": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "Get paste statistics",
+        "description": "After bootstrap this requires both the redsec_admin cookie and an active linked redsec_session cookie.",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "Paste stats",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/admin/api/file-stats": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "Get file-share statistics",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "File stats",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/admin/api/pastes": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "List pastes",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50, "maximum": 100 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paste page",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/admin/api/files": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "List shares/files",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50, "maximum": 100 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "File page",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/admin/api/paste/{id}": {
+      "delete": {
+        "tags": ["Admin"],
+        "summary": "Delete paste",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paste deleted",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/admin/api/file/{id}": {
+      "delete": {
+        "tags": ["Admin"],
+        "summary": "Delete file/share",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "File/share deleted",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/admin/api/pastes/bulk-delete": {
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Bulk delete pastes",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "ids": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  }
+                },
+                "required": ["ids"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Bulk delete complete",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/admin/api/files/bulk-delete": {
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Bulk delete shares/files",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "ids": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  }
+                },
+                "required": ["ids"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Bulk delete complete",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/admin/api/users": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "List users",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50, "maximum": 100 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "User page",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          }
+        }
+      }
+    },
+    "/admin/api/users/{id}": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "Get user details",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "User details",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          }
+        }
+      },
+      "put": {
+        "tags": ["Admin"],
+        "summary": "Update user email and username",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": { "type": "string", "format": "email" },
+                  "username": { "type": "string", "pattern": "^[a-zA-Z0-9_]{3,30}$" }
+                },
+                "required": ["email", "username"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "User updated",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Admin"],
+        "summary": "Delete user",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "User deleted",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } }
+          }
+        }
+      }
+    },
+    "/admin/api/users/{id}/suspend": {
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Suspend user",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "User suspended",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } }
+          }
+        }
+      }
+    },
+    "/admin/api/users/{id}/unsuspend": {
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Unsuspend user",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "User unsuspended",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } }
+          }
+        }
+      }
+    },
+    "/admin/api/users/{id}/reset-password": {
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Issue user password reset",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Password reset issued",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } }
+          }
+        }
+      }
+    },
+    "/admin/api/users/{id}/reset-mfa": {
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Reset a user's MFA configuration",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "MFA reset complete",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } }
+          }
+        }
+      }
+    },
+    "/admin/api/invites": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "List invites",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50, "maximum": 100 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Invite page",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Create invite",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": { "type": "string", "format": "email" }
+                },
+                "required": ["email"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Invite created",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          }
+        }
+      }
+    },
+    "/admin/api/invites/{id}": {
+      "delete": {
+        "tags": ["Admin"],
+        "summary": "Revoke invite",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Invite revoked",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } }
+          }
+        }
+      }
+    },
+    "/admin/api/settings/smtp": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "Get SMTP settings",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "SMTP settings",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Save SMTP settings",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/AdminSmtpSettingsRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "SMTP settings saved",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } }
+          }
+        }
+      }
+    },
+    "/admin/api/settings/smtp/test": {
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Send SMTP test email",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "to": { "type": "string", "format": "email" }
+                },
+                "required": ["to"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Test email sent",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } }
+          }
+        }
+      }
+    },
+    "/admin/api/chat-stats": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "Get chat statistics",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "Chat stats",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          }
+        }
+      }
+    },
+    "/admin/api/conversations": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "List conversations",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50, "maximum": 100 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conversation page",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          }
+        }
+      }
+    },
+    "/admin/api/conversations/{id}": {
+      "delete": {
+        "tags": ["Admin"],
+        "summary": "Delete conversation",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conversation deleted",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } }
+          }
+        }
+      }
+    },
+    "/admin/api/vault/stats": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "Get vault statistics",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "Vault stats",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          }
+        }
+      }
+    },
+    "/admin/api/vaults": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "List vaults",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Vault page",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          }
+        }
+      }
+    },
+    "/admin/api/vaults/{id}/members": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "List vault members",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Vault members",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "type": "object" } } } }
+          }
+        }
+      }
+    },
+    "/admin/api/vaults/{id}/members/{userId}": {
+      "put": {
+        "tags": ["Admin"],
+        "summary": "Update vault member permission",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "userId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "permission": { "type": "string" }
+                },
+                "required": ["permission"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Member updated",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Admin"],
+        "summary": "Remove vault member",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "userId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Member removed",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } }
+          }
+        }
+      }
+    },
+    "/admin/api/vaults/{id}": {
+      "delete": {
+        "tags": ["Admin"],
+        "summary": "Delete vault",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Vault deleted",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } }
+          }
+        }
+      }
+    },
+    "/admin/api/settings/security": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "Get security settings",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "Security settings",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Save security settings",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/AdminSecuritySettingsRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Security settings saved",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } }
+          }
+        }
+      }
+    },
+    "/admin/api/settings/weather": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "Get weather settings",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "Weather settings",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Save weather settings",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "locations": {
+                    "type": "array",
+                    "items": { "type": "object" }
+                  }
+                },
+                "required": ["locations"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Weather settings saved",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } }
+          }
+        }
+      }
+    },
+    "/admin/api/settings/weather/search": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "Search weather locations",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "q", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Location results",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "type": "object" } } } }
+          }
+        }
+      }
+    },
+    "/admin/api/shortcuts/team": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "List team shortcuts",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "Team shortcuts",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "type": "object" } } } }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Create team shortcut",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ShortcutRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Team shortcut created",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          }
+        }
+      }
+    },
+    "/admin/api/shortcuts/team/{id}": {
+      "put": {
+        "tags": ["Admin"],
+        "summary": "Update team shortcut",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ShortcutRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Team shortcut updated",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Admin"],
+        "summary": "Delete team shortcut",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Team shortcut deleted",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } }
+          }
+        }
+      }
+    },
+    "/admin/api/shortcuts/team/upload-icon": {
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Upload team shortcut icon",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "image": { "type": "string", "format": "binary" }
+                },
+                "required": ["image"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Icon uploaded",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          }
+        }
+      }
+    }
+  }
+}
