@@ -12,6 +12,7 @@ const authRouter = require("./routes/auth");
 const chatRouter = require("./routes/chat");
 const avatarRouter = require("./routes/avatar");
 const vaultRouter = require("./routes/vault");
+const extensionRouter = require("./routes/extension");
 const { router: homepageRouter } = require("./routes/homepage");
 const { initWebSocket } = require("./chat-ws");
 const {
@@ -19,7 +20,7 @@ const {
   deleteExpiredSessions, deleteExpiredInvites,
   deleteExpiredGuestLinks, deleteExpiredPasswordResets,
   deleteExpiredMessages, deleteExpiredVaultShares,
-  deleteExpiredPendingLogins, deleteExpiredTrustedDevices, deleteExpiredAdminSessions,
+  deleteExpiredPendingLogins, deleteExpiredTrustedDevices, deleteExpiredAdminSessions, deleteExpiredExtensionSessions,
 } = require("./database");
 const { pageRequireUser, pageRequireGuestOrUser } = require("./middleware/auth");
 
@@ -71,6 +72,7 @@ app.use("/api", authRouter);
 app.use("/api/chat", chatRouter);
 app.use("/api", avatarRouter);
 app.use("/api", vaultRouter);
+app.use("/api/ext", extensionRouter);
 app.use("/api/homepage", homepageRouter);
 
 // --- Admin routes ---
@@ -126,10 +128,11 @@ setInterval(() => {
   const pendingLogins = deleteExpiredPendingLogins();
   const trustedDevices = deleteExpiredTrustedDevices();
   const adminSessions = deleteExpiredAdminSessions();
+  const extensionSessions = deleteExpiredExtensionSessions();
   if (shareRouter.cleanupTmp) shareRouter.cleanupTmp();
-  const total = pastes + files + sessions + invites + guestLinks + passwordResets + messages + vaultShares + pendingLogins + trustedDevices + adminSessions;
+  const total = pastes + files + sessions + invites + guestLinks + passwordResets + messages + vaultShares + pendingLogins + trustedDevices + adminSessions + extensionSessions;
   if (total > 0) {
-    console.log(JSON.stringify({ ts: new Date().toISOString(), action: "cleanup", pastes, files, sessions, invites, guestLinks, passwordResets, messages, vaultShares, pendingLogins, trustedDevices, adminSessions }));
+    console.log(JSON.stringify({ ts: new Date().toISOString(), action: "cleanup", pastes, files, sessions, invites, guestLinks, passwordResets, messages, vaultShares, pendingLogins, trustedDevices, adminSessions, extensionSessions }));
   }
 }, 10 * 60 * 1000);
 

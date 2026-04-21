@@ -12,6 +12,7 @@ A multi-tool security platform by [RedSec Offensive Security](https://github.com
 | **RedSecShare** | Encrypted file sharing up to 250MB per file, with optional password protection |
 | **RedSecChat** | End-to-end encrypted real-time messaging with rich text formatting, emoji, and file sharing |
 | **RedSecVault** | Encrypted credential manager for passwords, API keys, SSH keys, TOTP 2FA codes, and secure notes |
+| **RedSecTools Chrome Extension** | Chrome Manifest V3 extension for Vault access, autofill, Paste creation, and Share creation using the same server and encryption model |
 
 **Key security properties:**
 - AES-256-GCM encryption via the Web Crypto API (zero server-side crypto)
@@ -20,6 +21,41 @@ A multi-tool security platform by [RedSec Offensive Security](https://github.com
 - TOTP-based multi-factor authentication with recovery codes and trusted device support
 - Invite-only user registration, bcrypt password hashing, server-side sessions
 - Strict CSP, Helmet security headers, rate limiting on all endpoints
+
+---
+
+## Chrome Extension
+
+RedSecTools includes an unpacked Chrome extension in `extension/chrome`.
+
+Current extension scope:
+- Vault unlock, search, filtering, detail view, and edit support
+- Exact-host-first autofill suggestions, with base-domain fallback only when no exact host match exists
+- Save new site passwords into writable vaults with password generation
+- Direct RedSecPaste link creation
+- Direct RedSecShare link creation
+- Extension-specific bearer sessions using `/api/ext/*`
+- Same server-configured session TTL, extended session TTL, and remembered-MFA duration as the main app
+
+### Install In Chrome (Not In Chrome Web Store Yet)
+
+1. Download or clone this repository to your machine.
+2. Open Chrome and go to `chrome://extensions`.
+3. Turn on `Developer mode` in the top-right corner.
+4. Click `Load unpacked`.
+5. Select the folder:
+   - `RedSecTools/extension/chrome`
+6. Pin the extension if you want quick access from the Chrome toolbar.
+
+### Updating The Extension
+
+When you pull new changes or replace the extension files:
+
+1. Open `chrome://extensions`
+2. Find `RedSecTools`
+3. Click the reload icon on the extension card
+
+If the server was updated too, restart the RedSecTools server before reloading the extension.
 
 ---
 
@@ -224,6 +260,19 @@ End-to-end encrypted real-time messaging with other registered users. Supports r
 ### Vault (`/vault`)
 
 Encrypted credential manager supporting passwords, API keys, SSH keys, TOTP 2FA codes, and secure notes. Personal vaults are encrypted with the user's password. Team vaults use RSA key pairs for member-to-member key exchange. Entries can be shared directly between users.
+
+### Chrome Extension
+
+After loading the unpacked extension, sign in with the same RedSecTools server URL and your normal user account.
+
+The extension supports:
+- Vault browsing and filtering across personal, team, and shared entries
+- Full entry detail view with copy, reveal, and edit actions where permitted
+- Login-form matching and explicit fill on the current site
+- Creating a new password entry for the current site
+- Creating RedSecPaste and RedSecShare links directly from the popup
+
+The extension is currently distributed as an unpacked build only. It is not yet published in the Chrome Web Store.
 
 ### Multi-Factor Authentication
 

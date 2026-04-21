@@ -93,6 +93,17 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
   CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
 
+  CREATE TABLE IF NOT EXISTS extension_sessions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    ip_address TEXT,
+    user_agent TEXT,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+  CREATE INDEX IF NOT EXISTS idx_extension_sessions_user_id ON extension_sessions(user_id);
+  CREATE INDEX IF NOT EXISTS idx_extension_sessions_expires_at ON extension_sessions(expires_at);
+
   CREATE TABLE IF NOT EXISTS admin_sessions (
     id TEXT PRIMARY KEY,
     user_id TEXT,
@@ -504,6 +515,15 @@ const stmts = {
   deleteExpiredSessions: db.prepare("DELETE FROM sessions WHERE expires_at < unixepoch()"),
   deleteSessionsByUserId: db.prepare("DELETE FROM sessions WHERE user_id = ?"),
   deleteOtherSessions: db.prepare("DELETE FROM sessions WHERE user_id = ? AND id != ?"),
+
+  createExtensionSession: db.prepare(`
+    INSERT INTO extension_sessions (id, user_id, expires_at, ip_address, user_agent)
+    VALUES (@id, @userId, @expiresAt, @ipAddress, @userAgent)
+  `),
+  getExtensionSessionById: db.prepare("SELECT s.*, u.username, u.suspended, u.avatar_updated_at FROM extension_sessions s JOIN users u ON s.user_id = u.id WHERE s.id = ?"),
+  deleteExtensionSession: db.prepare("DELETE FROM extension_sessions WHERE id = ?"),
+  deleteExpiredExtensionSessions: db.prepare("DELETE FROM extension_sessions WHERE expires_at < unixepoch()"),
+  deleteExtensionSessionsByUserId: db.prepare("DELETE FROM extension_sessions WHERE user_id = ?"),
 
   createAdminSession: db.prepare(`
     INSERT INTO admin_sessions (id, user_id, linked_session_id, expires_at, ip_address, user_agent)
@@ -1287,6 +1307,29 @@ function deleteSessionsByUserId(userId) {
 
 function deleteOtherSessions(userId, currentSessionId) {
   stmts.deleteOtherSessions.run(userId, currentSessionId);
+}
+
+function createExtensionSession({ id, userId, expiresIn, ipAddress, userAgent }) {
+  const expiresAt = Math.floor(Date.now() / 1000) + expiresIn;
+  stmts.createExtensionSession.run({ id, userId, expiresAt, ipAddress, userAgent });
+  return { id, expiresAt };
+}
+
+function getExtensionSession(id) {
+  return stmts.getExtensionSessionById.get(id) || null;
+}
+
+function deleteExtensionSessionById(id) {
+  stmts.deleteExtensionSession.run(id);
+}
+
+function deleteExpiredExtensionSessions() {
+  const result = stmts.deleteExpiredExtensionSessions.run();
+  return result.changes;
+}
+
+function deleteExtensionSessionsByUserId(userId) {
+  stmts.deleteExtensionSessionsByUserId.run(userId);
 }
 
 function createAdminSession({ id, userId = null, linkedSessionId = null, expiresIn, ipAddress, userAgent }) {
@@ -2143,6 +2186,11 @@ module.exports = {
   deleteExpiredSessions,
   deleteSessionsByUserId,
   deleteOtherSessions,
+  createExtensionSession,
+  getExtensionSession,
+  deleteExtensionSessionById,
+  deleteExpiredExtensionSessions,
+  deleteExtensionSessionsByUserId,
   createAdminSession,
   getAdminSession,
   deleteAdminSessionById,

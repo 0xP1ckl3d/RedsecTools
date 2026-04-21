@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RedSecTools</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main class="app-shell">
+    <header class="app-header">
+      <div class="brand">
+        <img src="icons/32.png" alt="" class="brand-icon">
+        <div>
+          <button id="open-server-link" class="brand-link" type="button">RedSecTools</button>
+          <p id="subtitle">Vault, paste, and share.</p>
+        </div>
+      </div>
+      <div id="header-actions" class="header-actions hidden">
+        <button id="lock-btn" class="btn btn-ghost btn-small" type="button">Lock</button>
+        <button id="logout-btn" class="btn btn-ghost btn-small" type="button">Logout</button>
+      </div>
+    </header>
+
+    <section id="login-view" class="view hidden">
+      <div class="panel stack">
+        <div id="remembered-login" class="stack hidden">
+          <div class="remembered-login-card">
+            <span class="field-label">Signed out</span>
+            <strong id="remembered-email"></strong>
+            <p id="remembered-server" class="helper"></p>
+          </div>
+          <button id="switch-account-btn" class="btn btn-ghost" type="button">Login with different account</button>
+        </div>
+        <form id="login-form" class="stack">
+          <label id="base-url-field" class="field">
+            <span>RedSecTools URL</span>
+            <input id="base-url" type="url" placeholder="https://tools.example.com" required>
+          </label>
+          <label id="login-email-field" class="field">
+            <span>Email</span>
+            <input id="login-email" type="email" autocomplete="username" required>
+          </label>
+          <label class="field">
+            <span>Password</span>
+            <input id="login-password" type="password" autocomplete="new-password" spellcheck="false" required>
+          </label>
+          <label class="checkbox-row">
+            <input id="keep-signed-in" type="checkbox">
+            <span>Keep extension session active longer</span>
+          </label>
+          <button id="login-submit" class="btn btn-primary" type="submit">Sign In</button>
+        </form>
+      </div>
+      <p id="login-error" class="error hidden"></p>
+    </section>
+
+    <section id="mfa-view" class="view hidden">
+      <div class="panel stack">
+        <p class="helper">Multi-factor authentication is required for this account.</p>
+        <div class="segment">
+          <button type="button" class="segment-btn active" data-mfa-mode="code">Code</button>
+          <button type="button" class="segment-btn" data-mfa-mode="recovery">Recovery</button>
+        </div>
+        <div id="mfa-code-row" class="stack">
+          <span class="field-label">TOTP Code</span>
+          <div id="mfa-digit-group" class="mfa-digit-group" role="group" aria-label="Six digit MFA code">
+            <input class="mfa-digit" data-mfa-index="0" inputmode="numeric" maxlength="1" autocomplete="one-time-code">
+            <input class="mfa-digit" data-mfa-index="1" inputmode="numeric" maxlength="1">
+            <input class="mfa-digit" data-mfa-index="2" inputmode="numeric" maxlength="1">
+            <input class="mfa-digit" data-mfa-index="3" inputmode="numeric" maxlength="1">
+            <input class="mfa-digit" data-mfa-index="4" inputmode="numeric" maxlength="1">
+            <input class="mfa-digit" data-mfa-index="5" inputmode="numeric" maxlength="1">
+          </div>
+          <p class="helper">Type all 6 digits and the extension will verify automatically.</p>
+        </div>
+        <label class="checkbox-row">
+          <input id="mfa-remember-device" type="checkbox">
+          <span>Remember this device</span>
+        </label>
+        <label id="mfa-recovery-row" class="field hidden">
+          <span>Recovery Code</span>
+          <input id="mfa-recovery" type="text" spellcheck="false" autocomplete="off" placeholder="Enter a recovery code">
+        </label>
+        <div class="button-row">
+          <button id="mfa-back" class="btn btn-ghost" type="button">Back</button>
+          <button id="mfa-submit" class="btn btn-primary hidden" type="button">Verify</button>
+        </div>
+      </div>
+      <p id="mfa-error" class="error hidden"></p>
+    </section>
+
+    <section id="locked-view" class="view hidden">
+      <div class="panel stack">
+        <p class="helper">Your extension session is active, but local vault keys are locked.</p>
+        <label class="field">
+          <span>Password</span>
+          <input id="unlock-password" type="password" autocomplete="new-password" spellcheck="false" required>
+        </label>
+        <button id="unlock-submit" class="btn btn-primary" type="button">Unlock Vault</button>
+      </div>
+      <p id="unlock-error" class="error hidden"></p>
+    </section>
+
+    <section id="unlocked-view" class="view hidden">
+      <div class="tool-tabs" role="tablist" aria-label="RedSecTools tabs">
+        <button id="tab-vault" class="tool-tab active" type="button" data-tab="vault" role="tab" aria-selected="true">Vault</button>
+        <button id="tab-paste" class="tool-tab" type="button" data-tab="paste" role="tab" aria-selected="false">Paste</button>
+        <button id="tab-share" class="tool-tab" type="button" data-tab="share" role="tab" aria-selected="false">Share</button>
+      </div>
+
+      <section id="tab-panel-vault" class="tool-panel active">
+        <div id="vault-dashboard" class="stack-lg">
+          <section class="panel hero-panel">
+            <div class="hero-top">
+              <div>
+                <p class="eyebrow">Signed In</p>
+                <h2 id="user-label"></h2>
+              </div>
+              <div class="hero-stat">
+                <strong id="entry-count-label"></strong>
+                <span>available now</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="section-head">
+            <div>
+              <p class="eyebrow">Add Secret</p>
+              <p id="site-label" class="site-url"></p>
+              <p class="helper">Add a new password.</p>
+            </div>
+            <button id="save-current-site-btn" class="btn btn-secondary" type="button">Add</button>
+          </div>
+
+            <div id="save-sheet" class="save-sheet hidden">
+              <form id="save-form" class="stack">
+                <div class="split-fields">
+                  <label class="field">
+                    <span>Vault</span>
+                    <select id="save-vault" required></select>
+                  </label>
+                  <label class="field">
+                    <span>Title</span>
+                    <input id="save-title" type="text" maxlength="200" required>
+                  </label>
+                </div>
+                <label class="field">
+                  <span>Username / Email</span>
+                  <input id="save-username" type="text">
+                </label>
+                <label class="field">
+                  <span>Password</span>
+                  <div class="secret-input-row">
+                    <input id="save-password" type="password" autocomplete="new-password">
+                    <button id="toggle-save-password-btn" class="btn btn-ghost btn-square" type="button" aria-label="Reveal password">Reveal</button>
+                    <button id="generate-password-btn" class="btn btn-ghost" type="button">Generate</button>
+                  </div>
+                </label>
+                <label class="field">
+                  <span>URL</span>
+                  <input id="save-url" type="url" required>
+                </label>
+                <label class="field">
+                  <span>Notes</span>
+                  <textarea id="save-notes" rows="3" maxlength="1000"></textarea>
+                </label>
+                <label class="checkbox-row">
+                  <input id="save-favorite" type="checkbox">
+                  <span>Add to favorites</span>
+                </label>
+                <div class="button-row">
+                  <button id="cancel-save-btn" class="btn btn-ghost" type="button">Cancel</button>
+                  <button id="submit-save-btn" class="btn btn-primary" type="submit">Save Login</button>
+                </div>
+              </form>
+              <p id="save-error" class="error hidden"></p>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="section-head section-head-tight">
+              <div>
+                <p class="eyebrow">Current Site Matches</p>
+                <p class="helper">Matched items for this site.</p>
+              </div>
+            </div>
+            <div id="site-suggestions" class="result-list"></div>
+          </section>
+
+          <section class="panel">
+            <div class="section-head section-head-tight">
+              <div>
+                <p class="eyebrow">Vault Explorer</p>
+                <p class="helper">Search every unlocked item, then narrow by vault or item type.</p>
+              </div>
+            </div>
+            <div class="stack">
+              <label class="field">
+                <span>Search</span>
+                <input id="search-input" type="search" placeholder="Search title, username, note content, service, or URL">
+              </label>
+              <div class="split-fields">
+                <label class="field">
+                  <span>Vault</span>
+                  <select id="vault-filter"></select>
+                </label>
+                <label class="field">
+                  <span>Item Type</span>
+                  <select id="type-filter"></select>
+                </label>
+              </div>
+            </div>
+            <div id="search-results" class="result-list result-list-spaced"></div>
+          </section>
+        </div>
+
+        <section id="entry-detail-view" class="panel hidden">
+          <div class="detail-topbar">
+            <button id="detail-back-btn" class="btn btn-ghost btn-back" type="button" aria-label="Back to vault explorer">← Back</button>
+            <button id="detail-edit-btn" class="btn btn-secondary hidden" type="button">Edit</button>
+          </div>
+          <div id="detail-content" class="stack"></div>
+          <form id="detail-edit-form" class="stack hidden">
+            <label class="field">
+              <span>Title</span>
+              <input id="edit-title" type="text" maxlength="200" required>
+            </label>
+            <div id="edit-dynamic-fields" class="stack"></div>
+            <label class="checkbox-row">
+              <input id="edit-favorite" type="checkbox">
+              <span>Add to favorites</span>
+            </label>
+            <div class="button-row">
+              <button id="cancel-edit-btn" class="btn btn-ghost" type="button">Cancel</button>
+              <button id="save-edit-btn" class="btn btn-primary" type="submit">Save Changes</button>
+            </div>
+            <p id="edit-error" class="error hidden"></p>
+          </form>
+        </section>
+      </section>
+
+      <section id="tab-panel-paste" class="tool-panel hidden">
+        <div id="paste-workspace" class="panel stack">
+          <div>
+            <p class="eyebrow">RedSecPaste</p>
+            <p class="helper">Create an encrypted paste.</p>
+          </div>
+          <div id="paste-form" class="stack">
+            <label class="field">
+              <span>Content</span>
+              <textarea id="paste-content" rows="8" maxlength="200000" placeholder="Paste your text or code here..." spellcheck="false"></textarea>
+            </label>
+            <div class="split-fields">
+              <label class="field">
+                <span>Syntax</span>
+                <select id="paste-syntax">
+                  <option value="plaintext">None (plain text)</option>
+                  <option value="css">CSS</option>
+                  <option value="xml">HTML / XML</option>
+                  <option value="javascript">JavaScript</option>
+                  <option value="json">JSON</option>
+                  <option value="typescript">TypeScript</option>
+                  <option value="sql">SQL</option>
+                  <option value="bash">Bash / Shell</option>
+                  <option value="c">C</option>
+                  <option value="cpp">C++</option>
+                  <option value="csharp">C#</option>
+                  <option value="go">Go</option>
+                  <option value="java">Java</option>
+                  <option value="kotlin">Kotlin</option>
+                  <option value="lua">Lua</option>
+                  <option value="perl">Perl</option>
+                  <option value="php">PHP</option>
+                  <option value="powershell">PowerShell</option>
+                  <option value="python">Python</option>
+                  <option value="ruby">Ruby</option>
+                  <option value="rust">Rust</option>
+                  <option value="scala">Scala</option>
+                  <option value="swift">Swift</option>
+                  <option value="vim">Vim Script</option>
+                  <option value="diff">Diff</option>
+                  <option value="dockerfile">Dockerfile</option>
+                  <option value="ini">INI / Config</option>
+                  <option value="markdown">Markdown</option>
+                  <option value="yaml">YAML</option>
+                  <option value="r">R</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Expiry</span>
+                <select id="paste-expiry">
+                  <option value="3600">1 hour</option>
+                  <option value="43200">12 hours</option>
+                  <option value="86400" selected>24 hours</option>
+                  <option value="259200">3 days</option>
+                </select>
+              </label>
+            </div>
+            <label class="field">
+              <span>Password (optional)</span>
+              <div class="secret-input-row">
+                <input id="paste-password" type="password" autocomplete="new-password" placeholder="Optional">
+                <button id="toggle-paste-password-btn" class="btn btn-ghost btn-square" type="button">Reveal</button>
+              </div>
+            </label>
+            <label class="checkbox-row">
+              <input id="paste-burn" type="checkbox">
+              <span>Burn after reading</span>
+            </label>
+            <div class="button-row">
+              <button id="toggle-paste-preview-btn" class="btn btn-ghost" type="button">Preview</button>
+              <button id="create-paste-btn" class="btn btn-primary" type="button">Create Paste Link</button>
+            </div>
+            <p id="paste-error" class="error hidden"></p>
+          </div>
+          <div id="paste-result" class="stack hidden">
+            <label class="field">
+              <span>Paste Link</span>
+              <input id="paste-result-url" type="text" readonly>
+            </label>
+            <div class="button-row button-row-start">
+              <button id="copy-paste-link-btn" class="btn btn-secondary" type="button">Copy Link</button>
+              <button id="new-paste-btn" class="btn btn-ghost" type="button">Create Another</button>
+            </div>
+          </div>
+        </div>
+
+        <section id="paste-preview-view" class="panel paste-preview-view hidden">
+          <div class="detail-topbar">
+            <button id="paste-preview-back-btn" class="btn btn-ghost btn-back" type="button" aria-label="Back to paste form">← Back</button>
+          </div>
+          <div>
+            <p class="eyebrow">Preview</p>
+            <p class="helper">Paste preview.</p>
+          </div>
+          <div id="paste-preview-scroll" class="code-container">
+            <div id="paste-preview-gutter" class="code-gutter" aria-hidden="true"></div>
+            <pre id="paste-preview-content" class="code-content"></pre>
+          </div>
+        </section>
+      </section>
+
+      <section id="tab-panel-share" class="tool-panel hidden">
+        <div class="panel stack">
+          <div>
+            <p class="eyebrow">RedSecShare</p>
+            <p class="helper">Create an encrypted file link.</p>
+          </div>
+          <div id="share-form" class="stack">
+            <label class="field">
+              <span>Files</span>
+              <input id="share-files" type="file" multiple>
+            </label>
+            <div id="share-file-summary" class="helper">No files selected yet.</div>
+            <div id="share-file-list" class="result-list"></div>
+            <div class="split-fields">
+              <label class="field">
+                <span>Expiry</span>
+                <select id="share-expiry">
+                  <option value="3600">1 hour</option>
+                  <option value="43200">12 hours</option>
+                  <option value="86400" selected>24 hours</option>
+                  <option value="259200">3 days</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Password (optional)</span>
+                <div class="secret-input-row">
+                  <input id="share-password" type="password" autocomplete="new-password" placeholder="Optional">
+                  <button id="toggle-share-password-btn" class="btn btn-ghost btn-square" type="button">Reveal</button>
+                </div>
+              </label>
+            </div>
+            <label class="checkbox-row">
+              <input id="share-burn" type="checkbox">
+              <span>Burn after reading</span>
+            </label>
+            <div class="button-row">
+              <button id="create-share-btn" class="btn btn-primary" type="button">Create Share Link</button>
+            </div>
+            <p id="share-error" class="error hidden"></p>
+          </div>
+          <div id="share-result" class="stack hidden">
+            <label class="field">
+              <span>Share Link</span>
+              <input id="share-result-url" type="text" readonly>
+            </label>
+            <div class="button-row button-row-start">
+              <button id="copy-share-link-btn" class="btn btn-secondary" type="button">Copy Link</button>
+              <button id="new-share-btn" class="btn btn-ghost" type="button">Create Another</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </section>
+
+    <div id="toast" class="toast hidden"></div>
+  </main>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

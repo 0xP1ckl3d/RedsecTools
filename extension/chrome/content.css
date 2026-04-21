@@ -1,0 +1,72 @@
+.redsec-inline-menu {
+  position: absolute;
+  z-index: 2147483647;
+  width: 260px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid #cf4f4f;
+  background: #15191d;
+  color: #f4f7fa;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.36);
+  font: 13px/1.4 "Segoe UI", Tahoma, sans-serif;
+}
+
+.redsec-inline-menu[hidden] {
+  display: none !important;
+}
+
+.redsec-inline-menu-title {
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #ef8d8d;
+}
+
+.redsec-inline-menu-note {
+  color: #b6c2cd;
+  font-size: 12px;
+}
+
+.redsec-inline-list {
+  display: grid;
+  gap: 6px;
+}
+
+.redsec-inline-item {
+  width: 100%;
+  padding: 8px 9px;
+  border-radius: 10px;
+  border: 1px solid #313941;
+  background: #22292f;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.redsec-inline-item strong {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 13px;
+}
+
+.redsec-inline-item span {
+  color: #b6c2cd;
+  font-size: 12px;
+}
+
+.redsec-inline-footer {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.redsec-inline-footer button {
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid #313941;
+  background: transparent;
+  color: #b6c2cd;
+  cursor: pointer;
+}

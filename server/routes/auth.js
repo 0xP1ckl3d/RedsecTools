@@ -9,6 +9,7 @@ const {
   getInviteByToken, markInviteUsed,
   createGuestLink, validateGuestLink, redeemGuestLink,
   createPasswordReset, getPasswordResetByToken, markPasswordResetUsed, deleteSessionsByUserId,
+  deleteExtensionSessionsByUserId,
   getUserByUsername, getSmtpConfig,
   getUserMFA, setUserMFA, enableUserMFA, disableUserMFA, updateRecoveryCodes,
   createPendingLogin, getPendingLogin, deletePendingLogin, incrementPendingLoginAttempts,
@@ -822,6 +823,7 @@ router.post("/auth/change-password", passwordLimiter, requireUser, async (req, r
   // Invalidate all other sessions (keep current)
   const currentSessionId = req.signedCookies.redsec_session;
   deleteOtherSessions(req.user.id, currentSessionId);
+  deleteExtensionSessionsByUserId(req.user.id);
 
   logAction("auth:change_password", req, { userId: req.user.id });
   res.json({ success: true });
@@ -1044,6 +1046,7 @@ router.post("/auth/reset-password", passwordLimiter, async (req, res) => {
   updateUserPassword(reset.user_id, newHash);
   markPasswordResetUsed(reset.id);
   deleteSessionsByUserId(reset.user_id);
+  deleteExtensionSessionsByUserId(reset.user_id);
 
   // NEW: Revoke trusted devices
   deleteTrustedDevicesByUser(reset.user_id);

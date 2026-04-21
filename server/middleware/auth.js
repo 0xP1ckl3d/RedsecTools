@@ -1,4 +1,4 @@
-const { getSession, deleteSessionById } = require("../database");
+const { getSession, deleteSessionById, getExtensionSession, deleteExtensionSessionById } = require("../database");
 
 function getValidUserSession(req) {
   const sessionId = req.signedCookies.redsec_session;
@@ -139,6 +139,54 @@ function requireGuestOrUserFor(tool) {
   };
 }
 
+function getValidExtensionSession(req) {
+  const header = req.get("authorization") || "";
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  if (!match) return null;
+
+  const sessionId = match[1].trim();
+  if (!sessionId) return { error: "missing" };
+
+  const session = getExtensionSession(sessionId);
+  if (!session) {
+    return { error: "missing", sessionId };
+  }
+
+  if (session.expires_at < Math.floor(Date.now() / 1000)) {
+    deleteExtensionSessionById(sessionId);
+    return { error: "expired", sessionId };
+  }
+
+  if (session.suspended) {
+    deleteExtensionSessionById(sessionId);
+    return { error: "suspended", sessionId };
+  }
+
+  return {
+    sessionId,
+    user: { id: session.user_id, username: session.username, avatarUpdatedAt: session.avatar_updated_at || null },
+  };
+}
+
+function requireExtensionUser(req, res, next) {
+  const result = getValidExtensionSession(req);
+  if (!result) {
+    return res.status(401).json({ error: "Extension login required" });
+  }
+
+  if (result.error === "missing" || result.error === "expired") {
+    return res.status(401).json({ error: "Extension session expired" });
+  }
+
+  if (result.error === "suspended") {
+    return res.status(403).json({ error: "Account suspended" });
+  }
+
+  req.user = result.user;
+  req.extensionSessionId = result.sessionId;
+  next();
+}
+
 // Placeholder — final export at end of file
 
 // --- Page-level auth (server-side redirects, not JSON responses) ---
@@ -197,4 +245,5 @@ module.exports = {
   pageRequireUser,
   pageRequireGuestOrUser,
   getActiveUserSession,
+  requireExtensionUser,
 };

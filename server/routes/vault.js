@@ -104,16 +104,17 @@ function membershipPermission(membership) {
 function userHasVaultAccess(vaultId, userId) {
   const vault = getVault(vaultId);
   if (!vault) return { error: "not_found" };
+  const membership = getVaultMemberShip(vaultId, userId);
   if (vault.owner_id === userId) {
     return {
       vault,
+      membership: membership || null,
       permission: "full",
       canWrite: true,
       canManageMembers: true,
       isOwner: true,
     };
   }
-  const membership = getVaultMemberShip(vaultId, userId);
   if (!membership) return { error: "forbidden" };
   const permission = membershipPermission(membership);
   return {
@@ -301,15 +302,15 @@ router.get("/vault/vaults/:id/master-key", readLimiter, requireUser, (req, res) 
   }
 
   // Team vault: return the member's encrypted master key
-  const membership = access.membership;
-  if (!membership) {
-    // Owner not in vault_members (pre-migration vault)
-    if (vault.owner_id === req.user.id) {
-      return res.json({ encryptedMasterKey: null });
-    }
-    return res.status(403).json({ error: "Not a member" });
+  const membership = access.membership || getVaultMemberShip(vault.id, req.user.id);
+  if (membership?.encrypted_master_key) {
+    return res.json({ encryptedMasterKey: membership.encrypted_master_key });
   }
-  res.json({ encryptedMasterKey: membership.encrypted_master_key });
+  // Owner not in vault_members (pre-migration vault)
+  if (vault.owner_id === req.user.id) {
+    return res.json({ encryptedMasterKey: null });
+  }
+  return res.status(403).json({ error: "Not a member" });
 });
 
 // ============================================================

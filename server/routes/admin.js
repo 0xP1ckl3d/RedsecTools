@@ -15,7 +15,7 @@ const {
   createPasswordReset,
   getSmtpConfig, setSmtpConfig,
   getSetting, setSetting,
-  getUserMFA, disableUserMFA, deleteSessionsByUserId, deleteTrustedDevicesByUser,
+  getUserMFA, disableUserMFA, deleteSessionsByUserId, deleteExtensionSessionsByUserId, deleteTrustedDevicesByUser,
   createAdminSession, getAdminSession, deleteAdminSessionById,
   getEmailSendState, setEmailSendState,
   countAllUsers,
@@ -845,6 +845,7 @@ router.post("/api/users/:id/reset-mfa", requireAdmin, (req, res) => {
   // Disable MFA and kill all sessions + trusted devices
   disableUserMFA(user.id);
   deleteSessionsByUserId(user.id);
+  deleteExtensionSessionsByUserId(user.id);
   deleteTrustedDevicesByUser(user.id);
 
   console.log(JSON.stringify({ ts: new Date().toISOString(), action: "admin:reset_mfa", ip: req.ip, userId: user.id }));
