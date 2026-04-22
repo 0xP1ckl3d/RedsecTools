@@ -10,12 +10,13 @@ const {
 test("normalizePermissionList removes duplicates and invalid permissions", () => {
   const permissions = normalizePermissionList([
     "wiki.view",
-    "wiki.view",
+    "wiki.create",
+    "wiki.edit_any",
     "not.real",
     "calendar.view",
   ]);
 
-  assert.deepEqual(permissions, ["calendar.view", "wiki.view"]);
+  assert.deepEqual(permissions, ["calendar.view", "wiki.create_team", "wiki.edit_team", "wiki.view"]);
 });
 
 test("getAvailableTools exposes only tools allowed by current permissions", () => {

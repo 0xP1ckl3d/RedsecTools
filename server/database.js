@@ -542,8 +542,14 @@ db.exec(`
     title TEXT NOT NULL,
     body_markdown TEXT NOT NULL,
     body_html TEXT NOT NULL,
+    excerpt TEXT,
+    scope TEXT NOT NULL DEFAULT 'team',
+    owner_id TEXT,
     parent_page_id TEXT,
     author_id TEXT NOT NULL,
+    last_editor_id TEXT,
+    published_at INTEGER,
+    sort_order INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at INTEGER NOT NULL DEFAULT (unixepoch())
   );
@@ -555,6 +561,7 @@ db.exec(`
     title TEXT NOT NULL,
     body_markdown TEXT NOT NULL,
     body_html TEXT NOT NULL,
+    excerpt TEXT,
     author_id TEXT NOT NULL,
     created_at INTEGER NOT NULL DEFAULT (unixepoch())
   );
@@ -587,6 +594,18 @@ try { db.exec("ALTER TABLE calendar_projects ADD COLUMN billable_rate REAL NOT N
 try { db.exec("ALTER TABLE calendar_projects ADD COLUMN notes TEXT"); } catch {}
 try { db.exec("ALTER TABLE calendar_entries ADD COLUMN scheduled_hours REAL NOT NULL DEFAULT 0"); } catch {}
 try { db.exec("UPDATE calendar_entries SET scheduled_hours = ROUND((ends_at - starts_at) / 3600.0, 2) WHERE project_id IS NOT NULL AND (scheduled_hours IS NULL OR scheduled_hours = 0) AND ends_at > starts_at"); } catch {}
+try { db.exec("ALTER TABLE wiki_pages ADD COLUMN excerpt TEXT"); } catch {}
+try { db.exec("ALTER TABLE wiki_pages ADD COLUMN scope TEXT NOT NULL DEFAULT 'team'"); } catch {}
+try { db.exec("ALTER TABLE wiki_pages ADD COLUMN owner_id TEXT"); } catch {}
+try { db.exec("ALTER TABLE wiki_pages ADD COLUMN last_editor_id TEXT"); } catch {}
+try { db.exec("ALTER TABLE wiki_pages ADD COLUMN published_at INTEGER"); } catch {}
+try { db.exec("ALTER TABLE wiki_pages ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0"); } catch {}
+try { db.exec("ALTER TABLE wiki_page_revisions ADD COLUMN excerpt TEXT"); } catch {}
+try { db.exec("UPDATE wiki_pages SET excerpt = substr(replace(replace(body_markdown, char(13), ' '), char(10), ' '), 1, 220) WHERE excerpt IS NULL OR excerpt = ''"); } catch {}
+try { db.exec("UPDATE wiki_pages SET scope = 'team' WHERE scope IS NULL OR scope = ''"); } catch {}
+try { db.exec("UPDATE wiki_pages SET last_editor_id = author_id WHERE last_editor_id IS NULL OR last_editor_id = ''"); } catch {}
+try { db.exec("UPDATE wiki_pages SET published_at = coalesce(updated_at, created_at) WHERE published_at IS NULL OR published_at = 0"); } catch {}
+try { db.exec("CREATE INDEX IF NOT EXISTS idx_wiki_pages_scope_owner ON wiki_pages(scope, owner_id, updated_at)"); } catch {}
 
 // Per-user favourite shortcuts (junction table — works for personal AND team shortcuts)
 db.exec(`CREATE TABLE IF NOT EXISTS user_favourite_shortcuts (
@@ -609,6 +628,8 @@ const VALID_SYNTAX_OPTIONS = [
 const MAX_EXPIRY = 3 * 24 * 60 * 60; // 259200
 const VALID_EXPIRY_OPTIONS = [3600, 43200, 86400, MAX_EXPIRY]; // 1h, 12h, 24h, 3d
 const VALID_GUEST_EXPIRY = [3600, 43200, 86400]; // 1h, 12h, 24h
+const SHARE_MAX_FILE_SIZE_OPTIONS_MB = [10, 25, 50, 100, 250];
+const SHARE_MAX_FILE_COUNT_OPTIONS = [1, 2, 3, 5, 8];
 
 const stmts = {
   // --- Paste statements ---
@@ -1384,6 +1405,11 @@ const stmts = {
     INSERT INTO survey_responses (id, survey_id, responder_user_id, responder_name, source_ip)
     VALUES (@id, @surveyId, @responderUserId, @responderName, @sourceIp)
   `),
+  countSurveyResponsesByUser: db.prepare(`
+    SELECT COUNT(*) as count
+    FROM survey_responses
+    WHERE survey_id = ? AND responder_user_id = ?
+  `),
   createSurveyAnswer: db.prepare(`
     INSERT INTO survey_answers (id, response_id, question_id, answer_text, answer_json)
     VALUES (@id, @responseId, @questionId, @answerText, @answerJson)
@@ -1396,11 +1422,32 @@ const stmts = {
     WHERE sr.survey_id = ?
     ORDER BY sr.submitted_at DESC, sa.created_at ASC
   `),
+  deleteSurveyAnswersBySurvey: db.prepare(`
+    DELETE FROM survey_answers WHERE response_id IN (
+      SELECT id FROM survey_responses WHERE survey_id = ?
+    )
+  `),
+  deleteSurveyResponsesBySurvey: db.prepare("DELETE FROM survey_responses WHERE survey_id = ?"),
+  countSurveyResponses: db.prepare("SELECT COUNT(*) as count FROM survey_responses WHERE survey_id = ?"),
+  countSurveyQuestions: db.prepare("SELECT COUNT(*) as count FROM survey_questions WHERE survey_id = ?"),
+  updateSurveyQuestionSort: db.prepare("UPDATE survey_questions SET sort_order = @sortOrder WHERE id = @id"),
+  getSurveyResponseById: db.prepare("SELECT * FROM survey_responses WHERE id = ?"),
+  listSurveyAnswersByResponse: db.prepare("SELECT * FROM survey_answers WHERE response_id = ? ORDER BY created_at"),
+  closeExpiredSurveys: db.prepare(`
+    UPDATE surveys SET status = 'ended', updated_at = unixepoch()
+    WHERE status = 'published' AND ends_at IS NOT NULL AND ends_at < unixepoch()
+  `),
 
   // --- Wiki ---
   createWikiPage: db.prepare(`
-    INSERT INTO wiki_pages (id, slug, title, body_markdown, body_html, parent_page_id, author_id)
-    VALUES (@id, @slug, @title, @bodyMarkdown, @bodyHtml, @parentPageId, @authorId)
+    INSERT INTO wiki_pages (
+      id, slug, title, body_markdown, body_html, excerpt, scope, owner_id, parent_page_id,
+      author_id, last_editor_id, published_at, sort_order
+    )
+    VALUES (
+      @id, @slug, @title, @bodyMarkdown, @bodyHtml, @excerpt, @scope, @ownerId, @parentPageId,
+      @authorId, @lastEditorId, @publishedAt, @sortOrder
+    )
   `),
   updateWikiPage: db.prepare(`
     UPDATE wiki_pages SET
@@ -1408,27 +1455,93 @@ const stmts = {
       title = @title,
       body_markdown = @bodyMarkdown,
       body_html = @bodyHtml,
+      excerpt = @excerpt,
+      scope = @scope,
+      owner_id = @ownerId,
       parent_page_id = @parentPageId,
-      author_id = @authorId,
+      last_editor_id = @lastEditorId,
+      published_at = @publishedAt,
+      sort_order = @sortOrder,
       updated_at = unixepoch()
     WHERE id = @id
   `),
   deleteWikiPage: db.prepare("DELETE FROM wiki_pages WHERE id = ?"),
-  getWikiPageById: db.prepare("SELECT * FROM wiki_pages WHERE id = ?"),
-  getWikiPageBySlug: db.prepare("SELECT * FROM wiki_pages WHERE slug = ?"),
-  listWikiPages: db.prepare("SELECT * FROM wiki_pages ORDER BY title ASC"),
+  deleteWikiRevisionByPageId: db.prepare("DELETE FROM wiki_page_revisions WHERE page_id = ?"),
+  getWikiPageById: db.prepare(`
+    SELECT wp.*,
+      author.username AS author_username,
+      owner.username AS owner_username,
+      editor.username AS last_editor_username
+    FROM wiki_pages wp
+    LEFT JOIN users author ON author.id = wp.author_id
+    LEFT JOIN users owner ON owner.id = wp.owner_id
+    LEFT JOIN users editor ON editor.id = wp.last_editor_id
+    WHERE wp.id = ?
+  `),
+  getWikiPageBySlug: db.prepare(`
+    SELECT wp.*,
+      author.username AS author_username,
+      owner.username AS owner_username,
+      editor.username AS last_editor_username
+    FROM wiki_pages wp
+    LEFT JOIN users author ON author.id = wp.author_id
+    LEFT JOIN users owner ON owner.id = wp.owner_id
+    LEFT JOIN users editor ON editor.id = wp.last_editor_id
+    WHERE wp.slug = ?
+  `),
+  listWikiPages: db.prepare(`
+    SELECT wp.*,
+      author.username AS author_username,
+      owner.username AS owner_username,
+      editor.username AS last_editor_username
+    FROM wiki_pages wp
+    LEFT JOIN users author ON author.id = wp.author_id
+    LEFT JOIN users owner ON owner.id = wp.owner_id
+    LEFT JOIN users editor ON editor.id = wp.last_editor_id
+    WHERE (@scope = '' OR wp.scope = @scope)
+      AND (@ownerId = '' OR ifnull(wp.owner_id, '') = @ownerId)
+    ORDER BY wp.scope ASC, COALESCE(wp.parent_page_id, ''), wp.sort_order ASC, wp.title COLLATE NOCASE ASC
+  `),
   searchWikiPages: db.prepare(`
-    SELECT *
-    FROM wiki_pages
-    WHERE title LIKE ? OR body_markdown LIKE ?
-    ORDER BY updated_at DESC
+    SELECT wp.*,
+      author.username AS author_username,
+      owner.username AS owner_username,
+      editor.username AS last_editor_username
+    FROM wiki_pages wp
+    LEFT JOIN users author ON author.id = wp.author_id
+    LEFT JOIN users owner ON owner.id = wp.owner_id
+    LEFT JOIN users editor ON editor.id = wp.last_editor_id
+    WHERE (@scope = '' OR wp.scope = @scope)
+      AND (@ownerId = '' OR ifnull(wp.owner_id, '') = @ownerId)
+      AND (wp.title LIKE @term OR wp.body_markdown LIKE @term OR ifnull(wp.excerpt, '') LIKE @term)
+    ORDER BY wp.updated_at DESC
+    LIMIT @limit
   `),
   createWikiRevision: db.prepare(`
-    INSERT INTO wiki_page_revisions (id, page_id, title, body_markdown, body_html, author_id)
-    VALUES (@id, @pageId, @title, @bodyMarkdown, @bodyHtml, @authorId)
+    INSERT INTO wiki_page_revisions (id, page_id, title, body_markdown, body_html, excerpt, author_id)
+    VALUES (@id, @pageId, @title, @bodyMarkdown, @bodyHtml, @excerpt, @authorId)
   `),
-  listWikiRevisions: db.prepare("SELECT * FROM wiki_page_revisions WHERE page_id = ? ORDER BY created_at DESC"),
-  getWikiRevisionById: db.prepare("SELECT * FROM wiki_page_revisions WHERE id = ?"),
+  listWikiRevisions: db.prepare(`
+    SELECT wr.*, users.username AS author_username
+    FROM wiki_page_revisions wr
+    LEFT JOIN users ON users.id = wr.author_id
+    WHERE wr.page_id = ?
+    ORDER BY wr.created_at DESC
+  `),
+  getWikiRevisionById: db.prepare(`
+    SELECT wr.*, users.username AS author_username
+    FROM wiki_page_revisions wr
+    LEFT JOIN users ON users.id = wr.author_id
+    WHERE wr.id = ?
+  `),
+  countWikiPagesByScope: db.prepare(`
+    SELECT
+      SUM(CASE WHEN scope = 'team' THEN 1 ELSE 0 END) AS team_total,
+      SUM(CASE WHEN scope = 'personal' THEN 1 ELSE 0 END) AS personal_total,
+      COUNT(*) AS total
+    FROM wiki_pages
+  `),
+  countWikiRevisions: db.prepare("SELECT COUNT(*) AS total FROM wiki_page_revisions"),
 
   // --- Homepage: Settings ---
   getHomepageSettings: db.prepare("SELECT * FROM homepage_settings WHERE user_id = ?"),
@@ -1451,12 +1564,17 @@ const DEFAULTS = {
   calendar_workday_start: "08:30",
   calendar_workday_end: "17:30",
   calendar_workdays: "1,2,3,4,5",
+  wiki_personal_spaces_enabled: "true",
+  wiki_search_result_limit: "20",
+  wiki_team_home_page_id: "",
 };
 for (const [key, value] of Object.entries(DEFAULTS)) {
   if (!getSetting(key)) setSetting(key, value);
 }
 
 db.prepare("UPDATE role_permissions SET permission = 'calendar.view_team' WHERE permission = 'calendar.edit_any'").run();
+db.prepare("UPDATE role_permissions SET permission = 'wiki.create_team' WHERE permission = 'wiki.create'").run();
+db.prepare("UPDATE role_permissions SET permission = 'wiki.edit_team' WHERE permission = 'wiki.edit_any'").run();
 db.prepare("DELETE FROM role_permissions WHERE permission = 'roles.manage'").run();
 
 for (const definition of SYSTEM_ROLE_DEFINITIONS) {
@@ -2185,6 +2303,18 @@ function setSmtpConfig({ host, port, user, pass, from, secure }) {
   setSetting("smtp_pass", pass ? encryptValue(pass) : "");
   setSetting("smtp_from", from || "");
   setSetting("smtp_secure", secure ? "true" : "false");
+}
+
+function getShareConfig() {
+  const maxFileSizeMbRaw = parseInt(getSetting("share_max_file_size_mb"), 10);
+  const maxFilesPerShareRaw = parseInt(getSetting("share_max_files_per_share"), 10);
+  const maxFileSizeMb = SHARE_MAX_FILE_SIZE_OPTIONS_MB.includes(maxFileSizeMbRaw) ? maxFileSizeMbRaw : 250;
+  const maxFilesPerShare = SHARE_MAX_FILE_COUNT_OPTIONS.includes(maxFilesPerShareRaw) ? maxFilesPerShareRaw : 8;
+  return {
+    maxFileSizeMb,
+    maxFileSizeBytes: maxFileSizeMb * 1024 * 1024,
+    maxFilesPerShare,
+  };
 }
 
 // ============================================================
@@ -3150,18 +3280,22 @@ function updateSurvey(payload) {
 }
 
 function getSurveyById(id) {
+  closeExpiredSurveys();
   return stmts.getSurveyById.get(id) || null;
 }
 
 function getSurveyByToken(token) {
+  closeExpiredSurveys();
   return stmts.getSurveyByToken.get(token) || null;
 }
 
 function listSurveysByOwner(ownerId) {
+  closeExpiredSurveys();
   return stmts.listSurveysByOwner.all(ownerId);
 }
 
 function listAllSurveys() {
+  closeExpiredSurveys();
   return stmts.listAllSurveys.all();
 }
 
@@ -3198,7 +3332,17 @@ function replaceSurveyQuestions(surveyId, questions) {
 }
 
 function deleteSurveyById(id) {
-  return stmts.deleteSurvey.run(id).changes > 0;
+  const tx = db.transaction(() => {
+    stmts.deleteSurveyAnswersBySurvey.run(id);
+    stmts.deleteSurveyResponsesBySurvey.run(id);
+    const questions = stmts.listSurveyQuestions.all(id);
+    for (const q of questions) {
+      stmts.deleteSurveyOptionsByQuestion.run(q.id);
+    }
+    stmts.deleteSurveyQuestionsBySurvey.run(id);
+    return stmts.deleteSurvey.run(id).changes > 0;
+  });
+  return tx();
 }
 
 function getSurveyQuestions(surveyId) {
@@ -3241,6 +3385,11 @@ function createSurveySubmission(payload) {
   tx();
 }
 
+function hasSurveyResponseForUser(surveyId, userId) {
+  if (!surveyId || !userId) return false;
+  return (stmts.countSurveyResponsesByUser.get(surveyId, userId)?.count || 0) > 0;
+}
+
 function getSurveyResults(surveyId) {
   const responses = stmts.listSurveyResponsesBySurvey.all(surveyId);
   const answers = stmts.listSurveyAnswersBySurvey.all(surveyId);
@@ -3261,6 +3410,49 @@ function getSurveyResults(surveyId) {
   };
 }
 
+function reorderSurveyQuestions(surveyId, orderedIds) {
+  const tx = db.transaction(() => {
+    const existing = stmts.listSurveyQuestions.all(surveyId);
+    const existingIds = new Set(existing.map((q) => q.id));
+    for (const id of orderedIds) {
+      if (!existingIds.has(id)) throw new Error("Question does not belong to survey");
+    }
+    for (let i = 0; i < orderedIds.length; i++) {
+      stmts.updateSurveyQuestionSort.run({ id: orderedIds[i], sortOrder: i });
+    }
+  });
+  tx();
+}
+
+function getSurveyStats(surveyId) {
+  const responses = stmts.countSurveyResponses.get(surveyId);
+  const questions = stmts.countSurveyQuestions.get(surveyId);
+  return { responseCount: responses.count, questionCount: questions.count };
+}
+
+function getSurveyResponseById(responseId) {
+  const response = stmts.getSurveyResponseById.get(responseId);
+  if (!response) return null;
+  const answers = stmts.listSurveyAnswersByResponse.all(responseId);
+  return {
+    id: response.id,
+    surveyId: response.survey_id,
+    responderUserId: response.responder_user_id,
+    responderName: response.responder_name,
+    submittedAt: response.submitted_at,
+    answers: answers.map((a) => ({
+      id: a.id,
+      questionId: a.question_id,
+      answerText: a.answer_text,
+      answerJson: a.answer_json ? JSON.parse(a.answer_json) : null,
+    })),
+  };
+}
+
+function closeExpiredSurveys() {
+  return stmts.closeExpiredSurveys.run().changes;
+}
+
 function createWikiPage(payload) {
   stmts.createWikiPage.run({
     id: payload.id,
@@ -3268,8 +3460,14 @@ function createWikiPage(payload) {
     title: payload.title,
     bodyMarkdown: payload.bodyMarkdown,
     bodyHtml: payload.bodyHtml,
+    excerpt: payload.excerpt || "",
+    scope: payload.scope || "team",
+    ownerId: payload.ownerId || null,
     parentPageId: payload.parentPageId || null,
     authorId: payload.authorId,
+    lastEditorId: payload.lastEditorId || payload.authorId,
+    publishedAt: payload.publishedAt || Math.floor(Date.now() / 1000),
+    sortOrder: Number(payload.sortOrder || 0),
   });
 }
 
@@ -3282,6 +3480,7 @@ function updateWikiPage(payload) {
       title: existing.title,
       bodyMarkdown: existing.body_markdown,
       bodyHtml: existing.body_html,
+      excerpt: existing.excerpt || "",
       authorId: payload.authorId,
     });
   }
@@ -3291,38 +3490,131 @@ function updateWikiPage(payload) {
     title: payload.title,
     bodyMarkdown: payload.bodyMarkdown,
     bodyHtml: payload.bodyHtml,
+    excerpt: payload.excerpt || "",
+    scope: payload.scope || existing?.scope || "team",
+    ownerId: payload.ownerId !== undefined ? payload.ownerId : (existing?.owner_id || null),
     parentPageId: payload.parentPageId || null,
-    authorId: payload.authorId,
+    lastEditorId: payload.lastEditorId || payload.authorId,
+    publishedAt: payload.publishedAt || existing?.published_at || Math.floor(Date.now() / 1000),
+    sortOrder: Number(payload.sortOrder ?? existing?.sort_order ?? 0),
   });
 }
 
 function getWikiPageById(id) {
-  return stmts.getWikiPageById.get(id) || null;
+  const row = stmts.getWikiPageById.get(id);
+  return row ? mapWikiPageRow(row) : null;
 }
 
 function getWikiPageBySlug(slug) {
-  return stmts.getWikiPageBySlug.get(slug) || null;
+  const row = stmts.getWikiPageBySlug.get(slug);
+  return row ? mapWikiPageRow(row) : null;
 }
 
-function listWikiPages() {
-  return stmts.listWikiPages.all();
+function listWikiPages(filters = {}) {
+  return stmts.listWikiPages.all({
+    scope: filters.scope || "",
+    ownerId: filters.ownerId || "",
+  }).map(mapWikiPageRow);
 }
 
-function searchWikiPages(query) {
+function searchWikiPages(query, filters = {}) {
   const term = `%${query}%`;
-  return stmts.searchWikiPages.all(term, term);
+  return stmts.searchWikiPages.all({
+    term,
+    scope: filters.scope || "",
+    ownerId: filters.ownerId || "",
+    limit: Number(filters.limit || 20),
+  }).map(mapWikiPageRow);
 }
 
 function deleteWikiPageById(id) {
-  return stmts.deleteWikiPage.run(id).changes > 0;
+  const pages = listWikiPages();
+  const target = pages.find((page) => page.id === id);
+  if (!target) return false;
+
+  const idsToDelete = new Set([id]);
+  let added = true;
+  while (added) {
+    added = false;
+    for (const page of pages) {
+      if (page.parentPageId && idsToDelete.has(page.parentPageId) && !idsToDelete.has(page.id)) {
+        idsToDelete.add(page.id);
+        added = true;
+      }
+    }
+  }
+
+  const tx = db.transaction(() => {
+    for (const pageId of idsToDelete) {
+      stmts.deleteWikiRevisionByPageId.run(pageId);
+      stmts.deleteWikiPage.run(pageId);
+    }
+  });
+  tx();
+  return true;
 }
 
 function listWikiRevisions(pageId) {
-  return stmts.listWikiRevisions.all(pageId);
+  return stmts.listWikiRevisions.all(pageId).map((row) => ({
+    id: row.id,
+    pageId: row.page_id,
+    title: row.title,
+    bodyMarkdown: row.body_markdown,
+    bodyHtml: row.body_html,
+    excerpt: row.excerpt || "",
+    authorId: row.author_id,
+    authorUsername: row.author_username || null,
+    createdAt: row.created_at,
+  }));
 }
 
 function getWikiRevisionById(id) {
-  return stmts.getWikiRevisionById.get(id) || null;
+  const row = stmts.getWikiRevisionById.get(id);
+  return row ? {
+    id: row.id,
+    pageId: row.page_id,
+    title: row.title,
+    bodyMarkdown: row.body_markdown,
+    bodyHtml: row.body_html,
+    excerpt: row.excerpt || "",
+    authorId: row.author_id,
+    authorUsername: row.author_username || null,
+    createdAt: row.created_at,
+  } : null;
+}
+
+function getWikiStats() {
+  const counts = stmts.countWikiPagesByScope.get() || {};
+  const revisions = stmts.countWikiRevisions.get() || {};
+  return {
+    total: Number(counts.total || 0),
+    teamTotal: Number(counts.team_total || 0),
+    personalTotal: Number(counts.personal_total || 0),
+    revisions: Number(revisions.total || 0),
+  };
+}
+
+function mapWikiPageRow(row) {
+  return {
+    id: row.id,
+    slug: row.slug,
+    title: row.title,
+    bodyMarkdown: row.body_markdown,
+    bodyHtml: row.body_html,
+    excerpt: row.excerpt || "",
+    scope: row.scope || "team",
+    ownerId: row.owner_id || null,
+    ownerUsername: row.owner_username || null,
+    parentPageId: row.parent_page_id || null,
+    authorId: row.author_id,
+    authorUsername: row.author_username || null,
+    lastEditorId: row.last_editor_id || row.author_id,
+    lastEditorUsername: row.last_editor_username || row.author_username || null,
+    publishedAt: row.published_at || row.updated_at || row.created_at,
+    sortOrder: Number(row.sort_order || 0),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
 }
 
 module.exports = {
@@ -3406,6 +3698,7 @@ module.exports = {
   setSetting,
   getSmtpConfig,
   setSmtpConfig,
+  getShareConfig,
   encryptValue,
   decryptValue,
   // Chat: User keys
@@ -3559,7 +3852,12 @@ module.exports = {
   deleteSurveyById,
   getSurveyQuestions,
   createSurveySubmission,
+  hasSurveyResponseForUser,
   getSurveyResults,
+  reorderSurveyQuestions,
+  getSurveyStats,
+  getSurveyResponseById,
+  closeExpiredSurveys,
   // Wiki
   createWikiPage,
   updateWikiPage,
@@ -3570,9 +3868,12 @@ module.exports = {
   deleteWikiPageById,
   listWikiRevisions,
   getWikiRevisionById,
+  getWikiStats,
   // Shared
   VALID_EXPIRY_OPTIONS,
   VALID_GUEST_EXPIRY,
+  SHARE_MAX_FILE_SIZE_OPTIONS_MB,
+  SHARE_MAX_FILE_COUNT_OPTIONS,
   VALID_SYNTAX_OPTIONS,
   FILES_DIR,
   TMP_DIR,

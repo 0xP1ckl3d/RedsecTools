@@ -3,6 +3,8 @@ const BULLETIN_ANIMATION_PRESETS = ["none", "slide-left-right", "slide-through",
 
 const LEGACY_PERMISSION_ALIASES = {
   "calendar.edit_any": "calendar.view_team",
+  "wiki.create": "wiki.create_team",
+  "wiki.edit_any": "wiki.edit_team",
 };
 
 const PERMISSION_DEFINITIONS = [
@@ -88,25 +90,31 @@ const PERMISSION_DEFINITIONS = [
     key: "wiki.view",
     category: "Wiki",
     label: "View",
-    description: "Read internal wiki content.",
+    description: "Read the team wiki and any personal wiki pages you own.",
   },
   {
-    key: "wiki.create",
+    key: "wiki.create_personal",
     category: "Wiki",
-    label: "Create Own",
-    description: "Create and edit your own wiki pages.",
+    label: "Create Personal",
+    description: "Create, edit, and delete pages in your own personal wiki.",
   },
   {
-    key: "wiki.edit_any",
+    key: "wiki.create_team",
+    category: "Wiki",
+    label: "Create Team",
+    description: "Create team wiki pages and edit or delete the team pages you created.",
+  },
+  {
+    key: "wiki.edit_team",
     category: "Wiki",
     label: "Edit Team",
-    description: "Edit wiki pages created by other users.",
+    description: "Edit, move, restore, and delete team wiki pages created by other users.",
   },
   {
     key: "wiki.manage",
     category: "Wiki",
     label: "Manage",
-    description: "Manage wiki structure and broader wiki administration.",
+    description: "Manage wiki settings, structure, search defaults, and all wiki spaces.",
   },
 ];
 
@@ -135,7 +143,8 @@ const SYSTEM_ROLE_DEFINITIONS = [
       "survey.create",
       "survey.respond_public",
       "wiki.view",
-      "wiki.create",
+      "wiki.create_personal",
+      "wiki.create_team",
     ],
   },
   {
@@ -157,8 +166,9 @@ const SYSTEM_ROLE_DEFINITIONS = [
       "survey.respond_public",
       "survey.view_results_any",
       "wiki.view",
-      "wiki.create",
-      "wiki.edit_any",
+      "wiki.create_personal",
+      "wiki.create_team",
+      "wiki.edit_team",
       "wiki.manage",
     ],
   },
@@ -171,7 +181,7 @@ const TOOL_DEFINITIONS = [
   { key: "vault", name: "RedSecVault", href: "/vault" },
   { key: "calendar", name: "RedSecCal", href: "/calendar", permissionsAny: ["calendar.view"] },
   { key: "survey", name: "RedSecSurvey", href: "/survey", permissionsAny: ["survey.create", "survey.manage_any", "survey.view_results_any"] },
-  { key: "wiki", name: "RedSecWiki", href: "/wiki", permissionsAny: ["wiki.view"] },
+  { key: "wiki", name: "RedSecWiki", href: "/wiki", permissionsAny: ["wiki.view", "wiki.create_personal", "wiki.create_team", "wiki.edit_team", "wiki.manage"] },
 ];
 
 function canonicalizePermission(permission) {

@@ -27,6 +27,7 @@ const {
   deleteExpiredGuestLinks, deleteExpiredPasswordResets,
   deleteExpiredMessages, deleteExpiredVaultShares,
   deleteExpiredPendingLogins, deleteExpiredTrustedDevices, deleteExpiredAdminSessions, deleteExpiredExtensionSessions,
+  closeExpiredSurveys,
 } = require("./database");
 const { pageRequireUser, pageRequireGuestOrUser } = require("./middleware/auth");
 const { pageRequirePermission, pageRequireAnyPermission } = require("./middleware/permissions");
@@ -115,9 +116,10 @@ app.get("/vault/about", (req, res) => res.sendFile(page("vault/about.html")));
 app.get("/calendar", pageRequireUser, pageRequirePermission("calendar.view"), (req, res) => res.sendFile(page("calendar/index.html")));
 app.get("/calendar/about", (req, res) => res.sendFile(page("calendar/about.html")));
 app.get("/survey", pageRequireUser, pageRequireAnyPermission(["survey.create", "survey.manage_any", "survey.view_results_any"]), (req, res) => res.sendFile(page("survey/index.html")));
+app.get("/survey/results", pageRequireUser, pageRequireAnyPermission(["survey.create", "survey.manage_any", "survey.view_results_any"]), (req, res) => res.sendFile(page("survey/results.html")));
 app.get("/survey/about", (req, res) => res.sendFile(page("survey/about.html")));
 app.get("/survey/r/:token", (req, res) => res.sendFile(page("survey/respond.html")));
-app.get("/wiki", pageRequireUser, pageRequirePermission("wiki.view"), (req, res) => res.sendFile(page("wiki/index.html")));
+app.get("/wiki", pageRequireUser, pageRequireAnyPermission(["wiki.view", "wiki.create_personal", "wiki.create_team", "wiki.edit_team", "wiki.manage"]), (req, res) => res.sendFile(page("wiki/index.html")));
 app.get("/wiki/about", (req, res) => res.sendFile(page("wiki/about.html")));
 app.get("/admin", (req, res) => res.sendFile(page("admin.html")));
 
@@ -148,9 +150,10 @@ setInterval(() => {
   const trustedDevices = deleteExpiredTrustedDevices();
   const adminSessions = deleteExpiredAdminSessions();
   const extensionSessions = deleteExpiredExtensionSessions();
+  const expiredSurveys = closeExpiredSurveys();
   const bulletinPurge = runBulletinAutoPurge();
   if (shareRouter.cleanupTmp) shareRouter.cleanupTmp();
-  const total = pastes + files + sessions + invites + guestLinks + passwordResets + messages + vaultShares + pendingLogins + trustedDevices + adminSessions + extensionSessions + bulletinPurge.deletedBulletins + bulletinPurge.deletedAssets;
+  const total = pastes + files + sessions + invites + guestLinks + passwordResets + messages + vaultShares + pendingLogins + trustedDevices + adminSessions + extensionSessions + expiredSurveys + bulletinPurge.deletedBulletins + bulletinPurge.deletedAssets;
   if (total > 0) {
     console.log(JSON.stringify({
       ts: new Date().toISOString(),
@@ -167,6 +170,7 @@ setInterval(() => {
       trustedDevices,
       adminSessions,
       extensionSessions,
+      expiredSurveys,
       bulletinPurge,
     }));
   }

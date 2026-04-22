@@ -10,60 +10,172 @@
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-  <div class="page-wide py-10">
-    <header class="flex justify-between items-center mb-8">
-      <h1 class="text-2xl font-bold"><span class="text-accent">RedSec</span><span class="text-secondary">Survey</span></h1>
-      <div class="flex items-center gap-2">
-        <div class="relative">
-          <button id="burger-btn" class="burger-btn" aria-label="Menu" aria-expanded="false">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
-          </button>
-          <nav id="burger-nav" class="burger-nav hidden"></nav>
-        </div>
-        <button type="button" class="theme-toggle" id="theme-toggle" title="Toggle theme">
-          <svg class="w-5 h-5 dark-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
-          <svg class="w-5 h-5 light-icon hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+  <div class="dashboard-layout survey-dashboard-shell">
+    <aside id="survey-sidebar" class="dashboard-sidebar">
+      <button type="button" id="survey-sidebar-collapse-btn" class="sidebar-collapse-btn" title="Collapse sidebar">
+        <svg class="sidebar-collapse-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+      </button>
+
+      <nav class="sidebar-nav">
+        <button type="button" class="sidebar-nav-item active" data-survey-view="all">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+          <span class="sidebar-nav-text">All Surveys</span>
         </button>
+        <button type="button" class="sidebar-nav-item" data-survey-view="published">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          <span class="sidebar-nav-text">Active</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-survey-view="draft">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+          <span class="sidebar-nav-text">Drafts</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-survey-view="closed">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/></svg>
+          <span class="sidebar-nav-text">Closed</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-divider"></div>
+
+      <section class="wiki-sidebar-panel">
+        <div class="wiki-sidebar-kicker">Survey Tool</div>
+        <h2 class="wiki-sidebar-heading">RedSec Survey</h2>
+        <p class="wiki-sidebar-copy">Create, manage, and analyze surveys with tokenized response links.</p>
+      </section>
+
+      <section class="wiki-sidebar-panel">
+        <div class="wiki-sidebar-kicker">Quick Stats</div>
+        <div id="survey-sidebar-stats" class="wiki-sidebar-overview">
+          <div class="wiki-sidebar-stat">
+            <span class="wiki-sidebar-stat-label">Surveys</span>
+            <span class="wiki-sidebar-stat-value" id="survey-stat-total">0</span>
+          </div>
+          <div class="wiki-sidebar-stat">
+            <span class="wiki-sidebar-stat-label">Active</span>
+            <span class="wiki-sidebar-stat-value" id="survey-stat-active">0</span>
+          </div>
+        </div>
+      </section>
+    </aside>
+
+    <div class="dashboard-content">
+      <header class="dashboard-header">
+        <div>
+          <h1 class="text-xl font-bold">
+            <a href="/survey" class="hover:underline transition-colors">
+              <span class="text-accent">RedSec</span><span class="text-secondary">Survey</span>
+            </a>
+          </h1>
+          <p class="text-sm text-muted mt-1">Create surveys with visual builders, share token links, and review response analytics.</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <div class="relative">
+            <button id="burger-btn" class="burger-btn" aria-label="Menu" aria-expanded="false">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+            <nav id="burger-nav" class="burger-nav hidden"></nav>
+          </div>
+          <button type="button" class="theme-toggle" id="theme-toggle" title="Toggle theme">
+            <svg class="w-5 h-5 dark-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+            <svg class="w-5 h-5 light-icon hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="mobile-tabs">
+        <button type="button" class="mobile-tab active" data-survey-view="all">All</button>
+        <button type="button" class="mobile-tab" data-survey-view="published">Active</button>
+        <button type="button" class="mobile-tab" data-survey-view="draft">Drafts</button>
+        <button type="button" class="mobile-tab" data-survey-view="closed">Closed</button>
       </div>
-    </header>
 
-    <div class="grid gap-6 lg:grid-cols-[380px_1fr]">
-      <section class="card">
-        <h2 class="text-lg font-semibold mb-4">Create Survey</h2>
-        <div class="space-y-3">
-          <input id="survey-title" class="input-field" placeholder="Survey title">
-          <textarea id="survey-description" class="input-field min-h-[100px]" placeholder="Description"></textarea>
-          <select id="survey-response-mode" class="input-field">
-            <option value="anonymous_public">Anonymous public</option>
-            <option value="internal_named">Named internal-only</option>
-            <option value="public_named">Named public</option>
-          </select>
-          <div class="grid grid-cols-2 gap-3">
-            <input id="survey-starts-at" type="datetime-local" class="input-field">
-            <input id="survey-ends-at" type="datetime-local" class="input-field">
+      <div class="dashboard-main">
+        <section class="card wiki-toolbar-card">
+          <div class="wiki-toolbar-copy">
+            <div id="survey-toolbar-kicker" class="wiki-toolbar-kicker">Survey Builder</div>
+            <h2 id="survey-toolbar-heading" class="wiki-toolbar-heading">All Surveys</h2>
+            <p id="survey-toolbar-description" class="wiki-toolbar-description">Create, edit, and publish surveys with tokenized response links.</p>
           </div>
-          <textarea id="survey-questions-json" class="input-field min-h-[220px]" placeholder='Questions JSON, e.g. [{"questionText":"How did it go?","questionType":"long_text","isRequired":true}]'></textarea>
-          <button id="survey-create-btn" type="button" class="btn-primary w-full">Save Survey</button>
-          <p id="survey-create-msg" class="text-sm hidden"></p>
-        </div>
-      </section>
+          <div class="wiki-toolbar-actions">
+            <button type="button" id="survey-new-btn" class="btn-primary">New Survey</button>
+            <button type="button" id="survey-results-btn" class="btn-secondary hidden">View Results</button>
+          </div>
+        </section>
 
-      <section class="card">
-        <div class="flex justify-between items-center mb-4">
-          <div>
-            <h2 class="text-lg font-semibold">My Surveys</h2>
-            <p class="text-sm text-muted">Draft, publish, share, and review response stats.</p>
-          </div>
-          <button id="survey-refresh-btn" type="button" class="btn-secondary">Refresh</button>
+        <div class="wiki-main-grid">
+          <section class="card wiki-list-card">
+            <div class="wiki-card-header">
+              <div>
+                <h3 class="wiki-card-title" id="survey-list-heading">Surveys</h3>
+              </div>
+              <button type="button" id="survey-list-refresh-btn" class="btn-secondary text-sm">Refresh</button>
+            </div>
+            <div id="survey-list-body" class="wiki-list-body">Loading surveys...</div>
+          </section>
+
+          <section class="card wiki-reader-card">
+            <div class="wiki-card-header">
+              <div>
+                <h3 id="survey-builder-title" class="wiki-reader-title">Select a survey</h3>
+                <p id="survey-builder-subtitle" class="wiki-reader-subtitle">Choose a survey from the list or create a new one.</p>
+              </div>
+            </div>
+            <div id="survey-builder-body" class="survey-builder-body">
+              <p class="text-sm text-muted">No survey selected.</p>
+            </div>
+          </section>
+
+          <aside class="card wiki-meta-card">
+            <div class="wiki-card-header">
+              <div>
+                <h3 class="wiki-card-title">Survey Settings</h3>
+              </div>
+            </div>
+            <div id="survey-meta-body" class="wiki-page-meta">
+              <div class="text-sm text-muted">Select a survey to see settings.</div>
+            </div>
+          </aside>
         </div>
-        <div id="survey-list" class="space-y-3 text-sm text-muted">Loading surveys...</div>
-      </section>
+
+        <footer class="footer">&copy; <span class="current-year"></span> RedSec Offensive Security</footer>
+      </div>
     </div>
-
-    <footer class="footer">&copy; <span class="current-year"></span> RedSec Offensive Security</footer>
   </div>
+
+  <!-- Time picker modal -->
+  <div id="survey-time-modal" class="modal-overlay hidden">
+    <div class="modal-card bulletin-time-modal-card">
+      <div class="flex justify-between items-center mb-4">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-wide text-muted">Select Time</p>
+          <h3 id="survey-time-modal-heading" class="text-lg font-semibold">Choose time</h3>
+        </div>
+        <button type="button" id="survey-time-modal-close" class="text-muted hover:text-primary text-lg cursor-pointer" title="Close">&times;</button>
+      </div>
+      <div class="bulletin-time-display">
+        <button type="button" id="survey-time-hour-display" class="bulletin-time-display-segment active">09</button>
+        <span class="bulletin-time-display-colon">:</span>
+        <button type="button" id="survey-time-minute-display" class="bulletin-time-display-segment">00</button>
+        <div class="bulletin-period-toggle">
+          <button type="button" id="survey-time-am" class="bulletin-period-btn">AM</button>
+          <button type="button" id="survey-time-pm" class="bulletin-period-btn">PM</button>
+        </div>
+      </div>
+      <div class="bulletin-clock-stage">
+        <div id="survey-clock-hour-face" class="bulletin-clock-face"></div>
+        <div id="survey-clock-minute-face" class="bulletin-clock-face hidden"></div>
+        <div class="bulletin-clock-center"></div>
+        <div id="survey-clock-hand" class="bulletin-clock-hand" data-clock-angle="0"></div>
+      </div>
+      <div class="flex gap-2 mt-4">
+        <button type="button" id="survey-time-cancel" class="btn-secondary flex-1">Cancel</button>
+        <button type="button" id="survey-time-save" class="btn-primary flex-1">OK</button>
+      </div>
+    </div>
+  </div>
+
   <script type="module" src="/js/burger-menu.js"></script>
   <script type="module" src="/js/theme.js"></script>
-  <script type="module" src="/js/survey.js"></script>
+  <script type="module" src="/js/survey-builder.js"></script>
 </body>
 </html>

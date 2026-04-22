@@ -1,4 +1,5 @@
 // RedSecVault — Main UI logic
+import { showConfirmModal } from "./confirm-modal.js";
 import {
   createPersonalVault, unlockPersonalVault,
   createTeamVault, unlockTeamVault, wrapTeamVaultKeyForMember,
@@ -572,7 +573,7 @@ async function updateExistingTeamMemberPermission(vaultId, userId, permission) {
 }
 
 async function removeExistingTeamMember(vaultId, userId) {
-  if (!confirm("Remove this team member from the vault?")) return;
+  if (!await showConfirmModal({ title: "Remove Member", message: "Remove this team member from the vault?", confirmLabel: "Remove", danger: true })) return;
   try {
     const res = await fetch(`/api/vault/vaults/${vaultId}/members/${userId}`, { method: "DELETE" });
     if (!res.ok) {
@@ -1424,7 +1425,7 @@ async function revokeShare(shareId, entryId) {
 
 async function deleteEntry() {
   if (!currentEntryId) return;
-  if (!confirm("Delete this entry? This cannot be undone.")) return;
+  if (!await showConfirmModal({ title: "Delete Entry", message: "Delete this entry? This cannot be undone.", confirmLabel: "Delete", danger: true })) return;
 
   try {
     const res = await fetch(`/api/vault/entries/${currentEntryId}`, { method: "DELETE" });
@@ -1445,7 +1446,7 @@ async function deleteVault() {
   if (!currentVaultId) return;
   const vault = vaults.find(v => v.id === currentVaultId);
   if (!vault || vault.owner_id !== currentUser.id) return;
-  if (!confirm("Delete this vault and all its entries? This cannot be undone.")) return;
+  if (!await showConfirmModal({ title: "Delete Vault", message: "Delete this vault and all its entries? This cannot be undone.", confirmLabel: "Delete", danger: true })) return;
 
   try {
     const res = await fetch(`/api/vault/vaults/${currentVaultId}`, { method: "DELETE" });

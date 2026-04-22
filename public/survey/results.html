@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <title>RedSecSurvey — Results</title>
+  <link rel="icon" href="/assets/favicon.ico" type="image/x-icon">
+  <script src="/js/theme-init.js"></script>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="page-wide py-10">
+    <header class="flex justify-between items-center mb-6">
+      <h1 class="text-2xl font-bold">
+        <a href="/survey" class="hover:underline transition-colors">
+          <span class="text-accent">RedSec</span><span class="text-secondary">Survey</span>
+        </a>
+        <span class="text-muted font-normal text-lg mx-2">/</span>
+        <span class="text-secondary font-normal text-lg">Results</span>
+      </h1>
+      <div class="flex items-center gap-2">
+        <div class="relative">
+          <button id="burger-btn" class="burger-btn" aria-label="Menu" aria-expanded="false">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+          </button>
+          <nav id="burger-nav" class="burger-nav hidden"></nav>
+        </div>
+        <button type="button" class="theme-toggle" id="theme-toggle" title="Toggle theme">
+          <svg class="w-5 h-5 dark-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+          <svg class="w-5 h-5 light-icon hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <div id="results-loading" class="card max-w-4xl mx-auto text-center">
+      <p class="text-muted text-sm">Loading results...</p>
+    </div>
+
+    <div id="results-error" class="card max-w-4xl mx-auto text-center hidden">
+      <h2 class="text-lg font-semibold text-error mb-1">Error</h2>
+      <p id="results-error-message" class="text-sm text-muted"></p>
+    </div>
+
+    <div id="results-content" class="survey-results-content hidden">
+      <div class="card mb-6">
+        <div class="flex justify-between items-start flex-wrap gap-3">
+          <div>
+            <div class="wiki-toolbar-kicker">Survey Results</div>
+            <h2 id="results-survey-title" class="text-xl font-semibold">Loading...</h2>
+            <p id="results-survey-description" class="text-sm text-muted mt-1"></p>
+          </div>
+          <div class="flex gap-2">
+            <button type="button" id="results-export-btn" class="btn-secondary text-sm">Export CSV</button>
+            <a id="results-back-link" href="/survey" class="btn-secondary text-sm">Back to Surveys</a>
+          </div>
+        </div>
+        <div id="results-stats-row" class="survey-results-stats mt-4"></div>
+      </div>
+
+      <div id="results-timeline-section" class="card mb-6 hidden">
+        <h3 class="text-sm font-semibold mb-3">Response Timeline</h3>
+        <div id="results-timeline-chart" class="survey-timeline-chart"></div>
+      </div>
+
+      <div id="results-questions" class="space-y-4"></div>
+
+      <div class="card mt-6">
+        <div class="wiki-card-header">
+          <h3 class="wiki-card-title">Individual Responses</h3>
+          <span id="results-response-count" class="text-xs text-muted"></span>
+        </div>
+        <div id="results-responses-list" class="wiki-list-body"></div>
+      </div>
+    </div>
+
+    <footer class="footer">&copy; <span class="current-year"></span> RedSec Offensive Security</footer>
+  </div>
+
+  <script type="module" src="/js/burger-menu.js"></script>
+  <script type="module" src="/js/theme.js"></script>
+  <script type="module" src="/js/survey-results.js"></script>
+</body>
+</html>

@@ -37,7 +37,7 @@
   </div>
 
   <!-- Dashboard -->
-  <div id="dashboard" class="hidden dashboard-layout admin-dashboard-shell">
+  <div id="dashboard" class="hidden dashboard-layout admin-dashboard-shell" hidden>
     <aside id="admin-sidebar" class="dashboard-sidebar">
       <button type="button" id="admin-sidebar-collapse-btn" class="sidebar-collapse-btn" title="Collapse sidebar">
         <svg class="sidebar-collapse-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
@@ -151,6 +151,42 @@
 
       <!-- Files Tab -->
       <div id="files-tab" class="hidden admin-page-stack">
+        <div class="card admin-section-card">
+          <div class="admin-card-header">
+            <div>
+              <p class="admin-card-kicker">Tool Settings</p>
+              <h2 class="admin-card-title">RedSecShare Limits</h2>
+              <p class="admin-card-copy">Choose the server-enforced upload ceilings for file size and files per share.</p>
+            </div>
+          </div>
+          <div class="grid gap-4 md:grid-cols-2">
+            <div>
+              <label class="block text-sm font-medium mb-1.5" for="share-max-file-size">Max file size</label>
+              <select id="share-max-file-size" class="input-field">
+                <option value="10">10 MB</option>
+                <option value="25">25 MB</option>
+                <option value="50">50 MB</option>
+                <option value="100">100 MB</option>
+                <option value="250">250 MB</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1.5" for="share-max-files">Max files per share</label>
+              <select id="share-max-files" class="input-field">
+                <option value="1">1 file</option>
+                <option value="2">2 files</option>
+                <option value="3">3 files</option>
+                <option value="5">5 files</option>
+                <option value="8">8 files</option>
+              </select>
+            </div>
+          </div>
+          <div class="flex items-center gap-3">
+            <button type="button" id="share-settings-save-btn" class="btn-primary">Save Share Limits</button>
+            <p id="share-settings-result" class="text-sm hidden"></p>
+          </div>
+        </div>
+
         <div class="admin-stat-grid admin-stat-grid-4">
           <div class="stat-card"><div class="stat-value" id="file-stat-total">-</div><div class="stat-label">Total</div></div>
           <div class="stat-card"><div class="stat-value" id="file-stat-active">-</div><div class="stat-label">Active</div></div>
@@ -198,6 +234,49 @@
             <button type="button" id="file-prev-btn" class="btn-secondary text-sm" disabled>Previous</button>
             <span class="text-sm text-muted" id="file-page-info">Page 1</span>
             <button type="button" id="file-next-btn" class="btn-secondary text-sm">Next</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="survey-tool-settings-tab" class="hidden admin-page-stack">
+        <div class="admin-stat-grid admin-stat-grid-4">
+          <div class="stat-card"><div class="stat-value" id="survey-admin-stat-total">-</div><div class="stat-label">Total</div></div>
+          <div class="stat-card"><div class="stat-value" id="survey-admin-stat-active">-</div><div class="stat-label">Active</div></div>
+          <div class="stat-card"><div class="stat-value" id="survey-admin-stat-ended">-</div><div class="stat-label">Ended</div></div>
+          <div class="stat-card"><div class="stat-value" id="survey-admin-stat-closed">-</div><div class="stat-label">Closed</div></div>
+        </div>
+        <div class="card admin-section-card">
+          <div class="admin-card-header">
+            <div>
+              <p class="admin-card-kicker">Tool Settings</p>
+              <h2 class="admin-card-title">RedSecSurvey Records</h2>
+              <p class="admin-card-copy">Review survey owners, statuses, response volume, and remove surveys when required.</p>
+            </div>
+            <div class="admin-card-actions">
+              <button type="button" id="survey-admin-refresh-btn" class="btn-secondary text-sm">Refresh</button>
+            </div>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>Title</th>
+                  <th>Owner</th>
+                  <th>Status</th>
+                  <th>Mode</th>
+                  <th>Questions</th>
+                  <th>Responses</th>
+                  <th>Updated</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="survey-admin-body"></tbody>
+            </table>
+          </div>
+          <div class="admin-pagination">
+            <button type="button" id="survey-admin-prev-btn" class="btn-secondary text-sm" disabled>Previous</button>
+            <span class="text-sm text-muted" id="survey-admin-page-info">Page 1</span>
+            <button type="button" id="survey-admin-next-btn" class="btn-secondary text-sm">Next</button>
           </div>
         </div>
       </div>
@@ -293,7 +372,7 @@
       </div>
 
       <!-- Settings Tab -->
-      <div id="settings-tab" class="admin-page-stack">
+      <div id="settings-tab" class="hidden admin-page-stack">
         <div class="card admin-section-card">
             <div class="admin-card-header">
               <div>
@@ -685,6 +764,53 @@
             </div>
             <button type="button" id="save-calendar-settings-btn" class="btn-primary">Save Calendar Settings</button>
             <p id="calendar-settings-result" class="text-sm hidden"></p>
+          </div>
+        </div>
+      </div>
+
+      <div id="wiki-tool-settings-tab" class="hidden admin-page-stack">
+        <div class="admin-stat-grid admin-stat-grid-4">
+          <div class="stat-card"><div class="stat-value" id="wiki-stat-total-pages">-</div><div class="stat-label">Total Pages</div></div>
+          <div class="stat-card"><div class="stat-value" id="wiki-stat-team-pages">-</div><div class="stat-label">Team Pages</div></div>
+          <div class="stat-card"><div class="stat-value" id="wiki-stat-personal-pages">-</div><div class="stat-label">Personal Pages</div></div>
+          <div class="stat-card"><div class="stat-value" id="wiki-stat-revisions">-</div><div class="stat-label">Revisions</div></div>
+        </div>
+        <div class="grid gap-6 xl:grid-cols-[360px_1fr]">
+          <div class="card admin-section-card">
+            <div class="admin-card-header">
+              <div>
+                <h2 class="admin-card-title">RedSecWiki Settings</h2>
+              </div>
+            </div>
+            <div class="space-y-4">
+              <label class="custom-checkbox gap-2">
+                <input type="checkbox" id="wiki-personal-spaces-enabled">
+                <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+                <span class="text-sm">Enable personal wiki spaces</span>
+              </label>
+              <label class="space-y-1">
+                <span class="text-xs font-semibold uppercase tracking-wide text-muted">Search Result Limit</span>
+                <input type="number" id="wiki-search-result-limit" min="5" max="50" class="input-field" placeholder="20">
+              </label>
+              <label class="space-y-1">
+                <span class="text-xs font-semibold uppercase tracking-wide text-muted">Team Home Page</span>
+                <select id="wiki-team-home-page" class="input-field">
+                  <option value="">Automatic first team page</option>
+                </select>
+              </label>
+              <button type="button" id="wiki-settings-save-btn" class="btn-primary">Save Wiki Settings</button>
+              <p id="wiki-settings-result" class="text-sm hidden"></p>
+            </div>
+          </div>
+          <div class="card admin-section-card">
+            <div class="admin-card-header">
+              <div>
+                <h2 class="admin-card-title">Recent Wiki Pages</h2>
+              </div>
+            </div>
+            <div id="wiki-admin-recent-pages" class="space-y-3">
+              <div class="text-sm text-muted">Loading wiki pages…</div>
+            </div>
           </div>
         </div>
       </div>

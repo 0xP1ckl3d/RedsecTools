@@ -1,3 +1,5 @@
+import { showConfirmModal, showAlertModal } from "./confirm-modal.js";
+
 const adminLoginShell = document.getElementById("admin-login-shell");
 const loginSection = document.getElementById("login-section");
 const dashboard = document.getElementById("dashboard");
@@ -28,14 +30,20 @@ async function api(path, options = {}) {
 
 function showLogin() {
   adminLoginShell?.classList.remove("hidden");
+  adminLoginShell?.removeAttribute("hidden");
   loginSection.classList.remove("hidden");
+  loginSection.removeAttribute("hidden");
   dashboard.classList.add("hidden");
+  dashboard.setAttribute("hidden", "");
 }
 
 function showDashboard() {
   adminLoginShell?.classList.add("hidden");
+  adminLoginShell?.setAttribute("hidden", "");
   loginSection.classList.add("hidden");
+  loginSection.setAttribute("hidden", "");
   dashboard.classList.remove("hidden");
+  dashboard.removeAttribute("hidden");
   loadPasteStats();
   loadPastes();
   loadFileStats();
@@ -75,10 +83,13 @@ function userDisplayName(p) {
 
 async function checkAuth() {
   try {
-    const res = await fetch("/admin/api/paste-stats");
+    const res = await fetch("/admin/api/auth-status");
     if (res.ok) {
-      showDashboard();
-      return;
+      const data = await res.json();
+      if (data.authenticated) {
+        showDashboard();
+        return;
+      }
     }
   } catch {}
   showLogin();
@@ -127,12 +138,12 @@ logoutBtn.addEventListener("click", async () => {
 // --- Tabs ---
 
 const tabBtns = document.querySelectorAll(".admin-tab[data-tab]");
-const childTabs = ["settings", "security", "roles", "bulletins", "weather", "team-shortcuts", "invites", "users", "chat", "pastes", "files", "vaults", "calendar-tool-settings"];
+const childTabs = ["settings", "security", "roles", "bulletins", "weather", "team-shortcuts", "invites", "users", "chat", "pastes", "files", "survey-tool-settings", "vaults", "calendar-tool-settings", "wiki-tool-settings"];
 const adminTabGroups = {
   server: ["settings", "security", "roles"],
   homepage: ["weather", "bulletins", "team-shortcuts"],
   "users-admin": ["users", "invites"],
-  tools: ["calendar-tool-settings", "chat", "pastes", "files", "vaults"],
+  tools: ["calendar-tool-settings", "wiki-tool-settings", "chat", "pastes", "files", "survey-tool-settings", "vaults"],
 };
 const adminSubtabLabels = {
   settings: "SMTP",
@@ -144,9 +155,11 @@ const adminSubtabLabels = {
   users: "Users",
   invites: "Invites",
   "calendar-tool-settings": "RedSecCal",
+  "wiki-tool-settings": "RedSecWiki",
   chat: "RedSecTeam",
   pastes: "RedSecPaste",
   files: "RedSecShare",
+  "survey-tool-settings": "RedSecSurvey",
   vaults: "RedSecVault",
 };
 let activeAdminParentTab = "server";
@@ -198,8 +211,20 @@ function updateAdminVisibleTabs() {
   if (visibleTabs.has("settings")) {
     loadSmtpSettings();
   }
+  if (visibleTabs.has("files")) {
+    loadShareSettings();
+    loadFileStats();
+    loadFiles();
+  }
   if (visibleTabs.has("calendar-tool-settings")) {
     loadCalendarSettings();
+  }
+  if (visibleTabs.has("wiki-tool-settings")) {
+    loadWikiToolSettings();
+  }
+  if (visibleTabs.has("survey-tool-settings")) {
+    loadSurveyAdminStats();
+    loadSurveysAdmin();
   }
   if (visibleTabs.has("weather")) {
     loadWeatherLocations();
@@ -331,7 +356,7 @@ function updatePasteBulkUI() {
 pastesBody.addEventListener("click", async (e) => {
   if (e.target.classList.contains("delete-paste-btn")) {
     const id = e.target.dataset.id;
-    if (!confirm("Delete this paste?")) return;
+    if (!await showConfirmModal({ title: "Delete Paste", message: "Permanently delete this paste?", confirmLabel: "Delete", danger: true })) return;
     try {
       const res = await api(`/api/paste/${id}`, { method: "DELETE" });
       if (res.ok) { loadPastes(); loadPasteStats(); }
@@ -340,7 +365,7 @@ pastesBody.addEventListener("click", async (e) => {
 });
 
 pasteBulkDeleteBtn.addEventListener("click", async () => {
-  if (!confirm(`Delete ${pasteSelectedIds.size} paste(s)?`)) return;
+  if (!await showConfirmModal({ title: "Bulk Delete", message: `Permanently delete ${pasteSelectedIds.size} paste(s)?`, confirmLabel: "Delete All", danger: true })) return;
   try {
     await api("/api/pastes/bulk-delete", {
       method: "POST",
@@ -367,9 +392,22 @@ const filePrevBtn = document.getElementById("file-prev-btn");
 const fileNextBtn = document.getElementById("file-next-btn");
 const filePageInfo = document.getElementById("file-page-info");
 const fileRefreshBtn = document.getElementById("file-refresh-btn");
+const shareMaxFileSizeSelect = document.getElementById("share-max-file-size");
+const shareMaxFilesSelect = document.getElementById("share-max-files");
+const shareSettingsSaveBtn = document.getElementById("share-settings-save-btn");
+const shareSettingsResult = document.getElementById("share-settings-result");
 
 let filePage = 1;
 let fileSelectedIds = new Set();
+
+async function loadShareSettings() {
+  try {
+    const res = await api("/api/settings/share");
+    const data = await res.json();
+    if (shareMaxFileSizeSelect) shareMaxFileSizeSelect.value = String(data.maxFileSizeMb);
+    if (shareMaxFilesSelect) shareMaxFilesSelect.value = String(data.maxFilesPerShare);
+  } catch {}
+}
 
 async function loadFileStats() {
   try {
@@ -450,7 +488,7 @@ function updateFileBulkUI() {
 filesBody.addEventListener("click", async (e) => {
   if (e.target.classList.contains("delete-file-btn")) {
     const id = e.target.dataset.id;
-    if (!confirm("Delete this file?")) return;
+    if (!await showConfirmModal({ title: "Delete File", message: "Permanently delete this file?", confirmLabel: "Delete", danger: true })) return;
     try {
       const res = await api(`/api/file/${id}`, { method: "DELETE" });
       if (res.ok) { loadFiles(); loadFileStats(); }
@@ -459,7 +497,7 @@ filesBody.addEventListener("click", async (e) => {
 });
 
 fileBulkDeleteBtn.addEventListener("click", async () => {
-  if (!confirm(`Delete ${fileSelectedIds.size} file(s)?`)) return;
+  if (!await showConfirmModal({ title: "Bulk Delete", message: `Permanently delete ${fileSelectedIds.size} file(s)?`, confirmLabel: "Delete All", danger: true })) return;
   try {
     await api("/api/files/bulk-delete", {
       method: "POST",
@@ -472,7 +510,133 @@ fileBulkDeleteBtn.addEventListener("click", async () => {
 
 filePrevBtn.addEventListener("click", () => { if (filePage > 1) { filePage--; loadFiles(); } });
 fileNextBtn.addEventListener("click", () => { filePage++; loadFiles(); });
-fileRefreshBtn.addEventListener("click", () => { loadFileStats(); loadFiles(); });
+fileRefreshBtn.addEventListener("click", () => { loadShareSettings(); loadFileStats(); loadFiles(); });
+
+shareSettingsSaveBtn?.addEventListener("click", async () => {
+  shareSettingsSaveBtn.disabled = true;
+  shareSettingsResult.classList.add("hidden");
+
+  try {
+    const res = await api("/api/settings/share", {
+      method: "POST",
+      body: JSON.stringify({
+        maxFileSizeMb: parseInt(shareMaxFileSizeSelect.value, 10),
+        maxFilesPerShare: parseInt(shareMaxFilesSelect.value, 10),
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to save");
+    shareSettingsResult.textContent = `Limits saved: ${data.maxFileSizeMb} MB, ${data.maxFilesPerShare} file${data.maxFilesPerShare === 1 ? "" : "s"} per share.`;
+    shareSettingsResult.className = "text-sm text-accent";
+  } catch (err) {
+    shareSettingsResult.textContent = err.message;
+    shareSettingsResult.className = "text-sm text-error";
+  }
+
+  shareSettingsResult.classList.remove("hidden");
+  shareSettingsSaveBtn.disabled = false;
+});
+
+// ============================================================
+// SURVEYS
+// ============================================================
+
+const surveyAdminBody = document.getElementById("survey-admin-body");
+const surveyAdminPrevBtn = document.getElementById("survey-admin-prev-btn");
+const surveyAdminNextBtn = document.getElementById("survey-admin-next-btn");
+const surveyAdminPageInfo = document.getElementById("survey-admin-page-info");
+const surveyAdminRefreshBtn = document.getElementById("survey-admin-refresh-btn");
+
+let surveyAdminPage = 1;
+
+function formatSurveyStatus(status) {
+  if (status === "published") return '<span class="badge badge-green">Active</span>';
+  if (status === "draft") return '<span class="badge badge-amber">Draft</span>';
+  if (status === "ended") return '<span class="badge badge-red">Ended</span>';
+  return '<span class="badge badge-gray">Closed</span>';
+}
+
+function formatSurveyMode(mode) {
+  if (mode === "internal_named") return "Named Internal";
+  if (mode === "public_named") return "Named Public";
+  return "Anonymous Public";
+}
+
+async function loadSurveyAdminStats() {
+  try {
+    const res = await api("/api/survey-stats");
+    const stats = await res.json();
+    document.getElementById("survey-admin-stat-total").textContent = stats.total;
+    document.getElementById("survey-admin-stat-active").textContent = stats.active;
+    document.getElementById("survey-admin-stat-ended").textContent = stats.ended;
+    document.getElementById("survey-admin-stat-closed").textContent = stats.closed;
+  } catch {}
+}
+
+async function loadSurveysAdmin() {
+  try {
+    const res = await api(`/api/surveys?page=${surveyAdminPage}&limit=50`);
+    const data = await res.json();
+
+    surveyAdminBody.innerHTML = "";
+
+    if (!data.surveys.length) {
+      surveyAdminBody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-8">No surveys found.</td></tr>';
+    } else {
+      for (const survey of data.surveys) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>
+            <div class="text-sm font-medium">${escapeHtml(survey.title || "Untitled Survey")}</div>
+            <div class="text-xs text-muted font-mono mt-1">${escapeHtml(survey.id.substring(0, 12))}...</div>
+          </td>
+          <td class="text-xs">${escapeHtml(survey.ownerUsername || "Unknown")}</td>
+          <td>${formatSurveyStatus(survey.status)}</td>
+          <td class="text-xs">${escapeHtml(formatSurveyMode(survey.responseMode))}</td>
+          <td class="text-xs">${survey.questionCount}</td>
+          <td class="text-xs">${survey.responseCount}</td>
+          <td class="text-xs">${formatTime(survey.updatedAt)}</td>
+          <td><button class="delete-survey-admin-btn text-error text-xs hover:underline" data-id="${escapeHtml(survey.id)}">Delete</button></td>
+        `;
+        surveyAdminBody.appendChild(tr);
+      }
+    }
+
+    surveyAdminPageInfo.textContent = `Page ${data.page} of ${data.totalPages || 1}`;
+    surveyAdminPrevBtn.disabled = data.page <= 1;
+    surveyAdminNextBtn.disabled = data.page >= data.totalPages;
+  } catch {}
+}
+
+surveyAdminBody?.addEventListener("click", async (e) => {
+  if (!e.target.classList.contains("delete-survey-admin-btn")) return;
+  const { id } = e.target.dataset;
+  if (!await showConfirmModal({ title: "Delete Survey", message: "Permanently delete this survey and all of its responses?", confirmLabel: "Delete", danger: true })) return;
+  try {
+    const res = await api(`/api/survey/${id}`, { method: "DELETE" });
+    if (res.ok) {
+      loadSurveyAdminStats();
+      loadSurveysAdmin();
+    }
+  } catch {}
+});
+
+surveyAdminPrevBtn?.addEventListener("click", () => {
+  if (surveyAdminPage > 1) {
+    surveyAdminPage -= 1;
+    loadSurveysAdmin();
+  }
+});
+
+surveyAdminNextBtn?.addEventListener("click", () => {
+  surveyAdminPage += 1;
+  loadSurveysAdmin();
+});
+
+surveyAdminRefreshBtn?.addEventListener("click", () => {
+  loadSurveyAdminStats();
+  loadSurveysAdmin();
+});
 
 // ============================================================
 // USERS
@@ -559,23 +723,23 @@ usersBody.addEventListener("click", async (e) => {
   const id = btn.dataset.id;
 
   if (btn.classList.contains("user-suspend-btn")) {
-    if (!confirm("Suspend this user? They will be logged out immediately.")) return;
+    if (!await showConfirmModal({ title: "Suspend User", message: "This user will be logged out immediately.", confirmLabel: "Suspend", danger: true })) return;
     await api(`/api/users/${id}/suspend`, { method: "POST" });
     loadUsers();
   } else if (btn.classList.contains("user-unsuspend-btn")) {
     await api(`/api/users/${id}/unsuspend`, { method: "POST" });
     loadUsers();
   } else if (btn.classList.contains("user-reset-btn")) {
-    if (!confirm("Send password reset email to this user?")) return;
+    if (!await showConfirmModal({ title: "Reset Password", message: "Send a password reset email to this user?" })) return;
     const res = await api(`/api/users/${id}/reset-password`, { method: "POST" });
     const data = await res.json();
     if (data.emailSent) {
-      alert("Password reset email sent.");
+      await showAlertModal({ title: "Password Reset", message: "Reset email sent successfully." });
     } else {
-      alert("Email failed. Reset URL: " + data.resetUrl);
+      await showAlertModal({ title: "Email Failed", message: "Could not send email. Reset URL: " + data.resetUrl });
     }
   } else if (btn.classList.contains("user-delete-btn")) {
-    if (!confirm("Permanently delete this user? This cannot be undone.")) return;
+    if (!await showConfirmModal({ title: "Delete User", message: "Permanently delete this user? This cannot be undone.", confirmLabel: "Delete", danger: true })) return;
     await api(`/api/users/${id}`, { method: "DELETE" });
     loadUsers();
   }
@@ -689,14 +853,14 @@ invitesBody.addEventListener("click", async (e) => {
   const revokeBtn = e.target.closest(".revoke-invite-btn");
   if (revokeBtn) {
     const id = revokeBtn.dataset.id;
-    if (!confirm("Revoke this invitation?")) return;
+    if (!await showConfirmModal({ title: "Revoke Invite", message: "Revoke this invitation? The link will no longer work.", confirmLabel: "Revoke", danger: true })) return;
     try {
       const res = await api(`/api/invites/${id}`, { method: "DELETE" });
       if (res.ok) {
         loadInvites();
       } else {
         const data = await res.json();
-        alert(data.error || "Failed to revoke");
+        await showAlertModal({ title: "Error", message: data.error || "Failed to revoke" });
       }
     } catch {}
     return;
@@ -731,6 +895,11 @@ const calendarWorkdayEnd = document.getElementById("calendar-workday-end");
 const calendarWorkdayCheckboxes = [...document.querySelectorAll(".calendar-workday-checkbox")];
 const saveCalendarSettingsBtn = document.getElementById("save-calendar-settings-btn");
 const calendarSettingsResult = document.getElementById("calendar-settings-result");
+const wikiPersonalSpacesEnabled = document.getElementById("wiki-personal-spaces-enabled");
+const wikiSearchResultLimit = document.getElementById("wiki-search-result-limit");
+const wikiTeamHomePage = document.getElementById("wiki-team-home-page");
+const wikiSettingsSaveBtn = document.getElementById("wiki-settings-save-btn");
+const wikiSettingsResult = document.getElementById("wiki-settings-result");
 
 async function loadSmtpSettings() {
   try {
@@ -757,6 +926,35 @@ async function loadCalendarSettings() {
     calendarWorkdayCheckboxes.forEach((checkbox) => {
       checkbox.checked = workdays.has(String(checkbox.value));
     });
+  } catch {}
+}
+
+async function loadWikiToolSettings() {
+  if (!wikiSearchResultLimit || !wikiTeamHomePage) return;
+  try {
+    const res = await api("/api/wiki/settings");
+    const data = await res.json();
+    document.getElementById("wiki-stat-total-pages").textContent = data.stats?.total ?? 0;
+    document.getElementById("wiki-stat-team-pages").textContent = data.stats?.teamTotal ?? 0;
+    document.getElementById("wiki-stat-personal-pages").textContent = data.stats?.personalTotal ?? 0;
+    document.getElementById("wiki-stat-revisions").textContent = data.stats?.revisions ?? 0;
+    wikiPersonalSpacesEnabled.checked = data.settings?.personalSpacesEnabled !== false;
+    wikiSearchResultLimit.value = data.settings?.searchResultLimit || 20;
+    wikiTeamHomePage.innerHTML = '<option value="">Automatic first team page</option>' + (data.teamPages || []).map((page) => (
+      `<option value="${escapeHtml(page.id)}">${escapeHtml(page.title)}</option>`
+    )).join("");
+    wikiTeamHomePage.value = data.settings?.teamHomePageId || "";
+    const recent = document.getElementById("wiki-admin-recent-pages");
+    if (recent) {
+      recent.innerHTML = (data.recentPages || []).length
+        ? data.recentPages.map((page) => `
+          <div class="card">
+            <div class="font-medium">${escapeHtml(page.title)}</div>
+            <div class="text-xs text-muted mt-1">${escapeHtml(page.slug)} · ${escapeHtml(page.authorUsername || "Unknown")} · ${escapeHtml(formatTime(page.updatedAt))}</div>
+          </div>
+        `).join("")
+        : '<div class="text-sm text-muted">No wiki pages yet.</div>';
+    }
   } catch {}
 }
 
@@ -866,6 +1064,37 @@ saveCalendarSettingsBtn?.addEventListener("click", async () => {
   }
 });
 
+wikiSettingsSaveBtn?.addEventListener("click", async () => {
+  wikiSettingsSaveBtn.disabled = true;
+  wikiSettingsResult.classList.add("hidden");
+  try {
+    const res = await api("/api/wiki/settings", {
+      method: "PUT",
+      body: JSON.stringify({
+        personalSpacesEnabled: wikiPersonalSpacesEnabled.checked,
+        searchResultLimit: parseInt(wikiSearchResultLimit.value, 10) || 20,
+        teamHomePageId: wikiTeamHomePage.value || "",
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      wikiSearchResultLimit.value = data.settings?.searchResultLimit || 20;
+      wikiSettingsResult.textContent = "Wiki settings saved.";
+      wikiSettingsResult.className = "text-sm text-accent";
+      await loadWikiToolSettings();
+    } else {
+      wikiSettingsResult.textContent = data.error || "Failed to save wiki settings.";
+      wikiSettingsResult.className = "text-sm text-error";
+    }
+  } catch {
+    wikiSettingsResult.textContent = "Network error";
+    wikiSettingsResult.className = "text-sm text-error";
+  } finally {
+    wikiSettingsResult.classList.remove("hidden");
+    wikiSettingsSaveBtn.disabled = false;
+  }
+});
+
 // ============================================================
 // CHAT
 // ============================================================
@@ -926,7 +1155,7 @@ document.getElementById("chat-table-body").addEventListener("click", async (e) =
   const btn = e.target.closest("[data-delete-conv]");
   if (!btn) return;
   const id = btn.dataset.deleteConv;
-  if (!confirm("Delete this conversation and all its messages?")) return;
+  if (!await showConfirmModal({ title: "Delete Conversation", message: "Delete this conversation and all its messages?", confirmLabel: "Delete", danger: true })) return;
 
   try {
     const res = await api(`/api/conversations/${id}`, { method: "DELETE" });
@@ -986,15 +1215,15 @@ usersBody.addEventListener("click", async (e) => {
   const btn = e.target;
   if (btn.classList.contains("user-reset-mfa-btn")) {
     const id = btn.dataset.id;
-    if (!confirm("Reset this user's MFA? They will be logged out and need to set up MFA again.")) return;
+    if (!await showConfirmModal({ title: "Reset MFA", message: "This user will be logged out and need to set up MFA again.", confirmLabel: "Reset MFA", danger: true })) return;
     try {
       const res = await api(`/api/users/${id}/reset-mfa`, { method: "POST" });
       if (res.ok) {
-        alert("MFA reset. User has been logged out.");
+        await showAlertModal({ title: "MFA Reset", message: "User has been logged out." });
         loadUsers();
       } else {
         const data = await res.json();
-        alert(data.error || "Failed to reset MFA");
+        await showAlertModal({ title: "Error", message: data.error || "Failed to reset MFA" });
       }
     } catch {}
   }
@@ -1216,18 +1445,18 @@ document.getElementById("vault-table-body").addEventListener("click", async (e) 
 
   const removeBtn = e.target.closest("[data-vault-member-remove]");
   if (removeBtn) {
-    if (!confirm("Remove this vault member?")) return;
+    if (!await showConfirmModal({ title: "Remove Member", message: "Remove this vault member?", confirmLabel: "Remove", danger: true })) return;
     try {
       const res = await api(`/api/vaults/${removeBtn.dataset.vaultMemberRemove}/members/${removeBtn.dataset.userId}`, { method: "DELETE" });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        alert(data.error || "Failed to remove member");
+        await showAlertModal({ title: "Error", message: data.error || "Failed to remove member" });
         return;
       }
       await loadVaultMembersAdmin(removeBtn.dataset.vaultMemberRemove);
       await loadVaultsAdmin(vaultAdminPage);
     } catch {
-      alert("Failed to remove member");
+      await showAlertModal({ title: "Error", message: "Failed to remove member" });
     }
     return;
   }
@@ -1235,7 +1464,7 @@ document.getElementById("vault-table-body").addEventListener("click", async (e) 
   const btn = e.target.closest(".vault-delete-btn");
   if (!btn) return;
   const id = btn.dataset.vaultId;
-  if (!confirm("Delete this vault and all its entries? This cannot be undone.")) return;
+  if (!await showConfirmModal({ title: "Delete Vault", message: "Delete this vault and all its entries? This cannot be undone.", confirmLabel: "Delete", danger: true })) return;
   try {
     const res = await api(`/api/vaults/${id}`, { method: "DELETE" });
     if (res.ok) {
@@ -1363,7 +1592,7 @@ document.getElementById("weather-search-btn").addEventListener("click", async ()
     resultsEl.querySelectorAll(".weather-add-btn").forEach((btn) => {
       btn.addEventListener("click", async () => {
         if (weatherLocations.length >= 5) {
-          alert("Maximum 5 locations allowed");
+          await showAlertModal({ title: "Limit Reached", message: "Maximum 5 locations allowed." });
           return;
         }
         weatherLocations.push({ name: btn.dataset.name, lat: parseFloat(btn.dataset.lat), lon: parseFloat(btn.dataset.lon) });
@@ -1401,13 +1630,13 @@ document.getElementById("vault-table-body").addEventListener("change", async (e)
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      alert(data.error || "Failed to update member");
+      await showAlertModal({ title: "Error", message: data.error || "Failed to update member" });
       await loadVaultMembersAdmin(select.dataset.vaultMemberPermission);
       return;
     }
     await loadVaultMembersAdmin(select.dataset.vaultMemberPermission);
   } catch {
-    alert("Failed to update member");
+    await showAlertModal({ title: "Error", message: "Failed to update member" });
     await loadVaultMembersAdmin(select.dataset.vaultMemberPermission);
   }
 });
@@ -1483,7 +1712,7 @@ function renderTeamShortcuts(shortcuts) {
 
   list.querySelectorAll(".team-sc-delete").forEach((btn) => {
     btn.addEventListener("click", async () => {
-      if (!confirm("Delete this team shortcut?")) return;
+      if (!await showConfirmModal({ title: "Delete Shortcut", message: "Delete this team shortcut?", confirmLabel: "Delete", danger: true })) return;
       await api("/api/shortcuts/team/" + btn.dataset.id, { method: "DELETE" });
       loadTeamShortcuts();
     });
@@ -1522,18 +1751,18 @@ document.getElementById("team-shortcut-modal").addEventListener("click", (e) => 
 document.getElementById("team-shortcut-image-upload").addEventListener("change", async function () {
   const file = this.files[0];
   if (!file) return;
-  if (file.size > 2 * 1024 * 1024) { alert("Image must be under 2MB"); return; }
+  if (file.size > 2 * 1024 * 1024) { await showAlertModal({ title: "Too Large", message: "Image must be under 2MB." }); return; }
   const formData = new FormData();
   formData.append("image", file);
   try {
     const res = await api("/api/shortcuts/team/upload-icon", { method: "POST", body: formData, headers: {} });
-    if (!res.ok) { alert("Upload failed"); return; }
+    if (!res.ok) { await showAlertModal({ title: "Upload Failed", message: "Could not upload the image." }); return; }
     const data = await res.json();
     teamUploadedIconUrl = data.url;
     teamSelectedEmoji = null;
     document.getElementById("team-shortcut-emoji-trigger").innerHTML = '<img src="' + escapeHtml(teamUploadedIconUrl) + '" class="shortcut-emoji-preview" alt="">';
     document.getElementById("team-shortcut-emoji-picker").classList.add("hidden");
-  } catch { alert("Upload failed"); }
+  } catch { await showAlertModal({ title: "Upload Failed", message: "Could not upload the image." }); }
 });
 
 // Team emoji picker
@@ -1625,7 +1854,7 @@ document.getElementById("team-shortcut-modal-save").addEventListener("click", as
     loadTeamShortcuts();
   } else {
     const data = await res.json().catch(() => ({}));
-    alert(data.error || "Failed to save");
+    await showAlertModal({ title: "Error", message: data.error || "Failed to save" });
   }
 });
 
@@ -1717,7 +1946,7 @@ async function loadRoles() {
 
     list.querySelectorAll(".role-delete-btn").forEach((button) => {
       button.addEventListener("click", async () => {
-        if (!confirm("Delete this role?")) return;
+        if (!await showConfirmModal({ title: "Delete Role", message: "Delete this role? Users with this role will lose its permissions.", confirmLabel: "Delete", danger: true })) return;
         await api(`/api/roles/${button.dataset.id}`, { method: "DELETE" });
         loadRoles();
         loadUsers();
@@ -1783,7 +2012,7 @@ async function loadBulletinsAdmin() {
 
     list.querySelectorAll(".bulletin-delete-btn").forEach((button) => {
       button.addEventListener("click", async () => {
-        if (!confirm("Delete this bulletin?")) return;
+        if (!await showConfirmModal({ title: "Delete Bulletin", message: "Delete this bulletin?", confirmLabel: "Delete", danger: true })) return;
         await api(`/api/bulletins/${button.dataset.id}`, { method: "DELETE" });
         loadBulletinsAdmin();
       });
@@ -1830,10 +2059,10 @@ document.getElementById("bulletin-settings-save-btn")?.addEventListener("click",
 document.getElementById("bulletin-purge-user-btn")?.addEventListener("click", async () => {
   const userId = document.getElementById("bulletin-purge-user").value;
   if (!userId) {
-    alert("Select a user first.");
+    await showAlertModal({ title: "Select User", message: "Select a user first." });
     return;
   }
-  if (!confirm("Purge all bulletin messages for this user?")) return;
+  if (!await showConfirmModal({ title: "Purge User Bulletins", message: "Purge all bulletin messages for this user?", confirmLabel: "Purge", danger: true })) return;
   try {
     await api("/api/bulletins/purge-user", {
       method: "POST",
@@ -1841,17 +2070,17 @@ document.getElementById("bulletin-purge-user-btn")?.addEventListener("click", as
     });
     await loadBulletinsAdmin();
   } catch (error) {
-    alert(error.message || "Failed to purge user bulletins");
+    await showAlertModal({ title: "Error", message: error.message || "Failed to purge user bulletins" });
   }
 });
 
 document.getElementById("bulletin-purge-all-btn")?.addEventListener("click", async () => {
   const confirmText = document.getElementById("bulletin-purge-all-confirm").value.trim();
   if (confirmText !== "PURGE ALL") {
-    alert('Type "PURGE ALL" to confirm.');
+    await showAlertModal({ title: "Confirmation Required", message: 'Type "PURGE ALL" to confirm.' });
     return;
   }
-  if (!confirm("Purge all bulletin messages and bulletin assets? This cannot be undone.")) return;
+  if (!await showConfirmModal({ title: "Purge All Bulletins", message: "Purge all bulletin messages and bulletin assets? This cannot be undone.", confirmLabel: "Purge All", danger: true })) return;
   try {
     await api("/api/bulletins/purge-all", {
       method: "POST",
@@ -1860,7 +2089,7 @@ document.getElementById("bulletin-purge-all-btn")?.addEventListener("click", asy
     document.getElementById("bulletin-purge-all-confirm").value = "";
     await loadBulletinsAdmin();
   } catch (error) {
-    alert(error.message || "Failed to purge all bulletins");
+    await showAlertModal({ title: "Error", message: error.message || "Failed to purge all bulletins" });
   }
 });
 

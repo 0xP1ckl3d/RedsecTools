@@ -1575,6 +1575,25 @@
     if (elements.shareModal) elements.shareModal.classList.add("hidden");
   }
 
+  var embedShareConfigPromise = null;
+
+  async function getEmbedShareConfig() {
+    if (!embedShareConfigPromise) {
+      embedShareConfigPromise = fetch("/api/share/config")
+        .then(function (res) {
+          if (!res.ok) throw new Error("Failed to load share config");
+          return res.json();
+        })
+        .catch(function () {
+          return {
+            maxFileSizeMb: 250,
+            maxFileSizeBytes: 250 * 1024 * 1024,
+          };
+        });
+    }
+    return embedShareConfigPromise;
+  }
+
   async function createEmbedShare() {
     var fileInput = elements.embedShareFile;
     if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
@@ -1586,10 +1605,10 @@
     }
 
     var file = fileInput.files[0];
-    var MAX_SIZE = 250 * 1024 * 1024;
-    if (file.size > MAX_SIZE) {
+    var shareConfig = await getEmbedShareConfig();
+    if (file.size > shareConfig.maxFileSizeBytes) {
       if (elements.embedShareError) {
-        elements.embedShareError.textContent = "File exceeds 250MB limit.";
+        elements.embedShareError.textContent = "File exceeds the " + shareConfig.maxFileSizeMb + "MB limit.";
         elements.embedShareError.classList.remove("hidden");
       }
       return;

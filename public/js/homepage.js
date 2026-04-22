@@ -1,4 +1,5 @@
 import { EMOJI_DATA, loadShortcuts, initShortcutModal, onShortcutChange } from "./homepage-shortcuts.js";
+import { showConfirmModal } from "./confirm-modal.js";
 import { loadWeather } from "./homepage-weather.js";
 
 const TOOL_MAP = {
@@ -509,7 +510,7 @@ async function loadBulletinFeed(reset) {
   feed.querySelectorAll(".bulletin-feed-delete-btn").forEach((button) => {
     button.addEventListener("click", async (e) => {
       e.stopPropagation();
-      if (!window.confirm("Delete this bulletin message?")) return;
+      if (!await showConfirmModal({ title: "Delete Message", message: "Delete this bulletin message?", confirmLabel: "Delete", danger: true })) return;
       await fetchJson(`/api/homepage/bulletins/${button.dataset.bulletinId}`, { method: "DELETE" });
       resetBulletinComposer();
       await refreshBulletinData();

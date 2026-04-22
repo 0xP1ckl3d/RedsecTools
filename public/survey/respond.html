@@ -10,10 +10,15 @@
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-  <div class="page-wide py-10">
-    <header class="flex justify-between items-center mb-8">
-      <h1 class="text-2xl font-bold"><span class="text-accent">RedSec</span><span class="text-secondary">Survey</span></h1>
-      <div class="flex items-center gap-2">
+  <div class="page-wide py-12">
+    <header class="grid grid-cols-[1fr_3fr_1fr] items-center mb-10">
+      <div></div>
+      <div class="text-center">
+        <h1 class="text-2xl font-bold">
+          <span class="text-accent">RedSec</span><span class="text-secondary">Survey</span>
+        </h1>
+      </div>
+      <div class="flex items-center gap-2 justify-end">
         <div class="relative">
           <button id="burger-btn" class="burger-btn" aria-label="Menu" aria-expanded="false">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
@@ -26,9 +31,68 @@
         </button>
       </div>
     </header>
-    <div class="card max-w-3xl mx-auto">
-      <div id="survey-response-root" class="space-y-4 text-sm text-muted">Loading survey...</div>
+
+    <!-- Loading -->
+    <div id="respond-loading" class="card text-center">
+      <svg class="animate-spin h-8 w-8 mx-auto mb-3 text-accent" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+      </svg>
+      <p class="text-secondary text-sm">Loading survey...</p>
     </div>
+
+    <!-- Error -->
+    <div id="respond-error" class="card text-center hidden">
+      <svg class="w-10 h-10 mx-auto mb-2 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+      </svg>
+      <h2 class="text-lg font-semibold mb-1">Unable to Load Survey</h2>
+      <p id="respond-error-text" class="text-muted text-sm">Something went wrong.</p>
+    </div>
+
+    <!-- Stepper -->
+    <div id="respond-stepper" class="card hidden">
+      <div class="mb-4">
+        <h2 id="respond-survey-title" class="text-xl font-semibold text-center"></h2>
+        <p id="respond-survey-description" class="text-sm text-muted text-center mt-1"></p>
+      </div>
+
+      <!-- Progress bar -->
+      <progress id="survey-progress-fill" class="survey-progress-fill mb-2" max="100" value="0"></progress>
+      <p id="respond-progress-text" class="text-xs text-muted text-center mb-6"></p>
+
+      <!-- Question area -->
+      <div id="respond-question-container" class="survey-stepper-question">
+        <p id="respond-question-text" class="font-medium mb-3"></p>
+        <p id="respond-question-required" class="text-xs text-muted mb-3 hidden">Required</p>
+        <div id="respond-question-input"></div>
+      </div>
+
+      <!-- Name input (shown on last step when not anonymous) -->
+      <div id="respond-name-section" class="mt-6 hidden">
+        <label class="text-sm font-medium mb-1 block">Your Name</label>
+        <input id="respond-name-input" class="input-field" placeholder="Enter your name" maxlength="120">
+      </div>
+
+      <!-- Validation message -->
+      <p id="respond-validation-msg" class="text-sm text-error mt-3 hidden"></p>
+
+      <!-- Navigation -->
+      <div class="flex gap-3 mt-6">
+        <button type="button" id="respond-prev-btn" class="btn-secondary flex-1 justify-center hidden">Previous</button>
+        <button type="button" id="respond-next-btn" class="btn-primary flex-1 justify-center">Next</button>
+      </div>
+    </div>
+
+    <!-- Thank you -->
+    <div id="respond-thankyou" class="card text-center hidden">
+      <svg class="w-12 h-12 mx-auto mb-3 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+      </svg>
+      <h2 class="text-xl font-semibold mb-1">Thank You!</h2>
+      <p class="text-muted text-sm">Your response has been submitted successfully.</p>
+    </div>
+
     <footer class="footer">&copy; <span class="current-year"></span> RedSec Offensive Security</footer>
   </div>
   <script type="module" src="/js/burger-menu.js"></script>

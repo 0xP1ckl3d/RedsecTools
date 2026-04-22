@@ -1,3 +1,5 @@
+import { showConfirmModal, showAlertModal } from "./confirm-modal.js";
+
 // RedSecTools — Homepage shortcuts manager (with image + emoji icons)
 
 export const EMOJI_DATA = {
@@ -117,7 +119,7 @@ function renderShortcuts() {
       btn.addEventListener("click", async (e) => {
         e.preventDefault();
         e.stopPropagation();
-        if (!confirm("Remove this shortcut?")) return;
+        if (!await showConfirmModal({ title: "Remove Shortcut", message: "Remove this shortcut?", confirmLabel: "Remove", danger: true })) return;
         await fetch("/api/homepage/shortcuts/" + btn.dataset.id, { method: "DELETE" });
         loadShortcuts();
       });
@@ -268,7 +270,7 @@ export function initShortcutModal() {
       const file = imageUpload.files[0];
       if (!file) return;
       if (file.size > 2 * 1024 * 1024) {
-        alert("Image must be under 2MB");
+        await showAlertModal({ title: "Too Large", message: "Image must be under 2MB." });
         return;
       }
 
@@ -282,7 +284,7 @@ export function initShortcutModal() {
         });
         if (!res.ok) {
           const data = await res.json();
-          alert(data.error || "Upload failed");
+          await showAlertModal({ title: "Upload Failed", message: data.error || "Could not upload the image." });
           return;
         }
         const data = await res.json();
@@ -291,7 +293,7 @@ export function initShortcutModal() {
         emojiTrigger.innerHTML = '<img src="' + escapeHtml(uploadedIconUrl) + '" class="shortcut-emoji-preview" alt="">';
         emojiPickerEl.classList.add("hidden");
       } catch {
-        alert("Upload failed");
+        await showAlertModal({ title: "Upload Failed", message: "Could not upload the image." });
       }
     });
   }
@@ -390,10 +392,10 @@ export function initShortcutModal() {
         loadShortcuts();
       } else {
         const data = await res.json();
-        alert(data.error || "Failed to save shortcut");
+        await showAlertModal({ title: "Error", message: data.error || "Failed to save shortcut" });
       }
     } catch {
-      alert("Network error");
+      await showAlertModal({ title: "Error", message: "Network error" });
     } finally {
       saveBtn.disabled = false;
     }

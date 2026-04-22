@@ -12,6 +12,10 @@ const {
   listBulletins,
   getUserById,
   setUserRole,
+  listWikiPages,
+  getSetting,
+  setSetting,
+  getWikiStats,
 } = require("../database");
 const { ALL_PERMISSIONS, PERMISSION_DEFINITIONS } = require("../access");
 const {
@@ -124,6 +128,51 @@ router.post("/api/bulletins/purge-all", writeLimiter, requireAdmin, (req, res) =
   }
   const deleted = purgeAllBulletins();
   res.json({ success: true, deleted });
+});
+
+router.get("/api/wiki/settings", requireAdmin, (req, res) => {
+  const teamPages = listWikiPages({ scope: "team" });
+  res.json({
+    stats: getWikiStats(),
+    settings: {
+      personalSpacesEnabled: getSetting("wiki_personal_spaces_enabled") !== "false",
+      searchResultLimit: parseInt(getSetting("wiki_search_result_limit"), 10) || 20,
+      teamHomePageId: String(getSetting("wiki_team_home_page_id") || ""),
+    },
+    teamPages: teamPages.map((page) => ({
+      id: page.id,
+      title: page.title,
+      slug: page.slug,
+      updatedAt: page.updatedAt,
+      authorUsername: page.authorUsername || null,
+    })),
+    recentPages: [...teamPages]
+      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+      .slice(0, 12),
+  });
+});
+
+router.put("/api/wiki/settings", writeLimiter, requireAdmin, (req, res) => {
+  const personalSpacesEnabled = req.body?.personalSpacesEnabled !== false;
+  const searchResultLimit = Math.min(50, Math.max(5, parseInt(req.body?.searchResultLimit, 10) || 20));
+  const teamHomePageId = String(req.body?.teamHomePageId || "");
+  const teamHomePage = teamHomePageId ? listWikiPages({ scope: "team" }).find((page) => page.id === teamHomePageId) : null;
+  if (teamHomePageId && !teamHomePage) {
+    return res.status(400).json({ error: "Team home page not found" });
+  }
+
+  setSetting("wiki_personal_spaces_enabled", personalSpacesEnabled ? "true" : "false");
+  setSetting("wiki_search_result_limit", String(searchResultLimit));
+  setSetting("wiki_team_home_page_id", teamHomePageId);
+
+  res.json({
+    success: true,
+    settings: {
+      personalSpacesEnabled,
+      searchResultLimit,
+      teamHomePageId,
+    },
+  });
 });
 
 module.exports = router;

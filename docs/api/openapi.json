@@ -3,7 +3,7 @@
   "info": {
     "title": "RedSecTools API",
     "version": "2.0.0",
-    "description": "Repository-only OpenAPI documentation for RedSecTools. This file is not served by the live application. It documents the current HTTP API, including auth requirements for main app, guest-link, extension, and admin routes. Survey and Wiki are currently placeholder tools under active development, so those route groups may evolve faster than the mature core tools."
+    "description": "Repository-only OpenAPI documentation for RedSecTools. This file is not served by the live application. It documents the current HTTP API, including auth requirements for main app, guest-link, extension, and admin routes. Survey and Wiki now include their active create/manage/respond/results/documentation route groups alongside the existing Paste, Share, Vault, Chat, Calendar, Homepage, Extension, and Admin surfaces."
   },
   "servers": [
     {
@@ -19,7 +19,7 @@
     { "name": "Homepage", "description": "Homepage shortcuts and user homepage settings" },
     { "name": "Calendar", "description": "RedSecCal projects and calendar entries" },
     { "name": "Survey", "description": "RedSecSurvey placeholder routes and public response flows under active development" },
-    { "name": "Wiki", "description": "RedSecWiki placeholder page and revision routes under active development" },
+    { "name": "Wiki", "description": "RedSecWiki team/personal spaces, page trees, markdown preview, revision history, and admin settings" },
     { "name": "Vault", "description": "Vaults, vault entries, sharing, and audit" },
     { "name": "Chat", "description": "Encrypted chat keys, conversations, and messages" },
     { "name": "Extension", "description": "Chrome extension bearer-token API" },
@@ -1515,6 +1515,30 @@
         }
       }
     },
+    "/api/share/config": {
+      "get": {
+        "tags": ["Share"],
+        "summary": "Get current RedSecShare upload limits",
+        "responses": {
+          "200": {
+            "description": "Share upload configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "maxFileSizeMb": { "type": "integer" },
+                    "maxFileSizeBytes": { "type": "integer" },
+                    "maxFilesPerShare": { "type": "integer" }
+                  },
+                  "required": ["maxFileSizeMb", "maxFileSizeBytes", "maxFilesPerShare"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/share": {
       "post": {
         "tags": ["Share"],
@@ -1994,17 +2018,30 @@
         }
       }
     },
+    "/api/homepage/home-tab": {
+      "get": {
+        "tags": ["Homepage"],
+        "summary": "Get homepage dashboard bootstrap data for the Home tab",
+        "security": [{ "UserSessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "Home tab payload",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
     "/api/homepage/bulletins": {
       "get": {
         "tags": ["Homepage"],
         "summary": "Get bulletin feed for the homepage dashboard",
         "security": [{ "UserSessionCookie": [] }],
         "parameters": [
-          {
-            "name": "tab",
-            "in": "query",
-            "schema": { "type": "string", "enum": ["active", "pinned"] }
-          },
           {
             "name": "page",
             "in": "query",
@@ -2021,25 +2058,123 @@
             "description": "Bulletin feed payload",
             "content": {
               "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "canView": { "type": "boolean" },
-                    "bulletins": {
-                      "type": "array",
-                      "items": { "$ref": "#/components/schemas/BulletinSummary" }
-                    },
-                    "pinned": {
-                      "type": "array",
-                      "items": { "$ref": "#/components/schemas/BulletinSummary" }
-                    }
-                  },
-                  "required": ["canView", "bulletins", "pinned"]
-                }
+                "schema": { "type": "object" }
               }
             }
           },
           "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "post": {
+        "tags": ["Homepage"],
+        "summary": "Create a bulletin",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/homepage/bulletins/manage": {
+      "get": {
+        "tags": ["Homepage"],
+        "summary": "Get bulletin management data for the current user",
+        "security": [{ "UserSessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "Bulletin management payload",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/homepage/bulletins/{id}": {
+      "get": {
+        "tags": ["Homepage"],
+        "summary": "Get a single bulletin",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bulletin detail",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/BadRequest" }
+        }
+      },
+      "put": {
+        "tags": ["Homepage"],
+        "summary": "Update a bulletin",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/BadRequest" }
+        }
+      },
+      "delete": {
+        "tags": ["Homepage"],
+        "summary": "Delete a bulletin",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/BadRequest" }
         }
       }
     },
@@ -2619,6 +2754,112 @@
         }
       }
     },
+    "/api/survey/{id}/status": {
+      "put": {
+        "tags": ["Survey"],
+        "summary": "Change survey lifecycle state",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": ["publish", "close", "end_early", "reopen"]
+                  }
+                },
+                "required": ["action"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/api/survey/{id}/questions/reorder": {
+      "put": {
+        "tags": ["Survey"],
+        "summary": "Reorder survey questions",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "order": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  }
+                },
+                "required": ["order"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/api/survey/{id}/stats": {
+      "get": {
+        "tags": ["Survey"],
+        "summary": "Get survey statistics",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Survey statistics",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
     "/api/survey/{id}/results": {
       "get": {
         "tags": ["Survey"],
@@ -2635,6 +2876,68 @@
         "responses": {
           "200": {
             "description": "Survey results",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/api/survey/{id}/results/export": {
+      "get": {
+        "tags": ["Survey"],
+        "summary": "Export survey results as CSV",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "CSV export",
+            "content": {
+              "text/csv": {
+                "schema": { "type": "string", "format": "binary" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/api/survey/{id}/responses/{responseId}": {
+      "get": {
+        "tags": ["Survey"],
+        "summary": "Get a single survey response",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "responseId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Survey response detail",
             "content": {
               "application/json": {
                 "schema": { "type": "object" }
@@ -2715,40 +3018,96 @@
         }
       }
     },
-    "/api/wiki/pages": {
+    "/api/wiki/bootstrap": {
       "get": {
         "tags": ["Wiki"],
-        "summary": "List wiki pages or search by query",
+        "summary": "Load the visible wiki spaces, selected page, and revision list",
         "security": [{ "UserSessionCookie": [] }],
         "parameters": [
           {
-            "name": "q",
+            "name": "scope",
+            "in": "query",
+            "schema": { "type": "string", "enum": ["team", "personal"] }
+          },
+          {
+            "name": "pageId",
             "in": "query",
             "schema": { "type": "string" }
           }
         ],
         "responses": {
           "200": {
-            "description": "Wiki page list",
+            "description": "Wiki bootstrap payload",
             "content": {
               "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "pages": {
-                      "type": "array",
-                      "items": { "$ref": "#/components/schemas/WikiPageSummary" }
-                    }
-                  },
-                  "required": ["pages"]
-                }
+                "schema": { "type": "object" }
               }
             }
           },
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "403": { "$ref": "#/components/responses/Forbidden" }
         }
-      },
+      }
+    },
+    "/api/wiki/search": {
+      "get": {
+        "tags": ["Wiki"],
+        "summary": "Search visible wiki pages by title, excerpt, or markdown body",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "schema": { "type": "string", "enum": ["all", "team", "personal"] }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Wiki search results",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/wiki/preview": {
+      "post": {
+        "tags": ["Wiki"],
+        "summary": "Render markdown to the same safe HTML used for saved wiki pages",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Rendered preview",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/wiki/pages": {
       "post": {
         "tags": ["Wiki"],
         "summary": "Create a wiki page",
@@ -2914,6 +3273,42 @@
         }
       }
     },
+    "/admin/api/wiki/settings": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "Get RedSecWiki tool settings, stats, and recent team pages",
+        "security": [{ "AdminCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "Wiki admin settings payload",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "put": {
+        "tags": ["Admin"],
+        "summary": "Update RedSecWiki tool settings",
+        "security": [{ "AdminCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
     "/admin/api/roles": {
       "get": {
         "tags": ["Admin"],
@@ -3053,7 +3448,8 @@
       "get": {
         "tags": ["Admin"],
         "summary": "List bulletins for admin management",
-        "security": [{ "AdminCookie": [] }],
+        "description": "After bootstrap this requires both the redsec_admin cookie and an active linked redsec_session cookie.",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
         "responses": {
           "200": {
             "description": "Admin bulletin listing",
@@ -3076,11 +3472,14 @@
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "403": { "$ref": "#/components/responses/Forbidden" }
         }
-      },
-      "post": {
+      }
+    },
+    "/admin/api/bulletins/settings": {
+      "put": {
         "tags": ["Admin"],
-        "summary": "Create a bulletin",
-        "security": [{ "AdminCookie": [] }],
+        "summary": "Update bulletin retention settings",
+        "description": "After bootstrap this requires both the redsec_admin cookie and an active linked redsec_session cookie.",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
         "requestBody": {
           "required": true,
           "content": {
@@ -3097,70 +3496,68 @@
         }
       }
     },
-    "/admin/api/bulletins/{id}": {
-      "get": {
+    "/admin/api/bulletins/purge-user": {
+      "post": {
         "tags": ["Admin"],
-        "summary": "Get a bulletin for editing",
-        "security": [{ "AdminCookie": [] }],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string" }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Bulletin detail",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "bulletin": { "$ref": "#/components/schemas/BulletinSummary" }
-                  },
-                  "required": ["bulletin"]
-                }
-              }
-            }
-          },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "404": { "$ref": "#/components/responses/BadRequest" }
-        }
-      },
-      "put": {
-        "tags": ["Admin"],
-        "summary": "Update a bulletin",
-        "security": [{ "AdminCookie": [] }],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string" }
-          }
-        ],
+        "summary": "Purge bulletins created by a specific user",
+        "description": "After bootstrap this requires both the redsec_admin cookie and an active linked redsec_session cookie.",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "type": "object" }
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "userId": { "type": "string" }
+                },
+                "required": ["userId"]
+              }
             }
           }
         },
         "responses": {
           "200": { "$ref": "#/components/responses/Success" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "404": { "$ref": "#/components/responses/BadRequest" }
+          "403": { "$ref": "#/components/responses/Forbidden" }
         }
-      },
+      }
+    },
+    "/admin/api/bulletins/purge-all": {
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Purge all bulletins",
+        "description": "After bootstrap this requires both the redsec_admin cookie and an active linked redsec_session cookie.",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "confirm": { "type": "string", "enum": ["PURGE ALL"] }
+                },
+                "required": ["confirm"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/admin/api/bulletins/{id}": {
       "delete": {
         "tags": ["Admin"],
         "summary": "Delete a bulletin",
-        "security": [{ "AdminCookie": [] }],
+        "description": "After bootstrap this requires both the redsec_admin cookie and an active linked redsec_session cookie.",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
         "parameters": [
           {
             "name": "id",
@@ -4491,6 +4888,44 @@
         }
       }
     },
+    "/admin/api/auth-status": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "Check whether the current admin session is valid",
+        "responses": {
+          "200": {
+            "description": "Authentication state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "authenticated": { "type": "boolean" },
+                    "error": { "type": "string" }
+                  },
+                  "required": ["authenticated"]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Admin password not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "authenticated": { "type": "boolean" },
+                    "error": { "type": "string" }
+                  },
+                  "required": ["authenticated", "error"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/api/paste-stats": {
       "get": {
         "tags": ["Admin"],
@@ -4515,6 +4950,85 @@
         "responses": {
           "200": {
             "description": "File stats",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/admin/api/settings/share": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "Get RedSecShare upload configuration",
+        "description": "After bootstrap this requires both the redsec_admin cookie and an active linked redsec_session cookie.",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "Share settings",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Update RedSecShare upload configuration",
+        "description": "After bootstrap this requires both the redsec_admin cookie and an active linked redsec_session cookie.",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "maxFileSizeMb": { "type": "integer" },
+                  "maxFilesPerShare": { "type": "integer" }
+                },
+                "required": ["maxFileSizeMb", "maxFilesPerShare"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/admin/api/survey-stats": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "Get RedSecSurvey statistics",
+        "description": "After bootstrap this requires both the redsec_admin cookie and an active linked redsec_session cookie.",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "Survey stats",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/admin/api/surveys": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "List surveys for admin management",
+        "description": "After bootstrap this requires both the redsec_admin cookie and an active linked redsec_session cookie.",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50, "maximum": 100 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Survey page",
             "content": { "application/json": { "schema": { "type": "object" } } }
           },
           "401": { "$ref": "#/components/responses/Unauthorized" },
@@ -4589,6 +5103,25 @@
         "responses": {
           "200": {
             "description": "File/share deleted",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/admin/api/survey/{id}": {
+      "delete": {
+        "tags": ["Admin"],
+        "summary": "Delete survey",
+        "description": "After bootstrap this requires both the redsec_admin cookie and an active linked redsec_session cookie.",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Survey deleted",
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } }
           },
           "400": { "$ref": "#/components/responses/BadRequest" },
@@ -4912,6 +5445,52 @@
             "description": "Test email sent",
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } }
           }
+        }
+      }
+    },
+    "/admin/api/settings/calendar": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "Get RedSecCal workweek settings",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "Calendar settings",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Update RedSecCal workweek settings",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "dailyHours": { "type": "number" },
+                  "workdayStart": { "type": "string" },
+                  "workdayEnd": { "type": "string" },
+                  "workdays": {
+                    "type": "array",
+                    "items": { "type": "integer" }
+                  }
+                },
+                "required": ["dailyHours", "workdayStart", "workdayEnd", "workdays"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
         }
       }
     },

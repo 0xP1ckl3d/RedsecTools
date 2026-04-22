@@ -26,13 +26,15 @@
         </button>
       </div>
     </header>
-    <div class="card max-w-3xl mx-auto space-y-4 text-sm">
-      <p>RedSecWiki is currently an in-progress placeholder tool inside RedSecTools. The current routes and early UI exist for development and internal testing, but the feature is still being refined.</p>
-      <p>The current implementation already covers markdown storage, safe HTML rendering, revision history, restore, search, and page hierarchy, but this tool should still be treated as under active development.</p>
-      <div class="flex gap-2">
-        <span class="badge badge-red">Markdown</span>
-        <span class="badge badge-gray">Revision History</span>
-        <span class="badge badge-gray">Workspace Docs</span>
+    <div class="card max-w-4xl mx-auto space-y-4 text-sm">
+      <p>RedSecWiki is the internal knowledge hub for RedSecTools. It provides a structured team wiki plus a personal Markdown workspace for each user, all inside the same application shell used by the homepage and admin areas.</p>
+      <p>Pages support nested subpages, live Markdown preview, published rendering, safe server-side HTML output, revision history, restore, search, and role-aware editing controls. Team pages stay collaborative, while personal pages remain scoped to the owning user.</p>
+      <div class="flex gap-2 flex-wrap">
+        <span class="badge badge-red">Team Wiki</span>
+        <span class="badge badge-gray">Personal Wiki</span>
+        <span class="badge badge-gray">Markdown Preview</span>
+        <span class="badge badge-gray">Revisions</span>
+        <span class="badge badge-gray">Search</span>
       </div>
     </div>
     <footer class="footer">&copy; <span class="current-year"></span> RedSec Offensive Security</footer>

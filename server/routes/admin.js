@@ -15,6 +15,9 @@ const {
   createInvite, listInvites, markInviteUsed, revokeInvite,
   createPasswordReset,
   getSmtpConfig, setSmtpConfig,
+  getShareConfig,
+  SHARE_MAX_FILE_SIZE_OPTIONS_MB,
+  SHARE_MAX_FILE_COUNT_OPTIONS,
   getSetting, setSetting,
   getUserMFA, disableUserMFA, deleteSessionsByUserId, deleteExtensionSessionsByUserId, deleteTrustedDevicesByUser,
   createAdminSession, getAdminSession, deleteAdminSessionById,
@@ -23,6 +26,7 @@ const {
   getShortcutsByCategory, getShortcutByIdAny, deleteShortcutByIdAdmin,
   getShortcutsByUser, deleteShortcutById, deleteFavouritesByShortcut, AVATARS_DIR,
   getVault, getVaultMembersList, updateVaultMemberPermission, removeVaultMember,
+  listAllSurveys, getSurveyStats, deleteSurveyById,
 } = require("../database");
 const { sendInviteEmail, sendPasswordResetEmail, sendTestEmail } = require("../email");
 const { buildAbsoluteUrl } = require("../public-origin");
@@ -225,6 +229,41 @@ router.post("/logout", (req, res) => {
   res.json({ success: true });
 });
 
+// GET /admin/api/auth-status
+router.get("/api/auth-status", (req, res) => {
+  if (!ADMIN_PASSWORD) {
+    return res.status(503).json({ authenticated: false, error: "Admin not configured" });
+  }
+
+  const adminResult = getValidAdminSession(req);
+  if (!adminResult || adminResult.error) {
+    if (adminResult?.sessionId) {
+      clearAdminCookie(res);
+    }
+    return res.json({ authenticated: false });
+  }
+
+  if (countAllUsers() > 0) {
+    const userSession = getActiveUserSession(req);
+    if (!userSession) {
+      return res.json({ authenticated: false });
+    }
+    const userSessionId = req.signedCookies.redsec_session;
+    const adminSession = adminResult.session;
+    if (
+      !adminSession.linked_session_id ||
+      adminSession.linked_session_id !== userSessionId ||
+      adminSession.user_id !== userSession.id
+    ) {
+      deleteAdminSessionById(adminResult.sessionId);
+      clearAdminCookie(res);
+      return res.json({ authenticated: false });
+    }
+  }
+
+  return res.json({ authenticated: true });
+});
+
 // ============================================================
 // Paste stats/list/delete
 // ============================================================
@@ -253,6 +292,97 @@ router.get("/api/files", requireAdmin, (req, res) => {
   res.json(listFiles(page, limit));
 });
 
+// GET /admin/api/settings/share
+router.get("/api/settings/share", requireAdmin, (req, res) => {
+  const config = getShareConfig();
+  res.json({
+    maxFileSizeMb: config.maxFileSizeMb,
+    maxFilesPerShare: config.maxFilesPerShare,
+    allowedFileSizesMb: SHARE_MAX_FILE_SIZE_OPTIONS_MB,
+    allowedFileCounts: SHARE_MAX_FILE_COUNT_OPTIONS,
+  });
+});
+
+// POST /admin/api/settings/share
+router.post("/api/settings/share", requireAdmin, (req, res) => {
+  const maxFileSizeMb = parseInt(req.body?.maxFileSizeMb, 10);
+  const maxFilesPerShare = parseInt(req.body?.maxFilesPerShare, 10);
+
+  if (!SHARE_MAX_FILE_SIZE_OPTIONS_MB.includes(maxFileSizeMb)) {
+    return res.status(400).json({ error: `Max file size must be one of: ${SHARE_MAX_FILE_SIZE_OPTIONS_MB.join(", ")} MB` });
+  }
+  if (!SHARE_MAX_FILE_COUNT_OPTIONS.includes(maxFilesPerShare)) {
+    return res.status(400).json({ error: `Max files per share must be one of: ${SHARE_MAX_FILE_COUNT_OPTIONS.join(", ")}` });
+  }
+
+  setSetting("share_max_file_size_mb", String(maxFileSizeMb));
+  setSetting("share_max_files_per_share", String(maxFilesPerShare));
+
+  console.log(JSON.stringify({
+    ts: new Date().toISOString(),
+    action: "admin:update_share_settings",
+    ip: req.ip,
+    maxFileSizeMb,
+    maxFilesPerShare,
+  }));
+
+  res.json({
+    success: true,
+    maxFileSizeMb,
+    maxFilesPerShare,
+    allowedFileSizesMb: SHARE_MAX_FILE_SIZE_OPTIONS_MB,
+    allowedFileCounts: SHARE_MAX_FILE_COUNT_OPTIONS,
+  });
+});
+
+// GET /admin/api/survey-stats
+router.get("/api/survey-stats", requireAdmin, (req, res) => {
+  const surveys = listAllSurveys();
+  const stats = {
+    total: surveys.length,
+    active: 0,
+    draft: 0,
+    ended: 0,
+    closed: 0,
+  };
+  for (const survey of surveys) {
+    if (survey.status === "published") stats.active++;
+    else if (survey.status === "draft") stats.draft++;
+    else if (survey.status === "ended") stats.ended++;
+    else if (survey.status === "closed") stats.closed++;
+  }
+  res.json(stats);
+});
+
+// GET /admin/api/surveys?page=1&limit=50
+router.get("/api/surveys", requireAdmin, (req, res) => {
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 50));
+  const allSurveys = listAllSurveys();
+  const total = allSurveys.length;
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  const start = (page - 1) * limit;
+  const surveys = allSurveys.slice(start, start + limit).map((survey) => {
+    const owner = getUserById(survey.owner_id);
+    const stats = getSurveyStats(survey.id);
+    return {
+      id: survey.id,
+      title: survey.title,
+      ownerId: survey.owner_id,
+      ownerUsername: owner?.username || null,
+      status: survey.status,
+      responseMode: survey.response_mode,
+      startsAt: survey.starts_at,
+      endsAt: survey.ends_at,
+      createdAt: survey.created_at,
+      updatedAt: survey.updated_at,
+      questionCount: stats.questionCount || 0,
+      responseCount: stats.responseCount || 0,
+    };
+  });
+  res.json({ surveys, page, totalPages, total });
+});
+
 // DELETE /admin/api/paste/:id
 router.delete("/api/paste/:id", requireAdmin, (req, res) => {
   const { id } = req.params;
@@ -275,6 +405,17 @@ router.delete("/api/file/:id", requireAdmin, (req, res) => {
   }
 
   deleteFile(id);
+  res.json({ success: true });
+});
+
+// DELETE /admin/api/survey/:id
+router.delete("/api/survey/:id", requireAdmin, (req, res) => {
+  const { id } = req.params;
+  if (typeof id !== "string" || !/^[A-Za-z0-9_-]{22}$/.test(id)) {
+    return res.status(400).json({ error: "Invalid survey ID" });
+  }
+
+  deleteSurveyById(id);
   res.json({ success: true });
 });
 

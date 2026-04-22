@@ -9,13 +9,13 @@ A multi-tool security platform by [RedSec Offensive Security](https://github.com
 | Tool | Description |
 |---|---|
 | **RedSecPaste** | Encrypted pastebin with optional password protection, burn-after-reading, and syntax highlighting |
-| **RedSecShare** | Encrypted file sharing up to 250MB per file, with optional password protection |
+| **RedSecShare** | Encrypted file sharing with admin-configurable upload limits, optional password protection, and browser-side encryption |
 | **RedSecChat** | End-to-end encrypted real-time messaging with rich text formatting, emoji, and file sharing |
 | **RedSecVault** | Encrypted credential manager for passwords, API keys, SSH keys, TOTP 2FA codes, and secure notes |
 | **BulletinBoard** | Workspace bulletin feed on the homepage with rich-text notices, scheduling, pinning, preset styling, and WebP image support |
 | **RedSecCal** | Team and individual scheduling for assignments, tasks, reminders, utilisation tracking, and project-linked calendar entries |
-| **RedSecSurvey** | Placeholder survey/poll tool under active development. Current early routes and UI exist, but the feature is still being refined |
-| **RedSecWiki** | Placeholder internal wiki under active development. Current early routes and UI exist, but the feature is still being refined |
+| **RedSecSurvey** | Role-aware survey builder with public or internal response modes, live results, CSV export, expiry windows, and admin oversight |
+| **RedSecWiki** | Team and personal Markdown wiki with page trees, subpages, live preview, published rendering, revision history, and search |
 | **RedSecTools Chrome Extension** | Chrome Manifest V3 extension for Vault access, autofill, Paste creation, and Share creation using the same server and encryption model |
 
 **Key security properties:**
@@ -94,7 +94,7 @@ Users are now assigned one primary role. Roles are managed in Admin and map to a
 - `bulletin.view`, `bulletin.create`, `bulletin.edit_any`, `bulletin.pin`, `bulletin.manage`
 - `calendar.view`, `calendar.create`, `calendar.view_team`, `calendar.manage`
 - `survey.create`, `survey.manage_any`, `survey.view_results_any`
-- `wiki.view`, `wiki.create`, `wiki.edit_any`, `wiki.manage`
+- `wiki.view`, `wiki.create_personal`, `wiki.create_team`, `wiki.edit_team`, `wiki.manage`
 
 UI visibility follows the user's granted permissions, but enforcement is server-side on the protected APIs and the new tool pages.
 
@@ -284,7 +284,7 @@ Log in with the admin password from your `.env` file. After the first user is cr
 ### Sharing Files (`/share`)
 
 1. Log in (or use a guest link)
-2. Upload one or more files (up to 250MB each)
+2. Upload one or more files within the server-admin-configured file count and file size limits
 3. Optionally set a password for double encryption
 4. Choose expiration and burn-after-reading options
 5. Share the link — filenames are also encrypted
@@ -311,29 +311,30 @@ Projects support estimates in either hours or days, a global default daily-hours
 
 ### Survey (`/survey`)
 
-RedSecSurvey is currently a placeholder tool under active development. The current route surface and early UI are present for internal testing, but the tool should still be considered in-progress rather than production-complete.
+RedSecSurvey provides an internal survey workspace with:
 
-Current implemented foundations include:
-
-- Survey create, update, delete, and results routes
-- Tokenized public response flow
-- Response windows and response modes
-- Early creator/results UI
-
-Expect this tool to continue changing as the feature is completed.
+- Draft, published, ended, and closed lifecycle states
+- Public anonymous or internal named response modes
+- Time-windowed response collection with reopen support for ended surveys
+- Builder, live status updates, and result views with CSV export
+- Basic anti-abuse protections for public responses using per-survey browser response sessions plus duplicate-user submission blocking for authenticated responders
+- Admin visibility and deletion controls from the Admin tool settings area
 
 ### Wiki (`/wiki`)
 
-RedSecWiki is currently a placeholder tool under active development. The current route surface and early UI are present for internal testing, but the tool should still be considered in-progress rather than production-complete.
+RedSecWiki is the internal knowledge hub for RedSecTools. It now provides:
 
-Current implemented foundations include:
+- A **team wiki** for shared process docs, runbooks, engagement notes, and living documentation
+- A **personal wiki** for private notes, checklists, meeting prep, and individual working pages
+- Nested page trees with subpages in both spaces
+- Markdown authoring with the same rendered output used for live preview and published pages
+- Revision history with restore
+- Search across visible spaces
+- Role-aware creation and editing rules for personal and team pages
 
-- Markdown page storage with server-rendered safe HTML
-- Shared page list and page lookup routes
-- Revision history and restore
-- Search and basic hierarchy support
+The Wiki interface uses the same shell pattern as the homepage and admin surfaces: a persistent sidebar, focused content region, and tool-specific management instead of the smaller floating layout used by earlier placeholder tools.
 
-Expect this tool to continue changing as the feature is completed.
+Wiki is intended for runbooks, methodology notes, onboarding docs, internal references, project knowledge, and personal working pages, all within the same permission-aware platform shell as the other RedSecTools apps.
 
 ### Chrome Extension
 
@@ -411,7 +412,7 @@ The SQLite database now includes the original encrypted content/auth/chat/vault 
 - `bulletins`, `bulletin_assets` — homepage bulletin messages and managed WebP assets
 - `calendar_projects`, `calendar_entries` — RedSecCal projects and events/assignments
 - `surveys`, `survey_questions`, `survey_question_options`, `survey_responses`, `survey_answers` — RedSecSurvey
-- `wiki_pages`, `wiki_page_revisions` — RedSecWiki page tree and revision history
+- `wiki_pages`, `wiki_page_revisions` — RedSecWiki team/personal page tree, published markdown render, and revision history
 - `homepage_settings` — homepage layout plus built-in tool favourites
 
 ---

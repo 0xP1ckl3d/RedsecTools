@@ -13,14 +13,16 @@ const {
   deleteWikiPageById,
   listWikiRevisions,
   getWikiRevisionById,
+  getSetting,
+  getWikiStats,
 } = require("../database");
-const { renderMarkdownToHtml } = require("../wiki-render");
+const { renderMarkdownToHtml, markdownToExcerpt } = require("../wiki-render");
 
 const router = Router();
 
 const writeLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 80,
+  max: 120,
   message: { error: "Too many wiki requests. Try again later." },
   standardHeaders: true,
   legacyHeaders: false,
@@ -34,123 +36,392 @@ function normalizeSlug(value) {
     .slice(0, 120);
 }
 
-function canManageWiki(req) {
-  return req.access.permissionSet.has("wiki.manage");
+function getWikiSettings() {
+  const searchLimit = Math.min(50, Math.max(5, parseInt(getSetting("wiki_search_result_limit"), 10) || 20));
+  return {
+    personalSpacesEnabled: getSetting("wiki_personal_spaces_enabled") !== "false",
+    searchResultLimit: searchLimit,
+    teamHomePageId: String(getSetting("wiki_team_home_page_id") || ""),
+  };
 }
 
-function canEditAnyWiki(req) {
-  return req.access.permissionSet.has("wiki.edit_any") || canManageWiki(req);
+function getWikiCapabilities(req, settings) {
+  const set = req.access.permissionSet;
+  return {
+    canUseWiki: [
+      "wiki.view",
+      "wiki.create_personal",
+      "wiki.create_team",
+      "wiki.edit_team",
+      "wiki.manage",
+    ].some((permission) => set.has(permission)),
+    canViewTeam: [
+      "wiki.view",
+      "wiki.create_team",
+      "wiki.edit_team",
+      "wiki.manage",
+    ].some((permission) => set.has(permission)),
+    canViewPersonal: settings.personalSpacesEnabled && [
+      "wiki.view",
+      "wiki.create_personal",
+      "wiki.manage",
+    ].some((permission) => set.has(permission)),
+    canCreatePersonal: settings.personalSpacesEnabled && (set.has("wiki.create_personal") || set.has("wiki.manage")),
+    canCreateTeam: set.has("wiki.create_team") || set.has("wiki.manage"),
+    canEditTeam: set.has("wiki.edit_team") || set.has("wiki.manage"),
+    canManage: set.has("wiki.manage"),
+  };
 }
 
-router.get("/wiki/pages", requireUser, attachUserAccess, (req, res) => {
-  if (!req.access.permissionSet.has("wiki.view")) {
+function getVisiblePages(req, settings) {
+  const capabilities = getWikiCapabilities(req, settings);
+  const pages = [];
+  if (capabilities.canViewTeam) {
+    pages.push(...listWikiPages({ scope: "team" }));
+  }
+  if (capabilities.canViewPersonal) {
+    pages.push(...listWikiPages({ scope: "personal", ownerId: req.user.id }));
+  }
+  return pages;
+}
+
+function canViewPage(req, page, settings = getWikiSettings()) {
+  if (!page) return false;
+  const capabilities = getWikiCapabilities(req, settings);
+  if (page.scope === "team") return capabilities.canViewTeam;
+  if (page.scope === "personal") return capabilities.canViewPersonal && page.ownerId === req.user.id;
+  return false;
+}
+
+function canEditPage(req, page, settings = getWikiSettings()) {
+  if (!page) return false;
+  const capabilities = getWikiCapabilities(req, settings);
+  if (page.scope === "personal") {
+    return page.ownerId === req.user.id && capabilities.canCreatePersonal;
+  }
+  if (page.scope === "team") {
+    return capabilities.canManage
+      || capabilities.canEditTeam
+      || (capabilities.canCreateTeam && page.authorId === req.user.id);
+  }
+  return false;
+}
+
+function canDeletePage(req, page, settings = getWikiSettings()) {
+  return canEditPage(req, page, settings);
+}
+
+function validateParentForScope(parentPageId, scope, req, settings) {
+  if (!parentPageId) return null;
+  const parentPage = getWikiPageById(parentPageId);
+  if (!parentPage) {
+    const error = new Error("Parent page not found");
+    error.status = 400;
+    throw error;
+  }
+  if (!canViewPage(req, parentPage, settings) || parentPage.scope !== scope) {
+    const error = new Error("Parent page is not available in this wiki space");
+    error.status = 400;
+    throw error;
+  }
+  if (scope === "personal" && parentPage.ownerId !== req.user.id) {
+    const error = new Error("Parent page must be in your personal wiki");
+    error.status = 400;
+    throw error;
+  }
+  return parentPage.id;
+}
+
+function ensureUniqueSlug(slug, currentPageId = null) {
+  const existing = listWikiPages().find((page) => page.slug === slug && page.id !== currentPageId);
+  return !existing;
+}
+
+function getNextSortOrder(scope, ownerId, parentPageId) {
+  const siblings = listWikiPages({ scope, ownerId: scope === "personal" ? ownerId : "" })
+    .filter((page) => (page.parentPageId || null) === (parentPageId || null));
+  if (!siblings.length) return 0;
+  return Math.max(...siblings.map((page) => Number(page.sortOrder || 0))) + 1;
+}
+
+function buildRecentPages(pages, limit = 8) {
+  return [...pages]
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+    .slice(0, limit);
+}
+
+function selectDefaultPage(scope, settings, teamPages, personalPages) {
+  if (scope === "personal") {
+    return personalPages[0] || null;
+  }
+  const homePage = settings.teamHomePageId ? teamPages.find((page) => page.id === settings.teamHomePageId) : null;
+  if (homePage) return homePage;
+  return teamPages.find((page) => !page.parentPageId) || teamPages[0] || personalPages[0] || null;
+}
+
+router.get("/wiki/bootstrap", requireUser, attachUserAccess, (req, res) => {
+  const settings = getWikiSettings();
+  const capabilities = getWikiCapabilities(req, settings);
+  if (!capabilities.canUseWiki) {
     return res.status(403).json({ error: "Wiki access denied" });
   }
-  const query = typeof req.query.q === "string" ? req.query.q.trim() : "";
-  const pages = query ? searchWikiPages(query) : listWikiPages();
-  res.json({ pages });
+
+  const visiblePages = getVisiblePages(req, settings);
+  const teamPages = visiblePages.filter((page) => page.scope === "team");
+  const personalPages = visiblePages.filter((page) => page.scope === "personal");
+  const requestedScope = String(req.query.scope || "team") === "personal" ? "personal" : "team";
+  const defaultScope = requestedScope === "personal" && settings.personalSpacesEnabled ? "personal" : "team";
+
+  let selectedPage = null;
+  if (typeof req.query.pageId === "string" && req.query.pageId) {
+    const requestedPage = getWikiPageById(req.query.pageId);
+    if (requestedPage && canViewPage(req, requestedPage, settings)) {
+      selectedPage = requestedPage;
+    }
+  }
+  if (!selectedPage) {
+    selectedPage = selectDefaultPage(defaultScope, settings, teamPages, personalPages);
+  }
+
+  res.json({
+    currentUserId: req.user.id,
+    currentUsername: req.user.username || null,
+    settings,
+    capabilities,
+    stats: getWikiStats(),
+    teamPages,
+    personalPages,
+    recentPages: buildRecentPages(visiblePages),
+    selectedPage,
+    revisions: selectedPage ? listWikiRevisions(selectedPage.id) : [],
+  });
 });
 
-router.get("/wiki/pages/slug/:slug", requireUser, attachUserAccess, (req, res) => {
-  if (!req.access.permissionSet.has("wiki.view")) {
+router.get("/wiki/search", requireUser, attachUserAccess, (req, res) => {
+  const settings = getWikiSettings();
+  const capabilities = getWikiCapabilities(req, settings);
+  if (!capabilities.canUseWiki) {
     return res.status(403).json({ error: "Wiki access denied" });
   }
-  const page = getWikiPageBySlug(req.params.slug);
-  if (!page) return res.status(404).json({ error: "Wiki page not found" });
-  res.json({ page, revisions: listWikiRevisions(page.id) });
+
+  const query = String(req.query.q || "").trim();
+  const scope = String(req.query.scope || "all");
+  if (!query) {
+    return res.json({ results: [] });
+  }
+
+  const filtersByScope = [];
+  if ((scope === "all" || scope === "team") && capabilities.canViewTeam) {
+    filtersByScope.push({ scope: "team", ownerId: "" });
+  }
+  if ((scope === "all" || scope === "personal") && capabilities.canViewPersonal) {
+    filtersByScope.push({ scope: "personal", ownerId: req.user.id });
+  }
+
+  const results = filtersByScope.flatMap((filter) => (
+    searchWikiPages(query, {
+      scope: filter.scope,
+      ownerId: filter.ownerId,
+      limit: settings.searchResultLimit,
+    })
+  ));
+
+  const uniqueResults = [];
+  const seen = new Set();
+  for (const result of results) {
+    if (!seen.has(result.id)) {
+      seen.add(result.id);
+      uniqueResults.push(result);
+    }
+  }
+
+  res.json({ results: uniqueResults.slice(0, settings.searchResultLimit) });
+});
+
+router.post("/wiki/preview", writeLimiter, requireUser, attachUserAccess, (req, res) => {
+  const settings = getWikiSettings();
+  const capabilities = getWikiCapabilities(req, settings);
+  if (!capabilities.canUseWiki) {
+    return res.status(403).json({ error: "Wiki access denied" });
+  }
+
+  const markdown = typeof req.body?.bodyMarkdown === "string" ? req.body.bodyMarkdown : "";
+  res.json({
+    html: renderMarkdownToHtml(markdown),
+    excerpt: markdownToExcerpt(markdown),
+  });
 });
 
 router.get("/wiki/pages/:id", requireUser, attachUserAccess, (req, res) => {
-  if (!req.access.permissionSet.has("wiki.view")) {
-    return res.status(403).json({ error: "Wiki access denied" });
-  }
   const page = getWikiPageById(req.params.id);
-  if (!page) return res.status(404).json({ error: "Wiki page not found" });
-  res.json({ page, revisions: listWikiRevisions(page.id) });
+  if (!page || !canViewPage(req, page)) {
+    return res.status(404).json({ error: "Wiki page not found" });
+  }
+
+  res.json({
+    page,
+    revisions: listWikiRevisions(page.id),
+  });
+});
+
+router.get("/wiki/pages/slug/:slug", requireUser, attachUserAccess, (req, res) => {
+  const page = getWikiPageBySlug(req.params.slug);
+  if (!page || !canViewPage(req, page)) {
+    return res.status(404).json({ error: "Wiki page not found" });
+  }
+  res.json({
+    page,
+    revisions: listWikiRevisions(page.id),
+  });
 });
 
 router.post("/wiki/pages", writeLimiter, requireUser, attachUserAccess, (req, res) => {
-  if (!req.access.permissionSet.has("wiki.create")) {
-    return res.status(403).json({ error: "Wiki create access denied" });
+  const settings = getWikiSettings();
+  const capabilities = getWikiCapabilities(req, settings);
+  const scope = String(req.body?.scope || "team") === "personal" ? "personal" : "team";
+
+  if (scope === "personal" && !capabilities.canCreatePersonal) {
+    return res.status(403).json({ error: "Personal wiki create access denied" });
+  }
+  if (scope === "team" && !capabilities.canCreateTeam) {
+    return res.status(403).json({ error: "Team wiki create access denied" });
   }
 
-  const { title, slug, bodyMarkdown, parentPageId } = req.body || {};
-  if (!title || typeof title !== "string") {
-    return res.status(400).json({ error: "Wiki title is required" });
+  const title = String(req.body?.title || "").trim();
+  const markdown = typeof req.body?.bodyMarkdown === "string" ? req.body.bodyMarkdown : "";
+  if (!title) return res.status(400).json({ error: "Page title is required" });
+
+  const slug = normalizeSlug(req.body?.slug || title);
+  if (!slug) return res.status(400).json({ error: "Page slug is required" });
+  if (!ensureUniqueSlug(slug)) {
+    return res.status(409).json({ error: "Page slug already exists" });
   }
-  const safeSlug = normalizeSlug(slug || title);
-  if (!safeSlug) return res.status(400).json({ error: "Wiki slug is required" });
-  if (getWikiPageBySlug(safeSlug)) {
-    return res.status(409).json({ error: "Wiki slug already exists" });
+
+  let parentPageId;
+  try {
+    parentPageId = validateParentForScope(req.body?.parentPageId || null, scope, req, settings);
+  } catch (error) {
+    return res.status(error.status || 400).json({ error: error.message });
   }
 
   const id = crypto.randomBytes(16).toString("base64url");
+  const html = renderMarkdownToHtml(markdown);
   createWikiPage({
     id,
-    slug: safeSlug,
-    title: title.trim().slice(0, 160),
-    bodyMarkdown: typeof bodyMarkdown === "string" ? bodyMarkdown : "",
-    bodyHtml: renderMarkdownToHtml(bodyMarkdown || ""),
-    parentPageId: typeof parentPageId === "string" && parentPageId ? parentPageId : null,
+    slug,
+    title: title.slice(0, 160),
+    bodyMarkdown: markdown,
+    bodyHtml: html,
+    excerpt: markdownToExcerpt(markdown),
+    scope,
+    ownerId: scope === "personal" ? req.user.id : null,
+    parentPageId,
     authorId: req.user.id,
+    lastEditorId: req.user.id,
+    publishedAt: Math.floor(Date.now() / 1000),
+    sortOrder: getNextSortOrder(scope, scope === "personal" ? req.user.id : "", parentPageId),
   });
-  res.json({ success: true, id, slug: safeSlug });
+
+  res.json({ success: true, id });
 });
 
 router.put("/wiki/pages/:id", writeLimiter, requireUser, attachUserAccess, (req, res) => {
+  const settings = getWikiSettings();
   const page = getWikiPageById(req.params.id);
-  if (!page) return res.status(404).json({ error: "Wiki page not found" });
-  if (page.author_id !== req.user.id && !canEditAnyWiki(req)) {
+  if (!page || !canViewPage(req, page, settings)) {
+    return res.status(404).json({ error: "Wiki page not found" });
+  }
+  if (!canEditPage(req, page, settings)) {
     return res.status(403).json({ error: "Wiki edit access denied" });
   }
 
-  const safeSlug = normalizeSlug(req.body?.slug || page.slug || req.body?.title || page.title);
-  const slugOwner = getWikiPageBySlug(safeSlug);
-  if (slugOwner && slugOwner.id !== page.id) {
-    return res.status(409).json({ error: "Wiki slug already exists" });
+  const title = String(req.body?.title || page.title || "").trim();
+  if (!title) return res.status(400).json({ error: "Page title is required" });
+  const slug = normalizeSlug(req.body?.slug || page.slug || title);
+  if (!slug) return res.status(400).json({ error: "Page slug is required" });
+  if (!ensureUniqueSlug(slug, page.id)) {
+    return res.status(409).json({ error: "Page slug already exists" });
   }
 
+  let parentPageId;
+  try {
+    parentPageId = validateParentForScope(
+      req.body?.parentPageId === undefined ? page.parentPageId : req.body.parentPageId,
+      page.scope,
+      req,
+      settings
+    );
+  } catch (error) {
+    return res.status(error.status || 400).json({ error: error.message });
+  }
+
+  if (parentPageId === page.id) {
+    return res.status(400).json({ error: "A page cannot be its own parent" });
+  }
+
+  const markdown = typeof req.body?.bodyMarkdown === "string" ? req.body.bodyMarkdown : page.bodyMarkdown;
   updateWikiPage({
     id: page.id,
-    slug: safeSlug,
-    title: typeof req.body?.title === "string" ? req.body.title.trim().slice(0, 160) : page.title,
-    bodyMarkdown: typeof req.body?.bodyMarkdown === "string" ? req.body.bodyMarkdown : page.body_markdown,
-    bodyHtml: renderMarkdownToHtml(typeof req.body?.bodyMarkdown === "string" ? req.body.bodyMarkdown : page.body_markdown),
-    parentPageId: req.body?.parentPageId === undefined ? page.parent_page_id : (req.body.parentPageId || null),
+    slug,
+    title: title.slice(0, 160),
+    bodyMarkdown: markdown,
+    bodyHtml: renderMarkdownToHtml(markdown),
+    excerpt: markdownToExcerpt(markdown),
+    scope: page.scope,
+    ownerId: page.ownerId,
+    parentPageId,
     authorId: req.user.id,
+    lastEditorId: req.user.id,
+    publishedAt: Math.floor(Date.now() / 1000),
+    sortOrder: Number(req.body?.sortOrder ?? page.sortOrder ?? 0),
   });
+
   res.json({ success: true });
 });
 
 router.delete("/wiki/pages/:id", writeLimiter, requireUser, attachUserAccess, (req, res) => {
   const page = getWikiPageById(req.params.id);
-  if (!page) return res.status(404).json({ error: "Wiki page not found" });
-  if (page.author_id !== req.user.id && !canManageWiki(req)) {
+  if (!page || !canViewPage(req, page)) {
+    return res.status(404).json({ error: "Wiki page not found" });
+  }
+  if (!canDeletePage(req, page)) {
     return res.status(403).json({ error: "Wiki delete access denied" });
   }
+
   deleteWikiPageById(page.id);
   res.json({ success: true });
 });
 
 router.post("/wiki/pages/:id/restore/:revisionId", writeLimiter, requireUser, attachUserAccess, (req, res) => {
   const page = getWikiPageById(req.params.id);
-  if (!page) return res.status(404).json({ error: "Wiki page not found" });
-  if (page.author_id !== req.user.id && !canEditAnyWiki(req)) {
+  if (!page || !canViewPage(req, page)) {
+    return res.status(404).json({ error: "Wiki page not found" });
+  }
+  if (!canEditPage(req, page)) {
     return res.status(403).json({ error: "Wiki edit access denied" });
   }
+
   const revision = getWikiRevisionById(req.params.revisionId);
-  if (!revision || revision.page_id !== page.id) {
+  if (!revision || revision.pageId !== page.id) {
     return res.status(404).json({ error: "Wiki revision not found" });
   }
+
   updateWikiPage({
     id: page.id,
     slug: page.slug,
     title: revision.title,
-    bodyMarkdown: revision.body_markdown,
-    bodyHtml: revision.body_html,
-    parentPageId: page.parent_page_id,
+    bodyMarkdown: revision.bodyMarkdown,
+    bodyHtml: revision.bodyHtml,
+    excerpt: revision.excerpt || markdownToExcerpt(revision.bodyMarkdown),
+    scope: page.scope,
+    ownerId: page.ownerId,
+    parentPageId: page.parentPageId,
     authorId: req.user.id,
+    lastEditorId: req.user.id,
+    publishedAt: Math.floor(Date.now() / 1000),
+    sortOrder: page.sortOrder,
   });
+
   res.json({ success: true });
 });
 

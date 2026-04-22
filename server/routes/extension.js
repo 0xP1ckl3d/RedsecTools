@@ -42,6 +42,7 @@ const {
   getVaultEntry,
   createPaste,
   createShare,
+  getShareConfig,
   VALID_EXPIRY_OPTIONS,
   VALID_SYNTAX_OPTIONS,
   TMP_DIR,
@@ -110,13 +111,34 @@ const createShareLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-const upload = multer({
-  storage: multer.diskStorage({
-    destination: TMP_DIR,
-    filename: (req, file, cb) => cb(null, crypto.randomBytes(16).toString("hex")),
-  }),
-  limits: { fileSize: 250 * 1024 * 1024 },
+const shareUploadStorage = multer.diskStorage({
+  destination: TMP_DIR,
+  filename: (req, file, cb) => cb(null, crypto.randomBytes(16).toString("hex")),
 });
+
+function runShareUpload(req, res, next) {
+  const config = getShareConfig();
+  multer({
+    storage: shareUploadStorage,
+    limits: {
+      fileSize: config.maxFileSizeBytes,
+      files: config.maxFilesPerShare,
+    },
+  }).array("files", config.maxFilesPerShare)(req, res, (err) => {
+    if (!err) {
+      return next();
+    }
+    if (err instanceof multer.MulterError) {
+      if (err.code === "LIMIT_FILE_SIZE") {
+        return res.status(413).json({ error: `Each file must be ${config.maxFileSizeMb}MB or smaller.` });
+      }
+      if (err.code === "LIMIT_FILE_COUNT") {
+        return res.status(400).json({ error: `You can upload up to ${config.maxFilesPerShare} file${config.maxFilesPerShare === 1 ? "" : "s"} per share.` });
+      }
+    }
+    return res.status(400).json({ error: "Upload failed" });
+  });
+}
 
 function logAction(action, req, extra = {}) {
   const ip = req.ip || req.connection?.remoteAddress;
@@ -904,7 +926,7 @@ router.post("/paste", createPasteLimiter, requireExtensionUser, (req, res) => {
   }
 });
 
-router.post("/share", createShareLimiter, requireExtensionUser, upload.array("files", 20), (req, res) => {
+router.post("/share", createShareLimiter, requireExtensionUser, runShareUpload, (req, res) => {
   const uploadedFiles = req.files || [];
   const metadataStr = req.body?.metadata;
 

@@ -1,3 +1,5 @@
+import { showConfirmModal } from "./confirm-modal.js";
+
 // RedSecTools — Profile page logic
 
 const currentPasswordInput = document.getElementById("current-password");
@@ -582,7 +584,7 @@ mfaRegenCancelBtn.addEventListener("click", () => {
 
 // Revoke trusted devices
 mfaRevokeTrustedBtn.addEventListener("click", async () => {
-  if (!confirm("Revoke all trusted browsers? You will need to verify MFA on each browser next time.")) return;
+  if (!await showConfirmModal({ title: "Revoke Trusted Browsers", message: "You will need to verify MFA on each browser next time.", confirmLabel: "Revoke All", danger: true })) return;
 
   try {
     const res = await fetch("/api/auth/mfa/trusted-devices", { method: "DELETE" });

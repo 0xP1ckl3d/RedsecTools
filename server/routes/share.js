@@ -4,7 +4,7 @@ const multer = require("multer");
 const crypto = require("crypto");
 const path = require("path");
 const fs = require("fs");
-const { createShare, getShare, getShareFile, deleteShareFile, VALID_EXPIRY_OPTIONS, TMP_DIR, FILES_DIR, redeemGuestLink } = require("../database");
+const { createShare, getShare, getShareFile, deleteShareFile, VALID_EXPIRY_OPTIONS, TMP_DIR, FILES_DIR, redeemGuestLink, getShareConfig } = require("../database");
 const { requireGuestOrUserFor } = require("../middleware/auth");
 const { decodeBase64Strict } = require("../base64");
 
@@ -27,14 +27,34 @@ const readLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-// Multer config — temp storage for multiple files
-const upload = multer({
-  storage: multer.diskStorage({
-    destination: TMP_DIR,
-    filename: (req, file, cb) => cb(null, crypto.randomBytes(16).toString("hex")),
-  }),
-  limits: { fileSize: 250 * 1024 * 1024 },
+const shareUploadStorage = multer.diskStorage({
+  destination: TMP_DIR,
+  filename: (req, file, cb) => cb(null, crypto.randomBytes(16).toString("hex")),
 });
+
+function runShareUpload(req, res, next) {
+  const config = getShareConfig();
+  multer({
+    storage: shareUploadStorage,
+    limits: {
+      fileSize: config.maxFileSizeBytes,
+      files: config.maxFilesPerShare,
+    },
+  }).array("files", config.maxFilesPerShare)(req, res, (err) => {
+    if (!err) {
+      return next();
+    }
+    if (err instanceof multer.MulterError) {
+      if (err.code === "LIMIT_FILE_SIZE") {
+        return res.status(413).json({ error: `Each file must be ${config.maxFileSizeMb}MB or smaller.` });
+      }
+      if (err.code === "LIMIT_FILE_COUNT") {
+        return res.status(400).json({ error: `You can upload up to ${config.maxFilesPerShare} file${config.maxFilesPerShare === 1 ? "" : "s"} per share.` });
+      }
+    }
+    return res.status(400).json({ error: "Upload failed" });
+  });
+}
 
 // --- Validation helpers ---
 
@@ -86,8 +106,17 @@ function cleanupTmp() {
 
 // --- Routes ---
 
+router.get("/share/config", (req, res) => {
+  const config = getShareConfig();
+  res.json({
+    maxFileSizeMb: config.maxFileSizeMb,
+    maxFileSizeBytes: config.maxFileSizeBytes,
+    maxFilesPerShare: config.maxFilesPerShare,
+  });
+});
+
 // POST /api/share — multi-file upload
-router.post("/share", uploadLimiter, requireGuestOrUserFor("share"), upload.array("files", 20), (req, res) => {
+router.post("/share", uploadLimiter, requireGuestOrUserFor("share"), runShareUpload, (req, res) => {
   const uploadedFiles = req.files;
   const metadataStr = req.body.metadata;
 

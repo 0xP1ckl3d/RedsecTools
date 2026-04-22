@@ -9,9 +9,12 @@ The current spec now includes the collaboration feature set introduced in the ap
 
 - role-aware `/api/auth/me` responses with `role`, `permissions`, and `availableTools`
 - homepage bulletin feed, bulletin asset upload, and built-in tool favourite endpoints
-- admin role management and bulletin management endpoints
+- homepage bulletin management, detail, and home-tab bootstrap endpoints
+- admin role management, bulletin management, auth-status, share-setting, calendar-setting, wiki-setting, and survey-management endpoints
 - RedSecCal bootstrap, weekly schedule, project management, team allocation, statistics, and admin calendar-setting route groups
-- early RedSecSurvey and RedSecWiki route groups used by the current in-progress placeholder implementations
+- RedSecWiki bootstrap, page management, search, preview, revision, and admin settings routes
+- RedSecSurvey create/manage/respond/results/export route groups
+- RedSecShare upload/download routes plus live upload-config endpoints used by the app and extension
 
 Important:
 - These docs are **not** exposed by the live app.
@@ -54,4 +57,4 @@ The spec documents the auth required for each route using these schemes:
 - The source of truth for behavior is still the route handlers in `server/routes/`.
 - This spec documents the current routes and payload shapes used by the app today, including the collaboration and extension endpoints.
 - Bulletin content is intentionally documented as sanitized HTML plus preset-driven presentation metadata. Raw CSS, JavaScript, and arbitrary asset URLs are not accepted by the live app.
-- Survey and Wiki are currently placeholder tools under active development. Their documented route shapes are real and mounted, but those tool surfaces are still evolving and may change faster than the mature Paste/Share/Vault/Auth parts of the app.
+- RedSecSurvey and RedSecWiki are now first-class documented tool surfaces rather than placeholder route groups.

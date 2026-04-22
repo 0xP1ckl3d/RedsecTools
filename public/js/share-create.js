@@ -3,6 +3,7 @@ import { createEncryptedShare } from "./file-crypto.js";
 
 const dropZone = document.getElementById("drop-zone");
 const fileInput = document.getElementById("file-input");
+const shareLimitHint = document.getElementById("share-limit-hint");
 const fileList = document.getElementById("file-list");
 const fileListBody = document.getElementById("file-list-body");
 const fileCountEl = document.getElementById("file-count");
@@ -24,7 +25,28 @@ const toast = document.getElementById("toast");
 const toastText = document.getElementById("toast-text");
 
 let selectedFiles = [];
-const MAX_TOTAL_SIZE = 250 * 1024 * 1024;
+let shareConfig = {
+  maxFileSizeMb: 250,
+  maxFileSizeBytes: 250 * 1024 * 1024,
+  maxFilesPerShare: 8,
+};
+
+async function loadShareConfig() {
+  try {
+    const res = await fetch("/api/share/config");
+    if (!res.ok) return;
+    const data = await res.json();
+    shareConfig = {
+      maxFileSizeMb: data.maxFileSizeMb || 250,
+      maxFileSizeBytes: data.maxFileSizeBytes || (250 * 1024 * 1024),
+      maxFilesPerShare: data.maxFilesPerShare || 8,
+    };
+  } catch {}
+
+  if (shareLimitHint) {
+    shareLimitHint.textContent = `Up to ${shareConfig.maxFilesPerShare} file${shareConfig.maxFilesPerShare === 1 ? "" : "s"} per share. Max ${shareConfig.maxFileSizeMb}MB per file.`;
+  }
+}
 
 // --- Password toggle ---
 
@@ -63,13 +85,12 @@ fileInput.addEventListener("change", () => {
 
 function addFiles(newFiles) {
   for (const file of newFiles) {
-    if (file.size > MAX_TOTAL_SIZE) {
-      showToast(`"${file.name}" exceeds 250MB limit`);
+    if (file.size > shareConfig.maxFileSizeBytes) {
+      showToast(`"${file.name}" exceeds the ${shareConfig.maxFileSizeMb}MB per-file limit`);
       continue;
     }
-    const totalAfter = selectedFiles.reduce((s, f) => s + f.size, 0) + file.size;
-    if (totalAfter > MAX_TOTAL_SIZE) {
-      showToast("Total size would exceed 250MB limit");
+    if (selectedFiles.length >= shareConfig.maxFilesPerShare) {
+      showToast(`You can attach up to ${shareConfig.maxFilesPerShare} file${shareConfig.maxFilesPerShare === 1 ? "" : "s"} per share`);
       break;
     }
     // Avoid duplicates by name+size
@@ -305,6 +326,7 @@ const emailBtn = document.getElementById("email-btn");
 const emailResult = document.getElementById("email-result");
 
 (async () => {
+  await loadShareConfig();
   try {
     const res = await fetch("/api/auth/smtp-status");
     const data = await res.json();
