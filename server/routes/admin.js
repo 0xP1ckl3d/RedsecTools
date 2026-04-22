@@ -11,6 +11,7 @@ const {
   getFileStats, listFiles, deleteFile, bulkDeleteFiles,
   listUsers, getUserById, deleteUserById, suspendUserById, unsuspendUserById,
   updateUserDetails, getUserByEmail, getUserByUsername,
+  getRoleById,
   createInvite, listInvites, markInviteUsed, revokeInvite,
   createPasswordReset,
   getSmtpConfig, setSmtpConfig,
@@ -483,9 +484,13 @@ router.get("/api/invites", requireAdmin, (req, res) => {
 
 // POST /admin/api/invites
 router.post("/api/invites", requireAdmin, async (req, res) => {
-  const { email } = req.body || {};
+  const { email, roleId } = req.body || {};
   if (!email || typeof email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return res.status(400).json({ error: "Valid email is required" });
+  }
+
+  if (roleId && !getRoleById(roleId)) {
+    return res.status(400).json({ error: "Selected role not found" });
   }
 
   // Check if user already exists with this email
@@ -503,6 +508,7 @@ router.post("/api/invites", requireAdmin, async (req, res) => {
     email: email.toLowerCase().trim(),
     token,
     createdBy: "admin",
+    roleId: roleId || null,
     expiresAt,
   });
 
@@ -611,6 +617,56 @@ router.post("/api/settings/smtp/test", requireAdmin, async (req, res) => {
     console.log(JSON.stringify({ ts: new Date().toISOString(), action: "admin:smtp_test_error", ip: req.ip, error: err.message }));
     res.status(400).json({ error: "SMTP test failed" });
   }
+});
+
+// ============================================================
+// Calendar settings
+// ============================================================
+
+router.get("/api/settings/calendar", requireAdmin, (req, res) => {
+  const dailyHours = Number.parseFloat(getSetting("calendar_daily_hours"));
+  const workdayStart = String(getSetting("calendar_workday_start") || "08:30");
+  const workdayEnd = String(getSetting("calendar_workday_end") || "17:30");
+  const workdays = String(getSetting("calendar_workdays") || "1,2,3,4,5")
+    .split(",")
+    .map((value) => parseInt(value, 10))
+    .filter((value) => Number.isInteger(value) && value >= 0 && value <= 6);
+  res.json({
+    dailyHours: Number.isFinite(dailyHours) ? dailyHours : 7.6,
+    workdayStart,
+    workdayEnd,
+    workdays: workdays.length ? workdays : [1, 2, 3, 4, 5],
+  });
+});
+
+router.post("/api/settings/calendar", requireAdmin, (req, res) => {
+  const parsed = Number.parseFloat(req.body?.dailyHours);
+  if (!Number.isFinite(parsed) || parsed < 1 || parsed > 24) {
+    return res.status(400).json({ error: "Daily hours must be between 1 and 24" });
+  }
+  const workdayStart = String(req.body?.workdayStart || "").trim();
+  const workdayEnd = String(req.body?.workdayEnd || "").trim();
+  const workdays = Array.isArray(req.body?.workdays)
+    ? req.body.workdays.map((value) => parseInt(value, 10)).filter((value) => Number.isInteger(value) && value >= 0 && value <= 6)
+    : [];
+  if (!/^\d{2}:\d{2}$/.test(workdayStart) || !/^\d{2}:\d{2}$/.test(workdayEnd)) {
+    return res.status(400).json({ error: "Workday start and end times must use HH:MM format" });
+  }
+  if (workdays.length === 0) {
+    return res.status(400).json({ error: "Select at least one workday" });
+  }
+  setSetting("calendar_daily_hours", String(Number(parsed.toFixed(2))));
+  setSetting("calendar_workday_start", workdayStart);
+  setSetting("calendar_workday_end", workdayEnd);
+  setSetting("calendar_workdays", workdays.join(","));
+  console.log(JSON.stringify({ ts: new Date().toISOString(), action: "admin:update_calendar_settings", ip: req.ip }));
+  res.json({
+    success: true,
+    dailyHours: Number(parsed.toFixed(2)),
+    workdayStart,
+    workdayEnd,
+    workdays,
+  });
 });
 
 // ============================================================
@@ -1070,4 +1126,7 @@ router.post("/api/shortcuts/team/upload-icon", requireAdmin, teamIconUpload.sing
   }
 });
 
-module.exports = router;
+module.exports = {
+  router,
+  requireAdmin,
+};

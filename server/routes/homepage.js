@@ -568,8 +568,8 @@ router.put("/shortcuts/:id/favourite", shortcutLimiter, requireUser, (req, res) 
     removeUserFavourite(req.user.id, id);
   } else {
     const count = countUserFavourites(req.user.id);
-    if (count >= 4) {
-      return res.status(400).json({ error: "Maximum 4 favourites allowed" });
+    if (count >= 5) {
+      return res.status(400).json({ error: "Maximum 5 favourites allowed" });
     }
     addUserFavourite(req.user.id, id);
   }

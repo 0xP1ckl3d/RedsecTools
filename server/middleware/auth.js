@@ -21,7 +21,13 @@ function getValidUserSession(req) {
 
   return {
     sessionId,
-    user: { id: session.user_id, username: session.username },
+    user: {
+      id: session.user_id,
+      username: session.username,
+      roleId: session.role_id || null,
+      roleKey: session.role_key || null,
+      roleName: session.role_name || null,
+    },
   };
 }
 
@@ -164,7 +170,14 @@ function getValidExtensionSession(req) {
 
   return {
     sessionId,
-    user: { id: session.user_id, username: session.username, avatarUpdatedAt: session.avatar_updated_at || null },
+    user: {
+      id: session.user_id,
+      username: session.username,
+      avatarUpdatedAt: session.avatar_updated_at || null,
+      roleId: session.role_id || null,
+      roleKey: session.role_key || null,
+      roleName: session.role_name || null,
+    },
   };
 }
 

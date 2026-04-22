@@ -8,6 +8,9 @@ const TOOL_LINKS = [
   { href: "/share", label: "RedSecShare" },
   { href: "/chat", label: "RedSecTeam" },
   { href: "/vault", label: "RedSecVault" },
+  { href: "/calendar", label: "RedSecCal", key: "calendar" },
+  { href: "/survey", label: "RedSecSurvey", key: "survey" },
+  { href: "/wiki", label: "RedSecWiki", key: "wiki" },
 ];
 
 // Contextual about links based on current page path
@@ -17,6 +20,9 @@ const ABOUT_LINKS = [
   { pathPrefix: "/share", href: "/share/about", label: "About this tool" },
   { pathPrefix: "/paste", href: "/paste/about", label: "About this tool" },
   { pathPrefix: "/p/", href: "/paste/about", label: "About this tool" },
+  { pathPrefix: "/calendar", href: "/calendar/about", label: "About this tool" },
+  { pathPrefix: "/survey", href: "/survey/about", label: "About this tool" },
+  { pathPrefix: "/wiki", href: "/wiki/about", label: "About this tool" },
 ];
 
 export function initBurgerMenu() {
@@ -25,8 +31,7 @@ export function initBurgerMenu() {
 
   if (!btn || !nav) return;
 
-  // Always inject links (clear any existing static content)
-  injectLinks(nav);
+  injectLinks(nav, []);
 
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -53,11 +58,13 @@ export function initBurgerMenu() {
   addAuthLinks(nav);
 }
 
-function injectLinks(nav) {
+function injectLinks(nav, allowedToolKeys) {
   let html = "";
+  const allowed = new Set(allowedToolKeys || []);
 
   // Standard tool links
   for (const link of TOOL_LINKS) {
+    if (link.key && allowed.size && !allowed.has(link.key)) continue;
     html += `<a href="${link.href}">${link.label}</a>`;
     if (link.dividerAfter) {
       html += `<div class="burger-divider"></div>`;
@@ -79,6 +86,7 @@ async function addAuthLinks(nav) {
   try {
     const res = await fetch("/api/auth/me");
     const data = await res.json();
+    injectLinks(nav, (data.availableTools || []).map((tool) => tool.key));
 
     const divider = document.createElement("div");
     divider.className = "burger-divider";

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <title>RedSecSurvey — About</title>
+  <link rel="icon" href="/assets/favicon.ico" type="image/x-icon">
+  <script src="/js/theme-init.js"></script>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="page-wide py-12">
+    <header class="flex justify-between items-center mb-10">
+      <h1 class="text-2xl font-bold"><span class="text-accent">RedSec</span><span class="text-secondary">Survey</span></h1>
+      <div class="flex items-center gap-2">
+        <div class="relative">
+          <button id="burger-btn" class="burger-btn" aria-label="Menu" aria-expanded="false">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+          </button>
+          <nav id="burger-nav" class="burger-nav hidden"></nav>
+        </div>
+        <button type="button" class="theme-toggle" id="theme-toggle" title="Toggle theme">
+          <svg class="w-5 h-5 dark-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+          <svg class="w-5 h-5 light-icon hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+        </button>
+      </div>
+    </header>
+    <div class="card max-w-3xl mx-auto space-y-4 text-sm">
+      <p>RedSecSurvey is currently an in-progress placeholder tool inside RedSecTools. The current routes and early UI exist for development and internal testing, but the feature is still being refined.</p>
+      <p>The current implementation already covers tokenized response links, response windows, response modes, and creator/results flows, but this tool should still be treated as under active development.</p>
+      <div class="flex gap-2">
+        <span class="badge badge-red">Token Links</span>
+        <span class="badge badge-gray">Analytics</span>
+        <span class="badge badge-gray">Mixed Response Modes</span>
+      </div>
+    </div>
+    <footer class="footer">&copy; <span class="current-year"></span> RedSec Offensive Security</footer>
+  </div>
+  <script type="module" src="/js/burger-menu.js"></script>
+  <script type="module" src="/js/theme.js"></script>
+</body>
+</html>

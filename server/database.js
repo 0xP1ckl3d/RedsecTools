@@ -2,6 +2,7 @@ const Database = require("better-sqlite3");
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
+const { SYSTEM_ROLE_DEFINITIONS, normalizePermissionList } = require("./access");
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, "..", "data", "pastes.db");
 
@@ -15,9 +16,11 @@ if (!fs.existsSync(dbDir)) {
 const FILES_DIR = path.join(__dirname, "..", "data", "files");
 const TMP_DIR = path.join(__dirname, "..", "data", "tmp");
 const AVATARS_DIR = path.join(__dirname, "..", "data", "avatars");
+const BULLETIN_ASSETS_DIR = path.join(__dirname, "..", "data", "bulletin-assets");
 if (!fs.existsSync(FILES_DIR)) fs.mkdirSync(FILES_DIR, { recursive: true });
 if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR, { recursive: true });
 if (!fs.existsSync(AVATARS_DIR)) fs.mkdirSync(AVATARS_DIR, { recursive: true });
+if (!fs.existsSync(BULLETIN_ASSETS_DIR)) fs.mkdirSync(BULLETIN_ASSETS_DIR, { recursive: true });
 
 const db = new Database(DB_PATH);
 db.pragma("journal_mode = WAL");
@@ -75,12 +78,31 @@ db.exec(`
     email TEXT NOT NULL UNIQUE,
     username TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
+    role_id TEXT,
     suspended INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at INTEGER NOT NULL DEFAULT (unixepoch())
   );
   CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email);
   CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username);
+
+  CREATE TABLE IF NOT EXISTS roles (
+    id TEXT PRIMARY KEY,
+    role_key TEXT UNIQUE,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT,
+    is_system INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+
+  CREATE TABLE IF NOT EXISTS role_permissions (
+    role_id TEXT NOT NULL,
+    permission TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (role_id, permission)
+  );
+  CREATE INDEX IF NOT EXISTS idx_role_permissions_role ON role_permissions(role_id);
 
   CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
@@ -122,6 +144,7 @@ db.exec(`
     email TEXT NOT NULL,
     token TEXT NOT NULL UNIQUE,
     created_by TEXT NOT NULL,
+    role_id TEXT,
     used INTEGER NOT NULL DEFAULT 0,
     expires_at INTEGER NOT NULL,
     created_at INTEGER NOT NULL DEFAULT (unixepoch())
@@ -384,10 +407,164 @@ db.exec(`
     layout TEXT NOT NULL DEFAULT '{"showWeather":true,"showSearch":true,"showShortcuts":true}',
     updated_at INTEGER NOT NULL DEFAULT (unixepoch())
   );
+
+  CREATE TABLE IF NOT EXISTS bulletins (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    body_html TEXT NOT NULL,
+    body_source TEXT NOT NULL,
+    author_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'draft',
+    starts_at INTEGER,
+    ends_at INTEGER,
+    pin_starts_at INTEGER,
+    pin_ends_at INTEGER,
+    recurrence_type TEXT NOT NULL DEFAULT 'none',
+    recurrence_config TEXT,
+    style_preset TEXT NOT NULL DEFAULT 'default',
+    animation_preset TEXT NOT NULL DEFAULT 'none',
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+  CREATE INDEX IF NOT EXISTS idx_bulletins_status ON bulletins(status, starts_at, created_at);
+
+  CREATE TABLE IF NOT EXISTS bulletin_assets (
+    id TEXT PRIMARY KEY,
+    bulletin_id TEXT,
+    author_id TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    mime_type TEXT NOT NULL DEFAULT 'image/webp',
+    size_bytes INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+  CREATE INDEX IF NOT EXISTS idx_bulletin_assets_bulletin ON bulletin_assets(bulletin_id);
+
+  CREATE TABLE IF NOT EXISTS calendar_projects (
+    id TEXT PRIMARY KEY,
+    code TEXT,
+    name TEXT NOT NULL,
+    client_name TEXT,
+    project_type TEXT,
+    description TEXT,
+    color TEXT,
+    status TEXT NOT NULL DEFAULT 'active',
+    starts_at INTEGER,
+    ends_at INTEGER,
+    estimated_mode TEXT NOT NULL DEFAULT 'hours',
+    estimated_value REAL NOT NULL DEFAULT 0,
+    estimated_hours INTEGER NOT NULL DEFAULT 0,
+    billable_rate REAL NOT NULL DEFAULT 0,
+    notes TEXT,
+    created_by TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+
+  CREATE TABLE IF NOT EXISTS calendar_entries (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    owner_id TEXT NOT NULL,
+    assignee_user_id TEXT,
+    project_id TEXT,
+    starts_at INTEGER NOT NULL,
+    ends_at INTEGER NOT NULL,
+    all_day INTEGER NOT NULL DEFAULT 0,
+    scheduled_hours REAL NOT NULL DEFAULT 0,
+    utilization_percent INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'scheduled',
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+  CREATE INDEX IF NOT EXISTS idx_calendar_entries_time ON calendar_entries(starts_at, ends_at);
+  CREATE INDEX IF NOT EXISTS idx_calendar_entries_assignee ON calendar_entries(assignee_user_id);
+  CREATE INDEX IF NOT EXISTS idx_calendar_entries_project ON calendar_entries(project_id);
+
+  CREATE TABLE IF NOT EXISTS surveys (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT,
+    owner_id TEXT NOT NULL,
+    response_mode TEXT NOT NULL DEFAULT 'anonymous_public',
+    status TEXT NOT NULL DEFAULT 'draft',
+    public_token TEXT UNIQUE,
+    starts_at INTEGER,
+    ends_at INTEGER,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+  CREATE INDEX IF NOT EXISTS idx_surveys_token ON surveys(public_token);
+
+  CREATE TABLE IF NOT EXISTS survey_questions (
+    id TEXT PRIMARY KEY,
+    survey_id TEXT NOT NULL,
+    question_text TEXT NOT NULL,
+    question_type TEXT NOT NULL,
+    is_required INTEGER NOT NULL DEFAULT 0,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+  CREATE INDEX IF NOT EXISTS idx_survey_questions_survey ON survey_questions(survey_id, sort_order);
+
+  CREATE TABLE IF NOT EXISTS survey_question_options (
+    id TEXT PRIMARY KEY,
+    question_id TEXT NOT NULL,
+    option_text TEXT NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+  CREATE INDEX IF NOT EXISTS idx_survey_options_question ON survey_question_options(question_id, sort_order);
+
+  CREATE TABLE IF NOT EXISTS survey_responses (
+    id TEXT PRIMARY KEY,
+    survey_id TEXT NOT NULL,
+    responder_user_id TEXT,
+    responder_name TEXT,
+    submitted_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    source_ip TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_survey_responses_survey ON survey_responses(survey_id, submitted_at);
+
+  CREATE TABLE IF NOT EXISTS survey_answers (
+    id TEXT PRIMARY KEY,
+    response_id TEXT NOT NULL,
+    question_id TEXT NOT NULL,
+    answer_text TEXT,
+    answer_json TEXT,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+  CREATE INDEX IF NOT EXISTS idx_survey_answers_response ON survey_answers(response_id);
+
+  CREATE TABLE IF NOT EXISTS wiki_pages (
+    id TEXT PRIMARY KEY,
+    slug TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    body_markdown TEXT NOT NULL,
+    body_html TEXT NOT NULL,
+    parent_page_id TEXT,
+    author_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+  CREATE INDEX IF NOT EXISTS idx_wiki_pages_parent ON wiki_pages(parent_page_id);
+
+  CREATE TABLE IF NOT EXISTS wiki_page_revisions (
+    id TEXT PRIMARY KEY,
+    page_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body_markdown TEXT NOT NULL,
+    body_html TEXT NOT NULL,
+    author_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+  CREATE INDEX IF NOT EXISTS idx_wiki_revisions_page ON wiki_page_revisions(page_id, created_at);
 `);
 
 // Add avatar column to users table (safe migration)
 try { db.exec("ALTER TABLE users ADD COLUMN avatar_updated_at INTEGER"); } catch {}
+try { db.exec("ALTER TABLE users ADD COLUMN role_id TEXT"); } catch {}
+try { db.exec("ALTER TABLE invites ADD COLUMN role_id TEXT"); } catch {}
 
 // Add needs_rekey column to vault_members (safe migration)
 try { db.exec("ALTER TABLE vault_members ADD COLUMN needs_rekey INTEGER NOT NULL DEFAULT 0"); } catch {}
@@ -398,6 +575,18 @@ try { db.exec("UPDATE vault_members SET can_manage_members = CASE WHEN role = 'a
 try { db.exec("ALTER TABLE mfa_pending_logins ADD COLUMN failed_attempts INTEGER NOT NULL DEFAULT 0"); } catch {}
 try { db.exec("ALTER TABLE homepage_shortcuts ADD COLUMN description TEXT"); } catch {}
 try { db.exec("ALTER TABLE homepage_shortcuts ADD COLUMN icon_url TEXT"); } catch {}
+try { db.exec("ALTER TABLE calendar_projects ADD COLUMN code TEXT"); } catch {}
+try { db.exec("ALTER TABLE calendar_projects ADD COLUMN client_name TEXT"); } catch {}
+try { db.exec("ALTER TABLE calendar_projects ADD COLUMN project_type TEXT"); } catch {}
+try { db.exec("ALTER TABLE calendar_projects ADD COLUMN starts_at INTEGER"); } catch {}
+try { db.exec("ALTER TABLE calendar_projects ADD COLUMN ends_at INTEGER"); } catch {}
+try { db.exec("ALTER TABLE calendar_projects ADD COLUMN estimated_mode TEXT NOT NULL DEFAULT 'hours'"); } catch {}
+try { db.exec("ALTER TABLE calendar_projects ADD COLUMN estimated_value REAL NOT NULL DEFAULT 0"); } catch {}
+try { db.exec("ALTER TABLE calendar_projects ADD COLUMN estimated_hours INTEGER NOT NULL DEFAULT 0"); } catch {}
+try { db.exec("ALTER TABLE calendar_projects ADD COLUMN billable_rate REAL NOT NULL DEFAULT 0"); } catch {}
+try { db.exec("ALTER TABLE calendar_projects ADD COLUMN notes TEXT"); } catch {}
+try { db.exec("ALTER TABLE calendar_entries ADD COLUMN scheduled_hours REAL NOT NULL DEFAULT 0"); } catch {}
+try { db.exec("UPDATE calendar_entries SET scheduled_hours = ROUND((ends_at - starts_at) / 3600.0, 2) WHERE project_id IS NOT NULL AND (scheduled_hours IS NULL OR scheduled_hours = 0) AND ends_at > starts_at"); } catch {}
 
 // Per-user favourite shortcuts (junction table — works for personal AND team shortcuts)
 db.exec(`CREATE TABLE IF NOT EXISTS user_favourite_shortcuts (
@@ -486,31 +675,82 @@ const stmts = {
 
   // --- User statements ---
   createUser: db.prepare(`
-    INSERT INTO users (id, email, username, password_hash)
-    VALUES (@id, @email, @username, @passwordHash)
+    INSERT INTO users (id, email, username, password_hash, role_id)
+    VALUES (@id, @email, @username, @passwordHash, @roleId)
   `),
-  getUserById: db.prepare("SELECT * FROM users WHERE id = ?"),
-  getUserByEmail: db.prepare("SELECT * FROM users WHERE email = ?"),
-  getUserByUsername: db.prepare("SELECT * FROM users WHERE username = ?"),
+  getUserById: db.prepare(`
+    SELECT u.*, r.role_key, r.name as role_name
+    FROM users u
+    LEFT JOIN roles r ON u.role_id = r.id
+    WHERE u.id = ?
+  `),
+  getUserByEmail: db.prepare(`
+    SELECT u.*, r.role_key, r.name as role_name
+    FROM users u
+    LEFT JOIN roles r ON u.role_id = r.id
+    WHERE u.email = ?
+  `),
+  getUserByUsername: db.prepare(`
+    SELECT u.*, r.role_key, r.name as role_name
+    FROM users u
+    LEFT JOIN roles r ON u.role_id = r.id
+    WHERE u.username = ?
+  `),
   updateUserPassword: db.prepare("UPDATE users SET password_hash = ?, updated_at = unixepoch() WHERE id = ?"),
-  updateUser: db.prepare("UPDATE users SET email = @email, username = @username, updated_at = unixepoch() WHERE id = @id"),
+  updateUser: db.prepare("UPDATE users SET email = @email, username = @username, role_id = COALESCE(@roleId, role_id), updated_at = unixepoch() WHERE id = @id"),
   updateUsername: db.prepare("UPDATE users SET username = ?, updated_at = unixepoch() WHERE id = ?"),
+  updateUserRole: db.prepare("UPDATE users SET role_id = ?, updated_at = unixepoch() WHERE id = ?"),
   suspendUser: db.prepare("UPDATE users SET suspended = 1, updated_at = unixepoch() WHERE id = ?"),
   unsuspendUser: db.prepare("UPDATE users SET suspended = 0, updated_at = unixepoch() WHERE id = ?"),
   deleteUser: db.prepare("DELETE FROM users WHERE id = ?"),
   deleteUserSessions: db.prepare("DELETE FROM sessions WHERE user_id = ?"),
   listUsers: db.prepare(`
-    SELECT id, email, username, suspended, created_at, updated_at
-    FROM users ORDER BY created_at DESC LIMIT ? OFFSET ?
+    SELECT u.id, u.email, u.username, u.suspended, u.created_at, u.updated_at, u.role_id, r.role_key, r.name as role_name
+    FROM users u
+    LEFT JOIN roles r ON u.role_id = r.id
+    ORDER BY u.created_at DESC LIMIT ? OFFSET ?
   `),
   countUsers: db.prepare("SELECT COUNT(*) as total FROM users"),
+
+  // --- Role statements ---
+  createRole: db.prepare(`
+    INSERT INTO roles (id, role_key, name, description, is_system)
+    VALUES (@id, @roleKey, @name, @description, @isSystem)
+  `),
+  getRoleById: db.prepare("SELECT * FROM roles WHERE id = ?"),
+  getRoleByKey: db.prepare("SELECT * FROM roles WHERE role_key = ?"),
+  getRoleByName: db.prepare("SELECT * FROM roles WHERE name = ?"),
+  listRoles: db.prepare("SELECT * FROM roles ORDER BY is_system DESC, name ASC"),
+  updateRole: db.prepare(`
+    UPDATE roles
+    SET name = @name, description = @description, updated_at = unixepoch()
+    WHERE id = @id
+  `),
+  deleteRole: db.prepare("DELETE FROM roles WHERE id = ? AND is_system = 0"),
+  replaceRolePermissionsDelete: db.prepare("DELETE FROM role_permissions WHERE role_id = ?"),
+  addRolePermission: db.prepare("INSERT OR IGNORE INTO role_permissions (role_id, permission) VALUES (?, ?)"),
+  getRolePermissions: db.prepare("SELECT permission FROM role_permissions WHERE role_id = ? ORDER BY permission"),
+  getPermissionsByUserId: db.prepare(`
+    SELECT rp.permission
+    FROM users u
+    JOIN role_permissions rp ON rp.role_id = u.role_id
+    WHERE u.id = ?
+    ORDER BY rp.permission
+  `),
+  countUsersByRoleId: db.prepare("SELECT COUNT(*) as total FROM users WHERE role_id = ?"),
 
   // --- Session statements ---
   createSession: db.prepare(`
     INSERT INTO sessions (id, user_id, expires_at, ip_address, user_agent)
     VALUES (@id, @userId, @expiresAt, @ipAddress, @userAgent)
   `),
-  getSessionById: db.prepare("SELECT s.*, u.username, u.suspended, u.avatar_updated_at FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.id = ?"),
+  getSessionById: db.prepare(`
+    SELECT s.*, u.username, u.suspended, u.avatar_updated_at, u.role_id, r.role_key, r.name as role_name
+    FROM sessions s
+    JOIN users u ON s.user_id = u.id
+    LEFT JOIN roles r ON u.role_id = r.id
+    WHERE s.id = ?
+  `),
   deleteSession: db.prepare("DELETE FROM sessions WHERE id = ?"),
   deleteExpiredSessions: db.prepare("DELETE FROM sessions WHERE expires_at < unixepoch()"),
   deleteSessionsByUserId: db.prepare("DELETE FROM sessions WHERE user_id = ?"),
@@ -520,7 +760,13 @@ const stmts = {
     INSERT INTO extension_sessions (id, user_id, expires_at, ip_address, user_agent)
     VALUES (@id, @userId, @expiresAt, @ipAddress, @userAgent)
   `),
-  getExtensionSessionById: db.prepare("SELECT s.*, u.username, u.suspended, u.avatar_updated_at FROM extension_sessions s JOIN users u ON s.user_id = u.id WHERE s.id = ?"),
+  getExtensionSessionById: db.prepare(`
+    SELECT s.*, u.username, u.suspended, u.avatar_updated_at, u.role_id, r.role_key, r.name as role_name
+    FROM extension_sessions s
+    JOIN users u ON s.user_id = u.id
+    LEFT JOIN roles r ON u.role_id = r.id
+    WHERE s.id = ?
+  `),
   deleteExtensionSession: db.prepare("DELETE FROM extension_sessions WHERE id = ?"),
   deleteExpiredExtensionSessions: db.prepare("DELETE FROM extension_sessions WHERE expires_at < unixepoch()"),
   deleteExtensionSessionsByUserId: db.prepare("DELETE FROM extension_sessions WHERE user_id = ?"),
@@ -536,17 +782,24 @@ const stmts = {
 
   // --- Invite statements ---
   createInvite: db.prepare(`
-    INSERT INTO invites (id, email, token, created_by, expires_at)
-    VALUES (@id, @email, @token, @createdBy, @expiresAt)
+    INSERT INTO invites (id, email, token, created_by, role_id, expires_at)
+    VALUES (@id, @email, @token, @createdBy, @roleId, @expiresAt)
   `),
-  getInviteByToken: db.prepare("SELECT * FROM invites WHERE token = ?"),
+  getInviteByToken: db.prepare(`
+    SELECT i.*, r.name as role_name
+    FROM invites i
+    LEFT JOIN roles r ON r.id = i.role_id
+    WHERE i.token = ?
+  `),
   getInviteByEmail: db.prepare("SELECT * FROM invites WHERE email = ? AND used = 0 AND expires_at > unixepoch() ORDER BY created_at DESC LIMIT 1"),
   markInviteUsed: db.prepare("UPDATE invites SET used = 1 WHERE id = ?"),
   deleteExpiredInvites: db.prepare("DELETE FROM invites WHERE expires_at < unixepoch() AND used = 0"),
   revokeInvite: db.prepare("DELETE FROM invites WHERE id = ? AND used = 0"),
   listInvites: db.prepare(`
-    SELECT id, email, token, created_by, used, expires_at, created_at
-    FROM invites ORDER BY created_at DESC LIMIT ? OFFSET ?
+    SELECT i.id, i.email, i.token, i.created_by, i.role_id, r.name as role_name, i.used, i.expires_at, i.created_at
+    FROM invites i
+    LEFT JOIN roles r ON r.id = i.role_id
+    ORDER BY i.created_at DESC LIMIT ? OFFSET ?
   `),
   countInvites: db.prepare("SELECT COUNT(*) as total FROM invites"),
 
@@ -864,6 +1117,319 @@ const stmts = {
   isFavourite: db.prepare("SELECT 1 FROM user_favourite_shortcuts WHERE user_id = ? AND shortcut_id = ?"),
   deleteFavouritesByShortcut: db.prepare("DELETE FROM user_favourite_shortcuts WHERE shortcut_id = ?"),
 
+  // --- Bulletins ---
+  createBulletin: db.prepare(`
+    INSERT INTO bulletins (
+      id, title, body_html, body_source, author_id, status, starts_at, ends_at,
+      pin_starts_at, pin_ends_at, recurrence_type, recurrence_config, style_preset, animation_preset
+    ) VALUES (
+      @id, @title, @bodyHtml, @bodySource, @authorId, @status, @startsAt, @endsAt,
+      @pinStartsAt, @pinEndsAt, @recurrenceType, @recurrenceConfig, @stylePreset, @animationPreset
+    )
+  `),
+  updateBulletin: db.prepare(`
+    UPDATE bulletins SET
+      title = @title,
+      body_html = @bodyHtml,
+      body_source = @bodySource,
+      status = @status,
+      starts_at = @startsAt,
+      ends_at = @endsAt,
+      pin_starts_at = @pinStartsAt,
+      pin_ends_at = @pinEndsAt,
+      recurrence_type = @recurrenceType,
+      recurrence_config = @recurrenceConfig,
+      style_preset = @stylePreset,
+      animation_preset = @animationPreset,
+      updated_at = unixepoch()
+    WHERE id = @id
+  `),
+  getBulletinById: db.prepare(`
+    SELECT b.*, u.username as author_username
+    FROM bulletins b
+    JOIN users u ON u.id = b.author_id
+    WHERE b.id = ?
+  `),
+  listAllBulletins: db.prepare(`
+    SELECT b.*, u.username as author_username
+    FROM bulletins b
+    JOIN users u ON u.id = b.author_id
+    ORDER BY b.created_at DESC
+  `),
+  listBulletinsByAuthor: db.prepare(`
+    SELECT b.*, u.username as author_username
+    FROM bulletins b
+    JOIN users u ON u.id = b.author_id
+    WHERE b.author_id = ?
+    ORDER BY b.updated_at DESC, b.created_at DESC
+    LIMIT ? OFFSET ?
+  `),
+  listBulletins: db.prepare(`
+    SELECT b.*, u.username as author_username
+    FROM bulletins b
+    JOIN users u ON u.id = b.author_id
+    ORDER BY
+      CASE WHEN b.pin_starts_at IS NOT NULL THEN 0 ELSE 1 END,
+      COALESCE(b.pin_starts_at, b.starts_at, b.created_at) DESC,
+      b.created_at DESC
+    LIMIT ? OFFSET ?
+  `),
+  listActiveBulletins: db.prepare(`
+    SELECT b.*, u.username as author_username
+    FROM bulletins b
+    JOIN users u ON u.id = b.author_id
+    WHERE b.status = 'published'
+      AND (b.starts_at IS NULL OR b.starts_at <= unixepoch())
+      AND (b.ends_at IS NULL OR b.ends_at >= unixepoch())
+    ORDER BY
+      CASE
+        WHEN b.pin_starts_at IS NOT NULL
+         AND (b.pin_starts_at <= unixepoch())
+         AND (b.pin_ends_at IS NULL OR b.pin_ends_at >= unixepoch())
+        THEN 0 ELSE 1 END,
+      COALESCE(b.pin_starts_at, b.starts_at, b.created_at) DESC,
+      b.created_at DESC
+    LIMIT ? OFFSET ?
+  `),
+  listPinnedBulletins: db.prepare(`
+    SELECT b.*, u.username as author_username
+    FROM bulletins b
+    JOIN users u ON u.id = b.author_id
+    WHERE b.status = 'published'
+      AND b.pin_starts_at IS NOT NULL
+      AND b.pin_starts_at <= unixepoch()
+      AND (b.pin_ends_at IS NULL OR b.pin_ends_at >= unixepoch())
+      AND (b.starts_at IS NULL OR b.starts_at <= unixepoch())
+      AND (b.ends_at IS NULL OR b.ends_at >= unixepoch())
+    ORDER BY COALESCE(b.pin_starts_at, b.created_at) DESC, b.created_at DESC
+    LIMIT ? OFFSET ?
+  `),
+  countBulletins: db.prepare("SELECT COUNT(*) as total FROM bulletins"),
+  countActiveBulletins: db.prepare(`
+    SELECT COUNT(*) as total
+    FROM bulletins
+    WHERE status = 'published'
+      AND (starts_at IS NULL OR starts_at <= unixepoch())
+      AND (ends_at IS NULL OR ends_at >= unixepoch())
+  `),
+  deleteBulletin: db.prepare("DELETE FROM bulletins WHERE id = ?"),
+  createBulletinAsset: db.prepare(`
+    INSERT INTO bulletin_assets (id, bulletin_id, author_id, filename, mime_type, size_bytes)
+    VALUES (@id, @bulletinId, @authorId, @filename, @mimeType, @sizeBytes)
+  `),
+  attachBulletinAsset: db.prepare("UPDATE bulletin_assets SET bulletin_id = ? WHERE id = ? AND author_id = ?"),
+  getBulletinAssetById: db.prepare("SELECT * FROM bulletin_assets WHERE id = ?"),
+  listBulletinAssetsByBulletinId: db.prepare("SELECT * FROM bulletin_assets WHERE bulletin_id = ? ORDER BY created_at DESC"),
+  listOrphanedBulletinAssetsOlderThan: db.prepare(`
+    SELECT *
+    FROM bulletin_assets
+    WHERE bulletin_id IS NULL
+      AND created_at <= ?
+    ORDER BY created_at ASC
+  `),
+  deleteBulletinAssetById: db.prepare("DELETE FROM bulletin_assets WHERE id = ?"),
+
+  // --- Calendar ---
+  createCalendarProject: db.prepare(`
+    INSERT INTO calendar_projects (
+      id, code, name, client_name, project_type, description, color, status,
+      starts_at, ends_at, estimated_mode, estimated_value, estimated_hours, billable_rate, notes, created_by
+    )
+    VALUES (
+      @id, @code, @name, @clientName, @projectType, @description, @color, @status,
+      @startsAt, @endsAt, @estimatedMode, @estimatedValue, @estimatedHours, @billableRate, @notes, @createdBy
+    )
+  `),
+  updateCalendarProject: db.prepare(`
+    UPDATE calendar_projects
+    SET
+      code = @code,
+      name = @name,
+      client_name = @clientName,
+      project_type = @projectType,
+      description = @description,
+      color = @color,
+      status = @status,
+      starts_at = @startsAt,
+      ends_at = @endsAt,
+      estimated_mode = @estimatedMode,
+      estimated_value = @estimatedValue,
+      estimated_hours = @estimatedHours,
+      billable_rate = @billableRate,
+      notes = @notes,
+      updated_at = unixepoch()
+    WHERE id = @id
+  `),
+  listCalendarProjects: db.prepare(`
+    SELECT cp.*, u.username as created_by_username
+    FROM calendar_projects cp
+    LEFT JOIN users u ON u.id = cp.created_by
+    ORDER BY
+      CASE cp.status
+        WHEN 'active' THEN 0
+        WHEN 'proposed' THEN 1
+        WHEN 'on_hold' THEN 2
+        WHEN 'complete' THEN 3
+        ELSE 4
+      END,
+      COALESCE(cp.client_name, '') ASC,
+      cp.name ASC
+  `),
+  getCalendarProjectById: db.prepare(`
+    SELECT cp.*, u.username as created_by_username
+    FROM calendar_projects cp
+    LEFT JOIN users u ON u.id = cp.created_by
+    WHERE cp.id = ?
+  `),
+  detachCalendarEntriesFromProject: db.prepare("UPDATE calendar_entries SET project_id = NULL, updated_at = unixepoch() WHERE project_id = ?"),
+  deleteCalendarProject: db.prepare("DELETE FROM calendar_projects WHERE id = ?"),
+  listCalendarUsersBasic: db.prepare(`
+    SELECT u.id, u.username, u.role_id, r.role_key, r.name as role_name
+    FROM users u
+    LEFT JOIN roles r ON r.id = u.role_id
+    WHERE u.suspended = 0
+    ORDER BY u.username COLLATE NOCASE ASC
+  `),
+  createCalendarEntry: db.prepare(`
+    INSERT INTO calendar_entries (
+      id, type, title, description, owner_id, assignee_user_id, project_id,
+      starts_at, ends_at, all_day, scheduled_hours, utilization_percent, status
+    ) VALUES (
+      @id, @type, @title, @description, @ownerId, @assigneeUserId, @projectId,
+      @startsAt, @endsAt, @allDay, @scheduledHours, @utilizationPercent, @status
+    )
+  `),
+  updateCalendarEntry: db.prepare(`
+    UPDATE calendar_entries SET
+      type = @type,
+      title = @title,
+      description = @description,
+      assignee_user_id = @assigneeUserId,
+      project_id = @projectId,
+      starts_at = @startsAt,
+      ends_at = @endsAt,
+      all_day = @allDay,
+      scheduled_hours = @scheduledHours,
+      utilization_percent = @utilizationPercent,
+      status = @status,
+      updated_at = unixepoch()
+    WHERE id = @id
+  `),
+  deleteCalendarEntry: db.prepare("DELETE FROM calendar_entries WHERE id = ?"),
+  getCalendarEntryById: db.prepare("SELECT * FROM calendar_entries WHERE id = ?"),
+  listCalendarEntries: db.prepare(`
+    SELECT
+      ce.*,
+      au.username as assignee_username,
+      ou.username as owner_username,
+      p.name as project_name,
+      p.client_name as project_client_name,
+      p.code as project_code,
+      p.color as project_color,
+      p.project_type as project_type
+    FROM calendar_entries ce
+    LEFT JOIN users au ON au.id = ce.assignee_user_id
+    LEFT JOIN users ou ON ou.id = ce.owner_id
+    LEFT JOIN calendar_projects p ON p.id = ce.project_id
+    WHERE (@assigneeUserId IS NULL OR ce.assignee_user_id = @assigneeUserId)
+      AND (@ownerId IS NULL OR ce.owner_id = @ownerId)
+      AND (@projectId IS NULL OR ce.project_id = @projectId)
+      AND ce.starts_at <= @endsBefore
+      AND ce.ends_at >= @startsAfter
+    ORDER BY ce.starts_at ASC, ce.created_at ASC
+  `),
+
+  // --- Surveys ---
+  createSurvey: db.prepare(`
+    INSERT INTO surveys (id, title, description, owner_id, response_mode, status, public_token, starts_at, ends_at)
+    VALUES (@id, @title, @description, @ownerId, @responseMode, @status, @publicToken, @startsAt, @endsAt)
+  `),
+  updateSurvey: db.prepare(`
+    UPDATE surveys SET
+      title = @title,
+      description = @description,
+      response_mode = @responseMode,
+      status = @status,
+      public_token = @publicToken,
+      starts_at = @startsAt,
+      ends_at = @endsAt,
+      updated_at = unixepoch()
+    WHERE id = @id
+  `),
+  deleteSurvey: db.prepare("DELETE FROM surveys WHERE id = ?"),
+  getSurveyById: db.prepare("SELECT * FROM surveys WHERE id = ?"),
+  getSurveyByToken: db.prepare("SELECT * FROM surveys WHERE public_token = ?"),
+  listSurveysByOwner: db.prepare("SELECT * FROM surveys WHERE owner_id = ? ORDER BY updated_at DESC"),
+  listAllSurveys: db.prepare("SELECT * FROM surveys ORDER BY updated_at DESC"),
+  deleteSurveyQuestionsBySurvey: db.prepare("DELETE FROM survey_questions WHERE survey_id = ?"),
+  createSurveyQuestion: db.prepare(`
+    INSERT INTO survey_questions (id, survey_id, question_text, question_type, is_required, sort_order)
+    VALUES (@id, @surveyId, @questionText, @questionType, @isRequired, @sortOrder)
+  `),
+  listSurveyQuestions: db.prepare("SELECT * FROM survey_questions WHERE survey_id = ? ORDER BY sort_order, created_at"),
+  createSurveyQuestionOption: db.prepare(`
+    INSERT INTO survey_question_options (id, question_id, option_text, sort_order)
+    VALUES (@id, @questionId, @optionText, @sortOrder)
+  `),
+  deleteSurveyOptionsByQuestion: db.prepare("DELETE FROM survey_question_options WHERE question_id = ?"),
+  listSurveyOptionsByQuestionIds: db.prepare(`
+    SELECT *
+    FROM survey_question_options
+    WHERE question_id IN (
+      SELECT id FROM survey_questions WHERE survey_id = ?
+    )
+    ORDER BY sort_order, created_at
+  `),
+  createSurveyResponse: db.prepare(`
+    INSERT INTO survey_responses (id, survey_id, responder_user_id, responder_name, source_ip)
+    VALUES (@id, @surveyId, @responderUserId, @responderName, @sourceIp)
+  `),
+  createSurveyAnswer: db.prepare(`
+    INSERT INTO survey_answers (id, response_id, question_id, answer_text, answer_json)
+    VALUES (@id, @responseId, @questionId, @answerText, @answerJson)
+  `),
+  listSurveyResponsesBySurvey: db.prepare("SELECT * FROM survey_responses WHERE survey_id = ? ORDER BY submitted_at DESC"),
+  listSurveyAnswersBySurvey: db.prepare(`
+    SELECT sa.*, sr.survey_id
+    FROM survey_answers sa
+    JOIN survey_responses sr ON sr.id = sa.response_id
+    WHERE sr.survey_id = ?
+    ORDER BY sr.submitted_at DESC, sa.created_at ASC
+  `),
+
+  // --- Wiki ---
+  createWikiPage: db.prepare(`
+    INSERT INTO wiki_pages (id, slug, title, body_markdown, body_html, parent_page_id, author_id)
+    VALUES (@id, @slug, @title, @bodyMarkdown, @bodyHtml, @parentPageId, @authorId)
+  `),
+  updateWikiPage: db.prepare(`
+    UPDATE wiki_pages SET
+      slug = @slug,
+      title = @title,
+      body_markdown = @bodyMarkdown,
+      body_html = @bodyHtml,
+      parent_page_id = @parentPageId,
+      author_id = @authorId,
+      updated_at = unixepoch()
+    WHERE id = @id
+  `),
+  deleteWikiPage: db.prepare("DELETE FROM wiki_pages WHERE id = ?"),
+  getWikiPageById: db.prepare("SELECT * FROM wiki_pages WHERE id = ?"),
+  getWikiPageBySlug: db.prepare("SELECT * FROM wiki_pages WHERE slug = ?"),
+  listWikiPages: db.prepare("SELECT * FROM wiki_pages ORDER BY title ASC"),
+  searchWikiPages: db.prepare(`
+    SELECT *
+    FROM wiki_pages
+    WHERE title LIKE ? OR body_markdown LIKE ?
+    ORDER BY updated_at DESC
+  `),
+  createWikiRevision: db.prepare(`
+    INSERT INTO wiki_page_revisions (id, page_id, title, body_markdown, body_html, author_id)
+    VALUES (@id, @pageId, @title, @bodyMarkdown, @bodyHtml, @authorId)
+  `),
+  listWikiRevisions: db.prepare("SELECT * FROM wiki_page_revisions WHERE page_id = ? ORDER BY created_at DESC"),
+  getWikiRevisionById: db.prepare("SELECT * FROM wiki_page_revisions WHERE id = ?"),
+
   // --- Homepage: Settings ---
   getHomepageSettings: db.prepare("SELECT * FROM homepage_settings WHERE user_id = ?"),
   setHomepageSettings: db.prepare(`
@@ -878,10 +1444,46 @@ const DEFAULTS = {
   session_ttl_extended: "604800",
   mfa_remember_days: "30",
   mfa_required: "false",
+  bulletin_auto_purge_enabled: "false",
+  bulletin_auto_purge_days: "90",
+  bulletin_asset_auto_purge_days: "30",
+  calendar_daily_hours: "7.6",
+  calendar_workday_start: "08:30",
+  calendar_workday_end: "17:30",
+  calendar_workdays: "1,2,3,4,5",
 };
 for (const [key, value] of Object.entries(DEFAULTS)) {
   if (!getSetting(key)) setSetting(key, value);
 }
+
+db.prepare("UPDATE role_permissions SET permission = 'calendar.view_team' WHERE permission = 'calendar.edit_any'").run();
+db.prepare("DELETE FROM role_permissions WHERE permission = 'roles.manage'").run();
+
+for (const definition of SYSTEM_ROLE_DEFINITIONS) {
+  const existingRole = stmts.getRoleByKey.get(definition.key);
+  let roleId = existingRole ? existingRole.id : null;
+  if (!existingRole) {
+    roleId = crypto.randomBytes(16).toString("base64url");
+    stmts.createRole.run({
+      id: roleId,
+      roleKey: definition.key,
+      name: definition.name,
+      description: definition.description,
+      isSystem: 1,
+    });
+  }
+  stmts.replaceRolePermissionsDelete.run(roleId);
+  for (const permission of normalizePermissionList(definition.permissions)) {
+    stmts.addRolePermission.run(roleId, permission);
+  }
+}
+
+const defaultMemberRole = stmts.getRoleByKey.get("member");
+if (defaultMemberRole) {
+  db.prepare("UPDATE users SET role_id = ? WHERE role_id IS NULL OR role_id = ''").run(defaultMemberRole.id);
+}
+
+db.prepare("UPDATE bulletins SET status = 'published' WHERE status IS NULL OR status = 'draft'").run();
 
 // ============================================================
 // Paste functions
@@ -1203,8 +1805,13 @@ function bulkDeleteFiles(ids) {
 // User functions
 // ============================================================
 
-function createUser({ id, email, username, passwordHash }) {
-  stmts.createUser.run({ id, email, username, passwordHash });
+function getDefaultRoleId() {
+  const role = stmts.getRoleByKey.get("member");
+  return role ? role.id : null;
+}
+
+function createUser({ id, email, username, passwordHash, roleId }) {
+  stmts.createUser.run({ id, email, username, passwordHash, roleId: roleId || getDefaultRoleId() });
   return { id };
 }
 
@@ -1228,8 +1835,12 @@ function updateUsername(id, username) {
   stmts.updateUsername.run(username, id);
 }
 
-function updateUserDetails({ id, email, username }) {
-  stmts.updateUser.run({ id, email, username });
+function updateUserDetails({ id, email, username, roleId = null }) {
+  stmts.updateUser.run({ id, email, username, roleId });
+}
+
+function setUserRole(id, roleId) {
+  stmts.updateUserRole.run(roleId, id);
 }
 
 function suspendUserById(id) {
@@ -1257,6 +1868,9 @@ function listUsers(page = 1, limit = 50) {
       id: r.id,
       email: r.email,
       username: r.username,
+      roleId: r.role_id || null,
+      roleKey: r.role_key || null,
+      roleName: r.role_name || null,
       suspended: !!r.suspended,
       createdAt: r.created_at,
       updatedAt: r.updated_at,
@@ -1286,6 +1900,70 @@ function createSession({ id, userId, expiresIn, ipAddress, userAgent }) {
   const expiresAt = Math.floor(Date.now() / 1000) + expiresIn;
   stmts.createSession.run({ id, userId, expiresAt, ipAddress, userAgent });
   return { id, expiresAt };
+}
+
+function listRoles() {
+  return stmts.listRoles.all().map((role) => ({
+    id: role.id,
+    key: role.role_key || null,
+    name: role.name,
+    description: role.description || "",
+    isSystem: !!role.is_system,
+    permissions: normalizePermissionList(stmts.getRolePermissions.all(role.id).map((row) => row.permission)),
+  }));
+}
+
+function getRoleById(roleId) {
+  const role = stmts.getRoleById.get(roleId);
+  if (!role) return null;
+  return {
+    id: role.id,
+    key: role.role_key || null,
+    name: role.name,
+    description: role.description || "",
+    isSystem: !!role.is_system,
+    permissions: normalizePermissionList(stmts.getRolePermissions.all(role.id).map((row) => row.permission)),
+  };
+}
+
+function getRolePermissions(roleId) {
+  return normalizePermissionList(stmts.getRolePermissions.all(roleId).map((row) => row.permission));
+}
+
+function getRolePermissionsByUserId(userId) {
+  return normalizePermissionList(stmts.getPermissionsByUserId.all(userId).map((row) => row.permission));
+}
+
+function createRole({ id, roleKey = null, name, description, permissions, isSystem = false }) {
+  stmts.createRole.run({
+    id,
+    roleKey,
+    name,
+    description: description || "",
+    isSystem: isSystem ? 1 : 0,
+  });
+  replaceRolePermissions(id, permissions);
+  return { id };
+}
+
+function replaceRolePermissions(roleId, permissions) {
+  stmts.replaceRolePermissionsDelete.run(roleId);
+  for (const permission of normalizePermissionList(permissions)) {
+    stmts.addRolePermission.run(roleId, permission);
+  }
+}
+
+function updateRole({ id, name, description, permissions }) {
+  stmts.updateRole.run({ id, name, description: description || "" });
+  replaceRolePermissions(id, permissions);
+}
+
+function deleteRoleById(roleId) {
+  const role = stmts.getRoleById.get(roleId);
+  if (!role || role.is_system) return false;
+  if (stmts.countUsersByRoleId.get(roleId).total > 0) return false;
+  stmts.replaceRolePermissionsDelete.run(roleId);
+  return stmts.deleteRole.run(roleId).changes > 0;
 }
 
 function getSession(id) {
@@ -1359,8 +2037,8 @@ function deleteAdminSessionsByUserId(userId) {
 // Invite functions
 // ============================================================
 
-function createInvite({ id, email, token, createdBy, expiresAt }) {
-  stmts.createInvite.run({ id, email, token, createdBy, expiresAt });
+function createInvite({ id, email, token, createdBy, roleId = null, expiresAt }) {
+  stmts.createInvite.run({ id, email, token, createdBy, roleId, expiresAt });
   return { id };
 }
 
@@ -1392,6 +2070,8 @@ function listInvites(page = 1, limit = 50) {
       email: r.email,
       token: r.token,
       createdBy: r.created_by,
+      roleId: r.role_id || null,
+      roleName: r.role_name || null,
       used: !!r.used,
       expiresAt: r.expires_at,
       createdAt: r.created_at,
@@ -2146,6 +2826,505 @@ function setHomepageSettings(userId, layout) {
   stmts.setHomepageSettings.run({ userId, layout: JSON.stringify(layout) });
 }
 
+function mapBulletinRow(row) {
+  return {
+    id: row.id,
+    title: row.title,
+    bodyHtml: row.body_html,
+    bodySource: row.body_source,
+    authorId: row.author_id,
+    authorUsername: row.author_username || null,
+    status: row.status,
+    startsAt: row.starts_at,
+    endsAt: row.ends_at,
+    pinStartsAt: row.pin_starts_at,
+    pinEndsAt: row.pin_ends_at,
+    recurrenceType: row.recurrence_type,
+    recurrenceConfig: row.recurrence_config ? JSON.parse(row.recurrence_config) : null,
+    stylePreset: row.style_preset,
+    animationPreset: row.animation_preset,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function createBulletin(payload) {
+  stmts.createBulletin.run({
+    id: payload.id,
+    title: payload.title,
+    bodyHtml: payload.bodyHtml,
+    bodySource: payload.bodySource,
+    authorId: payload.authorId,
+    status: payload.status || "published",
+    startsAt: payload.startsAt || null,
+    endsAt: payload.endsAt || null,
+    pinStartsAt: payload.pinStartsAt || null,
+    pinEndsAt: payload.pinEndsAt || null,
+    recurrenceType: payload.recurrenceType || "none",
+    recurrenceConfig: payload.recurrenceConfig ? JSON.stringify(payload.recurrenceConfig) : null,
+    stylePreset: payload.stylePreset || "default",
+    animationPreset: payload.animationPreset || "none",
+  });
+  return { id: payload.id };
+}
+
+function updateBulletin(payload) {
+  stmts.updateBulletin.run({
+    id: payload.id,
+    title: payload.title,
+    bodyHtml: payload.bodyHtml,
+    bodySource: payload.bodySource,
+    status: payload.status || "published",
+    startsAt: payload.startsAt || null,
+    endsAt: payload.endsAt || null,
+    pinStartsAt: payload.pinStartsAt || null,
+    pinEndsAt: payload.pinEndsAt || null,
+    recurrenceType: payload.recurrenceType || "none",
+    recurrenceConfig: payload.recurrenceConfig ? JSON.stringify(payload.recurrenceConfig) : null,
+    stylePreset: payload.stylePreset || "default",
+    animationPreset: payload.animationPreset || "none",
+  });
+}
+
+function getBulletinById(id) {
+  const row = stmts.getBulletinById.get(id);
+  return row ? mapBulletinRow(row) : null;
+}
+
+function listAllBulletins() {
+  return stmts.listAllBulletins.all().map(mapBulletinRow);
+}
+
+function listBulletinsByAuthor(authorId, page = 1, limit = 50) {
+  const offset = (page - 1) * limit;
+  return stmts.listBulletinsByAuthor.all(authorId, limit, offset).map(mapBulletinRow);
+}
+
+function listBulletins(page = 1, limit = 20) {
+  const offset = (page - 1) * limit;
+  return stmts.listBulletins.all(limit, offset).map(mapBulletinRow);
+}
+
+function listActiveBulletins(page = 1, limit = 20) {
+  const offset = (page - 1) * limit;
+  return stmts.listActiveBulletins.all(limit, offset).map(mapBulletinRow);
+}
+
+function listPinnedBulletins(page = 1, limit = 20) {
+  const offset = (page - 1) * limit;
+  return stmts.listPinnedBulletins.all(limit, offset).map(mapBulletinRow);
+}
+
+function getBulletinStats() {
+  return {
+    total: stmts.countBulletins.get().total,
+    active: stmts.countActiveBulletins.get().total,
+  };
+}
+
+function deleteBulletinById(id) {
+  return stmts.deleteBulletin.run(id).changes > 0;
+}
+
+function createBulletinAsset(payload) {
+  stmts.createBulletinAsset.run({
+    id: payload.id,
+    bulletinId: payload.bulletinId || null,
+    authorId: payload.authorId,
+    filename: payload.filename,
+    mimeType: payload.mimeType || "image/webp",
+    sizeBytes: payload.sizeBytes || 0,
+  });
+}
+
+function attachBulletinAssetToBulletin(assetId, bulletinId, authorId) {
+  stmts.attachBulletinAsset.run(bulletinId, assetId, authorId);
+}
+
+function getBulletinAssetById(id) {
+  return stmts.getBulletinAssetById.get(id) || null;
+}
+
+function listBulletinAssetsByBulletinId(bulletinId) {
+  return stmts.listBulletinAssetsByBulletinId.all(bulletinId);
+}
+
+function listOrphanedBulletinAssetsOlderThan(cutoffUnix) {
+  return stmts.listOrphanedBulletinAssetsOlderThan.all(cutoffUnix);
+}
+
+function deleteBulletinAssetById(id) {
+  return stmts.deleteBulletinAssetById.run(id).changes > 0;
+}
+
+function createCalendarProject(payload) {
+  stmts.createCalendarProject.run({
+    id: payload.id,
+    code: payload.code || "",
+    name: payload.name,
+    clientName: payload.clientName || "",
+    projectType: payload.projectType || "",
+    description: payload.description || "",
+    color: payload.color || "",
+    status: payload.status || "active",
+    startsAt: payload.startsAt || null,
+    endsAt: payload.endsAt || null,
+    estimatedMode: payload.estimatedMode || "hours",
+    estimatedValue: payload.estimatedValue || 0,
+    estimatedHours: payload.estimatedHours || 0,
+    billableRate: payload.billableRate || 0,
+    notes: payload.notes || "",
+    createdBy: payload.createdBy,
+  });
+}
+
+function updateCalendarProject(payload) {
+  stmts.updateCalendarProject.run({
+    id: payload.id,
+    code: payload.code || "",
+    name: payload.name,
+    clientName: payload.clientName || "",
+    projectType: payload.projectType || "",
+    description: payload.description || "",
+    color: payload.color || "",
+    status: payload.status || "active",
+    startsAt: payload.startsAt || null,
+    endsAt: payload.endsAt || null,
+    estimatedMode: payload.estimatedMode || "hours",
+    estimatedValue: payload.estimatedValue || 0,
+    estimatedHours: payload.estimatedHours || 0,
+    billableRate: payload.billableRate || 0,
+    notes: payload.notes || "",
+  });
+}
+
+function listCalendarProjects() {
+  return stmts.listCalendarProjects.all().map(mapCalendarProjectRow);
+}
+
+function getCalendarProjectById(id) {
+  const row = stmts.getCalendarProjectById.get(id);
+  return row ? mapCalendarProjectRow(row) : null;
+}
+
+function deleteCalendarProjectById(id) {
+  stmts.detachCalendarEntriesFromProject.run(id);
+  return stmts.deleteCalendarProject.run(id).changes > 0;
+}
+
+function listCalendarUsersBasic() {
+  return stmts.listCalendarUsersBasic.all().map((row) => ({
+    id: row.id,
+    username: row.username,
+    roleId: row.role_id || null,
+    roleKey: row.role_key || null,
+    roleName: row.role_name || null,
+  }));
+}
+
+function createCalendarEntry(payload) {
+  stmts.createCalendarEntry.run({
+    id: payload.id,
+    type: payload.type,
+    title: payload.title,
+    description: payload.description || "",
+    ownerId: payload.ownerId,
+    assigneeUserId: payload.assigneeUserId || null,
+    projectId: payload.projectId || null,
+    startsAt: payload.startsAt,
+    endsAt: payload.endsAt,
+    allDay: payload.allDay ? 1 : 0,
+    scheduledHours: Number(payload.scheduledHours || 0),
+    utilizationPercent: payload.utilizationPercent || 0,
+    status: payload.status || "scheduled",
+  });
+}
+
+function updateCalendarEntry(payload) {
+  stmts.updateCalendarEntry.run({
+    id: payload.id,
+    type: payload.type,
+    title: payload.title,
+    description: payload.description || "",
+    assigneeUserId: payload.assigneeUserId || null,
+    projectId: payload.projectId || null,
+    startsAt: payload.startsAt,
+    endsAt: payload.endsAt,
+    allDay: payload.allDay ? 1 : 0,
+    scheduledHours: Number(payload.scheduledHours || 0),
+    utilizationPercent: payload.utilizationPercent || 0,
+    status: payload.status || "scheduled",
+  });
+}
+
+function deleteCalendarEntryById(id) {
+  return stmts.deleteCalendarEntry.run(id).changes > 0;
+}
+
+function getCalendarEntryById(id) {
+  return stmts.getCalendarEntryById.get(id) || null;
+}
+
+function listCalendarEntries(filters = {}) {
+  return stmts.listCalendarEntries.all({
+    assigneeUserId: filters.assigneeUserId || null,
+    ownerId: filters.ownerId || null,
+    projectId: filters.projectId || null,
+    startsAfter: filters.startsAfter || 0,
+    endsBefore: filters.endsBefore || Math.floor(Date.now() / 1000) + (365 * 24 * 60 * 60),
+  }).map((row) => ({
+    id: row.id,
+    type: row.type,
+    title: row.title,
+    description: row.description,
+    ownerId: row.owner_id,
+    ownerUsername: row.owner_username || null,
+    assigneeUserId: row.assignee_user_id,
+    assigneeUsername: row.assignee_username || null,
+    projectId: row.project_id,
+    projectName: row.project_name || null,
+    projectClientName: row.project_client_name || null,
+    projectCode: row.project_code || null,
+    projectColor: row.project_color || null,
+    projectType: row.project_type || null,
+    startsAt: row.starts_at,
+    endsAt: row.ends_at,
+    allDay: !!row.all_day,
+    scheduledHours: Number(row.scheduled_hours || 0),
+    utilizationPercent: row.utilization_percent,
+    status: row.status,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
+}
+
+function mapCalendarProjectRow(row) {
+  return {
+    id: row.id,
+    code: row.code || "",
+    name: row.name,
+    clientName: row.client_name || "",
+    projectType: row.project_type || "",
+    description: row.description || "",
+    color: row.color || "",
+    status: row.status || "active",
+    startsAt: row.starts_at,
+    endsAt: row.ends_at,
+    estimatedMode: row.estimated_mode || "hours",
+    estimatedValue: Number(row.estimated_value || 0),
+    estimatedHours: Number(row.estimated_hours || 0),
+    billableRate: Number(row.billable_rate || 0),
+    notes: row.notes || "",
+    createdBy: row.created_by,
+    createdByUsername: row.created_by_username || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function createSurvey(payload) {
+  stmts.createSurvey.run({
+    id: payload.id,
+    title: payload.title,
+    description: payload.description || "",
+    ownerId: payload.ownerId,
+    responseMode: payload.responseMode,
+    status: payload.status || "draft",
+    publicToken: payload.publicToken || null,
+    startsAt: payload.startsAt || null,
+    endsAt: payload.endsAt || null,
+  });
+}
+
+function updateSurvey(payload) {
+  stmts.updateSurvey.run({
+    id: payload.id,
+    title: payload.title,
+    description: payload.description || "",
+    responseMode: payload.responseMode,
+    status: payload.status || "draft",
+    publicToken: payload.publicToken || null,
+    startsAt: payload.startsAt || null,
+    endsAt: payload.endsAt || null,
+  });
+}
+
+function getSurveyById(id) {
+  return stmts.getSurveyById.get(id) || null;
+}
+
+function getSurveyByToken(token) {
+  return stmts.getSurveyByToken.get(token) || null;
+}
+
+function listSurveysByOwner(ownerId) {
+  return stmts.listSurveysByOwner.all(ownerId);
+}
+
+function listAllSurveys() {
+  return stmts.listAllSurveys.all();
+}
+
+function replaceSurveyQuestions(surveyId, questions) {
+  const tx = db.transaction(() => {
+    const existingQuestions = stmts.listSurveyQuestions.all(surveyId);
+    for (const question of existingQuestions) {
+      stmts.deleteSurveyOptionsByQuestion.run(question.id);
+    }
+    stmts.deleteSurveyQuestionsBySurvey.run(surveyId);
+    for (let index = 0; index < questions.length; index++) {
+      const question = questions[index];
+      const questionId = question.id || crypto.randomBytes(16).toString("base64url");
+      stmts.createSurveyQuestion.run({
+        id: questionId,
+        surveyId,
+        questionText: question.questionText,
+        questionType: question.questionType,
+        isRequired: question.isRequired ? 1 : 0,
+        sortOrder: index,
+      });
+      const options = Array.isArray(question.options) ? question.options : [];
+      for (let optionIndex = 0; optionIndex < options.length; optionIndex++) {
+        stmts.createSurveyQuestionOption.run({
+          id: crypto.randomBytes(16).toString("base64url"),
+          questionId,
+          optionText: String(options[optionIndex] || ""),
+          sortOrder: optionIndex,
+        });
+      }
+    }
+  });
+  tx();
+}
+
+function deleteSurveyById(id) {
+  return stmts.deleteSurvey.run(id).changes > 0;
+}
+
+function getSurveyQuestions(surveyId) {
+  const questions = stmts.listSurveyQuestions.all(surveyId);
+  const options = stmts.listSurveyOptionsByQuestionIds.all(surveyId);
+  const byQuestionId = new Map();
+  for (const option of options) {
+    if (!byQuestionId.has(option.question_id)) byQuestionId.set(option.question_id, []);
+    byQuestionId.get(option.question_id).push(option.option_text);
+  }
+  return questions.map((question) => ({
+    id: question.id,
+    questionText: question.question_text,
+    questionType: question.question_type,
+    isRequired: !!question.is_required,
+    sortOrder: question.sort_order,
+    options: byQuestionId.get(question.id) || [],
+  }));
+}
+
+function createSurveySubmission(payload) {
+  const tx = db.transaction(() => {
+    stmts.createSurveyResponse.run({
+      id: payload.id,
+      surveyId: payload.surveyId,
+      responderUserId: payload.responderUserId || null,
+      responderName: payload.responderName || null,
+      sourceIp: payload.sourceIp || null,
+    });
+    for (const answer of payload.answers) {
+      stmts.createSurveyAnswer.run({
+        id: crypto.randomBytes(16).toString("base64url"),
+        responseId: payload.id,
+        questionId: answer.questionId,
+        answerText: answer.answerText || null,
+        answerJson: answer.answerJson ? JSON.stringify(answer.answerJson) : null,
+      });
+    }
+  });
+  tx();
+}
+
+function getSurveyResults(surveyId) {
+  const responses = stmts.listSurveyResponsesBySurvey.all(surveyId);
+  const answers = stmts.listSurveyAnswersBySurvey.all(surveyId);
+  return {
+    responses: responses.map((response) => ({
+      id: response.id,
+      responderUserId: response.responder_user_id,
+      responderName: response.responder_name,
+      submittedAt: response.submitted_at,
+    })),
+    answers: answers.map((answer) => ({
+      id: answer.id,
+      responseId: answer.response_id,
+      questionId: answer.question_id,
+      answerText: answer.answer_text,
+      answerJson: answer.answer_json ? JSON.parse(answer.answer_json) : null,
+    })),
+  };
+}
+
+function createWikiPage(payload) {
+  stmts.createWikiPage.run({
+    id: payload.id,
+    slug: payload.slug,
+    title: payload.title,
+    bodyMarkdown: payload.bodyMarkdown,
+    bodyHtml: payload.bodyHtml,
+    parentPageId: payload.parentPageId || null,
+    authorId: payload.authorId,
+  });
+}
+
+function updateWikiPage(payload) {
+  const existing = stmts.getWikiPageById.get(payload.id);
+  if (existing) {
+    stmts.createWikiRevision.run({
+      id: crypto.randomBytes(16).toString("base64url"),
+      pageId: existing.id,
+      title: existing.title,
+      bodyMarkdown: existing.body_markdown,
+      bodyHtml: existing.body_html,
+      authorId: payload.authorId,
+    });
+  }
+  stmts.updateWikiPage.run({
+    id: payload.id,
+    slug: payload.slug,
+    title: payload.title,
+    bodyMarkdown: payload.bodyMarkdown,
+    bodyHtml: payload.bodyHtml,
+    parentPageId: payload.parentPageId || null,
+    authorId: payload.authorId,
+  });
+}
+
+function getWikiPageById(id) {
+  return stmts.getWikiPageById.get(id) || null;
+}
+
+function getWikiPageBySlug(slug) {
+  return stmts.getWikiPageBySlug.get(slug) || null;
+}
+
+function listWikiPages() {
+  return stmts.listWikiPages.all();
+}
+
+function searchWikiPages(query) {
+  const term = `%${query}%`;
+  return stmts.searchWikiPages.all(term, term);
+}
+
+function deleteWikiPageById(id) {
+  return stmts.deleteWikiPage.run(id).changes > 0;
+}
+
+function listWikiRevisions(pageId) {
+  return stmts.listWikiRevisions.all(pageId);
+}
+
+function getWikiRevisionById(id) {
+  return stmts.getWikiRevisionById.get(id) || null;
+}
+
 module.exports = {
   // Paste
   createPaste,
@@ -2173,12 +3352,21 @@ module.exports = {
   updateUserPassword,
   updateUsername,
   updateUserDetails,
+  setUserRole,
   suspendUserById,
   unsuspendUserById,
   deleteUserById,
   listUsers,
   countAllUsers,
   getUsernamesMap,
+  getDefaultRoleId,
+  listRoles,
+  getRoleById,
+  getRolePermissions,
+  getRolePermissionsByUserId,
+  createRole,
+  updateRole,
+  deleteRoleById,
   // Session
   createSession,
   getSession,
@@ -2331,10 +3519,62 @@ module.exports = {
   getShortcutByIdAny,
   getHomepageSettings,
   setHomepageSettings,
+  // Bulletins
+  createBulletin,
+  updateBulletin,
+  getBulletinById,
+  listAllBulletins,
+  listBulletinsByAuthor,
+  listBulletins,
+  listActiveBulletins,
+  listPinnedBulletins,
+  getBulletinStats,
+  deleteBulletinById,
+  createBulletinAsset,
+  attachBulletinAssetToBulletin,
+  getBulletinAssetById,
+  listBulletinAssetsByBulletinId,
+  listOrphanedBulletinAssetsOlderThan,
+  deleteBulletinAssetById,
+  // Calendar
+  createCalendarProject,
+  updateCalendarProject,
+  listCalendarProjects,
+  getCalendarProjectById,
+  deleteCalendarProjectById,
+  listCalendarUsersBasic,
+  createCalendarEntry,
+  updateCalendarEntry,
+  deleteCalendarEntryById,
+  getCalendarEntryById,
+  listCalendarEntries,
+  // Survey
+  createSurvey,
+  updateSurvey,
+  getSurveyById,
+  getSurveyByToken,
+  listSurveysByOwner,
+  listAllSurveys,
+  replaceSurveyQuestions,
+  deleteSurveyById,
+  getSurveyQuestions,
+  createSurveySubmission,
+  getSurveyResults,
+  // Wiki
+  createWikiPage,
+  updateWikiPage,
+  getWikiPageById,
+  getWikiPageBySlug,
+  listWikiPages,
+  searchWikiPages,
+  deleteWikiPageById,
+  listWikiRevisions,
+  getWikiRevisionById,
   // Shared
   VALID_EXPIRY_OPTIONS,
   VALID_GUEST_EXPIRY,
   VALID_SYNTAX_OPTIONS,
   FILES_DIR,
   TMP_DIR,
+  BULLETIN_ASSETS_DIR,
 };

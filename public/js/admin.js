@@ -1,3 +1,4 @@
+const adminLoginShell = document.getElementById("admin-login-shell");
 const loginSection = document.getElementById("login-section");
 const dashboard = document.getElementById("dashboard");
 const adminPassword = document.getElementById("admin-password");
@@ -26,22 +27,25 @@ async function api(path, options = {}) {
 }
 
 function showLogin() {
+  adminLoginShell?.classList.remove("hidden");
   loginSection.classList.remove("hidden");
   dashboard.classList.add("hidden");
-  logoutBtn.classList.add("hidden");
 }
 
 function showDashboard() {
+  adminLoginShell?.classList.add("hidden");
   loginSection.classList.add("hidden");
   dashboard.classList.remove("hidden");
-  logoutBtn.classList.remove("hidden");
   loadPasteStats();
   loadPastes();
   loadFileStats();
   loadFiles();
-  loadUsers();
   loadInvites();
   loadSmtpSettings();
+  loadCalendarSettings();
+  loadRoles().then(() => loadUsers()).catch(() => loadUsers());
+  loadBulletinsAdmin();
+  setAdminTabGroup("server");
 }
 
 function formatTime(unix) {
@@ -123,34 +127,114 @@ logoutBtn.addEventListener("click", async () => {
 // --- Tabs ---
 
 const tabBtns = document.querySelectorAll(".admin-tab[data-tab]");
-const tabs = ["settings", "security", "weather", "team-shortcuts", "invites", "users", "chat", "pastes", "files", "vaults"];
+const childTabs = ["settings", "security", "roles", "bulletins", "weather", "team-shortcuts", "invites", "users", "chat", "pastes", "files", "vaults", "calendar-tool-settings"];
+const adminTabGroups = {
+  server: ["settings", "security", "roles"],
+  homepage: ["weather", "bulletins", "team-shortcuts"],
+  "users-admin": ["users", "invites"],
+  tools: ["calendar-tool-settings", "chat", "pastes", "files", "vaults"],
+};
+const adminSubtabLabels = {
+  settings: "SMTP",
+  security: "Session Security",
+  roles: "Access Controls",
+  weather: "Weather",
+  bulletins: "Bulletins",
+  "team-shortcuts": "Shortcuts",
+  users: "Users",
+  invites: "Invites",
+  "calendar-tool-settings": "RedSecCal",
+  chat: "RedSecTeam",
+  pastes: "RedSecPaste",
+  files: "RedSecShare",
+  vaults: "RedSecVault",
+};
+let activeAdminParentTab = "server";
+let activeAdminChildTab = "settings";
+
+function renderAdminSubtabs() {
+  const container = document.getElementById("admin-subtabs");
+  if (!container) return;
+  const children = adminTabGroups[activeAdminParentTab] || [];
+  if (children.length <= 1) {
+    container.classList.add("hidden");
+    container.innerHTML = "";
+    return;
+  }
+
+  container.classList.remove("hidden");
+  container.innerHTML = children.map((childTab) => `
+    <button type="button" class="admin-subtab-btn${childTab === activeAdminChildTab ? " active" : ""}" data-admin-child-tab="${childTab}">
+      ${escapeHtml(adminSubtabLabels[childTab] || childTab)}
+    </button>
+  `).join("");
+
+  container.querySelectorAll("[data-admin-child-tab]").forEach((button) => {
+    button.addEventListener("click", () => {
+      activeAdminChildTab = button.dataset.adminChildTab;
+      updateAdminVisibleTabs();
+    });
+  });
+}
+
+function updateAdminVisibleTabs() {
+  const visibleTabs = new Set([activeAdminChildTab]);
+  childTabs.forEach((childTab) => {
+    document.getElementById(`${childTab}-tab`)?.classList.toggle("hidden", !visibleTabs.has(childTab));
+  });
+  renderAdminSubtabs();
+
+  if (visibleTabs.has("chat")) {
+    loadChatStats();
+    loadChatConversations();
+  }
+  if (visibleTabs.has("vaults")) {
+    loadVaultStats();
+    loadVaultsAdmin();
+  }
+  if (visibleTabs.has("security")) {
+    loadSecuritySettings();
+  }
+  if (visibleTabs.has("settings")) {
+    loadSmtpSettings();
+  }
+  if (visibleTabs.has("calendar-tool-settings")) {
+    loadCalendarSettings();
+  }
+  if (visibleTabs.has("weather")) {
+    loadWeatherLocations();
+  }
+  if (visibleTabs.has("team-shortcuts")) {
+    loadTeamShortcuts();
+  }
+  if (visibleTabs.has("roles")) {
+    loadRoles();
+  }
+  if (visibleTabs.has("bulletins")) {
+    loadBulletinsAdmin();
+  }
+}
+
+function setAdminTabGroup(tab) {
+  activeAdminParentTab = tab;
+  const children = adminTabGroups[tab] || [];
+  if (!children.includes(activeAdminChildTab)) {
+    activeAdminChildTab = children[0] || "";
+  }
+  tabBtns.forEach((button) => {
+    button.classList.toggle("active", button.dataset.tab === tab);
+  });
+  updateAdminVisibleTabs();
+}
 
 tabBtns.forEach((btn) => {
   btn.addEventListener("click", () => {
-    tabBtns.forEach((b) => b.classList.remove("active"));
-    btn.classList.add("active");
-    const tab = btn.dataset.tab;
-    tabs.forEach((t) => {
-      document.getElementById(`${t}-tab`).classList.toggle("hidden", t !== tab);
-    });
-    if (tab === "chat") {
-      loadChatStats();
-      loadChatConversations();
-    }
-    if (tab === "vaults") {
-      loadVaultStats();
-      loadVaultsAdmin();
-    }
-    if (tab === "security") {
-      loadSecuritySettings();
-    }
-    if (tab === "weather") {
-      loadWeatherLocations();
-    }
-    if (tab === "team-shortcuts") {
-      loadTeamShortcuts();
-    }
+    setAdminTabGroup(btn.dataset.tab);
   });
+});
+
+document.getElementById("admin-sidebar-collapse-btn")?.addEventListener("click", () => {
+  document.getElementById("admin-sidebar")?.classList.toggle("collapsed");
 });
 
 // ============================================================
@@ -401,22 +485,47 @@ const userPageInfo = document.getElementById("user-page-info");
 const userRefreshBtn = document.getElementById("user-refresh-btn");
 
 let userPage = 1;
+let cachedRoles = [];
+let permissionDefinitions = [];
+
+function getPermissionDefinitionMap() {
+  return new Map(permissionDefinitions.map((permission) => [permission.key, permission]));
+}
+
+function populateInviteRoleSelect() {
+  const select = document.getElementById("invite-role");
+  if (!select) return;
+  const currentValue = select.value;
+  select.innerHTML = '<option value="">Default role</option>' + cachedRoles.map((role) => (
+    `<option value="${escapeHtml(role.id)}">${escapeHtml(role.name)}</option>`
+  )).join("");
+  if (currentValue && cachedRoles.some((role) => role.id === currentValue)) {
+    select.value = currentValue;
+  }
+}
 
 async function loadUsers() {
   try {
+    if (!cachedRoles.length) {
+      try {
+        await loadRoles();
+      } catch {}
+    }
     const res = await api(`/api/users?page=${userPage}&limit=50`);
     const data = await res.json();
 
     usersBody.innerHTML = "";
 
     if (data.users.length === 0) {
-      usersBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-8">No users found.</td></tr>';
+      usersBody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-8">No users found.</td></tr>';
     } else {
       for (const u of data.users) {
         const tr = document.createElement("tr");
+        const roleOptions = cachedRoles.map((role) => `<option value="${escapeHtml(role.id)}" ${u.roleId === role.id ? "selected" : ""}>${escapeHtml(role.name)}</option>`).join("");
         tr.innerHTML = `
           <td class="text-sm font-medium">${escapeHtml(u.username)}</td>
           <td class="text-xs">${escapeHtml(u.email)}</td>
+          <td>${roleOptions ? `<select class="input-field text-xs py-1 px-2 user-role-select" data-id="${u.id}">${roleOptions}</select>` : '<span class="text-xs text-muted">No roles</span>'}</td>
           <td>${u.suspended ? '<span class="badge badge-red">Suspended</span>' : '<span class="badge badge-green">Active</span>'}</td>
           <td id="mfa-${u.id}"><span class="text-xs text-muted">Loading...</span></td>
           <td class="text-xs">${formatTime(u.createdAt)}</td>
@@ -499,7 +608,7 @@ async function loadInvites() {
     invitesBody.innerHTML = "";
 
     if (data.invites.length === 0) {
-      invitesBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-8">No invitations found.</td></tr>';
+      invitesBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-8">No invitations found.</td></tr>';
     } else {
       for (const inv of data.invites) {
         const isExpired = inv.expiresAt < Math.floor(Date.now() / 1000);
@@ -514,6 +623,7 @@ async function loadInvites() {
           : inv.used ? "" : `<button class="revoke-invite-btn text-error text-xs hover:underline" data-id="${inv.id}">Delete</button>`;
         tr.innerHTML = `
           <td class="text-sm">${escapeHtml(inv.email)}</td>
+          <td class="text-xs">${escapeHtml(inv.roleName || "Default role")}</td>
           <td>${status}</td>
           <td class="text-xs">${formatTime(inv.createdAt)}</td>
           <td class="text-xs">${formatTime(inv.expiresAt)}</td>
@@ -531,6 +641,7 @@ async function loadInvites() {
 
 createInviteBtn.addEventListener("click", async () => {
   const email = inviteEmail.value.trim();
+  const roleId = document.getElementById("invite-role")?.value || "";
   if (!email) return;
 
   createInviteBtn.disabled = true;
@@ -539,7 +650,7 @@ createInviteBtn.addEventListener("click", async () => {
   try {
     const res = await api("/api/invites", {
       method: "POST",
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email, roleId: roleId || null }),
     });
     const data = await res.json();
 
@@ -553,6 +664,8 @@ createInviteBtn.addEventListener("click", async () => {
       }
       inviteResult.classList.remove("hidden");
       inviteEmail.value = "";
+      const inviteRole = document.getElementById("invite-role");
+      if (inviteRole) inviteRole.value = "";
       loadInvites();
     } else {
       inviteResult.textContent = data.error || "Failed to create invite";
@@ -612,6 +725,12 @@ const smtpSecure = document.getElementById("smtp-secure");
 const saveSmtpBtn = document.getElementById("save-smtp-btn");
 const testSmtpBtn = document.getElementById("test-smtp-btn");
 const smtpResult = document.getElementById("smtp-result");
+const calendarDailyHours = document.getElementById("calendar-daily-hours");
+const calendarWorkdayStart = document.getElementById("calendar-workday-start");
+const calendarWorkdayEnd = document.getElementById("calendar-workday-end");
+const calendarWorkdayCheckboxes = [...document.querySelectorAll(".calendar-workday-checkbox")];
+const saveCalendarSettingsBtn = document.getElementById("save-calendar-settings-btn");
+const calendarSettingsResult = document.getElementById("calendar-settings-result");
 
 async function loadSmtpSettings() {
   try {
@@ -623,6 +742,21 @@ async function loadSmtpSettings() {
     smtpPass.value = config.pass || "";
     smtpFrom.value = config.from || "";
     smtpSecure.checked = config.secure || false;
+  } catch {}
+}
+
+async function loadCalendarSettings() {
+  if (!calendarDailyHours) return;
+  try {
+    const res = await api("/api/settings/calendar");
+    const config = await res.json();
+    calendarDailyHours.value = Number(config.dailyHours || 7.6).toFixed(1);
+    if (calendarWorkdayStart) calendarWorkdayStart.value = config.workdayStart || "08:30";
+    if (calendarWorkdayEnd) calendarWorkdayEnd.value = config.workdayEnd || "17:30";
+    const workdays = new Set(Array.isArray(config.workdays) ? config.workdays.map(String) : ["1", "2", "3", "4", "5"]);
+    calendarWorkdayCheckboxes.forEach((checkbox) => {
+      checkbox.checked = workdays.has(String(checkbox.value));
+    });
   } catch {}
 }
 
@@ -674,12 +808,12 @@ testSmtpBtn.addEventListener("click", async () => {
       method: "POST",
       body: JSON.stringify({ to }),
     });
+    const data = await res.json().catch(() => ({}));
 
     if (res.ok) {
       smtpResult.textContent = "Test email sent successfully!" + (data.smtpResponse ? ` — ${data.smtpResponse}` : "");
       smtpResult.className = "text-sm text-accent";
     } else {
-      const data = await res.json();
       smtpResult.textContent = data.error || "Test failed";
       smtpResult.className = "text-sm text-error";
     }
@@ -690,6 +824,45 @@ testSmtpBtn.addEventListener("click", async () => {
     smtpResult.classList.remove("hidden");
   } finally {
     testSmtpBtn.disabled = false;
+  }
+});
+
+saveCalendarSettingsBtn?.addEventListener("click", async () => {
+  saveCalendarSettingsBtn.disabled = true;
+  calendarSettingsResult.classList.add("hidden");
+
+  try {
+    const res = await api("/api/settings/calendar", {
+      method: "POST",
+      body: JSON.stringify({
+        dailyHours: Number.parseFloat(calendarDailyHours.value) || 7.6,
+        workdayStart: calendarWorkdayStart?.value || "08:30",
+        workdayEnd: calendarWorkdayEnd?.value || "17:30",
+        workdays: calendarWorkdayCheckboxes.filter((checkbox) => checkbox.checked).map((checkbox) => Number(checkbox.value)),
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+
+    if (res.ok) {
+      calendarDailyHours.value = Number(data.dailyHours || 7.6).toFixed(1);
+      if (calendarWorkdayStart) calendarWorkdayStart.value = data.workdayStart || "08:30";
+      if (calendarWorkdayEnd) calendarWorkdayEnd.value = data.workdayEnd || "17:30";
+      const workdays = new Set(Array.isArray(data.workdays) ? data.workdays.map(String) : ["1", "2", "3", "4", "5"]);
+      calendarWorkdayCheckboxes.forEach((checkbox) => {
+        checkbox.checked = workdays.has(String(checkbox.value));
+      });
+      calendarSettingsResult.textContent = "Calendar settings saved.";
+      calendarSettingsResult.className = "text-sm text-accent";
+    } else {
+      calendarSettingsResult.textContent = data.error || "Failed to save calendar settings.";
+      calendarSettingsResult.className = "text-sm text-error";
+    }
+  } catch {
+    calendarSettingsResult.textContent = "Network error";
+    calendarSettingsResult.className = "text-sm text-error";
+  } finally {
+    calendarSettingsResult.classList.remove("hidden");
+    saveCalendarSettingsBtn.disabled = false;
   }
 });
 
@@ -1205,6 +1378,19 @@ document.getElementById("weather-search-btn").addEventListener("click", async ()
   }
 });
 
+usersBody.addEventListener("change", async (e) => {
+  const select = e.target.closest(".user-role-select");
+  if (!select) return;
+  try {
+    await api(`/api/users/${select.dataset.id}/role`, {
+      method: "PUT",
+      body: JSON.stringify({ roleId: select.value }),
+    });
+  } catch {
+    loadUsers();
+  }
+});
+
 document.getElementById("vault-table-body").addEventListener("change", async (e) => {
   const select = e.target.closest("[data-vault-member-permission]");
   if (!select) return;
@@ -1442,6 +1628,243 @@ document.getElementById("team-shortcut-modal-save").addEventListener("click", as
     alert(data.error || "Failed to save");
   }
 });
+
+// ============================================================
+// ROLES
+// ============================================================
+
+function renderRolePermissions(permissions) {
+  const grid = document.getElementById("role-permissions-grid");
+  if (!grid) return;
+
+  const permissionMap = getPermissionDefinitionMap();
+  const groupedPermissions = {};
+  permissions.forEach((permission) => {
+    const definition = permissionMap.get(permission) || {
+      key: permission,
+      category: permission.split(".")[0],
+      label: permission.split(".").slice(1).join("."),
+      description: "",
+    };
+    if (!groupedPermissions[definition.category]) groupedPermissions[definition.category] = [];
+    groupedPermissions[definition.category].push(definition);
+  });
+
+  grid.innerHTML = Object.entries(groupedPermissions).map(([group, definitions]) => {
+    const checkboxes = definitions.map((definition) => `
+      <label class="role-permission-card">
+        <span class="custom-checkbox gap-2">
+          <input type="checkbox" value="${escapeHtml(definition.key)}">
+          <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+        </span>
+        <span class="role-permission-copy">
+          <span class="role-permission-label">${escapeHtml(definition.label)}</span>
+          <span class="role-permission-description">${escapeHtml(definition.description || "")}</span>
+        </span>
+      </label>
+    `).join("");
+    return `<details class="role-perm-group">
+      <summary class="role-perm-group-summary">
+        <span class="role-perm-group-title">${escapeHtml(group)}</span>
+        <span class="role-perm-group-count">${definitions.length}</span>
+      </summary>
+      <div class="role-permission-grid">${checkboxes}</div>
+    </details>`;
+  }).join("");
+}
+
+async function loadRoles() {
+  try {
+    const data = await (await api("/api/roles")).json();
+    cachedRoles = data.roles || [];
+    permissionDefinitions = data.permissionDefinitions || [];
+    populateInviteRoleSelect();
+    renderRolePermissions(data.permissions || []);
+    const list = document.getElementById("roles-list");
+    if (!list) return;
+    list.innerHTML = cachedRoles.length
+      ? cachedRoles.map((role) => {
+        const permissionMap = getPermissionDefinitionMap();
+        const permGroups = {};
+        (role.permissions || []).forEach((permission) => {
+          const definition = permissionMap.get(permission) || {
+            category: permission.split(".")[0],
+            label: permission.split(".").slice(1).join("."),
+            description: "",
+          };
+          if (!permGroups[definition.category]) permGroups[definition.category] = [];
+          permGroups[definition.category].push(definition);
+        });
+        const permHtml = Object.entries(permGroups).map(([group, definitions]) => `
+          <div class="admin-role-summary-line">
+            <span class="role-perm-group-title">${escapeHtml(group)}</span>
+            <span class="text-xs text-muted">${escapeHtml(definitions.map((definition) => definition.label).join(", "))}</span>
+          </div>
+        `).join("");
+        return `
+        <div class="card">
+          <div class="flex justify-between items-start gap-3">
+            <div class="flex-1">
+              <div class="font-medium">${escapeHtml(role.name)} ${role.isSystem ? '<span class="badge badge-gray">System</span>' : ""}</div>
+              <div class="text-xs text-muted mt-1">${escapeHtml(role.description || "No description")}</div>
+              <div class="mt-2">${permHtml || '<span class="text-xs text-muted">No permissions</span>'}</div>
+            </div>
+            ${role.isSystem ? "" : `<button class="btn-danger text-xs role-delete-btn" data-id="${role.id}">Delete</button>`}
+          </div>
+        </div>`;
+      }).join("")
+      : '<p class="text-sm text-muted">No roles configured.</p>';
+
+    list.querySelectorAll(".role-delete-btn").forEach((button) => {
+      button.addEventListener("click", async () => {
+        if (!confirm("Delete this role?")) return;
+        await api(`/api/roles/${button.dataset.id}`, { method: "DELETE" });
+        loadRoles();
+        loadUsers();
+      });
+    });
+  } catch {}
+}
+
+document.getElementById("create-role-btn")?.addEventListener("click", async () => {
+  const name = document.getElementById("role-name").value.trim();
+  const description = document.getElementById("role-description").value.trim();
+  const permissions = [...document.querySelectorAll('#role-permissions-grid input[type="checkbox"]:checked')].map((input) => input.value);
+  const result = document.getElementById("role-result");
+  result.classList.add("hidden");
+  try {
+    await api("/api/roles", {
+      method: "POST",
+      body: JSON.stringify({ name, description, permissions }),
+    });
+    document.getElementById("role-name").value = "";
+    document.getElementById("role-description").value = "";
+    document.querySelectorAll('#role-permissions-grid input[type="checkbox"]').forEach((input) => { input.checked = false; });
+    result.textContent = "Role saved.";
+    result.className = "text-sm text-accent";
+    await loadRoles();
+    await loadUsers();
+  } catch (error) {
+    result.textContent = error.message;
+    result.className = "text-sm text-error";
+  }
+  result.classList.remove("hidden");
+});
+
+document.getElementById("roles-refresh-btn")?.addEventListener("click", loadRoles);
+
+// ============================================================
+// BULLETINS
+// ============================================================
+
+async function loadBulletinsAdmin() {
+  try {
+    const data = await (await api("/api/bulletins")).json();
+    document.getElementById("bulletin-stat-total").textContent = data.stats.total;
+    document.getElementById("bulletin-stat-active").textContent = data.stats.active;
+    document.getElementById("bulletin-auto-purge-enabled").checked = !!data.retention?.autoPurgeEnabled;
+    document.getElementById("bulletin-auto-purge-days").value = data.retention?.autoPurgeDays || 90;
+    const list = document.getElementById("bulletins-list");
+    list.innerHTML = data.bulletins.length
+      ? data.bulletins.map((bulletin) => `
+        <div class="card">
+          <div class="flex justify-between items-start gap-3">
+            <div>
+              <div class="font-medium">${escapeHtml(bulletin.title)}</div>
+              <div class="text-xs text-muted mt-1">${escapeHtml(bulletin.status)} • ${escapeHtml(bulletin.authorUsername || "Unknown")} • ${escapeHtml(bulletin.recurrenceType || "none")}</div>
+            </div>
+            <div class="flex gap-2">
+              <button class="btn-danger text-xs bulletin-delete-btn" data-id="${bulletin.id}">Delete</button>
+            </div>
+          </div>
+        </div>
+      `).join("")
+      : '<p class="text-sm text-muted">No bulletins yet.</p>';
+
+    list.querySelectorAll(".bulletin-delete-btn").forEach((button) => {
+      button.addEventListener("click", async () => {
+        if (!confirm("Delete this bulletin?")) return;
+        await api(`/api/bulletins/${button.dataset.id}`, { method: "DELETE" });
+        loadBulletinsAdmin();
+      });
+    });
+
+    await populateBulletinPurgeUsers();
+  } catch {}
+}
+
+async function populateBulletinPurgeUsers() {
+  const select = document.getElementById("bulletin-purge-user");
+  if (!select) return;
+  const currentValue = select.value;
+  const res = await api("/api/users?page=1&limit=100");
+  const data = await res.json().catch(() => ({ users: [] }));
+  const users = Array.isArray(data?.users) ? data.users : [];
+  select.innerHTML = '<option value="">Select a user</option>' + users.map((user) => (
+    `<option value="${escapeHtml(user.id)}">${escapeHtml(user.username || user.email || user.id)}</option>`
+  )).join("");
+  if (currentValue) select.value = currentValue;
+}
+
+document.getElementById("bulletin-settings-save-btn")?.addEventListener("click", async () => {
+  const result = document.getElementById("bulletin-result");
+  result.classList.add("hidden");
+  try {
+    await api("/api/bulletins/settings", {
+      method: "PUT",
+      body: JSON.stringify({
+        autoPurgeEnabled: document.getElementById("bulletin-auto-purge-enabled").checked,
+        autoPurgeDays: parseInt(document.getElementById("bulletin-auto-purge-days").value, 10),
+      }),
+    });
+    result.textContent = "Retention settings saved.";
+    result.className = "text-sm text-accent";
+    await loadBulletinsAdmin();
+  } catch (error) {
+    result.textContent = error.message;
+    result.className = "text-sm text-error";
+  }
+  result.classList.remove("hidden");
+});
+
+document.getElementById("bulletin-purge-user-btn")?.addEventListener("click", async () => {
+  const userId = document.getElementById("bulletin-purge-user").value;
+  if (!userId) {
+    alert("Select a user first.");
+    return;
+  }
+  if (!confirm("Purge all bulletin messages for this user?")) return;
+  try {
+    await api("/api/bulletins/purge-user", {
+      method: "POST",
+      body: JSON.stringify({ userId }),
+    });
+    await loadBulletinsAdmin();
+  } catch (error) {
+    alert(error.message || "Failed to purge user bulletins");
+  }
+});
+
+document.getElementById("bulletin-purge-all-btn")?.addEventListener("click", async () => {
+  const confirmText = document.getElementById("bulletin-purge-all-confirm").value.trim();
+  if (confirmText !== "PURGE ALL") {
+    alert('Type "PURGE ALL" to confirm.');
+    return;
+  }
+  if (!confirm("Purge all bulletin messages and bulletin assets? This cannot be undone.")) return;
+  try {
+    await api("/api/bulletins/purge-all", {
+      method: "POST",
+      body: JSON.stringify({ confirm: confirmText }),
+    });
+    document.getElementById("bulletin-purge-all-confirm").value = "";
+    await loadBulletinsAdmin();
+  } catch (error) {
+    alert(error.message || "Failed to purge all bulletins");
+  }
+});
+
+document.getElementById("bulletin-preview-refresh")?.addEventListener("click", loadBulletinsAdmin);
 
 // --- Init ---
 checkAuth();

@@ -10,26 +10,13 @@
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-  <div class="max-w-6xl mx-auto px-4 py-8">
+  <div id="admin-login-shell" class="max-w-6xl mx-auto px-4 py-8">
     <header class="flex justify-between items-center mb-8">
       <div>
         <h1 class="text-2xl font-bold flex items-center gap-2">
           <span class="text-accent">RedSec</span><span class="text-secondary">Tools</span>
           <span class="text-muted text-base font-normal ml-1">Admin</span>
         </h1>
-      </div>
-      <div class="flex items-center gap-3">
-        <div class="relative">
-          <button id="burger-btn" class="burger-btn" aria-label="Menu" aria-expanded="false">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
-          </button>
-          <nav id="burger-nav" class="burger-nav hidden"></nav>
-        </div>
-        <button type="button" class="theme-toggle" id="theme-toggle" title="Toggle theme">
-          <svg class="w-5 h-5 dark-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
-          <svg class="w-5 h-5 light-icon hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
-        </button>
-        <button type="button" id="logout-btn" class="btn-secondary hidden">Logout</button>
       </div>
     </header>
 
@@ -47,237 +34,323 @@
         <p id="login-error" class="text-sm mt-3 text-center hidden text-error">Invalid password.</p>
       </div>
     </div>
+  </div>
 
-    <!-- Dashboard -->
-    <div id="dashboard" class="hidden">
-      <!-- Tabs -->
-      <div class="flex gap-2 mb-6 flex-wrap">
-        <button type="button" class="admin-tab active" data-tab="settings">Settings</button>
-        <button type="button" class="admin-tab" data-tab="security">Security</button>
-        <button type="button" class="admin-tab" data-tab="weather">Weather</button>
-        <button type="button" class="admin-tab" data-tab="team-shortcuts">Shortcuts</button>
-        <button type="button" class="admin-tab" data-tab="invites">Invites</button>
-        <button type="button" class="admin-tab" data-tab="users">Users</button>
-        <button type="button" class="admin-tab" data-tab="chat">Chat</button>
-        <button type="button" class="admin-tab" data-tab="pastes">Pastes</button>
-        <button type="button" class="admin-tab" data-tab="files">Files</button>
-        <button type="button" class="admin-tab" data-tab="vaults">Vaults</button>
+  <!-- Dashboard -->
+  <div id="dashboard" class="hidden dashboard-layout admin-dashboard-shell">
+    <aside id="admin-sidebar" class="dashboard-sidebar">
+      <button type="button" id="admin-sidebar-collapse-btn" class="sidebar-collapse-btn" title="Collapse sidebar">
+        <svg class="sidebar-collapse-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+      </button>
+
+      <nav class="sidebar-nav admin-sidebar-nav">
+        <button type="button" class="admin-tab sidebar-nav-item active" data-tab="server">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 7h14M5 17h14"/></svg>
+          <span class="sidebar-nav-text">Server Settings</span>
+        </button>
+        <button type="button" class="admin-tab sidebar-nav-item" data-tab="homepage">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l9-9 9 9m-2 0v8a1 1 0 01-1 1h-4v-6H10v6H6a1 1 0 01-1-1v-8"/></svg>
+          <span class="sidebar-nav-text">Homepage Settings</span>
+        </button>
+        <button type="button" class="admin-tab sidebar-nav-item" data-tab="users-admin">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5V4H2v16h5m10 0v-2a3 3 0 00-3-3H10a3 3 0 00-3 3v2m10 0H7m10-10a3 3 0 11-6 0 3 3 0 016 0zm-8 0a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          <span class="sidebar-nav-text">User Settings</span>
+        </button>
+        <button type="button" class="admin-tab sidebar-nav-item" data-tab="tools">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 3a1.5 1.5 0 00-1.5 1.5v1.19a6.972 6.972 0 00-1.57.91l-1.03-.6a1.5 1.5 0 00-2.05.55l-1.5 2.6a1.5 1.5 0 00.55 2.05l1.03.6a7.16 7.16 0 000 1.82l-1.03.6a1.5 1.5 0 00-.55 2.05l1.5 2.6a1.5 1.5 0 002.05.55l1.03-.6c.49.37 1.01.68 1.57.91v1.19A1.5 1.5 0 009.75 21h3a1.5 1.5 0 001.5-1.5v-1.19a6.972 6.972 0 001.57-.91l1.03.6a1.5 1.5 0 002.05-.55l1.5-2.6a1.5 1.5 0 00-.55-2.05l-1.03-.6a7.16 7.16 0 000-1.82l1.03-.6a1.5 1.5 0 00.55-2.05l-1.5-2.6a1.5 1.5 0 00-2.05-.55l-1.03.6a6.972 6.972 0 00-1.57-.91V4.5A1.5 1.5 0 0012.75 3h-3z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.25 15a3 3 0 100-6 3 3 0 000 6z"/></svg>
+          <span class="sidebar-nav-text">Tool Settings</span>
+        </button>
+      </nav>
+    </aside>
+
+    <div class="dashboard-content">
+      <header class="dashboard-header">
+        <div>
+          <h1 class="text-xl font-bold">
+            <span class="text-accent">RedSec</span><span class="text-secondary">Tools</span>
+            <span class="text-muted text-base font-normal ml-1">Admin</span>
+          </h1>
+          <p class="text-sm text-muted mt-1">Server configuration, access controls, homepage settings, and tool administration.</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <div class="relative">
+            <button id="burger-btn" class="burger-btn" aria-label="Menu" aria-expanded="false">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+            <nav id="burger-nav" class="burger-nav hidden"></nav>
+          </div>
+          <button type="button" class="theme-toggle" id="theme-toggle" title="Toggle theme">
+            <svg class="w-5 h-5 dark-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+            <svg class="w-5 h-5 light-icon hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+          </button>
+          <button type="button" id="logout-btn" class="btn-secondary">Admin Logout</button>
+        </div>
+      </header>
+
+      <div class="mobile-tabs admin-mobile-tabs">
+        <button type="button" class="admin-tab mobile-tab active" data-tab="server">Server</button>
+        <button type="button" class="admin-tab mobile-tab" data-tab="homepage">Homepage</button>
+        <button type="button" class="admin-tab mobile-tab" data-tab="users-admin">Users</button>
+        <button type="button" class="admin-tab mobile-tab" data-tab="tools">Tools</button>
       </div>
 
+      <div class="dashboard-main">
+        <div id="admin-subtabs" class="admin-subtabs hidden"></div>
+
       <!-- Pastes Tab -->
-      <div id="pastes-tab" class="hidden">
-        <div class="grid grid-cols-3 gap-4 mb-8">
+      <div id="pastes-tab" class="hidden admin-page-stack">
+        <div class="admin-stat-grid admin-stat-grid-3">
           <div class="stat-card"><div class="stat-value" id="paste-stat-total">-</div><div class="stat-label">Total</div></div>
           <div class="stat-card"><div class="stat-value" id="paste-stat-active">-</div><div class="stat-label">Active</div></div>
           <div class="stat-card"><div class="stat-value" id="paste-stat-expired">-</div><div class="stat-label">Expired</div></div>
         </div>
-
-        <div class="flex justify-between items-center mb-4">
-          <div class="flex items-center gap-3">
-            <label class="custom-checkbox gap-2 text-sm text-muted">
-              <input type="checkbox" id="paste-select-all">
-              <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
-              Select all
-            </label>
-            <button type="button" id="paste-bulk-delete-btn" class="btn-danger text-sm hidden">Delete Selected (<span id="paste-selected-count">0</span>)</button>
+        <div class="card admin-section-card">
+          <div class="admin-card-header">
+            <div>
+              <p class="admin-card-kicker">Tool Settings</p>
+              <h2 class="admin-card-title">RedSecPaste Records</h2>
+              <p class="admin-card-copy">Review stored encrypted pastes, expiry state, and bulk removal actions.</p>
+            </div>
+            <div class="admin-card-actions">
+              <label class="custom-checkbox gap-2 text-sm text-muted">
+                <input type="checkbox" id="paste-select-all">
+                <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+                Select all
+              </label>
+              <button type="button" id="paste-bulk-delete-btn" class="btn-danger text-sm hidden">Delete Selected (<span id="paste-selected-count">0</span>)</button>
+              <button type="button" id="paste-refresh-btn" class="btn-secondary text-sm">Refresh</button>
+            </div>
           </div>
-          <button type="button" id="paste-refresh-btn" class="btn-secondary text-sm">Refresh</button>
-        </div>
-
-        <div class="card overflow-x-auto">
-          <table class="admin-table">
-            <thead>
-              <tr>
-                <th class="w-6"></th>
-                <th>ID</th>
-                <th>User</th>
-                <th>Source IP</th>
-                <th>Syntax</th>
-                <th>Created</th>
-                <th>Expires</th>
-                <th>Password</th>
-                <th>Burn</th>
-                <th>Size</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody id="pastes-body"></tbody>
-          </table>
-        </div>
-
-        <div class="flex justify-center items-center gap-4 mt-6">
-          <button type="button" id="paste-prev-btn" class="btn-secondary text-sm" disabled>Previous</button>
-          <span class="text-sm text-muted" id="paste-page-info">Page 1</span>
-          <button type="button" id="paste-next-btn" class="btn-secondary text-sm">Next</button>
+          <div class="overflow-x-auto">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th class="w-6"></th>
+                  <th>ID</th>
+                  <th>User</th>
+                  <th>Source IP</th>
+                  <th>Syntax</th>
+                  <th>Created</th>
+                  <th>Expires</th>
+                  <th>Password</th>
+                  <th>Burn</th>
+                  <th>Size</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="pastes-body"></tbody>
+            </table>
+          </div>
+          <div class="admin-pagination">
+            <button type="button" id="paste-prev-btn" class="btn-secondary text-sm" disabled>Previous</button>
+            <span class="text-sm text-muted" id="paste-page-info">Page 1</span>
+            <button type="button" id="paste-next-btn" class="btn-secondary text-sm">Next</button>
+          </div>
         </div>
       </div>
 
       <!-- Files Tab -->
-      <div id="files-tab" class="hidden">
-        <div class="grid grid-cols-4 gap-4 mb-8">
+      <div id="files-tab" class="hidden admin-page-stack">
+        <div class="admin-stat-grid admin-stat-grid-4">
           <div class="stat-card"><div class="stat-value" id="file-stat-total">-</div><div class="stat-label">Total</div></div>
           <div class="stat-card"><div class="stat-value" id="file-stat-active">-</div><div class="stat-label">Active</div></div>
           <div class="stat-card"><div class="stat-value" id="file-stat-expired">-</div><div class="stat-label">Expired</div></div>
           <div class="stat-card"><div class="stat-value" id="file-stat-disk">-</div><div class="stat-label">Disk Usage</div></div>
         </div>
-
-        <div class="flex justify-between items-center mb-4">
-          <div class="flex items-center gap-3">
-            <label class="custom-checkbox gap-2 text-sm text-muted">
-              <input type="checkbox" id="file-select-all">
-              <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
-              Select all
-            </label>
-            <button type="button" id="file-bulk-delete-btn" class="btn-danger text-sm hidden">Delete Selected (<span id="file-selected-count">0</span>)</button>
+        <div class="card admin-section-card">
+          <div class="admin-card-header">
+            <div>
+              <p class="admin-card-kicker">Tool Settings</p>
+              <h2 class="admin-card-title">RedSecShare Records</h2>
+              <p class="admin-card-copy">Inspect encrypted file drops, expiry windows, and storage usage in one place.</p>
+            </div>
+            <div class="admin-card-actions">
+              <label class="custom-checkbox gap-2 text-sm text-muted">
+                <input type="checkbox" id="file-select-all">
+                <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+                Select all
+              </label>
+              <button type="button" id="file-bulk-delete-btn" class="btn-danger text-sm hidden">Delete Selected (<span id="file-selected-count">0</span>)</button>
+              <button type="button" id="file-refresh-btn" class="btn-secondary text-sm">Refresh</button>
+            </div>
           </div>
-          <button type="button" id="file-refresh-btn" class="btn-secondary text-sm">Refresh</button>
-        </div>
-
-        <div class="card overflow-x-auto">
-          <table class="admin-table">
-            <thead>
-              <tr>
-                <th class="w-6"></th>
-                <th>ID</th>
-                <th>User</th>
-                <th>Size</th>
-                <th>Files</th>
-                <th>Source IP</th>
-                <th>Created</th>
-                <th>Expires</th>
-                <th>Password</th>
-                <th>Burn</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody id="files-body"></tbody>
-          </table>
-        </div>
-
-        <div class="flex justify-center items-center gap-4 mt-6">
-          <button type="button" id="file-prev-btn" class="btn-secondary text-sm" disabled>Previous</button>
-          <span class="text-sm text-muted" id="file-page-info">Page 1</span>
-          <button type="button" id="file-next-btn" class="btn-secondary text-sm">Next</button>
+          <div class="overflow-x-auto">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th class="w-6"></th>
+                  <th>ID</th>
+                  <th>User</th>
+                  <th>Size</th>
+                  <th>Files</th>
+                  <th>Source IP</th>
+                  <th>Created</th>
+                  <th>Expires</th>
+                  <th>Password</th>
+                  <th>Burn</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="files-body"></tbody>
+            </table>
+          </div>
+          <div class="admin-pagination">
+            <button type="button" id="file-prev-btn" class="btn-secondary text-sm" disabled>Previous</button>
+            <span class="text-sm text-muted" id="file-page-info">Page 1</span>
+            <button type="button" id="file-next-btn" class="btn-secondary text-sm">Next</button>
+          </div>
         </div>
       </div>
 
       <!-- Users Tab -->
-      <div id="users-tab" class="hidden">
-        <div class="flex justify-between items-center mb-4">
-          <h2 class="text-lg font-semibold">User Management</h2>
-          <button type="button" id="user-refresh-btn" class="btn-secondary text-sm">Refresh</button>
-        </div>
-
-        <div class="card overflow-x-auto">
-          <table class="admin-table">
-            <thead>
-              <tr>
-                <th>Username</th>
-                <th>Email</th>
-                <th>Status</th>
-                <th>MFA</th>
-                <th>Created</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="users-body"></tbody>
-          </table>
-        </div>
-
-        <div class="flex justify-center items-center gap-4 mt-6">
-          <button type="button" id="user-prev-btn" class="btn-secondary text-sm" disabled>Previous</button>
-          <span class="text-sm text-muted" id="user-page-info">Page 1</span>
-          <button type="button" id="user-next-btn" class="btn-secondary text-sm">Next</button>
+      <div id="users-tab" class="hidden admin-page-stack">
+        <div class="card admin-section-card">
+          <div class="admin-card-header">
+            <div>
+              <p class="admin-card-kicker">User Settings</p>
+              <h2 class="admin-card-title">Users</h2>
+              <p class="admin-card-copy">Manage account status, assigned roles, MFA state, and reset actions.</p>
+            </div>
+            <div class="admin-card-actions">
+              <button type="button" id="user-refresh-btn" class="btn-secondary text-sm">Refresh</button>
+            </div>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>Username</th>
+                  <th>Email</th>
+                  <th>Role</th>
+                  <th>Status</th>
+                  <th>MFA</th>
+                  <th>Created</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="users-body"></tbody>
+            </table>
+          </div>
+          <div class="admin-pagination">
+            <button type="button" id="user-prev-btn" class="btn-secondary text-sm" disabled>Previous</button>
+            <span class="text-sm text-muted" id="user-page-info">Page 1</span>
+            <button type="button" id="user-next-btn" class="btn-secondary text-sm">Next</button>
+          </div>
         </div>
       </div>
 
       <!-- Invites Tab -->
-      <div id="invites-tab" class="hidden">
-        <div class="flex justify-between items-center mb-4">
-          <h2 class="text-lg font-semibold">Invitations</h2>
-          <div class="flex gap-2">
-            <button type="button" id="invite-refresh-btn" class="btn-secondary text-sm">Refresh</button>
+      <div id="invites-tab" class="hidden admin-page-stack">
+        <div class="card admin-section-card">
+          <div class="admin-card-header">
+            <div>
+              <p class="admin-card-kicker">User Settings</p>
+              <h2 class="admin-card-title">Create Invitation</h2>
+              <p class="admin-card-copy">Send invite-only registration links with an initial role already assigned.</p>
+            </div>
           </div>
-        </div>
-
-        <div class="card mb-4">
-          <h3 class="text-sm font-semibold mb-3">Create Invitation</h3>
-          <div class="flex gap-2">
-            <input type="email" id="invite-email" class="input-field flex-1" placeholder="Enter email address">
+          <div class="grid gap-3 md:grid-cols-[1.4fr_1fr_auto]">
+            <input type="email" id="invite-email" class="input-field" placeholder="Enter email address">
+            <select id="invite-role" class="input-field">
+              <option value="">Default role</option>
+            </select>
             <button type="button" id="create-invite-btn" class="btn-primary whitespace-nowrap">Send Invite</button>
           </div>
           <p id="invite-result" class="text-sm mt-2 hidden"></p>
         </div>
-
-        <div class="card overflow-x-auto">
-          <table class="admin-table">
-            <thead>
-              <tr>
-                <th>Email</th>
-                <th>Status</th>
-                <th>Created</th>
-                <th>Expires</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="invites-body"></tbody>
-          </table>
-        </div>
-
-        <div class="flex justify-center items-center gap-4 mt-6">
-          <button type="button" id="invite-prev-btn" class="btn-secondary text-sm" disabled>Previous</button>
-          <span class="text-sm text-muted" id="invite-page-info">Page 1</span>
-          <button type="button" id="invite-next-btn" class="btn-secondary text-sm">Next</button>
-        </div>
-      </div>
-
-      <!-- Settings Tab -->
-      <div id="settings-tab">
-        <h2 class="text-lg font-semibold mb-4">SMTP Configuration</h2>
-        <div class="card">
-          <div class="space-y-4">
-            <div class="grid grid-cols-2 gap-4">
-              <div>
-                <label class="block text-sm font-medium mb-1.5">Host</label>
-                <input type="text" id="smtp-host" class="input-field" placeholder="smtp.example.com">
-              </div>
-              <div>
-                <label class="block text-sm font-medium mb-1.5">Port</label>
-                <input type="text" id="smtp-port" class="input-field" placeholder="587">
-              </div>
-            </div>
-            <div class="grid grid-cols-2 gap-4">
-              <div>
-                <label class="block text-sm font-medium mb-1.5">Username</label>
-                <input type="text" id="smtp-user" class="input-field" placeholder="user@example.com">
-              </div>
-              <div>
-                <label class="block text-sm font-medium mb-1.5">Password</label>
-                <input type="password" id="smtp-pass" class="input-field" placeholder="••••••••">
-              </div>
-            </div>
+        <div class="card admin-section-card">
+          <div class="admin-card-header">
             <div>
-              <label class="block text-sm font-medium mb-1.5">From Address</label>
-              <input type="email" id="smtp-from" class="input-field" placeholder="noreply@example.com">
+              <p class="admin-card-kicker">User Settings</p>
+              <h2 class="admin-card-title">Invite History</h2>
+              <p class="admin-card-copy">Track pending invites, expiry windows, and the starting role attached to each invite.</p>
             </div>
-            <label class="custom-checkbox gap-2">
-              <input type="checkbox" id="smtp-secure">
-              <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
-              <span class="text-sm">Use TLS (port 465)</span>
-            </label>
-            <div class="flex gap-3">
-              <button type="button" id="save-smtp-btn" class="btn-primary">Save Configuration</button>
-              <button type="button" id="test-smtp-btn" class="btn-secondary">Send Test Email</button>
+            <div class="admin-card-actions">
+              <button type="button" id="invite-refresh-btn" class="btn-secondary text-sm">Refresh</button>
             </div>
-            <p id="smtp-result" class="text-sm hidden"></p>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>Email</th>
+                  <th>Role</th>
+                  <th>Status</th>
+                  <th>Created</th>
+                  <th>Expires</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="invites-body"></tbody>
+            </table>
+          </div>
+          <div class="admin-pagination">
+            <button type="button" id="invite-prev-btn" class="btn-secondary text-sm" disabled>Previous</button>
+            <span class="text-sm text-muted" id="invite-page-info">Page 1</span>
+            <button type="button" id="invite-next-btn" class="btn-secondary text-sm">Next</button>
           </div>
         </div>
       </div>
 
+      <!-- Settings Tab -->
+      <div id="settings-tab" class="admin-page-stack">
+        <div class="card admin-section-card">
+            <div class="admin-card-header">
+              <div>
+                <p class="admin-card-kicker">Server Settings</p>
+                <h2 class="admin-card-title">SMTP Configuration</h2>
+                <p class="admin-card-copy">Configure outbound mail for invites, password resets, and notification workflows.</p>
+              </div>
+            </div>
+            <div class="space-y-4">
+              <div class="grid grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-sm font-medium mb-1.5">Host</label>
+                  <input type="text" id="smtp-host" class="input-field" placeholder="smtp.example.com">
+                </div>
+                <div>
+                  <label class="block text-sm font-medium mb-1.5">Port</label>
+                  <input type="text" id="smtp-port" class="input-field" placeholder="587">
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-sm font-medium mb-1.5">Username</label>
+                  <input type="text" id="smtp-user" class="input-field" placeholder="user@example.com">
+                </div>
+                <div>
+                  <label class="block text-sm font-medium mb-1.5">Password</label>
+                  <input type="password" id="smtp-pass" class="input-field" placeholder="••••••••">
+                </div>
+              </div>
+              <div>
+                <label class="block text-sm font-medium mb-1.5">From Address</label>
+                <input type="email" id="smtp-from" class="input-field" placeholder="noreply@example.com">
+              </div>
+              <label class="custom-checkbox gap-2">
+                <input type="checkbox" id="smtp-secure">
+                <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+                <span class="text-sm">Use TLS (port 465)</span>
+              </label>
+              <div class="flex gap-3">
+                <button type="button" id="save-smtp-btn" class="btn-primary">Save Configuration</button>
+                <button type="button" id="test-smtp-btn" class="btn-secondary">Send Test Email</button>
+              </div>
+              <p id="smtp-result" class="text-sm hidden"></p>
+            </div>
+          </div>
+      </div>
+
       <!-- Security Tab -->
-      <div id="security-tab" class="hidden">
-        <h2 class="text-lg font-semibold mb-4">Security Settings</h2>
-        <div class="card">
+      <div id="security-tab" class="hidden admin-page-stack">
+        <div class="card admin-section-card">
+          <div class="admin-card-header">
+            <div>
+              <p class="admin-card-kicker">Server Settings</p>
+              <h2 class="admin-card-title">Session Security</h2>
+              <p class="admin-card-copy">Control session lifetimes, trusted device behavior, and global MFA requirements.</p>
+            </div>
+          </div>
           <div class="space-y-5">
             <div>
               <label class="block text-sm font-medium mb-1.5">Session Duration</label>
@@ -326,10 +399,107 @@
         </div>
       </div>
 
+      <!-- Roles Tab -->
+      <div id="roles-tab" class="hidden admin-page-stack">
+        <div class="grid gap-6 lg:grid-cols-[340px_1fr]">
+          <div class="card admin-section-card">
+            <div class="admin-card-header">
+              <div>
+                <p class="admin-card-kicker">Server Settings</p>
+                <h2 class="admin-card-title">Create Role</h2>
+                <p class="admin-card-copy">Build concise access bundles for application features without mixing in admin-only controls.</p>
+              </div>
+            </div>
+            <div class="space-y-3">
+              <input id="role-name" class="input-field" placeholder="Role name">
+              <textarea id="role-description" class="input-field min-h-[100px]" placeholder="Description"></textarea>
+              <div id="role-permissions-grid" class="space-y-2"></div>
+              <button id="create-role-btn" type="button" class="btn-primary w-full">Save Role</button>
+              <p id="role-result" class="text-sm hidden"></p>
+            </div>
+          </div>
+          <div class="card admin-section-card">
+            <div class="admin-card-header">
+              <div>
+                <p class="admin-card-kicker">Server Settings</p>
+                <h2 class="admin-card-title">Configured Roles</h2>
+                <p class="admin-card-copy">Review each role by category instead of a noisy permission-by-permission dump.</p>
+              </div>
+              <button id="roles-refresh-btn" type="button" class="btn-secondary text-sm">Refresh</button>
+            </div>
+            <div id="roles-list" class="space-y-3 text-sm text-muted">Loading roles...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bulletins Tab -->
+      <div id="bulletins-tab" class="hidden admin-page-stack">
+        <div class="grid gap-6 lg:grid-cols-[380px_1fr]">
+          <div class="card admin-section-card">
+            <div class="admin-card-header">
+              <div>
+                <p class="admin-card-kicker">Homepage Settings</p>
+                <h2 class="admin-card-title">Bulletin Retention</h2>
+                <p class="admin-card-copy">Control automated cleanup and keep the bulletin image store from accumulating stale content.</p>
+              </div>
+            </div>
+            <div class="space-y-3">
+              <label class="flex items-center gap-2 text-sm text-secondary">
+                <input id="bulletin-auto-purge-enabled" type="checkbox">
+                Enable automatic bulletin cleanup
+              </label>
+              <label class="space-y-1">
+                <span class="text-xs font-semibold uppercase tracking-wide text-muted">Message Age Limit (Days)</span>
+                <input id="bulletin-auto-purge-days" type="number" min="1" class="input-field" placeholder="90">
+                <p class="text-xs text-muted">Recurring or pinned messages are excluded from automatic message purging.</p>
+              </label>
+              <p class="text-xs text-muted">Unused images (never attached to a bulletin) are automatically removed after 30 days.</p>
+              <button id="bulletin-settings-save-btn" type="button" class="btn-primary w-full">Save Retention Settings</button>
+              <p id="bulletin-result" class="text-sm hidden"></p>
+            </div>
+          </div>
+          <div class="space-y-4">
+            <div class="admin-stat-grid admin-stat-grid-2">
+              <div class="stat-card"><div class="stat-value" id="bulletin-stat-total">-</div><div class="stat-label">Total</div></div>
+              <div class="stat-card"><div class="stat-value" id="bulletin-stat-active">-</div><div class="stat-label">Active</div></div>
+            </div>
+            <div class="card admin-section-card space-y-3">
+              <div class="admin-card-header">
+                <div>
+                  <p class="admin-card-kicker">Homepage Settings</p>
+                  <h2 class="admin-card-title">Manual Purge</h2>
+                  <p class="admin-card-copy">Remove specific bulletins, clear a single user’s history, or purge all bulletin records.</p>
+                </div>
+              </div>
+              <div class="grid gap-3 md:grid-cols-[1fr_auto]">
+                <select id="bulletin-purge-user" class="input-field">
+                  <option value="">Select a user</option>
+                </select>
+                <button id="bulletin-purge-user-btn" type="button" class="btn-secondary">Purge User</button>
+              </div>
+              <div class="grid gap-3 md:grid-cols-[1fr_auto]">
+                <input id="bulletin-purge-all-confirm" class="input-field" placeholder='Type "PURGE ALL"'>
+                <button id="bulletin-purge-all-btn" type="button" class="btn-danger">Purge All</button>
+              </div>
+            </div>
+            <div class="card admin-section-card">
+              <div class="admin-card-header">
+                <div>
+                  <p class="admin-card-kicker">Homepage Settings</p>
+                  <h2 class="admin-card-title">Bulletin Records</h2>
+                  <p class="admin-card-copy">Administrative review list for one-off deletion and cleanup checks.</p>
+                </div>
+                <button id="bulletin-preview-refresh" type="button" class="btn-secondary text-sm">Refresh</button>
+              </div>
+              <div id="bulletins-list" class="space-y-3 text-sm text-muted">Loading bulletins...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Chat Tab -->
-      <div id="chat-tab" class="hidden">
-        <!-- Stats -->
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+      <div id="chat-tab" class="hidden admin-page-stack">
+        <div class="admin-stat-grid admin-stat-grid-3">
           <div class="card p-4 text-center">
             <div class="text-2xl font-bold" id="chat-total-conversations">0</div>
             <div class="text-sm text-muted">Total Conversations</div>
@@ -343,11 +513,13 @@
             <div class="text-sm text-muted">Total Messages</div>
           </div>
         </div>
-
-        <!-- Conversation list -->
-        <div class="card">
-          <div class="flex items-center justify-between mb-4">
-            <h3 class="text-lg font-bold">Conversations</h3>
+        <div class="card admin-section-card">
+          <div class="admin-card-header">
+            <div>
+              <p class="admin-card-kicker">Tool Settings</p>
+              <h2 class="admin-card-title">RedSecTeam Conversations</h2>
+              <p class="admin-card-copy">Monitor channel activity, direct messages, membership, and message volume.</p>
+            </div>
             <button id="refresh-chat-btn" class="btn-secondary text-sm">Refresh</button>
           </div>
           <div class="overflow-x-auto">
@@ -368,7 +540,7 @@
               </tbody>
             </table>
           </div>
-          <div id="chat-pagination" class="flex items-center justify-between mt-4">
+          <div id="chat-pagination" class="admin-pagination">
             <span id="chat-page-info" class="text-sm text-muted"></span>
             <div class="flex gap-2">
               <button id="chat-prev-page" class="btn-secondary text-sm" disabled>Previous</button>
@@ -379,31 +551,40 @@
       </div>
 
       <!-- Vaults Tab -->
-      <div id="vaults-tab" class="hidden">
-        <div class="grid grid-cols-3 gap-4 mb-8">
+      <div id="vaults-tab" class="hidden admin-page-stack">
+        <div class="admin-stat-grid admin-stat-grid-3">
           <div class="stat-card"><div class="stat-value" id="vault-stat-total">-</div><div class="stat-label">Total Vaults</div></div>
           <div class="stat-card"><div class="stat-value" id="vault-stat-entries">-</div><div class="stat-label">Total Entries</div></div>
           <div class="stat-card"><div class="stat-value" id="vault-stat-shares">-</div><div class="stat-label">Direct Entry Shares</div></div>
         </div>
-        <div class="card overflow-hidden">
-          <table class="w-full text-sm">
-            <thead>
-              <tr class="border-b border-[var(--border)]">
-                <th class="text-left py-2 px-3 font-medium">ID</th>
-                <th class="text-left py-2 px-3 font-medium">Type</th>
-                <th class="text-left py-2 px-3 font-medium">Owner</th>
-                <th class="text-left py-2 px-3 font-medium">Entries</th>
-                <th class="text-left py-2 px-3 font-medium">Members</th>
-                <th class="text-left py-2 px-3 font-medium">Created</th>
-                <th class="text-left py-2 px-3 font-medium"></th>
-              </tr>
-            </thead>
-            <tbody id="vault-table-body">
-              <tr><td colspan="7" class="py-4 text-center text-muted">Loading...</td></tr>
-            </tbody>
-          </table>
+        <div class="card admin-section-card">
+          <div class="admin-card-header">
+            <div>
+              <p class="admin-card-kicker">Tool Settings</p>
+              <h2 class="admin-card-title">RedSecVault Records</h2>
+              <p class="admin-card-copy">Audit vault ownership, member access, and shared secret entry counts.</p>
+            </div>
+          </div>
+          <div class="overflow-hidden">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="border-b border-[var(--border)]">
+                  <th class="text-left py-2 px-3 font-medium">ID</th>
+                  <th class="text-left py-2 px-3 font-medium">Type</th>
+                  <th class="text-left py-2 px-3 font-medium">Owner</th>
+                  <th class="text-left py-2 px-3 font-medium">Entries</th>
+                  <th class="text-left py-2 px-3 font-medium">Members</th>
+                  <th class="text-left py-2 px-3 font-medium">Created</th>
+                  <th class="text-left py-2 px-3 font-medium"></th>
+                </tr>
+              </thead>
+              <tbody id="vault-table-body">
+                <tr><td colspan="7" class="py-4 text-center text-muted">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
-        <div id="vault-pagination" class="flex items-center justify-between mt-4">
+        <div id="vault-pagination" class="admin-pagination">
           <span id="vault-page-info" class="text-sm text-muted"></span>
           <div class="flex gap-2">
             <button id="vault-prev-page" class="btn-secondary text-sm" disabled>Previous</button>
@@ -413,21 +594,32 @@
       </div>
 
       <!-- Weather Tab -->
-      <div id="weather-tab" class="hidden">
-        <div class="flex justify-between items-center mb-4">
-          <h2 class="text-lg font-semibold">Weather Locations</h2>
-          <button type="button" id="weather-refresh-btn" class="btn-secondary text-sm">Refresh</button>
-        </div>
-        <div class="card mb-4">
-          <h3 class="text-sm font-semibold mb-3">Add Location</h3>
+      <div id="weather-tab" class="hidden admin-page-stack">
+        <div class="card admin-section-card">
+          <div class="admin-card-header">
+            <div>
+              <p class="admin-card-kicker">Homepage Settings</p>
+              <h2 class="admin-card-title">Add Weather Location</h2>
+              <p class="admin-card-copy">Choose up to five cities for the homepage weather strip.</p>
+            </div>
+            <div class="admin-card-actions">
+              <button type="button" id="weather-refresh-btn" class="btn-secondary text-sm">Refresh</button>
+            </div>
+          </div>
           <div class="flex gap-2 mb-3">
             <input type="text" id="weather-search-input" class="input-field flex-1" placeholder="Search city name...">
             <button type="button" id="weather-search-btn" class="btn-primary whitespace-nowrap">Search</button>
           </div>
           <div id="weather-search-results" class="space-y-1 hidden"></div>
         </div>
-        <div class="card">
-          <h3 class="text-sm font-semibold mb-3">Configured Locations (<span id="weather-count">0</span>/5)</h3>
+        <div class="card admin-section-card">
+          <div class="admin-card-header">
+            <div>
+              <p class="admin-card-kicker">Homepage Settings</p>
+              <h2 class="admin-card-title">Configured Locations (<span id="weather-count">0</span>/5)</h2>
+              <p class="admin-card-copy">Current weather locations displayed on the homepage cards.</p>
+            </div>
+          </div>
           <div id="weather-locations-list" class="space-y-2">
             <p class="text-sm text-muted">No locations configured.</p>
           </div>
@@ -435,14 +627,65 @@
       </div>
 
       <!-- Team Shortcuts Tab -->
-      <div id="team-shortcuts-tab" class="hidden">
-        <div class="flex justify-between items-center mb-4">
-          <h2 class="text-lg font-semibold">Team Shortcuts</h2>
-          <button type="button" id="team-shortcut-add-btn" class="btn-primary text-sm">+ Add Shortcut</button>
+      <div id="team-shortcuts-tab" class="hidden admin-page-stack">
+        <div class="card admin-section-card">
+          <div class="admin-card-header">
+            <div>
+              <p class="admin-card-kicker">Homepage Settings</p>
+              <h2 class="admin-card-title">Team Shortcuts</h2>
+              <p class="admin-card-copy">Shared shortcuts visible to all users on the homepage dashboard.</p>
+            </div>
+            <div class="admin-card-actions">
+              <button type="button" id="team-shortcut-add-btn" class="btn-primary text-sm">+ Add Shortcut</button>
+            </div>
+          </div>
+          <div id="team-shortcuts-list" class="space-y-2">
+            <p class="text-sm text-muted">No team shortcuts configured.</p>
+          </div>
         </div>
-        <p class="text-sm text-muted mb-4">Team shortcuts are visible to all users on the homepage dashboard.</p>
-        <div id="team-shortcuts-list" class="space-y-2">
-          <p class="text-sm text-muted">No team shortcuts configured.</p>
+      </div>
+
+      <!-- Calendar Tool Settings Tab -->
+      <div id="calendar-tool-settings-tab" class="hidden admin-page-stack">
+        <div class="card admin-section-card">
+          <div class="admin-card-header">
+            <div>
+              <p class="admin-card-kicker">Tool Settings</p>
+              <h2 class="admin-card-title">RedSecCal Workweek & Capacity</h2>
+              <p class="admin-card-copy">Controls the visible workday span, active daily hours, break-aware defaults, and which days count toward calendar capacity and utilisation.</p>
+            </div>
+          </div>
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium mb-1.5" for="calendar-daily-hours">Default Daily Active Hours</label>
+              <input type="number" id="calendar-daily-hours" min="1" max="24" step="0.1" class="input-field" placeholder="7.6">
+              <p class="text-xs text-muted mt-1">Used for project estimates, utilisation, and default daily allocations. Any gap between workday start/end and active hours is treated as break time.</p>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-medium mb-1.5" for="calendar-workday-start">Workday Start</label>
+                <input type="time" id="calendar-workday-start" class="input-field" value="08:30">
+              </div>
+              <div>
+                <label class="block text-sm font-medium mb-1.5" for="calendar-workday-end">Workday End</label>
+                <input type="time" id="calendar-workday-end" class="input-field" value="17:30">
+              </div>
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-2">Regular Work Week</label>
+              <div class="flex flex-wrap gap-3" id="calendar-workdays-group">
+                <label class="custom-checkbox gap-2"><input type="checkbox" class="calendar-workday-checkbox" value="1"><span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span><span class="text-sm">Mon</span></label>
+                <label class="custom-checkbox gap-2"><input type="checkbox" class="calendar-workday-checkbox" value="2"><span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span><span class="text-sm">Tue</span></label>
+                <label class="custom-checkbox gap-2"><input type="checkbox" class="calendar-workday-checkbox" value="3"><span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span><span class="text-sm">Wed</span></label>
+                <label class="custom-checkbox gap-2"><input type="checkbox" class="calendar-workday-checkbox" value="4"><span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span><span class="text-sm">Thu</span></label>
+                <label class="custom-checkbox gap-2"><input type="checkbox" class="calendar-workday-checkbox" value="5"><span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span><span class="text-sm">Fri</span></label>
+                <label class="custom-checkbox gap-2"><input type="checkbox" class="calendar-workday-checkbox" value="6"><span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span><span class="text-sm">Sat</span></label>
+                <label class="custom-checkbox gap-2"><input type="checkbox" class="calendar-workday-checkbox" value="0"><span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span><span class="text-sm">Sun</span></label>
+              </div>
+            </div>
+            <button type="button" id="save-calendar-settings-btn" class="btn-primary">Save Calendar Settings</button>
+            <p id="calendar-settings-result" class="text-sm hidden"></p>
+          </div>
         </div>
       </div>
     </div>
@@ -480,7 +723,9 @@
       </div>
     </div>
 
-    <footer class="footer">&copy; <span class="current-year"></span> RedSec Offensive Security</footer>
+        <footer class="footer">&copy; <span class="current-year"></span> RedSec Offensive Security</footer>
+      </div>
+    </div>
   </div>
   <script type="module" src="/js/admin.js"></script>
   <script type="module" src="/js/burger-menu.js"></script>

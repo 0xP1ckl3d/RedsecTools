@@ -7,13 +7,19 @@ const helmet = require("helmet");
 const cookieParser = require("cookie-parser");
 const pasteRouter = require("./routes/paste");
 const shareRouter = require("./routes/share");
-const adminRouter = require("./routes/admin");
+const { router: adminRouter } = require("./routes/admin");
 const authRouter = require("./routes/auth");
 const chatRouter = require("./routes/chat");
 const avatarRouter = require("./routes/avatar");
 const vaultRouter = require("./routes/vault");
 const extensionRouter = require("./routes/extension");
 const { router: homepageRouter } = require("./routes/homepage");
+const homepageDashboardRouter = require("./routes/homepage-dashboard");
+const calendarRouter = require("./routes/calendar");
+const surveyRouter = require("./routes/survey");
+const wikiRouter = require("./routes/wiki");
+const adminCollabRouter = require("./routes/admin-collab");
+const { runBulletinAutoPurge } = require("./bulletin-service");
 const { initWebSocket } = require("./chat-ws");
 const {
   deleteExpired, deleteExpiredFiles,
@@ -23,6 +29,7 @@ const {
   deleteExpiredPendingLogins, deleteExpiredTrustedDevices, deleteExpiredAdminSessions, deleteExpiredExtensionSessions,
 } = require("./database");
 const { pageRequireUser, pageRequireGuestOrUser } = require("./middleware/auth");
+const { pageRequirePermission, pageRequireAnyPermission } = require("./middleware/permissions");
 
 const app = express();
 const PORT = parseInt(process.env.PORT, 10) || 3000;
@@ -72,11 +79,16 @@ app.use("/api", authRouter);
 app.use("/api/chat", chatRouter);
 app.use("/api", avatarRouter);
 app.use("/api", vaultRouter);
+app.use("/api", calendarRouter);
+app.use("/api", surveyRouter);
+app.use("/api", wikiRouter);
 app.use("/api/ext", extensionRouter);
 app.use("/api/homepage", homepageRouter);
+app.use("/api/homepage", homepageDashboardRouter);
 
 // --- Admin routes ---
 app.use("/admin", adminRouter);
+app.use("/admin", adminCollabRouter);
 
 // --- Page routes ---
 const page = (file) => path.join(__dirname, "..", "public", file);
@@ -100,6 +112,13 @@ app.get("/chat", pageRequireUser, (req, res) => res.sendFile(page("chat/index.ht
 app.get("/chat/about", (req, res) => res.sendFile(page("chat/about.html")));
 app.get("/vault", pageRequireUser, (req, res) => res.sendFile(page("vault/index.html")));
 app.get("/vault/about", (req, res) => res.sendFile(page("vault/about.html")));
+app.get("/calendar", pageRequireUser, pageRequirePermission("calendar.view"), (req, res) => res.sendFile(page("calendar/index.html")));
+app.get("/calendar/about", (req, res) => res.sendFile(page("calendar/about.html")));
+app.get("/survey", pageRequireUser, pageRequireAnyPermission(["survey.create", "survey.manage_any", "survey.view_results_any"]), (req, res) => res.sendFile(page("survey/index.html")));
+app.get("/survey/about", (req, res) => res.sendFile(page("survey/about.html")));
+app.get("/survey/r/:token", (req, res) => res.sendFile(page("survey/respond.html")));
+app.get("/wiki", pageRequireUser, pageRequirePermission("wiki.view"), (req, res) => res.sendFile(page("wiki/index.html")));
+app.get("/wiki/about", (req, res) => res.sendFile(page("wiki/about.html")));
 app.get("/admin", (req, res) => res.sendFile(page("admin.html")));
 
 // Guest link redemption
@@ -129,10 +148,27 @@ setInterval(() => {
   const trustedDevices = deleteExpiredTrustedDevices();
   const adminSessions = deleteExpiredAdminSessions();
   const extensionSessions = deleteExpiredExtensionSessions();
+  const bulletinPurge = runBulletinAutoPurge();
   if (shareRouter.cleanupTmp) shareRouter.cleanupTmp();
-  const total = pastes + files + sessions + invites + guestLinks + passwordResets + messages + vaultShares + pendingLogins + trustedDevices + adminSessions + extensionSessions;
+  const total = pastes + files + sessions + invites + guestLinks + passwordResets + messages + vaultShares + pendingLogins + trustedDevices + adminSessions + extensionSessions + bulletinPurge.deletedBulletins + bulletinPurge.deletedAssets;
   if (total > 0) {
-    console.log(JSON.stringify({ ts: new Date().toISOString(), action: "cleanup", pastes, files, sessions, invites, guestLinks, passwordResets, messages, vaultShares, pendingLogins, trustedDevices, adminSessions, extensionSessions }));
+    console.log(JSON.stringify({
+      ts: new Date().toISOString(),
+      action: "cleanup",
+      pastes,
+      files,
+      sessions,
+      invites,
+      guestLinks,
+      passwordResets,
+      messages,
+      vaultShares,
+      pendingLogins,
+      trustedDevices,
+      adminSessions,
+      extensionSessions,
+      bulletinPurge,
+    }));
   }
 }, 10 * 60 * 1000);
 

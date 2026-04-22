@@ -26,6 +26,10 @@
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
           <span class="sidebar-nav-text">Tools</span>
         </button>
+        <button type="button" class="sidebar-nav-item" data-view="bulletin">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 10H5m14 4H5m14-8H5"/></svg>
+          <span class="sidebar-nav-text">Bulletin</span>
+        </button>
         <button type="button" class="sidebar-nav-item" data-view="shortcuts">
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/></svg>
           <span class="sidebar-nav-text">Shortcuts</span>
@@ -34,7 +38,7 @@
 
       <div class="sidebar-divider"></div>
 
-      <div class="sidebar-links-section">
+      <div class="sidebar-links-section collapsed">
         <button type="button" class="sidebar-links-toggle" data-target="sidebar-team-links">
           <h4 class="sidebar-links-title">Team</h4>
           <svg class="sidebar-toggle-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
@@ -42,7 +46,7 @@
         <div id="sidebar-team-links" class="sidebar-links-list"><span class="sidebar-section-empty">No links</span></div>
       </div>
 
-      <div class="sidebar-links-section">
+      <div class="sidebar-links-section collapsed">
         <button type="button" class="sidebar-links-toggle" data-target="sidebar-personal-links">
           <h4 class="sidebar-links-title">Personal</h4>
           <svg class="sidebar-toggle-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
@@ -80,13 +84,14 @@
       <div class="mobile-tabs">
         <button type="button" class="mobile-tab active" data-view="home">Home</button>
         <button type="button" class="mobile-tab" data-view="tools">Tools</button>
+        <button type="button" class="mobile-tab" data-view="bulletin">Bulletin</button>
         <button type="button" class="mobile-tab" data-view="shortcuts">Shortcuts</button>
       </div>
 
       <!-- Views -->
       <div class="dashboard-main">
         <!-- Home View -->
-        <section id="view-home" class="dashboard-view animate-fade-in-up">
+        <section id="view-home" class="dashboard-view dashboard-home-view animate-fade-in-up">
           <div class="home-greeting">
             <h1 class="text-2xl font-bold" id="greeting-text">Welcome back</h1>
             <p class="text-muted mt-1"><span id="current-date"></span> <span id="current-time" class="font-mono"></span></p>
@@ -108,19 +113,42 @@
           </div>
 
           <div class="animate-fade-in-up animate-delay-3">
+            <h2 class="text-sm font-semibold text-secondary mb-3">Bulletin Board</h2>
+              <div id="bulletin-home-area">
+                <div id="bulletin-preview-list" class="bulletin-preview-grid">
+                  <div class="skeleton skeleton-card"></div>
+                </div>
+              </div>
+          </div>
+
+          <div class="animate-fade-in-up animate-delay-4">
             <h2 class="text-sm font-semibold text-secondary mb-3">Quick Access</h2>
-            <div class="quick-tools-grid" id="quick-access-grid">
-              <div class="skeleton skeleton-card"></div>
+            <div class="quick-access-stack">
+              <div>
+                <h3 class="text-xs font-semibold text-muted uppercase tracking-wide mb-2">Tools</h3>
+                <div class="quick-access-grid" id="quick-access-tools-grid">
+                  <div class="skeleton skeleton-card"></div>
+                </div>
+              </div>
+              <div>
+                <h3 class="text-xs font-semibold text-muted uppercase tracking-wide mb-2">Shortcuts</h3>
+                <div class="quick-access-grid" id="quick-access-shortcuts-grid">
+                  <div class="skeleton skeleton-card"></div>
+                </div>
+              </div>
             </div>
           </div>
         </section>
 
         <!-- Tools View -->
         <section id="view-tools" class="dashboard-view hidden">
-          <h1 class="text-2xl font-bold mb-2">Security Tools</h1>
+          <div class="flex justify-between items-center mb-2">
+            <h1 class="text-2xl font-bold">Security Tools</h1>
+            <button type="button" id="tools-edit-btn" class="btn-secondary text-xs py-1 px-2" data-editing="false">Edit</button>
+          </div>
           <p class="text-muted mb-6">All encryption happens in your browser. The server never sees your data.</p>
           <div class="tools-grid">
-            <a href="/paste" class="tool-card">
+            <a href="/paste" class="tool-card" data-tool-key="paste">
               <div class="card">
                 <div class="flex items-center gap-3 mb-2">
                   <svg class="w-8 h-8 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
@@ -132,8 +160,9 @@
                   <span class="badge badge-gray">Zero-knowledge</span>
                 </div>
               </div>
+              <button type="button" class="shortcut-fav tool-fav-btn" data-tool-fav-id="paste" title="Add to favourites">☆</button>
             </a>
-            <a href="/share" class="tool-card">
+            <a href="/share" class="tool-card" data-tool-key="share">
               <div class="card">
                 <div class="flex items-center gap-3 mb-2">
                   <svg class="w-8 h-8 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.783A6 6 0 1111.41 4.283 4 4 0 017 16zm10-5a4 4 0 01-4.283 5.717A6 6 0 0111.717 4 4 4 0 0117 11z"/></svg>
@@ -145,8 +174,9 @@
                   <span class="badge badge-gray">Zero-knowledge</span>
                 </div>
               </div>
+              <button type="button" class="shortcut-fav tool-fav-btn" data-tool-fav-id="share" title="Add to favourites">☆</button>
             </a>
-            <a href="/chat" class="tool-card">
+            <a href="/chat" class="tool-card" data-tool-key="chat">
               <div class="card">
                 <div class="flex items-center gap-3 mb-2">
                   <svg class="w-8 h-8 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
@@ -158,8 +188,9 @@
                   <span class="badge badge-gray">Zero-knowledge</span>
                 </div>
               </div>
+              <button type="button" class="shortcut-fav tool-fav-btn" data-tool-fav-id="chat" title="Add to favourites">☆</button>
             </a>
-            <a href="/vault" class="tool-card">
+            <a href="/vault" class="tool-card" data-tool-key="vault">
               <div class="card">
                 <div class="flex items-center gap-3 mb-2">
                   <svg class="w-8 h-8 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
@@ -171,7 +202,244 @@
                   <span class="badge badge-gray">Zero-knowledge</span>
                 </div>
               </div>
+              <button type="button" class="shortcut-fav tool-fav-btn" data-tool-fav-id="vault" title="Add to favourites">☆</button>
             </a>
+            <a href="/calendar" class="tool-card" data-tool-key="calendar">
+              <div class="card">
+                <div class="flex items-center gap-3 mb-2">
+                  <svg class="w-8 h-8 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                  <h3 class="text-base font-bold"><span class="text-accent">RedSec</span><span class="text-secondary">Cal</span></h3>
+                </div>
+                <p class="text-muted text-sm">Assignments, scheduling, and utilisation planning for the team.</p>
+                <div class="flex gap-2 mt-2">
+                  <span class="badge badge-red">Team Ops</span>
+                  <span class="badge badge-gray">Planning</span>
+                </div>
+              </div>
+              <button type="button" class="shortcut-fav tool-fav-btn" data-tool-fav-id="calendar" title="Add to favourites">☆</button>
+            </a>
+            <a href="/survey" class="tool-card" data-tool-key="survey">
+              <div class="card">
+                <div class="flex items-center gap-3 mb-2">
+                  <svg class="w-8 h-8 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-6m3 6V7m3 10v-4m3 4V5M4 19h16"/></svg>
+                  <h3 class="text-base font-bold"><span class="text-accent">RedSec</span><span class="text-secondary">Survey</span></h3>
+                </div>
+                <p class="text-muted text-sm">Create surveys, share token links, and review response trends.</p>
+                <div class="flex gap-2 mt-2">
+                  <span class="badge badge-red">Analytics</span>
+                  <span class="badge badge-gray">Token Links</span>
+                </div>
+              </div>
+              <button type="button" class="shortcut-fav tool-fav-btn" data-tool-fav-id="survey" title="Add to favourites">☆</button>
+            </a>
+            <a href="/wiki" class="tool-card" data-tool-key="wiki">
+              <div class="card">
+                <div class="flex items-center gap-3 mb-2">
+                  <svg class="w-8 h-8 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5 4.186 5 1.5 6.79 1.5 9v9c0-2.21 2.686-4 6-4 1.746 0 3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c3.314 0 6 1.79 6 4v9c0-2.21-2.686-4-6-4-1.746 0-3.332.477-4.5 1.253"/></svg>
+                  <h3 class="text-base font-bold"><span class="text-accent">RedSec</span><span class="text-secondary">Wiki</span></h3>
+                </div>
+                <p class="text-muted text-sm">Shared markdown documentation with revisions and internal search.</p>
+                <div class="flex gap-2 mt-2">
+                  <span class="badge badge-red">Docs</span>
+                  <span class="badge badge-gray">Revision History</span>
+                </div>
+              </div>
+              <button type="button" class="shortcut-fav tool-fav-btn" data-tool-fav-id="wiki" title="Add to favourites">☆</button>
+            </a>
+          </div>
+        </section>
+
+        <!-- Bulletin View -->
+        <section id="view-bulletin" class="dashboard-view hidden">
+          <div class="mb-6">
+            <h1 class="text-2xl font-bold">Bulletin Board</h1>
+          </div>
+
+          <div class="bulletin-layout">
+            <div id="bulletin-composer-card" class="card bulletin-composer-card hidden composer-collapsed">
+              <button type="button" class="bulletin-composer-toggle">
+                <span id="bulletin-form-heading" class="text-sm font-semibold">Create Bulletin</span>
+                <svg class="bulletin-composer-chevron" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+              </button>
+              <button type="button" id="bulletin-cancel-btn" class="btn-secondary text-xs py-1 px-2 bulletin-cancel-btn">Clear</button>
+
+              <div class="space-y-3 bulletin-composer-body">
+                <input id="bulletin-title" class="input-field" placeholder="Bulletin title">
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <label class="space-y-1">
+                    <span class="text-xs font-semibold uppercase tracking-wide text-muted">Style</span>
+                    <select id="bulletin-style" class="input-field">
+                      <option value="default">Default</option>
+                      <option value="notice">Notice</option>
+                      <option value="alert">Alert</option>
+                      <option value="success">Success</option>
+                      <option value="reminder">Reminder</option>
+                    </select>
+                  </label>
+                  <label class="space-y-1">
+                    <span class="text-xs font-semibold uppercase tracking-wide text-muted">Animation</span>
+                    <select id="bulletin-animation" class="input-field">
+                      <option value="none">No animation</option>
+                      <option value="slide-left-right">Slide left to right</option>
+                      <option value="slide-through">Slide through</option>
+                      <option value="fade-in">Fade in and out</option>
+                      <option value="pulse-soft">Pulse soft</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div class="space-y-3">
+                  <label class="space-y-1">
+                    <span class="text-xs font-semibold uppercase tracking-wide text-muted">Schedule</span>
+                    <select id="bulletin-schedule-mode" class="input-field">
+                      <option value="always">Always visible</option>
+                      <option value="once">Show once during a window</option>
+                      <option value="recurring">Recurring schedule</option>
+                    </select>
+                  </label>
+
+                  <div id="bulletin-schedule-once" class="space-y-3 hidden">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <label class="space-y-1">
+                        <span class="text-xs font-semibold uppercase tracking-wide text-muted">Show Date</span>
+                        <input id="bulletin-starts-date" type="date" class="input-field">
+                      </label>
+                      <label class="space-y-1">
+                        <span class="text-xs font-semibold uppercase tracking-wide text-muted">Show Time</span>
+                        <button type="button" id="bulletin-starts-time" class="input-field bulletin-time-trigger" data-time-label="Show Time"></button>
+                      </label>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <label class="space-y-1">
+                        <span class="text-xs font-semibold uppercase tracking-wide text-muted">Hide Date</span>
+                        <input id="bulletin-ends-date" type="date" class="input-field">
+                      </label>
+                      <label class="space-y-1">
+                        <span class="text-xs font-semibold uppercase tracking-wide text-muted">Hide Time</span>
+                        <button type="button" id="bulletin-ends-time" class="input-field bulletin-time-trigger" data-time-label="Hide Time"></button>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div id="bulletin-schedule-recurring" class="space-y-3 hidden">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <label class="space-y-1">
+                        <span class="text-xs font-semibold uppercase tracking-wide text-muted">First Show Date</span>
+                        <input id="bulletin-starts-date-r" type="date" class="input-field">
+                      </label>
+                      <label class="space-y-1">
+                        <span class="text-xs font-semibold uppercase tracking-wide text-muted">First Show Time</span>
+                        <button type="button" id="bulletin-starts-time-r" class="input-field bulletin-time-trigger" data-time-label="First Show Time"></button>
+                      </label>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <label class="space-y-1">
+                        <span class="text-xs font-semibold uppercase tracking-wide text-muted">Stop Repeating After Date</span>
+                        <input id="bulletin-ends-date-r" type="date" class="input-field">
+                      </label>
+                      <label class="space-y-1">
+                        <span class="text-xs font-semibold uppercase tracking-wide text-muted">Stop Repeating After Time</span>
+                        <button type="button" id="bulletin-ends-time-r" class="input-field bulletin-time-trigger" data-time-label="Stop Repeating After Time"></button>
+                      </label>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <label class="space-y-1">
+                        <span class="text-xs font-semibold uppercase tracking-wide text-muted">Repeat</span>
+                        <select id="bulletin-recurrence-type" class="input-field">
+                          <option value="none">No recurrence</option>
+                          <option value="daily">Daily</option>
+                          <option value="weekly">Weekly</option>
+                        </select>
+                      </label>
+                      <label id="bulletin-recurrence-duration-wrap" class="space-y-1 hidden">
+                        <span class="text-xs font-semibold uppercase tracking-wide text-muted">Visible Each Occurrence</span>
+                        <select id="bulletin-duration-preset" class="input-field">
+                          <option value="1440">All day</option>
+                          <option value="60">1 hour</option>
+                          <option value="120">2 hours</option>
+                          <option value="240">4 hours</option>
+                          <option value="480">8 hours (workday)</option>
+                          <option value="720">12 hours</option>
+                          <option value="custom">Custom minutes</option>
+                        </select>
+                      </label>
+                    </div>
+
+                    <label id="bulletin-duration-custom-wrap" class="space-y-1 hidden">
+                      <span class="text-xs font-semibold uppercase tracking-wide text-muted">Custom Duration (Minutes)</span>
+                      <input id="bulletin-duration-minutes" type="number" min="5" value="1440" class="input-field" placeholder="1440">
+                    </label>
+
+                    <div id="bulletin-weekday-group" class="hidden">
+                      <span class="text-xs font-semibold uppercase tracking-wide text-muted block mb-2">Show On</span>
+                      <div class="bulletin-weekday-grid">
+                        <label class="bulletin-weekday-pill"><input type="checkbox" data-bulletin-weekday value="0">Sun</label>
+                        <label class="bulletin-weekday-pill"><input type="checkbox" data-bulletin-weekday value="1">Mon</label>
+                        <label class="bulletin-weekday-pill"><input type="checkbox" data-bulletin-weekday value="2">Tue</label>
+                        <label class="bulletin-weekday-pill"><input type="checkbox" data-bulletin-weekday value="3">Wed</label>
+                        <label class="bulletin-weekday-pill"><input type="checkbox" data-bulletin-weekday value="4">Thu</label>
+                        <label class="bulletin-weekday-pill"><input type="checkbox" data-bulletin-weekday value="5">Fri</label>
+                        <label class="bulletin-weekday-pill"><input type="checkbox" data-bulletin-weekday value="6">Sat</label>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div id="bulletin-pin-grid" class="hidden">
+                    <label class="bulletin-checkbox-row">
+                      <input id="bulletin-pin-enabled" type="checkbox" class="checkbox-field">
+                      <span>
+                        <span class="text-xs font-semibold uppercase tracking-wide text-muted block">Pin Bulletin</span>
+                        <span class="text-sm text-muted">Pinned messages stay at the top until manually unpinned.</span>
+                      </span>
+                    </label>
+                  </div>
+                </div>
+
+                <div class="space-y-2">
+                  <div class="bulletin-editor-toolbar">
+                    <button type="button" class="fmt-btn" data-bulletin-command="bold" title="Bold"><strong>B</strong></button>
+                    <button type="button" class="fmt-btn" data-bulletin-command="italic" title="Italic"><em>I</em></button>
+                    <button type="button" class="fmt-btn" data-bulletin-command="underline" title="Underline"><u>U</u></button>
+                    <button type="button" class="fmt-btn" data-bulletin-command="insertUnorderedList" title="Bullet list">•</button>
+                    <button type="button" class="fmt-btn" data-bulletin-command="insertOrderedList" title="Numbered list">1.</button>
+                    <button type="button" id="bulletin-link-btn" class="fmt-btn" title="Insert link">🔗</button>
+                    <button type="button" id="bulletin-emoji-btn" class="shortcut-emoji-btn">😀</button>
+                    <label class="bulletin-image-upload-btn" title="Upload image">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 16V8m0 0l-3 3m3-3l3 3M4 16.5V18a2 2 0 002 2h12a2 2 0 002-2v-1.5M4 16l4.586-4.586a2 2 0 012.828 0L16 16"/></svg>
+                      <span>Add image</span>
+                      <input type="file" id="bulletin-image-upload" accept="image/*" class="hidden">
+                    </label>
+                  </div>
+
+                  <div id="bulletin-emoji-picker" class="hidden bulletin-emoji-popover">
+                    <div class="card p-2 max-h-56 overflow-y-auto emoji-picker-card">
+                      <div id="bulletin-emoji-categories" class="flex gap-1 mb-2 border-b pb-2 flex-wrap emoji-picker-border"></div>
+                      <div id="bulletin-emoji-grid" class="grid grid-cols-8 gap-0.5"></div>
+                    </div>
+                  </div>
+
+                  <div id="bulletin-editor" class="input-field bulletin-editor" contenteditable="true"></div>
+                </div>
+
+                <div class="flex gap-2">
+                  <button type="button" id="bulletin-save-btn" class="btn-primary flex-1">Save Bulletin</button>
+                  <button type="button" id="bulletin-refresh-manage-btn" class="btn-secondary">Refresh</button>
+                </div>
+                <p id="bulletin-result" class="text-sm hidden"></p>
+              </div>
+            </div>
+
+            <div>
+              <div id="bulletin-feed" class="space-y-3">
+                <div class="skeleton skeleton-card"></div>
+              </div>
+              <div class="mt-4 flex justify-center">
+                <button type="button" id="bulletin-load-more-btn" class="btn-secondary text-xs py-1 px-2 hidden">Load More</button>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -248,6 +516,58 @@
       </div>
       <p id="fav-limit-msg" class="text-sm text-secondary mb-4"></p>
       <button type="button" id="fav-limit-modal-ok" class="btn-primary w-full">OK</button>
+    </div>
+  </div>
+
+  <!-- Bulletin Link Modal -->
+  <div id="bulletin-link-modal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-sm font-semibold">Insert Link</h3>
+        <button type="button" id="bulletin-link-modal-close" class="text-muted hover:text-primary text-lg cursor-pointer" title="Close">&times;</button>
+      </div>
+      <div class="space-y-3">
+        <input type="text" id="bulletin-link-url" class="input-field" placeholder="https://example.com or /internal/path">
+        <input type="text" id="bulletin-link-text" class="input-field" placeholder="Link text">
+        <div class="flex gap-2">
+          <button type="button" id="bulletin-link-cancel" class="btn-secondary flex-1">Cancel</button>
+          <button type="button" id="bulletin-link-save" class="btn-primary flex-1">Insert Link</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="bulletin-time-modal" class="modal-overlay hidden">
+    <div class="modal-card bulletin-time-modal-card">
+      <div class="flex justify-between items-center mb-4">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-wide text-muted">Select Time</p>
+          <h3 class="text-sm font-semibold" id="bulletin-time-modal-heading">Choose time</h3>
+        </div>
+        <button type="button" id="bulletin-time-modal-close" class="text-muted hover:text-primary text-lg cursor-pointer" title="Close">&times;</button>
+      </div>
+
+      <div class="bulletin-time-display">
+        <button type="button" id="bulletin-time-hour-display" class="bulletin-time-display-segment active">09</button>
+        <span class="bulletin-time-display-colon">:</span>
+        <button type="button" id="bulletin-time-minute-display" class="bulletin-time-display-segment">00</button>
+        <div class="bulletin-period-toggle">
+          <button type="button" id="bulletin-time-am" class="bulletin-period-btn">AM</button>
+          <button type="button" id="bulletin-time-pm" class="bulletin-period-btn">PM</button>
+        </div>
+      </div>
+
+      <div class="bulletin-clock-stage">
+        <div id="bulletin-clock-hour-face" class="bulletin-clock-face"></div>
+        <div id="bulletin-clock-minute-face" class="bulletin-clock-face hidden"></div>
+        <div class="bulletin-clock-center"></div>
+        <div id="bulletin-clock-hand" class="bulletin-clock-hand" data-clock-angle="0"></div>
+      </div>
+
+      <div class="flex gap-2 mt-4">
+        <button type="button" id="bulletin-time-cancel" class="btn-secondary flex-1">Cancel</button>
+        <button type="button" id="bulletin-time-save" class="btn-primary flex-1">OK</button>
+      </div>
     </div>
   </div>
 

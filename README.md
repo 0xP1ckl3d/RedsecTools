@@ -12,6 +12,10 @@ A multi-tool security platform by [RedSec Offensive Security](https://github.com
 | **RedSecShare** | Encrypted file sharing up to 250MB per file, with optional password protection |
 | **RedSecChat** | End-to-end encrypted real-time messaging with rich text formatting, emoji, and file sharing |
 | **RedSecVault** | Encrypted credential manager for passwords, API keys, SSH keys, TOTP 2FA codes, and secure notes |
+| **BulletinBoard** | Workspace bulletin feed on the homepage with rich-text notices, scheduling, pinning, preset styling, and WebP image support |
+| **RedSecCal** | Team and individual scheduling for assignments, tasks, reminders, utilisation tracking, and project-linked calendar entries |
+| **RedSecSurvey** | Placeholder survey/poll tool under active development. Current early routes and UI exist, but the feature is still being refined |
+| **RedSecWiki** | Placeholder internal wiki under active development. Current early routes and UI exist, but the feature is still being refined |
 | **RedSecTools Chrome Extension** | Chrome Manifest V3 extension for Vault access, autofill, Paste creation, and Share creation using the same server and encryption model |
 
 **Key security properties:**
@@ -77,9 +81,34 @@ The landing page (`/`) is a fully featured dashboard with:
 - **Personalized greeting** — "Welcome back, username" with live date and ticking clock
 - **Google search bar** — web search without leaving the page
 - **Weather widget** — real-time weather for up to 5 admin-configured cities (Open-Meteo API), with local time ticking per city
-- **Quick Access** — two-row grid: top row has all four RedSec tools, bottom row shows your favourite shortcuts (up to 4)
-- **Collapsible sidebar** — navigate between Home, Tools, and Shortcuts views with collapsible Team and Personal link sections
+- **BulletinBoard preview** — the latest 5 active workspace bulletins render as homepage cards below the weather section
+- **Quick Access** — 5 user-selected built-in tool favourites followed by 5 shortcut favourites on the homepage, filtered by the current user's role permissions
+- **Bulletin dashboard view** — pinned-first bulletin feed with full-message expansion, incremental loading, scheduling, recurrence, and permission-aware in-app management
+- **Collapsible sidebar** — navigate between Home, Tools, Bulletin, and Shortcuts views with collapsible Team and Personal link sections
 - **Mobile responsive** — sidebar collapses to a tab bar on mobile, weather grid adapts to 2 columns
+
+### Roles and Permissions
+
+Users are now assigned one primary role. Roles are managed in Admin and map to action-based permissions such as:
+
+- `bulletin.view`, `bulletin.create`, `bulletin.edit_any`, `bulletin.pin`, `bulletin.manage`
+- `calendar.view`, `calendar.create`, `calendar.view_team`, `calendar.manage`
+- `survey.create`, `survey.manage_any`, `survey.view_results_any`
+- `wiki.view`, `wiki.create`, `wiki.edit_any`, `wiki.manage`
+
+UI visibility follows the user's granted permissions, but enforcement is server-side on the protected APIs and the new tool pages.
+
+### BulletinBoard
+
+BulletinBoard is part of the homepage rather than a standalone tool page. It supports:
+
+- Rich-text HTML authoring with a constrained server-side sanitizer
+- Existing emoji picker reuse for inline emoji insertion
+- App-managed inline image uploads converted to WebP
+- Scheduling, recurring notices (`none`, `daily`, `weekly`), manual pinning, and preset-only visual treatments
+- Preset-only visual styles and animations to preserve CSP and avoid stored script/style injection
+
+Bulletin content accepts only safe allowlisted HTML and internal bulletin asset URLs. User-authored CSS and JavaScript are never stored or executed.
 
 ### Shortcuts
 
@@ -87,7 +116,7 @@ Users can create personal shortcuts (bookmarks) with:
 - Custom emoji icons (7 categories, 400+ emojis) or uploaded custom images (converted to WebP)
 - Title, URL, and optional description
 - Drag-to-reorder in edit mode
-- Favourite up to 4 shortcuts (star button, top-left of card in edit mode) — these appear in Quick Access
+- Favourite up to 5 shortcuts (star button, top-left of card in edit mode) — these appear in Quick Access
 - Team shortcuts managed by admin appear alongside personal shortcuts in a split-column layout
 
 ### Weather
@@ -233,19 +262,15 @@ Your data is stored separately from the application code and is never affected b
 
 Log in with the admin password from your `.env` file. After the first user is created, admin access requires both an active user session and the admin password (two-step authentication).
 
-**Server Configuration** (first group of tabs):
-- **Settings** — SMTP configuration with test email, password masked after save
-- **Security** — Session duration, extended session TTL, MFA policy, trusted browser duration
-- **Weather** — Manage up to 5 weather locations with city search and drag-to-reorder
-- **Shortcuts** — Manage team shortcuts (visible to all users) with emoji/image icons, add/edit/delete
-- **Invites** — Create registration invite links (sent via email or displayed as URL)
-
-**Tools Management** (second group of tabs):
-- **Chat** — View and delete conversations
-- **Pastes** — View, search, and bulk-delete pastes
-- **Files** — View, search, and bulk-delete shared files
-- **Users** — View, edit, suspend, delete users; reset passwords; disable MFA for account recovery
-- **Vaults** — View and delete encrypted vaults
+**Current admin grouping:**
+- **Server Settings**
+  SMTP configuration, session security, and access controls / role management
+- **Homepage Settings**
+  Weather locations, bulletin retention/purge administration, and team shortcuts
+- **User Settings**
+  Users and invite management, including invite role assignment
+- **Tool Settings**
+  RedSecCal workweek/capacity settings plus RedSecTeam, RedSecPaste, RedSecShare, and RedSecVault administration
 
 ### Creating Pastes (`/paste`)
 
@@ -271,6 +296,44 @@ End-to-end encrypted real-time messaging with other registered users. Supports r
 ### Vault (`/vault`)
 
 Encrypted credential manager supporting passwords, API keys, SSH keys, TOTP 2FA codes, and secure notes. Personal vaults are encrypted with the user's password. Team vaults use RSA key pairs for member-to-member key exchange. Entries can be shared directly between users.
+
+### Calendar (`/calendar`)
+
+RedSecCal provides a dashboard-style operations planner with:
+
+- Sidebar views for personal schedule, project management, team project schedule, and statistics
+- Individual calendars for each user with weekly planning, all-day events, multi-day spans, and timed entries
+- Role-aware visibility so some users see only their own calendar while elevated roles can review team schedules
+- Manager-controlled project planning with consultant allocation, delivery windows, and project-linked calendar entries
+- Weekly, monthly, and yearly utilisation reporting across users and projects
+
+Projects support estimates in either hours or days, a global default daily-hours setting for manager allocations, daily-rate billing, estimated full-project cost, and dual progress tracking for scheduled time versus completed time. Linked project calendar items can autofill project details, and scheduled project effort is rolled up directly from the calendar entries created against that project.
+
+### Survey (`/survey`)
+
+RedSecSurvey is currently a placeholder tool under active development. The current route surface and early UI are present for internal testing, but the tool should still be considered in-progress rather than production-complete.
+
+Current implemented foundations include:
+
+- Survey create, update, delete, and results routes
+- Tokenized public response flow
+- Response windows and response modes
+- Early creator/results UI
+
+Expect this tool to continue changing as the feature is completed.
+
+### Wiki (`/wiki`)
+
+RedSecWiki is currently a placeholder tool under active development. The current route surface and early UI are present for internal testing, but the tool should still be considered in-progress rather than production-complete.
+
+Current implemented foundations include:
+
+- Markdown page storage with server-rendered safe HTML
+- Shared page list and page lookup routes
+- Revision history and restore
+- Search and basic hierarchy support
+
+Expect this tool to continue changing as the feature is completed.
 
 ### Chrome Extension
 
@@ -320,29 +383,36 @@ All encryption uses the Web Crypto API. The server performs zero cryptographic o
 | Path | Purpose |
 |---|---|
 | `server/index.js` | Express server, routing, cleanup interval |
-| `server/database.js` | SQLite with 11 tables, prepared statements, CRUD |
+| `server/database.js` | SQLite schema, prepared statements, CRUD, role seeding, and collaboration data access |
 | `server/middleware/auth.js` | User/admin session middleware |
+| `server/middleware/permissions.js` | Permission attachment and route/page permission enforcement |
 | `server/routes/auth.js` | Login, register, profile, guest links, password reset |
 | `server/routes/paste.js` | Paste CRUD, rate limiting |
 | `server/routes/share.js` | File upload/download, rate limiting |
-| `server/routes/admin.js` | Admin dashboard API (all tabs) |
+| `server/routes/admin.js` | Core admin auth and existing admin dashboard API |
+| `server/routes/admin-collab.js` | Admin role, user-role, and bulletin management APIs |
 | `server/routes/homepage.js` | Homepage dashboard API (shortcuts, weather) |
+| `server/routes/homepage-dashboard.js` | Bulletin feed, bulletin assets, and built-in tool favourite APIs |
+| `server/routes/calendar.js` | RedSecCal API |
+| `server/routes/survey.js` | RedSecSurvey API |
+| `server/routes/wiki.js` | RedSecWiki API |
 | `public/js/crypto.js` | AES-256-GCM + PBKDF2 (zero dependencies) |
 | `public/js/file-crypto.js` | File encryption module |
 | `public/js/homepage.js` | Homepage dashboard orchestrator |
 | `public/js/homepage-shortcuts.js` | Shortcut CRUD, drag reorder, favourites |
 | `public/js/homepage-weather.js` | Weather widget with live time updates |
-| `public/js/admin.js` | Admin dashboard (tabbed UI) |
+| `public/js/admin.js` | Admin dashboard (tabbed UI, roles, bulletins) |
 
 ### Database Schema
 
-11 tables in SQLite:
-- `pastes`, `shares`, `share_files` — encrypted content storage
-- `users`, `sessions`, `invites`, `password_resets` — authentication
-- `guest_links` — one-time guest access tokens
-- `settings` — key-value config (SMTP, weather locations, security settings)
-- `homepage_shortcuts` — user and team shortcuts with icons
-- `user_favourite_shortcuts` — per-user favourite shortcuts (junction table)
+The SQLite database now includes the original encrypted content/auth/chat/vault tables plus collaboration tables for:
+
+- `roles`, `role_permissions` — primary user role and permission assignments
+- `bulletins`, `bulletin_assets` — homepage bulletin messages and managed WebP assets
+- `calendar_projects`, `calendar_entries` — RedSecCal projects and events/assignments
+- `surveys`, `survey_questions`, `survey_question_options`, `survey_responses`, `survey_answers` — RedSecSurvey
+- `wiki_pages`, `wiki_page_revisions` — RedSecWiki page tree and revision history
+- `homepage_settings` — homepage layout plus built-in tool favourites
 
 ---
 
@@ -393,6 +463,9 @@ Run `docker compose logs` to check the error. The most common cause is a missing
 
 **"Cannot find module" errors (npm)**
 Run `npm install` to install dependencies, then `npm run build` to compile the CSS.
+
+**How do I run the automated checks?**
+Run `npm test` for the lightweight security/rendering test suite, then `npm run build` and `npm start` or `npm run dev` for manual browser verification.
 
 **Port already in use**
 Change `PORT` in your `.env` file to a different port (e.g., `PORT=8080`).

@@ -3,7 +3,7 @@
   "info": {
     "title": "RedSecTools API",
     "version": "2.0.0",
-    "description": "Repository-only OpenAPI documentation for RedSecTools. This file is not served by the live application. It documents the current HTTP API, including auth requirements for main app, guest-link, extension, and admin routes."
+    "description": "Repository-only OpenAPI documentation for RedSecTools. This file is not served by the live application. It documents the current HTTP API, including auth requirements for main app, guest-link, extension, and admin routes. Survey and Wiki are currently placeholder tools under active development, so those route groups may evolve faster than the mature core tools."
   },
   "servers": [
     {
@@ -17,6 +17,9 @@
     { "name": "Share", "description": "Encrypted file sharing" },
     { "name": "Avatar", "description": "User avatar upload and retrieval" },
     { "name": "Homepage", "description": "Homepage shortcuts and user homepage settings" },
+    { "name": "Calendar", "description": "RedSecCal projects and calendar entries" },
+    { "name": "Survey", "description": "RedSecSurvey placeholder routes and public response flows under active development" },
+    { "name": "Wiki", "description": "RedSecWiki placeholder page and revision routes under active development" },
     { "name": "Vault", "description": "Vaults, vault entries, sharing, and audit" },
     { "name": "Chat", "description": "Encrypted chat keys, conversations, and messages" },
     { "name": "Extension", "description": "Chrome extension bearer-token API" },
@@ -71,8 +74,257 @@
         "properties": {
           "id": { "type": "string" },
           "username": { "type": "string" },
-          "avatarUpdatedAt": { "type": ["integer", "null"] }
+          "avatarUpdatedAt": { "type": ["integer", "null"] },
+          "roleId": { "type": ["string", "null"] },
+          "roleKey": { "type": ["string", "null"] },
+          "roleName": { "type": ["string", "null"] }
         }
+      },
+      "ToolSummary": {
+        "type": "object",
+        "properties": {
+          "key": { "type": "string" },
+          "name": { "type": "string" },
+          "href": { "type": "string" }
+        },
+        "required": ["key", "name", "href"]
+      },
+      "RoleSummary": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "roleKey": { "type": ["string", "null"] },
+          "name": { "type": "string" },
+          "description": { "type": ["string", "null"] },
+          "isSystem": { "type": "boolean" },
+          "permissions": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "required": ["id", "name", "permissions"]
+      },
+      "BulletinSummary": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "bodyHtml": { "type": "string" },
+          "bodySource": { "type": "string" },
+          "authorId": { "type": "string" },
+          "authorUsername": { "type": ["string", "null"] },
+          "status": { "type": "string" },
+          "startsAt": { "type": ["integer", "null"] },
+          "endsAt": { "type": ["integer", "null"] },
+          "pinStartsAt": { "type": ["integer", "null"] },
+          "pinEndsAt": { "type": ["integer", "null"] },
+          "recurrenceType": { "type": "string" },
+          "recurrenceConfig": { "type": ["object", "null"] },
+          "stylePreset": { "type": "string" },
+          "animationPreset": { "type": "string" },
+          "createdAt": { "type": "integer" },
+          "updatedAt": { "type": "integer" }
+        },
+        "required": ["id", "title", "bodyHtml", "status", "stylePreset", "animationPreset"]
+      },
+      "CalendarEntry": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "type": { "type": "string" },
+          "title": { "type": "string" },
+          "description": { "type": ["string", "null"] },
+          "ownerId": { "type": "string" },
+          "ownerUsername": { "type": ["string", "null"] },
+          "assigneeUserId": { "type": ["string", "null"] },
+          "assigneeUsername": { "type": ["string", "null"] },
+          "projectId": { "type": ["string", "null"] },
+          "projectName": { "type": ["string", "null"] },
+          "projectClientName": { "type": ["string", "null"] },
+          "projectCode": { "type": ["string", "null"] },
+          "projectColor": { "type": ["string", "null"] },
+          "projectType": { "type": ["string", "null"] },
+          "startsAt": { "type": "integer" },
+          "endsAt": { "type": "integer" },
+          "allDay": { "type": "boolean" },
+          "utilizationPercent": { "type": "integer" },
+          "status": { "type": "string" },
+          "calendarUserId": { "type": "string" }
+        },
+        "required": ["id", "type", "title", "ownerId", "startsAt", "endsAt", "status"]
+      },
+      "CalendarProject": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "code": { "type": "string" },
+          "name": { "type": "string" },
+          "clientName": { "type": "string" },
+          "projectType": { "type": "string" },
+          "description": { "type": "string" },
+          "color": { "type": "string" },
+          "status": { "type": "string" },
+          "startsAt": { "type": ["integer", "null"] },
+          "endsAt": { "type": ["integer", "null"] },
+          "estimatedMode": { "type": "string" },
+          "estimatedValue": { "type": "number" },
+          "estimatedHours": { "type": "number" },
+          "billableRate": { "type": "number" },
+          "notes": { "type": "string" },
+          "createdBy": { "type": "string" },
+          "createdByUsername": { "type": ["string", "null"] },
+          "scheduledHours": { "type": "number" },
+          "completedHours": { "type": "number" },
+          "utilizedHours": { "type": "number" },
+          "assignmentCount": { "type": "integer" },
+          "estimatedDays": { "type": "number" },
+          "estimatedCost": { "type": "number" },
+          "scheduledPercent": { "type": "integer" },
+          "completedPercent": { "type": "integer" },
+          "assignedUsers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "username": { "type": "string" }
+              },
+              "required": ["id", "username"]
+            }
+          }
+        },
+        "required": ["id", "name", "status"]
+      },
+      "CalendarBootstrapResponse": {
+        "type": "object",
+        "properties": {
+          "capabilities": {
+            "type": "object",
+            "properties": {
+              "canView": { "type": "boolean" },
+              "canCreate": { "type": "boolean" },
+              "canViewTeam": { "type": "boolean" },
+              "canAssignOthers": { "type": "boolean" },
+              "canManageProjects": { "type": "boolean" },
+              "canEditAny": { "type": "boolean" }
+            },
+            "required": ["canView", "canCreate", "canViewTeam", "canAssignOthers", "canManageProjects", "canEditAny"]
+          },
+          "settings": {
+            "type": "object",
+            "properties": {
+              "dailyHours": { "type": "number" }
+            },
+            "required": ["dailyHours"]
+          },
+          "currentUserId": { "type": "string" },
+          "weekStart": { "type": "integer" },
+          "weekEnd": { "type": "integer" },
+          "selectedUserId": { "type": "string" },
+          "selectedUser": { "$ref": "#/components/schemas/UserSummary" },
+          "availableUsers": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/UserSummary" }
+          },
+          "scheduleEntries": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/CalendarEntry" }
+          },
+          "teamProjectEntries": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/CalendarEntry" }
+          },
+          "projects": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/CalendarProject" }
+          },
+          "overviewStats": {
+            "type": "object"
+          }
+        },
+        "required": ["capabilities", "settings", "currentUserId", "weekStart", "weekEnd", "selectedUserId", "availableUsers", "scheduleEntries", "teamProjectEntries", "projects"]
+      },
+      "CalendarStatsResponse": {
+        "type": "object",
+        "properties": {
+          "period": { "type": "string" },
+          "label": { "type": "string" },
+          "startsAt": { "type": "integer" },
+          "endsAt": { "type": "integer" },
+          "scope": { "type": "string" },
+          "stats": {
+            "type": "object",
+            "properties": {
+              "summary": { "type": "object" },
+              "userStats": {
+                "type": "array",
+                "items": { "type": "object" }
+              },
+              "projectStats": {
+                "type": "array",
+                "items": { "type": "object" }
+              }
+            },
+            "required": ["summary", "userStats", "projectStats"]
+          }
+        },
+        "required": ["period", "label", "startsAt", "endsAt", "scope", "stats"]
+      },
+      "SurveySummary": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "ownerId": { "type": "string" },
+          "responseMode": { "type": "string" },
+          "status": { "type": "string" },
+          "publicToken": { "type": ["string", "null"] },
+          "startsAt": { "type": ["integer", "null"] },
+          "endsAt": { "type": ["integer", "null"] },
+          "createdAt": { "type": "integer" },
+          "updatedAt": { "type": "integer" }
+        },
+        "required": ["id", "title", "ownerId", "responseMode", "status"]
+      },
+      "WikiPageSummary": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "slug": { "type": "string" },
+          "title": { "type": "string" },
+          "body_markdown": { "type": "string" },
+          "body_html": { "type": "string" },
+          "parent_page_id": { "type": ["string", "null"] },
+          "author_id": { "type": "string" },
+          "created_at": { "type": "integer" },
+          "updated_at": { "type": "integer" }
+        },
+        "required": ["id", "slug", "title", "body_markdown", "body_html", "author_id"]
+      },
+      "AuthMeResponse": {
+        "type": "object",
+        "properties": {
+          "authenticated": { "type": "boolean" },
+          "user": { "$ref": "#/components/schemas/UserSummary" },
+          "role": {
+            "type": ["object", "null"],
+            "properties": {
+              "id": { "type": ["string", "null"] },
+              "key": { "type": ["string", "null"] },
+              "name": { "type": ["string", "null"] }
+            }
+          },
+          "permissions": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "availableTools": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ToolSummary" }
+          }
+        },
+        "required": ["authenticated"]
       },
       "LoginRequest": {
         "type": "object",
@@ -501,6 +753,14 @@
       }
     },
     "responses": {
+      "Success": {
+        "description": "Successful operation",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Success" }
+          }
+        }
+      },
       "BadRequest": {
         "description": "Bad request",
         "content": {
@@ -737,13 +997,7 @@
             "description": "Current auth state",
             "content": {
               "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "authenticated": { "type": "boolean" },
-                    "user": { "$ref": "#/components/schemas/UserSummary" }
-                  }
-                }
+                "schema": { "$ref": "#/components/schemas/AuthMeResponse" }
               }
             }
           }
@@ -1737,6 +1991,1189 @@
             }
           },
           "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/homepage/bulletins": {
+      "get": {
+        "tags": ["Homepage"],
+        "summary": "Get bulletin feed for the homepage dashboard",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "tab",
+            "in": "query",
+            "schema": { "type": "string", "enum": ["active", "pinned"] }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 1 }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 20 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bulletin feed payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "canView": { "type": "boolean" },
+                    "bulletins": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/BulletinSummary" }
+                    },
+                    "pinned": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/BulletinSummary" }
+                    }
+                  },
+                  "required": ["canView", "bulletins", "pinned"]
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/homepage/bulletin-assets": {
+      "post": {
+        "tags": ["Homepage"],
+        "summary": "Upload a bulletin image asset (converted to WebP)",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "image": { "type": "string", "format": "binary" }
+                },
+                "required": ["image"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Uploaded bulletin asset",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "const": true },
+                    "asset": {
+                      "type": "object",
+                      "properties": {
+                        "id": { "type": "string" },
+                        "url": { "type": "string" }
+                      },
+                      "required": ["id", "url"]
+                    }
+                  },
+                  "required": ["success", "asset"]
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/homepage/bulletin-assets/{id}": {
+      "get": {
+        "tags": ["Homepage"],
+        "summary": "Fetch a bulletin asset image",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bulletin asset image",
+            "content": {
+              "image/webp": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/api/homepage/tool-favourites": {
+      "get": {
+        "tags": ["Homepage"],
+        "summary": "Get the current user's built-in tool favourites",
+        "security": [{ "UserSessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "Tool favourite selection",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "selected": {
+                      "type": "array",
+                      "items": { "type": "string" }
+                    },
+                    "available": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/ToolSummary" }
+                    }
+                  },
+                  "required": ["selected", "available"]
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "put": {
+        "tags": ["Homepage"],
+        "summary": "Update the current user's built-in tool favourites",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "selected": {
+                    "type": "array",
+                    "maxItems": 4,
+                    "items": { "type": "string" }
+                  }
+                },
+                "required": ["selected"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Selection updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "const": true },
+                    "selected": {
+                      "type": "array",
+                      "items": { "type": "string" }
+                    }
+                  },
+                  "required": ["success", "selected"]
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/calendar/bootstrap": {
+      "get": {
+        "tags": ["Calendar"],
+        "summary": "Load weekly calendar bootstrap data",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "weekStart",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer" }
+          },
+          {
+            "name": "scheduleUserId",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Weekly calendar bootstrap payload",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CalendarBootstrapResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/calendar/stats": {
+      "get": {
+        "tags": ["Calendar"],
+        "summary": "Load calendar utilisation and project statistics",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "period",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "enum": ["week", "month", "year"] }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "anchor",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Calendar statistics payload",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CalendarStatsResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/calendar/projects": {
+      "get": {
+        "tags": ["Calendar"],
+        "summary": "List calendar projects",
+        "security": [{ "UserSessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "Project list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "projects": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/CalendarProject" }
+                    }
+                  },
+                  "required": ["projects"]
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "post": {
+        "tags": ["Calendar"],
+        "summary": "Create a calendar project",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/calendar/entries": {
+      "get": {
+        "tags": ["Calendar"],
+        "summary": "List calendar entries",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "startsAfter",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer" }
+          },
+          {
+            "name": "endsBefore",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Calendar entry list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "entries": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/CalendarEntry" }
+                    }
+                  },
+                  "required": ["entries"]
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "post": {
+        "tags": ["Calendar"],
+        "summary": "Create a calendar entry",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/calendar/allocations": {
+      "post": {
+        "tags": ["Calendar"],
+        "summary": "Create linked project allocation blocks",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/calendar/projects/{id}": {
+      "put": {
+        "tags": ["Calendar"],
+        "summary": "Update a calendar project",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "delete": {
+        "tags": ["Calendar"],
+        "summary": "Delete a calendar project",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/calendar/entries/{id}": {
+      "put": {
+        "tags": ["Calendar"],
+        "summary": "Update a calendar entry",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "delete": {
+        "tags": ["Calendar"],
+        "summary": "Delete a calendar entry",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/survey/list": {
+      "get": {
+        "tags": ["Survey"],
+        "summary": "List surveys visible to the current user",
+        "security": [{ "UserSessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "Survey list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "surveys": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/SurveySummary" }
+                    }
+                  },
+                  "required": ["surveys"]
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/survey": {
+      "post": {
+        "tags": ["Survey"],
+        "summary": "Create a survey",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/survey/{id}": {
+      "get": {
+        "tags": ["Survey"],
+        "summary": "Get a survey and its questions",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Survey detail",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/BadRequest" }
+        }
+      },
+      "put": {
+        "tags": ["Survey"],
+        "summary": "Update a survey",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/BadRequest" }
+        }
+      },
+      "delete": {
+        "tags": ["Survey"],
+        "summary": "Delete a survey",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/api/survey/{id}/results": {
+      "get": {
+        "tags": ["Survey"],
+        "summary": "Get survey results",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Survey results",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/api/survey/respond/{token}": {
+      "get": {
+        "tags": ["Survey"],
+        "summary": "Get public survey response form data",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Survey response metadata",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/BadRequest" },
+          "410": {
+            "description": "Survey is closed or not yet open",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Survey"],
+        "summary": "Submit a public or internal survey response",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object" }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/BadRequest" },
+          "410": {
+            "description": "Survey is closed or not yet open",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/wiki/pages": {
+      "get": {
+        "tags": ["Wiki"],
+        "summary": "List wiki pages or search by query",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Wiki page list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "pages": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/WikiPageSummary" }
+                    }
+                  },
+                  "required": ["pages"]
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "post": {
+        "tags": ["Wiki"],
+        "summary": "Create a wiki page",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "409": {
+            "description": "Wiki slug already exists",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/wiki/pages/slug/{slug}": {
+      "get": {
+        "tags": ["Wiki"],
+        "summary": "Get a wiki page by slug",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Wiki page detail",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/api/wiki/pages/{id}": {
+      "get": {
+        "tags": ["Wiki"],
+        "summary": "Get a wiki page by id",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Wiki page detail",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/BadRequest" }
+        }
+      },
+      "put": {
+        "tags": ["Wiki"],
+        "summary": "Update a wiki page",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/BadRequest" },
+          "409": {
+            "description": "Wiki slug already exists",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Wiki"],
+        "summary": "Delete a wiki page",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/api/wiki/pages/{id}/restore/{revisionId}": {
+      "post": {
+        "tags": ["Wiki"],
+        "summary": "Restore a wiki page from a prior revision",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "revisionId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/admin/api/roles": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "List roles and available permissions",
+        "security": [{ "AdminCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "Role list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "roles": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/RoleSummary" }
+                    },
+                    "permissions": {
+                      "type": "array",
+                      "items": { "type": "string" }
+                    }
+                  },
+                  "required": ["roles", "permissions"]
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Create a role",
+        "security": [{ "AdminCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/admin/api/roles/{id}": {
+      "put": {
+        "tags": ["Admin"],
+        "summary": "Update a role",
+        "security": [{ "AdminCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/BadRequest" }
+        }
+      },
+      "delete": {
+        "tags": ["Admin"],
+        "summary": "Delete a custom role",
+        "security": [{ "AdminCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/admin/api/users/{id}/role": {
+      "put": {
+        "tags": ["Admin"],
+        "summary": "Assign a role to a user",
+        "security": [{ "AdminCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "roleId": { "type": "string" }
+                },
+                "required": ["roleId"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/admin/api/bulletins": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "List bulletins for admin management",
+        "security": [{ "AdminCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "Admin bulletin listing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "bulletins": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/BulletinSummary" }
+                    },
+                    "stats": { "type": "object" }
+                  },
+                  "required": ["bulletins", "stats"]
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Create a bulletin",
+        "security": [{ "AdminCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/admin/api/bulletins/{id}": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "Get a bulletin for editing",
+        "security": [{ "AdminCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bulletin detail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "bulletin": { "$ref": "#/components/schemas/BulletinSummary" }
+                  },
+                  "required": ["bulletin"]
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/BadRequest" }
+        }
+      },
+      "put": {
+        "tags": ["Admin"],
+        "summary": "Update a bulletin",
+        "security": [{ "AdminCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/BadRequest" }
+        }
+      },
+      "delete": {
+        "tags": ["Admin"],
+        "summary": "Delete a bulletin",
+        "security": [{ "AdminCookie": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/BadRequest" }
         }
       }
     },

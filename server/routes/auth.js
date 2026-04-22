@@ -18,10 +18,11 @@ const {
   getAuthLoginState, setAuthLoginState, clearAuthLoginState,
   getEmailSendState, setEmailSendState,
   deletePersonalVaultsByUser, deleteUserKeyBackup, flagVaultMembersForRekey,
-  getSetting, setSetting,
+  getSetting, setSetting, getRolePermissionsByUserId,
   encryptValue, decryptValue,
   VALID_GUEST_EXPIRY,
 } = require("../database");
+const { getAvailableTools } = require("../access");
 const { sendInviteEmail, sendPasswordResetEmail, sendShareLinkEmail } = require("../email");
 const totp = require("../totp");
 const { buildAbsoluteUrl, isTrustedAbsoluteUrl } = require("../public-origin");
@@ -723,6 +724,7 @@ router.post("/auth/register", registerLimiter, async (req, res) => {
       email: invite.email,
       username,
       passwordHash,
+      roleId: invite.role_id || null,
     });
 
     markInviteUsed(invite.id);
@@ -763,13 +765,24 @@ router.get("/auth/me", (req, res) => {
   if (sessionId) {
     const session = getSession(sessionId);
     if (session && session.expires_at >= Math.floor(Date.now() / 1000) && !session.suspended) {
+      const permissions = getRolePermissionsByUserId(session.user_id);
       return res.json({
         authenticated: true,
         user: {
           id: session.user_id,
           username: session.username,
           avatarUpdatedAt: session.avatar_updated_at || null,
+          roleId: session.role_id || null,
+          roleKey: session.role_key || null,
+          roleName: session.role_name || null,
         },
+        role: {
+          id: session.role_id || null,
+          key: session.role_key || null,
+          name: session.role_name || null,
+        },
+        permissions,
+        availableTools: getAvailableTools(permissions),
       });
     }
     if (session) {

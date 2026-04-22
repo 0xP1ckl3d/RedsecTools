@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "concurrently \"nodemon server/index.js\" \"npx tailwindcss -i ./public/css/input.css -o ./public/css/style.css --watch\"",
     "build": "npx tailwindcss -i ./public/css/input.css -o ./public/css/style.css --minify",
-    "start": "node server/index.js"
+    "start": "node server/index.js",
+    "test": "node --test --experimental-test-isolation=none"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",

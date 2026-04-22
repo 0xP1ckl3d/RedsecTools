@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <title>RedSecSurvey</title>
+  <link rel="icon" href="/assets/favicon.ico" type="image/x-icon">
+  <script src="/js/theme-init.js"></script>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="page-wide py-10">
+    <header class="flex justify-between items-center mb-8">
+      <h1 class="text-2xl font-bold"><span class="text-accent">RedSec</span><span class="text-secondary">Survey</span></h1>
+      <div class="flex items-center gap-2">
+        <div class="relative">
+          <button id="burger-btn" class="burger-btn" aria-label="Menu" aria-expanded="false">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+          </button>
+          <nav id="burger-nav" class="burger-nav hidden"></nav>
+        </div>
+        <button type="button" class="theme-toggle" id="theme-toggle" title="Toggle theme">
+          <svg class="w-5 h-5 dark-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+          <svg class="w-5 h-5 light-icon hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <div class="grid gap-6 lg:grid-cols-[380px_1fr]">
+      <section class="card">
+        <h2 class="text-lg font-semibold mb-4">Create Survey</h2>
+        <div class="space-y-3">
+          <input id="survey-title" class="input-field" placeholder="Survey title">
+          <textarea id="survey-description" class="input-field min-h-[100px]" placeholder="Description"></textarea>
+          <select id="survey-response-mode" class="input-field">
+            <option value="anonymous_public">Anonymous public</option>
+            <option value="internal_named">Named internal-only</option>
+            <option value="public_named">Named public</option>
+          </select>
+          <div class="grid grid-cols-2 gap-3">
+            <input id="survey-starts-at" type="datetime-local" class="input-field">
+            <input id="survey-ends-at" type="datetime-local" class="input-field">
+          </div>
+          <textarea id="survey-questions-json" class="input-field min-h-[220px]" placeholder='Questions JSON, e.g. [{"questionText":"How did it go?","questionType":"long_text","isRequired":true}]'></textarea>
+          <button id="survey-create-btn" type="button" class="btn-primary w-full">Save Survey</button>
+          <p id="survey-create-msg" class="text-sm hidden"></p>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="flex justify-between items-center mb-4">
+          <div>
+            <h2 class="text-lg font-semibold">My Surveys</h2>
+            <p class="text-sm text-muted">Draft, publish, share, and review response stats.</p>
+          </div>
+          <button id="survey-refresh-btn" type="button" class="btn-secondary">Refresh</button>
+        </div>
+        <div id="survey-list" class="space-y-3 text-sm text-muted">Loading surveys...</div>
+      </section>
+    </div>
+
+    <footer class="footer">&copy; <span class="current-year"></span> RedSec Offensive Security</footer>
+  </div>
+  <script type="module" src="/js/burger-menu.js"></script>
+  <script type="module" src="/js/theme.js"></script>
+  <script type="module" src="/js/survey.js"></script>
+</body>
+</html>
