@@ -5704,6 +5704,113 @@ html.light {
 
 .threat-empty { padding: 2rem; text-align: center; color: var(--text-muted); font-size: 0.9rem; }
 
+.threat-toolbar {
+  display: grid;
+  gap: 1rem;
+}
+
+.threat-header-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.threat-toolbar-copy {
+  min-width: 0;
+}
+
+.threat-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.threat-filter-summary {
+  max-width: min(48rem, 100%);
+  line-height: 1.5;
+}
+
+.threat-filter-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.35fr) repeat(4, minmax(150px, 1fr));
+  gap: 0.85rem;
+  align-items: end;
+  margin-top: 0.5rem;
+}
+
+.threat-filter-grid-modal {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.threat-filter-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.threat-filter-label {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.threat-filter-input,
+.threat-filter-select {
+  width: 100%;
+  max-width: none;
+  min-height: 3rem;
+}
+
+.threat-filter-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  align-items: end;
+}
+
+@media (max-width: 1440px) {
+  .threat-filter-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 960px) {
+  .threat-header-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .threat-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .threat-filter-grid-modal {
+    grid-template-columns: 1fr;
+  }
+
+  .threat-filter-actions {
+    justify-content: stretch;
+  }
+
+  .threat-filter-actions .btn-secondary {
+    flex: 1 1 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .threat-filter-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .threat-pagination {
   display: flex;
   justify-content: center;
@@ -5757,6 +5864,16 @@ html.light {
   grid-template-columns: minmax(110px, auto) minmax(0, 1fr);
   gap: 0.65rem 1rem;
   align-items: start;
+}
+
+.threat-detail-grid > * {
+  min-width: 0;
+}
+
+.threat-detail-grid a,
+.threat-detail-grid span {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .threat-detail-keywords,

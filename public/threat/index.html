@@ -25,13 +25,9 @@
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 5c7.18 0 13 5.82 13 13M6 11a7 7 0 017 7m-6 0a1 1 0 11-2 0 1 1 0 012 0z"/></svg>
           <span class="sidebar-nav-text">Feeds</span>
         </button>
-        <button type="button" class="sidebar-nav-item" data-threat-view="keywords">
-          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/></svg>
-          <span class="sidebar-nav-text">Keywords</span>
-        </button>
-        <button type="button" class="sidebar-nav-item" data-threat-view="tags">
-          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3l3.057-3 9.943 9.943-3 3.057L5 3zm0 0L3 5l3.057 3.057m9.943 9.943L18 21l2-2-3.057-3.057"/></svg>
-          <span class="sidebar-nav-text">Tags</span>
+        <button type="button" class="sidebar-nav-item" data-threat-view="mitre">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-6m3 6V7m3 10v-3m3 3V4M6 20h12"/></svg>
+          <span class="sidebar-nav-text">MITRE ATT&amp;CK</span>
         </button>
         <button type="button" class="sidebar-nav-item" data-threat-view="alerts">
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
@@ -41,9 +37,13 @@
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10l6 6v8a2 2 0 01-2 2z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 3v6h6M8 13h8M8 17h5M8 9h2"/></svg>
           <span class="sidebar-nav-text">Intel Brief</span>
         </button>
-        <button type="button" class="sidebar-nav-item" data-threat-view="mitre">
-          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-6m3 6V7m3 10v-3m3 3V4M6 20h12"/></svg>
-          <span class="sidebar-nav-text">MITRE ATT&amp;CK</span>
+        <button type="button" class="sidebar-nav-item" data-threat-view="keywords">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/></svg>
+          <span class="sidebar-nav-text">Keywords</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-threat-view="tags">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3l3.057-3 9.943 9.943-3 3.057L5 3zm0 0L3 5l3.057 3.057m9.943 9.943L18 21l2-2-3.057-3.057"/></svg>
+          <span class="sidebar-nav-text">Tags</span>
         </button>
         <button type="button" class="sidebar-nav-item" data-threat-view="notifications">
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
@@ -82,11 +82,11 @@
 
       <div class="mobile-tabs">
         <button type="button" class="mobile-tab active" data-threat-view="dashboard">Dashboard</button>
-        <button type="button" class="mobile-tab" data-threat-view="feeds">Feeds</button>
-        <button type="button" class="mobile-tab" data-threat-view="keywords">Keywords</button>
+        <button type="button" class="mobile-tab" data-threat-view="mitre">MITRE</button>
         <button type="button" class="mobile-tab" data-threat-view="alerts">Alerts</button>
         <button type="button" class="mobile-tab" data-threat-view="news">Intel Brief</button>
-        <button type="button" class="mobile-tab" data-threat-view="mitre">MITRE</button>
+        <button type="button" class="mobile-tab" data-threat-view="feeds">Feeds</button>
+        <button type="button" class="mobile-tab" data-threat-view="keywords">Keywords</button>
         <button type="button" class="mobile-tab" data-threat-view="logs">Logs</button>
       </div>
 
@@ -261,23 +261,17 @@
         <!-- ===== ALERTS VIEW ===== -->
         <section id="threat-view-alerts" class="threat-dashboard-view hidden">
           <div class="card">
-            <div class="card-header flex justify-between items-center">
-              <h2 class="text-lg font-semibold">Alerts</h2>
-              <div class="flex gap-2">
-                <input type="text" id="threat-alerts-filter" class="input-field threat-input-sm" placeholder="Filter alerts...">
-                <select id="threat-alerts-status-filter" class="input-field threat-input-xs">
-                  <option value="all">All</option>
-                  <option value="unread">Unread</option>
-                  <option value="read">Read</option>
-                </select>
-                <select id="threat-alerts-criticality-filter" class="input-field threat-input-sm">
-                  <option value="all">All Levels</option>
-                  <option value="critical">Critical</option>
-                  <option value="high">High</option>
-                  <option value="medium">Medium</option>
-                  <option value="low">Low</option>
-                </select>
-                <button type="button" id="threat-alerts-read-all-btn" class="btn-secondary">Mark All Read</button>
+            <div class="card-header">
+              <div class="threat-header-row">
+                <div class="threat-toolbar-copy">
+                  <h2 class="text-lg font-semibold">Alerts</h2>
+                  <p class="text-sm text-muted mt-1">Triage alerts with quick filters when needed, without crowding the main table.</p>
+                </div>
+                <div class="threat-header-actions">
+                  <div id="threat-alerts-filter-summary" class="threat-filter-summary text-sm text-muted">No active filters</div>
+                  <button type="button" id="threat-alerts-open-filters-btn" class="btn-secondary">Filters</button>
+                  <button type="button" id="threat-alerts-read-all-btn" class="btn-secondary">Mark All Read</button>
+                </div>
               </div>
             </div>
             <div id="threat-alerts-bulk-bar" class="threat-bulk-bar hidden">
@@ -570,6 +564,71 @@
       <div id="threat-alert-detail-content" class="space-y-3"></div>
       <div class="threat-modal-actions">
         <button type="button" class="btn-secondary" data-threat-close-modal="alert">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== ALERT FILTER MODAL ===== -->
+  <div id="threat-alert-filters-modal" class="modal-overlay hidden">
+    <div class="modal-card threat-modal-lg">
+      <div class="modal-card-header">
+        <div>
+          <h2 class="text-lg font-bold">Filter Alerts</h2>
+          <p class="text-sm text-muted mt-1">Refine the current alert list by severity, ATT&amp;CK, feeds, or watchlist keywords.</p>
+        </div>
+        <button type="button" class="modal-close-btn" data-threat-close-modal="alert-filters">&times;</button>
+      </div>
+      <div class="threat-filter-grid threat-filter-grid-modal">
+        <label class="threat-filter-field">
+          <span class="threat-filter-label">Search</span>
+          <input type="text" id="threat-alerts-filter" class="input-field threat-filter-input" placeholder="Search alerts, feeds, content...">
+        </label>
+        <label class="threat-filter-field">
+          <span class="threat-filter-label">Status</span>
+          <select id="threat-alerts-status-filter" class="input-field threat-filter-select">
+            <option value="all">All alerts</option>
+            <option value="unread">Unread only</option>
+            <option value="read">Read only</option>
+          </select>
+        </label>
+        <label class="threat-filter-field">
+          <span class="threat-filter-label">Level</span>
+          <select id="threat-alerts-criticality-filter" class="input-field threat-filter-select">
+            <option value="all">All levels</option>
+            <option value="critical">Critical</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
+        </label>
+        <label class="threat-filter-field">
+          <span class="threat-filter-label">MITRE Tactic</span>
+          <select id="threat-alerts-tactic-filter" class="input-field threat-filter-select">
+            <option value="all">All tactics</option>
+          </select>
+        </label>
+        <label class="threat-filter-field">
+          <span class="threat-filter-label">MITRE Technique</span>
+          <select id="threat-alerts-technique-filter" class="input-field threat-filter-select">
+            <option value="all">All techniques</option>
+          </select>
+        </label>
+        <label class="threat-filter-field">
+          <span class="threat-filter-label">Watchlist Keyword</span>
+          <select id="threat-alerts-keyword-filter" class="input-field threat-filter-select">
+            <option value="all">All keywords</option>
+          </select>
+        </label>
+        <label class="threat-filter-field">
+          <span class="threat-filter-label">Feed Source</span>
+          <select id="threat-alerts-feed-filter" class="input-field threat-filter-select">
+            <option value="all">All feeds</option>
+          </select>
+        </label>
+      </div>
+      <div class="threat-modal-actions">
+        <button type="button" id="threat-alerts-reset-btn" class="btn-secondary">Reset Filters</button>
+        <button type="button" class="btn-secondary" data-threat-close-modal="alert-filters">Close</button>
       </div>
     </div>
   </div>

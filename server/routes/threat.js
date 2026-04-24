@@ -1,3 +1,6 @@
+const http = require("http");
+const https = require("https");
+const { URL } = require("url");
 const { Router } = require("express");
 const rateLimit = require("express-rate-limit");
 const { requireUser } = require("../middleware/auth");
@@ -23,6 +26,9 @@ const ID_REGEX = /^[A-Za-z0-9_-]{22}$/;
 const THREAT_VALID_FEED_TYPES = new Set(["rss", "website", "api", "onion"]);
 const THREAT_VALID_CRITICALITIES = new Set(["low", "medium", "high", "critical"]);
 const THREAT_VALID_CHANNEL_TYPES = new Set(["webhook", "email", "discord"]);
+const IMAGE_TIMEOUT_MS = 10000;
+const IMAGE_MAX_REDIRECTS = 5;
+const IMAGE_IPV4_RETRY_CODES = new Set(["ETIMEDOUT", "ECONNRESET", "ECONNREFUSED", "EHOSTUNREACH", "ENETUNREACH", "EAI_AGAIN", "EACCES"]);
 
 // ---------------------------------------------------------------------------
 // Rate limiter
@@ -82,6 +88,92 @@ function filterAccessibleTagIds(userId, tagIds) {
   if (!requested.length) return [];
   const accessible = new Set(db.listThreatTags(userId).map((tag) => tag.id));
   return requested.filter((id) => accessible.has(id));
+}
+
+function shouldRetryImageWithIpv4(error) {
+  if (!error) return false;
+  if (error.name === "AggregateError") return true;
+  return !!(error.code && IMAGE_IPV4_RETRY_CODES.has(error.code));
+}
+
+function fetchImageBufferInternal(resourceUrl, options = {}) {
+  const redirectCount = options.redirectCount || 0;
+  const preferIpv4 = options.preferIpv4 === true;
+  return new Promise((resolve, reject) => {
+    let parsed;
+    try {
+      parsed = new URL(resourceUrl);
+    } catch (_) {
+      reject(new Error("Invalid image URL"));
+      return;
+    }
+
+    const client = parsed.protocol === "https:" ? https : http;
+    const requestOptions = {
+      protocol: parsed.protocol,
+      hostname: parsed.hostname,
+      port: parsed.port || (parsed.protocol === "https:" ? 443 : 80),
+      path: parsed.pathname + parsed.search,
+      method: "GET",
+      timeout: IMAGE_TIMEOUT_MS,
+      headers: {
+        "User-Agent": "RedSecThreatBot/1.0",
+        Accept: "image/*,*/*;q=0.8",
+      },
+    };
+
+    if (preferIpv4) {
+      requestOptions.family = 4;
+    }
+
+    const req = client.request(requestOptions, (upstream) => {
+      const statusCode = upstream.statusCode || 0;
+      const location = upstream.headers.location;
+
+      if (statusCode >= 300 && statusCode < 400 && location && redirectCount < IMAGE_MAX_REDIRECTS) {
+        upstream.resume();
+        const nextUrl = new URL(location, resourceUrl).toString();
+        fetchImageBufferInternal(nextUrl, { redirectCount: redirectCount + 1, preferIpv4 })
+          .then(resolve)
+          .catch(reject);
+        return;
+      }
+
+      const chunks = [];
+      upstream.on("data", (chunk) => chunks.push(chunk));
+      upstream.on("end", () => {
+        if (statusCode < 200 || statusCode >= 300) {
+          const error = new Error(`HTTP ${statusCode}`);
+          error.code = `HTTP_${statusCode}`;
+          reject(error);
+          return;
+        }
+        resolve({
+          body: Buffer.concat(chunks),
+          contentType: String(upstream.headers["content-type"] || ""),
+        });
+      });
+    });
+
+    req.on("error", reject);
+    req.on("timeout", () => {
+      const error = new Error("Request timeout");
+      error.code = "ETIMEDOUT";
+      req.destroy(error);
+    });
+    req.end();
+  });
+}
+
+async function fetchImageBuffer(resourceUrl) {
+  try {
+    return await fetchImageBufferInternal(resourceUrl);
+  } catch (error) {
+    if (shouldRetryImageWithIpv4(error)) {
+      return await fetchImageBufferInternal(resourceUrl, { preferIpv4: true });
+    }
+    throw error;
+  }
 }
 
 // ===========================================================================
@@ -329,40 +421,39 @@ router.post("/threat/tags/alerts/:id", writeLimiter, requireUser, attachUserAcce
 
 router.get("/threat/news", requireUser, attachUserAccess, requireThreatView, (req, res) => {
   const hours = parseInt(req.query.hours, 10);
-  const limit = Math.min(48, Math.max(1, parseInt(req.query.limit, 10) || 24));
-  const alerts = db.listThreatAlerts({
-    userId: req.user.id,
+  const limit = Math.min(36, Math.max(1, parseInt(req.query.limit, 10) || 24));
+  const articles = db.listThreatArticles({
     hours: Number.isFinite(hours) && hours > 0 ? hours : 24 * 14,
-    limit: 250,
+    limit: Math.min(1000, Math.max(limit * 30, 400)),
     offset: 0,
   });
-  res.json({ items: buildNewsBrief(alerts, limit) });
+  const items = buildNewsBrief(articles, limit).map((item) => {
+    const linkedAlert = db.getThreatAlertByArticleHashForUser(req.user.id, item.feedId, item.articleHash);
+    return {
+      ...item,
+      linkedAlertId: linkedAlert?.id || null,
+    };
+  });
+  res.json({ items });
 });
 
 router.get("/threat/news-image/:id", requireUser, attachUserAccess, requireThreatView, async (req, res) => {
-  if (!validateId(req.params.id)) return res.status(400).json({ error: "Invalid alert ID" });
-  const alert = db.getThreatAlertByIdForUser(req.user.id, req.params.id);
-  if (!alert) return res.status(404).json({ error: "Alert not found" });
+  if (!validateId(req.params.id)) return res.status(400).json({ error: "Invalid article ID" });
+  const article = db.getThreatArticleById(req.params.id);
+  if (!article) return res.status(404).json({ error: "Article not found" });
 
-  const imageUrl = enrichAlert(alert).heroImage;
+  const imageUrl = article.imageUrl || "";
   if (!imageUrl) return res.status(404).json({ error: "No cover image available" });
 
   try {
-    const upstream = await fetch(imageUrl, {
-      redirect: "follow",
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!upstream.ok) {
-      return res.status(502).json({ error: "Unable to load cover image" });
-    }
-    const contentType = String(upstream.headers.get("content-type") || "");
+    const upstream = await fetchImageBuffer(imageUrl);
+    const contentType = String(upstream.contentType || "");
     if (!contentType.startsWith("image/")) {
       return res.status(415).json({ error: "Cover image response was not an image" });
     }
-    const body = Buffer.from(await upstream.arrayBuffer());
     res.setHeader("Content-Type", contentType);
     res.setHeader("Cache-Control", "private, max-age=900");
-    res.send(body);
+    res.send(upstream.body);
   } catch (error) {
     res.status(502).json({ error: "Unable to load cover image" });
   }

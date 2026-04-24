@@ -29,7 +29,7 @@ const {
   deleteExpiredGuestLinks, deleteExpiredPasswordResets,
   deleteExpiredMessages, deleteExpiredVaultShares,
   deleteExpiredPendingLogins, deleteExpiredTrustedDevices, deleteExpiredAdminSessions, deleteExpiredExtensionSessions,
-  closeExpiredSurveys, cleanupOldThreatAlerts, getSetting,
+  closeExpiredSurveys, cleanupOldThreatAlerts, cleanupOldThreatArticles, getSetting,
 } = require("./database");
 const { pageRequireUser, pageRequireGuestOrUser } = require("./middleware/auth");
 const { pageRequirePermission, pageRequireAnyPermission } = require("./middleware/permissions");
@@ -94,7 +94,14 @@ app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser(COOKIE_SECRET));
 
 // --- Static files ---
-app.use(express.static(path.join(__dirname, "..", "public"), { index: false }));
+app.use(express.static(path.join(__dirname, "..", "public"), {
+  index: false,
+  setHeaders(res, filePath) {
+    if (filePath.endsWith(".css") || filePath.endsWith(".js")) {
+      res.setHeader("Cache-Control", "public, max-age=3600, must-revalidate");
+    }
+  },
+}));
 
 // --- API routes ---
 app.use("/api", pasteRouter);
@@ -183,8 +190,9 @@ setInterval(() => {
     ? parsedThreatRetentionDays
     : 14;
   const threatAlerts = cleanupOldThreatAlerts(threatRetentionDays);
+  const threatArticles = cleanupOldThreatArticles(threatRetentionDays);
   if (shareRouter.cleanupTmp) shareRouter.cleanupTmp();
-  const total = pastes + files + sessions + invites + guestLinks + passwordResets + messages + vaultShares + pendingLogins + trustedDevices + adminSessions + extensionSessions + expiredSurveys + bulletinPurge.deletedBulletins + bulletinPurge.deletedAssets + threatAlerts;
+  const total = pastes + files + sessions + invites + guestLinks + passwordResets + messages + vaultShares + pendingLogins + trustedDevices + adminSessions + extensionSessions + expiredSurveys + bulletinPurge.deletedBulletins + bulletinPurge.deletedAssets + threatAlerts + threatArticles;
   if (total > 0) {
     console.log(JSON.stringify({
       ts: new Date().toISOString(),
@@ -204,6 +212,7 @@ setInterval(() => {
       expiredSurveys,
       threatRetentionDays,
       threatAlerts,
+      threatArticles,
       bulletinPurge,
     }));
   }

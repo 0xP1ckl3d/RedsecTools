@@ -606,13 +606,16 @@ function renderNews(items) {
 
   if (emptyEl) emptyEl.classList.add("hidden");
   gridEl.innerHTML = items.map((item) => {
-    const imageSrc = item.imageUrl && item.alertId ? ("/api/threat/news-image/" + encodeURIComponent(item.alertId)) : "";
+    const imageSrc = item.imageUrl && item.articleId ? ("/api/threat/news-image/" + encodeURIComponent(item.articleId)) : "";
     const image = item.imageUrl
       ? '<div class="threat-news-media"><img src="' + escapeHtml(imageSrc) + '" alt="' + escapeHtml(item.headline || item.feedName || "Threat article") + '" loading="lazy"></div>'
       : '<div class="threat-news-media threat-news-placeholder"><span>' + escapeHtml((item.feedName || "Intel").slice(0, 32)) + "</span></div>";
     const sourceHost = getSourceHost(item.articleUrl);
     const keywordText = keywordChips(item.keywords || []);
     const mitreText = mitreBadges(item.mitre || []);
+    const linkedAlertAction = item.linkedAlertId
+      ? '<button type="button" class="btn-secondary btn-xs" data-action="view-alert" data-id="' + escapeHtml(item.linkedAlertId) + '">Open Alert</button>'
+      : "";
     return (
       '<article class="threat-news-card">' +
         image +
@@ -629,7 +632,7 @@ function renderNews(items) {
             (mitreText || "") +
           "</div>" +
           '<div class="threat-news-actions">' +
-            '<button type="button" class="btn-secondary btn-xs" data-action="view-alert" data-id="' + escapeHtml(item.alertId || item.id) + '">Open Alert</button>' +
+            linkedAlertAction +
             '<a class="btn-primary btn-xs" href="' + escapeHtml(item.articleUrl) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(sourceHost ? "Read " + sourceHost : "Open Article") + "</a>" +
           "</div>" +
         "</div>" +
@@ -796,6 +799,7 @@ async function loadKeywords() {
   try {
     const data = await api("/keywords");
     state.keywords = data.keywords || [];
+    syncAlertFilterOptions(state.alerts);
     renderKeywords(state.keywords);
   } catch (err) {
     console.error("Failed to load keywords:", err);
@@ -910,6 +914,11 @@ function renderTags(tags) {
 
 async function loadAlerts() {
   try {
+    if (!state.keywords.length) {
+      const keywordData = await api("/keywords");
+      state.keywords = keywordData.keywords || [];
+    }
+
     const params = new URLSearchParams({ limit: String(state.alertLimit), offset: String(state.alertOffset) });
     const statusFilter = document.getElementById("threat-alerts-status-filter")?.value;
     const critFilter = document.getElementById("threat-alerts-criticality-filter")?.value;
@@ -921,6 +930,7 @@ async function loadAlerts() {
     const data = await api("/alerts?" + params.toString());
     state.alerts = data.alerts || [];
     state.alertTotal = state.alerts.length;
+    syncAlertFilterOptions(state.alerts);
     renderAlerts(state.alerts);
 
     // Auto-refresh every 10s
@@ -931,20 +941,36 @@ async function loadAlerts() {
 }
 
 function renderAlerts(alerts) {
+  updateAlertFilterSummary();
   const filterText = (document.getElementById("threat-alerts-filter")?.value || "").toLowerCase();
   const critFilter = document.getElementById("threat-alerts-criticality-filter")?.value;
   const statusFilter = document.getElementById("threat-alerts-status-filter")?.value;
+  const tacticFilter = document.getElementById("threat-alerts-tactic-filter")?.value || "all";
+  const techniqueFilter = document.getElementById("threat-alerts-technique-filter")?.value || "all";
+  const keywordFilter = document.getElementById("threat-alerts-keyword-filter")?.value || "all";
+  const feedFilter = document.getElementById("threat-alerts-feed-filter")?.value || "all";
 
   const filtered = alerts.filter((alert) => {
     if (critFilter && critFilter !== "all" && alert.criticality !== critFilter) return false;
     if (statusFilter === "unread" && alert.isRead) return false;
     if (statusFilter === "read" && !alert.isRead) return false;
+    if (feedFilter !== "all" && alert.feedId !== feedFilter) return false;
+    const mitreMatches = Array.isArray(alert.mitre) ? alert.mitre : [];
+    if (tacticFilter !== "all" && !mitreMatches.some((match) => match.tacticId === tacticFilter)) return false;
+    if (techniqueFilter !== "all" && !mitreMatches.some((match) => match.techniqueId === techniqueFilter)) return false;
+    const kwList = dedupeKeywordList(alert.keywords || []);
+    if (keywordFilter !== "all" && !kwList.some((keyword) => {
+      const keywordId = typeof keyword === "string" ? "" : (keyword.keywordId || "");
+      const keywordText = typeof keyword === "string" ? keyword : (keyword.keyword || keyword.text || "");
+      return keywordId === keywordFilter || keywordText.toLowerCase() === keywordFilter.toLowerCase();
+    })) return false;
     if (filterText) {
       const haystack = (
         (alert.feedName || "") + " " +
         (alert.matchedContent || "") + " " +
         (alert.context || "") + " " +
-        dedupeKeywordList(alert.keywords || []).map((k) => typeof k === "string" ? k : (k.keyword || "")).join(" ")
+        kwList.map((k) => typeof k === "string" ? k : (k.keyword || "")).join(" ") + " " +
+        mitreMatches.map((match) => `${match.tactic} ${match.tacticId} ${match.technique} ${match.techniqueId}`).join(" ")
       ).toLowerCase();
       if (!haystack.includes(filterText)) return false;
     }
@@ -993,6 +1019,92 @@ function renderAlerts(alerts) {
   applyTagColors(tbody);
   updateAlertsBulkBar();
   renderAlertsPagination();
+}
+
+function setSelectOptions(selectEl, options, placeholder) {
+  if (!selectEl) return;
+  const currentValue = selectEl.value || "all";
+  const deduped = [];
+  const seen = new Set();
+  for (const option of options) {
+    if (!option || !option.value || seen.has(option.value)) continue;
+    seen.add(option.value);
+    deduped.push(option);
+  }
+  selectEl.innerHTML = '<option value="all">' + escapeHtml(placeholder) + "</option>" + deduped.map((option) =>
+    '<option value="' + escapeHtml(option.value) + '">' + escapeHtml(option.label) + "</option>"
+  ).join("");
+  if (currentValue !== "all" && seen.has(currentValue)) {
+    selectEl.value = currentValue;
+  }
+}
+
+function syncAlertFilterOptions(alerts = state.alerts) {
+  const tacticSelect = document.getElementById("threat-alerts-tactic-filter");
+  const techniqueSelect = document.getElementById("threat-alerts-technique-filter");
+  const keywordSelect = document.getElementById("threat-alerts-keyword-filter");
+  const feedSelect = document.getElementById("threat-alerts-feed-filter");
+
+  const tacticOptions = [];
+  const techniqueOptions = [];
+  const keywordOptions = [];
+  const feedOptions = [];
+
+  for (const alert of alerts || []) {
+    if (alert.feedId && alert.feedName) {
+      feedOptions.push({ value: alert.feedId, label: alert.feedName });
+    }
+    const mitreMatches = Array.isArray(alert.mitre) ? alert.mitre : [];
+    for (const match of mitreMatches) {
+      if (match?.tacticId && match?.tactic) {
+        tacticOptions.push({ value: match.tacticId, label: `${match.tacticId} - ${match.tactic}` });
+      }
+      if (match?.techniqueId && match?.technique) {
+        techniqueOptions.push({ value: match.techniqueId, label: `${match.techniqueId} - ${match.technique}` });
+      }
+    }
+    for (const keyword of dedupeKeywordList(alert.keywords || [])) {
+      const keywordId = typeof keyword === "string" ? "" : (keyword.keywordId || "");
+      const keywordText = typeof keyword === "string" ? keyword : (keyword.keyword || keyword.text || "");
+      if (!keywordText) continue;
+      keywordOptions.push({ value: keywordId || keywordText, label: keywordText });
+    }
+  }
+
+  for (const keyword of state.keywords || []) {
+    if (!keyword?.keyword) continue;
+    keywordOptions.push({ value: keyword.id || keyword.keyword, label: keyword.keyword });
+  }
+
+  setSelectOptions(tacticSelect, tacticOptions.sort((left, right) => left.label.localeCompare(right.label)), "All tactics");
+  setSelectOptions(techniqueSelect, techniqueOptions.sort((left, right) => left.label.localeCompare(right.label)), "All techniques");
+  setSelectOptions(keywordSelect, keywordOptions.sort((left, right) => left.label.localeCompare(right.label)), "All keywords");
+  setSelectOptions(feedSelect, feedOptions.sort((left, right) => left.label.localeCompare(right.label)), "All feeds");
+  updateAlertFilterSummary();
+}
+
+function updateAlertFilterSummary() {
+  const summaryEl = document.getElementById("threat-alerts-filter-summary");
+  if (!summaryEl) return;
+
+  const entries = [];
+  const search = (document.getElementById("threat-alerts-filter")?.value || "").trim();
+  const status = document.getElementById("threat-alerts-status-filter")?.value || "all";
+  const level = document.getElementById("threat-alerts-criticality-filter")?.value || "all";
+  const tactic = document.getElementById("threat-alerts-tactic-filter");
+  const technique = document.getElementById("threat-alerts-technique-filter");
+  const keyword = document.getElementById("threat-alerts-keyword-filter");
+  const feed = document.getElementById("threat-alerts-feed-filter");
+
+  if (search) entries.push(`Search: ${search}`);
+  if (status !== "all") entries.push(`Status: ${status}`);
+  if (level !== "all") entries.push(`Level: ${level}`);
+  if (tactic?.value && tactic.value !== "all") entries.push(`Tactic: ${tactic.options[tactic.selectedIndex]?.text || tactic.value}`);
+  if (technique?.value && technique.value !== "all") entries.push(`Technique: ${technique.options[technique.selectedIndex]?.text || technique.value}`);
+  if (keyword?.value && keyword.value !== "all") entries.push(`Keyword: ${keyword.options[keyword.selectedIndex]?.text || keyword.value}`);
+  if (feed?.value && feed.value !== "all") entries.push(`Feed: ${feed.options[feed.selectedIndex]?.text || feed.value}`);
+
+  summaryEl.textContent = entries.length ? entries.join(" | ") : "No active filters";
 }
 
 function renderAlertsPagination() {
@@ -1855,7 +1967,7 @@ async function handleAction(action, id) {
         ? state.mitreOverview.recentAlerts.find((a) => a.id === id)
         : null;
       const newsAlert = Array.isArray(state.newsItems)
-        ? state.newsItems.find((item) => item.alertId === id || item.id === id)
+        ? state.newsItems.find((item) => item.linkedAlertId === id || item.id === id)
         : null;
       const alert = state.alerts.find((a) => a.id === id)
         || state.recentAlerts.find((a) => a.id === id)
@@ -2114,6 +2226,9 @@ function initEvents() {
     }
   });
 
+  const openFiltersBtn = document.getElementById("threat-alerts-open-filters-btn");
+  if (openFiltersBtn) openFiltersBtn.addEventListener("click", () => openModal("alert-filters"));
+
   // Tag modal color sync
   const tagColorEl = document.getElementById("threat-tag-color");
   const tagHexEl = document.getElementById("threat-tag-color-hex");
@@ -2257,9 +2372,32 @@ function initEvents() {
   const alertsFilter = document.getElementById("threat-alerts-filter");
   const alertsStatusFilter = document.getElementById("threat-alerts-status-filter");
   const alertsCritFilter = document.getElementById("threat-alerts-criticality-filter");
+  const alertsTacticFilter = document.getElementById("threat-alerts-tactic-filter");
+  const alertsTechniqueFilter = document.getElementById("threat-alerts-technique-filter");
+  const alertsKeywordFilter = document.getElementById("threat-alerts-keyword-filter");
+  const alertsFeedFilter = document.getElementById("threat-alerts-feed-filter");
+  const alertsResetBtn = document.getElementById("threat-alerts-reset-btn");
   if (alertsFilter) alertsFilter.addEventListener("input", () => renderAlerts(state.alerts));
   if (alertsStatusFilter) alertsStatusFilter.addEventListener("change", () => loadAlerts());
   if (alertsCritFilter) alertsCritFilter.addEventListener("change", () => loadAlerts());
+  if (alertsTacticFilter) alertsTacticFilter.addEventListener("change", () => renderAlerts(state.alerts));
+  if (alertsTechniqueFilter) alertsTechniqueFilter.addEventListener("change", () => renderAlerts(state.alerts));
+  if (alertsKeywordFilter) alertsKeywordFilter.addEventListener("change", () => renderAlerts(state.alerts));
+  if (alertsFeedFilter) alertsFeedFilter.addEventListener("change", () => renderAlerts(state.alerts));
+  if (alertsResetBtn) {
+    alertsResetBtn.addEventListener("click", () => {
+      if (alertsFilter) alertsFilter.value = "";
+      if (alertsStatusFilter) alertsStatusFilter.value = "all";
+      if (alertsCritFilter) alertsCritFilter.value = "all";
+      if (alertsTacticFilter) alertsTacticFilter.value = "all";
+      if (alertsTechniqueFilter) alertsTechniqueFilter.value = "all";
+      if (alertsKeywordFilter) alertsKeywordFilter.value = "all";
+      if (alertsFeedFilter) alertsFeedFilter.value = "all";
+      state.alertOffset = 0;
+      updateAlertFilterSummary();
+      loadAlerts();
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------

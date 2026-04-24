@@ -628,6 +628,26 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_threat_alerts_created ON threat_alerts(triggered_at DESC);
   CREATE INDEX IF NOT EXISTS idx_threat_alerts_read ON threat_alerts(is_read);
 
+  CREATE TABLE IF NOT EXISTS threat_articles (
+    id TEXT PRIMARY KEY,
+    feed_id TEXT NOT NULL,
+    article_hash TEXT NOT NULL,
+    headline TEXT NOT NULL,
+    summary TEXT,
+    content TEXT,
+    article_url TEXT,
+    image_url TEXT,
+    api_metadata TEXT DEFAULT '{}',
+    published_at INTEGER,
+    last_seen_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    UNIQUE(feed_id, article_hash)
+  );
+  CREATE INDEX IF NOT EXISTS idx_threat_articles_feed ON threat_articles(feed_id);
+  CREATE INDEX IF NOT EXISTS idx_threat_articles_published ON threat_articles(published_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_threat_articles_last_seen ON threat_articles(last_seen_at DESC);
+
   CREATE TABLE IF NOT EXISTS threat_api_templates (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
@@ -780,6 +800,9 @@ try { db.exec("CREATE INDEX IF NOT EXISTS idx_wiki_pages_scope_owner ON wiki_pag
 
 try { db.exec("ALTER TABLE threat_alerts ADD COLUMN article_url TEXT"); } catch {}
 try { db.exec("ALTER TABLE threat_alerts ADD COLUMN user_id TEXT"); } catch {}
+try { db.exec("ALTER TABLE threat_articles ADD COLUMN image_url TEXT"); } catch {}
+try { db.exec("ALTER TABLE threat_articles ADD COLUMN published_at INTEGER"); } catch {}
+try { db.exec("ALTER TABLE threat_articles ADD COLUMN last_seen_at INTEGER NOT NULL DEFAULT (unixepoch())"); } catch {}
 try { db.exec("ALTER TABLE threat_keywords ADD COLUMN user_id TEXT"); } catch {}
 try { db.exec("ALTER TABLE threat_tags ADD COLUMN user_id TEXT"); } catch {}
 try { db.exec(`
@@ -1957,6 +1980,52 @@ const stmts = {
     SELECT criticality, COUNT(*) AS count FROM threat_alerts GROUP BY criticality
   `),
   countThreatAlertsLast24h: db.prepare("SELECT COUNT(*) AS total FROM threat_alerts WHERE triggered_at > unixepoch() - 86400"),
+  createThreatArticle: db.prepare(`
+    INSERT INTO threat_articles (
+      id, feed_id, article_hash, headline, summary, content, article_url, image_url,
+      api_metadata, published_at, last_seen_at
+    ) VALUES (
+      @id, @feedId, @articleHash, @headline, @summary, @content, @articleUrl, @imageUrl,
+      @apiMetadata, @publishedAt, unixepoch()
+    )
+  `),
+  updateThreatArticle: db.prepare(`
+    UPDATE threat_articles
+    SET headline = @headline,
+        summary = @summary,
+        content = @content,
+        article_url = @articleUrl,
+        image_url = @imageUrl,
+        api_metadata = @apiMetadata,
+        published_at = @publishedAt,
+        last_seen_at = unixepoch(),
+        updated_at = unixepoch()
+    WHERE id = @id
+  `),
+  getThreatArticleByHash: db.prepare(`
+    SELECT ta.*, f.name AS feed_name, f.feed_type AS feed_feed_type, f.url AS feed_url
+    FROM threat_articles ta
+    LEFT JOIN threat_feeds f ON ta.feed_id = f.id
+    WHERE ta.feed_id = ? AND ta.article_hash = ?
+  `),
+  getThreatArticleById: db.prepare(`
+    SELECT ta.*, f.name AS feed_name, f.feed_type AS feed_feed_type, f.url AS feed_url
+    FROM threat_articles ta
+    LEFT JOIN threat_feeds f ON ta.feed_id = f.id
+    WHERE ta.id = ?
+  `),
+  listThreatArticles: db.prepare(`
+    SELECT ta.*, f.name AS feed_name, f.feed_type AS feed_feed_type, f.url AS feed_url
+    FROM threat_articles ta
+    LEFT JOIN threat_feeds f ON ta.feed_id = f.id
+    WHERE (? IS NULL OR COALESCE(ta.published_at, ta.created_at) > unixepoch() - ? * 3600)
+    ORDER BY COALESCE(ta.published_at, ta.created_at) DESC, ta.updated_at DESC
+    LIMIT ? OFFSET ?
+  `),
+  cleanupOldThreatArticles: db.prepare(`
+    DELETE FROM threat_articles
+    WHERE COALESCE(published_at, created_at) < unixepoch() - ? * 86400
+  `),
   listRecentThreatAlerts: db.prepare(`
     SELECT a.*, f.name AS feed_name, f.feed_type AS feed_feed_type, f.url AS feed_url,
       k.keyword AS keyword_text
@@ -4728,6 +4797,59 @@ function cleanupOldThreatAlerts(days) {
   return result.changes;
 }
 
+function createOrUpdateThreatArticle(article) {
+  if (!article?.feedId || !article?.articleHash || !article?.headline) return null;
+  const existing = stmts.getThreatArticleByHash.get(article.feedId, article.articleHash);
+  if (existing) {
+    stmts.updateThreatArticle.run({
+      id: existing.id,
+      headline: article.headline,
+      summary: article.summary || null,
+      content: article.content || null,
+      articleUrl: article.articleUrl || null,
+      imageUrl: article.imageUrl || null,
+      apiMetadata: JSON.stringify(article.apiMetadata || {}),
+      publishedAt: article.publishedAt || null,
+    });
+    return getThreatArticleById(existing.id);
+  }
+
+  const id = _tid();
+  stmts.createThreatArticle.run({
+    id,
+    feedId: article.feedId,
+    articleHash: article.articleHash,
+    headline: article.headline,
+    summary: article.summary || null,
+    content: article.content || null,
+    articleUrl: article.articleUrl || null,
+    imageUrl: article.imageUrl || null,
+    apiMetadata: JSON.stringify(article.apiMetadata || {}),
+    publishedAt: article.publishedAt || null,
+  });
+  return getThreatArticleById(id);
+}
+
+function listThreatArticles({ hours, limit = 24, offset = 0 } = {}) {
+  const safeHours = Number.isFinite(hours) && hours > 0 ? hours : null;
+  return stmts.listThreatArticles.all(safeHours, safeHours, limit, offset).map(_mapThreatArticle);
+}
+
+function getThreatArticleByHash(feedId, articleHash) {
+  const row = stmts.getThreatArticleByHash.get(feedId, articleHash);
+  return row ? _mapThreatArticle(row) : null;
+}
+
+function getThreatArticleById(id) {
+  const row = stmts.getThreatArticleById.get(id);
+  return row ? _mapThreatArticle(row) : null;
+}
+
+function cleanupOldThreatArticles(days) {
+  const result = stmts.cleanupOldThreatArticles.run(days);
+  return result.changes;
+}
+
 // --- Alert-Tag M2M ---
 const _setThreatAlertTags = db.transaction((alertId, tagIds) => {
   stmts.setThreatAlertTags.run(alertId);
@@ -4808,6 +4930,53 @@ function getThreatAlertByArticleHash(feedId, articleHash) {
   const alert = _mapThreatAlert(row);
   alert.tags = stmts.getThreatAlertTags.all(alert.id).map(_mapThreatTag);
   return alert;
+}
+function getThreatAlertByArticleHashForUser(userId, feedId, articleHash) {
+  if (!userId || !feedId || !articleHash) return null;
+  const rows = db.prepare(`
+    SELECT
+      a.*,
+      f.name AS feed_name,
+      f.feed_type AS feed_feed_type,
+      f.url AS feed_url,
+      k.keyword AS keyword_text,
+      uas.is_read AS user_is_read,
+      uak.keyword_id AS matched_keyword_id,
+      uak.matched_text AS user_matched_text,
+      uak.criticality AS user_keyword_criticality,
+      mk.keyword AS matched_keyword_text,
+      (
+        SELECT CASE MAX(
+          CASE uak2.criticality
+            WHEN 'critical' THEN 4
+            WHEN 'high' THEN 3
+            WHEN 'medium' THEN 2
+            ELSE 1
+          END
+        )
+          WHEN 4 THEN 'critical'
+          WHEN 3 THEN 'high'
+          WHEN 2 THEN 'medium'
+          ELSE 'low'
+        END
+        FROM threat_user_alert_keywords uak2
+        WHERE uak2.user_id = ? AND uak2.alert_id = a.id
+      ) AS user_criticality
+    FROM threat_alerts a
+    JOIN threat_user_alert_keywords uak
+      ON uak.alert_id = a.id AND uak.user_id = ?
+    LEFT JOIN threat_keywords mk ON mk.id = uak.keyword_id
+    LEFT JOIN threat_feeds f ON a.feed_id = f.id
+    LEFT JOIN threat_keywords k ON a.keyword_id = k.id
+    LEFT JOIN threat_user_alert_state uas
+      ON uas.alert_id = a.id AND uas.user_id = ?
+    LEFT JOIN threat_user_hidden_alerts uha
+      ON uha.alert_id = a.id AND uha.user_id = ?
+    WHERE a.feed_id = ? AND a.article_hash = ? AND uha.alert_id IS NULL
+    ORDER BY a.triggered_at DESC
+  `).all(userId, userId, userId, userId, feedId, articleHash);
+  if (!rows.length) return null;
+  return groupThreatAlertRowsForUser(rows, userId)[0] || null;
 }
 function threatAlertExistsByContextHash(feedId, keywordId, contextHash) {
   return !!stmts.alertExistsByContextHash.get(feedId, keywordId || null, contextHash || null);
@@ -5189,6 +5358,26 @@ function _mapThreatAlert(r) {
     keyword: r.keyword_text || null,
   };
 }
+function _mapThreatArticle(r) {
+  return {
+    id: r.id,
+    feedId: r.feed_id,
+    articleHash: r.article_hash,
+    headline: r.headline,
+    summary: r.summary || "",
+    content: r.content || "",
+    articleUrl: r.article_url || null,
+    imageUrl: r.image_url || "",
+    apiMetadata: JSON.parse(r.api_metadata || "{}"),
+    publishedAt: r.published_at || null,
+    lastSeenAt: r.last_seen_at || null,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    feedName: r.feed_name || null,
+    feedType: r.feed_feed_type || null,
+    feedUrl: r.feed_url || null,
+  };
+}
 function _mapThreatApiTemplate(r) {
   return {
     id: r.id, name: r.name, description: r.description,
@@ -5500,6 +5689,10 @@ module.exports = {
   updateThreatTag,
   deleteThreatTagById,
   createThreatAlert,
+  createOrUpdateThreatArticle,
+  listThreatArticles,
+  getThreatArticleByHash,
+  getThreatArticleById,
   listThreatAlerts,
   listThreatAlertsForUser,
   getThreatAlertById,
@@ -5511,6 +5704,7 @@ module.exports = {
   deleteThreatAlertById,
   hideThreatAlertForUser,
   cleanupOldThreatAlerts,
+  cleanupOldThreatArticles,
   setThreatAlertTags,
   setThreatAlertTagsForUser,
   getThreatAlertTags,
@@ -5520,6 +5714,7 @@ module.exports = {
   isThreatAlertSuppressed,
   threatAlertExistsByArticleHash,
   getThreatAlertByArticleHash,
+  getThreatAlertByArticleHashForUser,
   threatAlertExistsByContextHash,
   threatAlertExistsByFeedKeyword,
   listThreatAlertUserIds,

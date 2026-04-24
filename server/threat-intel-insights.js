@@ -157,7 +157,11 @@ function truncate(value, max) {
 
 function validArticleUrl(value) {
   const url = safeString(value).trim();
-  return /^https?:\/\//i.test(url) ? url : "";
+  if (/^https?:\/\//i.test(url)) return url;
+  if (/^[a-z0-9.-]+\.[a-z]{2,}(?:\/[^\s]*)?$/i.test(url)) {
+    return `https://${url.replace(/^\/+/, "")}`;
+  }
+  return "";
 }
 
 function pickImageUrl(alert) {
@@ -254,40 +258,84 @@ function enrichAlerts(alerts) {
   return Array.isArray(alerts) ? alerts.map(enrichAlert) : [];
 }
 
-function isPreferredNewsSource(alert) {
-  return REPUTABLE_NEWS_SOURCES.has(normalizeWhitespace(alert?.feedName).toLowerCase());
+function enrichIntelArticle(article) {
+  const normalized = {
+    ...article,
+    articleUrl: validArticleUrl(article?.articleUrl),
+    heroImage: validArticleUrl(article?.imageUrl) || pickImageUrl(article),
+  };
+  return {
+    ...normalized,
+    mitre: deriveMitreMatches({
+      ...normalized,
+      matchedContent: normalized.headline,
+      context: normalized.content || normalized.summary,
+      keywords: [],
+      iocs: normalized.apiMetadata?.iocs || {},
+    }),
+  };
 }
 
-function buildNewsBrief(alerts, limit = 24) {
+function enrichIntelArticles(articles) {
+  return Array.isArray(articles) ? articles.map(enrichIntelArticle) : [];
+}
+
+function isPreferredNewsSource(item) {
+  return REPUTABLE_NEWS_SOURCES.has(normalizeWhitespace(item?.feedName).toLowerCase());
+}
+
+function isHomepageLikeUrl(url) {
+  const normalized = validArticleUrl(url);
+  if (!normalized) return false;
+  try {
+    const parsed = new URL(normalized);
+    const path = parsed.pathname.replace(/\/+$/, "");
+    return path === "" || path === "/";
+  } catch (_) {
+    return false;
+  }
+}
+
+function isNewsworthyArticle(article) {
+  const url = validArticleUrl(article?.articleUrl);
+  if (!url) return false;
+  if (isPreferredNewsSource(article)) return true;
+  if (article?.feedType === "website" && isHomepageLikeUrl(url)) return false;
+  return article?.feedType !== "onion";
+}
+
+function buildNewsBrief(articles, limit = 24) {
   const deduped = [];
   const seen = new Set();
-  const enriched = enrichAlerts(alerts)
-    .filter((alert) => validArticleUrl(alert.articleUrl))
-    .sort((a, b) => (b.createdAt || b.triggeredAt || 0) - (a.createdAt || a.triggeredAt || 0));
+  const enriched = enrichIntelArticles(articles)
+    .filter((article) => isNewsworthyArticle(article))
+    .sort((a, b) => (b.publishedAt || b.createdAt || 0) - (a.publishedAt || a.createdAt || 0));
 
   const ordered = [
     ...enriched.filter(isPreferredNewsSource),
-    ...enriched.filter((alert) => !isPreferredNewsSource(alert) && alert.feedType !== "onion"),
+    ...enriched.filter((article) => !isPreferredNewsSource(article) && article.feedType !== "onion"),
   ];
 
-  for (const alert of ordered) {
-    const uniqueKey = alert.articleUrl || alert.articleHash || alert.id;
+  for (const article of ordered) {
+    const uniqueKey = article.articleUrl || article.articleHash || article.id;
     if (!uniqueKey || seen.has(uniqueKey)) continue;
     seen.add(uniqueKey);
     deduped.push({
-      id: alert.id,
-      alertId: alert.id,
-      headline: pickHeadline(alert),
-      summary: pickSummary(alert),
-      articleUrl: validArticleUrl(alert.articleUrl),
-      imageUrl: alert.heroImage || "",
-      feedName: alert.feedName || "Threat feed",
-      feedType: alert.feedType || "rss",
-      createdAt: alert.createdAt || alert.triggeredAt || null,
-      criticality: alert.criticality || "medium",
-      keywords: Array.isArray(alert.keywords) ? alert.keywords : [],
-      mitre: Array.isArray(alert.mitre) ? alert.mitre : [],
-      reputable: isPreferredNewsSource(alert),
+      id: article.id,
+      feedId: article.feedId,
+      articleHash: article.articleHash,
+      articleId: article.id,
+      headline: normalizeWhitespace(article.headline || pickHeadline(article) || "Threat intelligence article"),
+      summary: normalizeWhitespace(article.summary || pickSummary(article)),
+      articleUrl: article.articleUrl,
+      imageUrl: article.heroImage || "",
+      feedName: article.feedName || "Threat feed",
+      feedType: article.feedType || "rss",
+      createdAt: article.publishedAt || article.createdAt || null,
+      linkedAlertId: article.linkedAlertId || null,
+      keywords: Array.isArray(article.keywords) ? article.keywords : [],
+      mitre: Array.isArray(article.mitre) ? article.mitre : [],
+      reputable: isPreferredNewsSource(article),
     });
     if (deduped.length >= limit) break;
   }
@@ -347,6 +395,8 @@ function buildMitreOverview(alerts) {
 module.exports = {
   enrichAlert,
   enrichAlerts,
+  enrichIntelArticle,
+  enrichIntelArticles,
   buildNewsBrief,
   buildMitreOverview,
 };

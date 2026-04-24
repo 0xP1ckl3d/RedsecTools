@@ -23,21 +23,138 @@ const CONTEXT_WINDOW = 200;
 const HTTP_TIMEOUT_MS = 30000;
 const IPV4_RETRY_CODES = new Set(["ETIMEDOUT", "ECONNRESET", "ECONNREFUSED", "EHOSTUNREACH", "ENETUNREACH", "EAI_AGAIN"]);
 
+function safeText(value) {
+  return value == null ? "" : String(value);
+}
+
+function normalizeWhitespace(value) {
+  return safeText(value).replace(/\s+/g, " ").trim();
+}
+
+function truncateText(value, max) {
+  const text = normalizeWhitespace(value);
+  return text.length > max ? `${text.slice(0, max - 3)}...` : text;
+}
+
+function parsePublishedAt(value) {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.floor(parsed / 1000);
+}
+
+function resolveHttpUrl(value, baseUrl = "") {
+  const raw = safeText(value).trim();
+  if (!raw) return "";
+  try {
+    const resolved = baseUrl ? new URL(raw, baseUrl) : new URL(raw);
+    return /^https?:$/i.test(resolved.protocol) ? resolved.toString() : "";
+  } catch (_) {
+    return "";
+  }
+}
+
+function extractFirstImageFromHtml(html, baseUrl = "") {
+  const markup = safeText(html);
+  if (!markup || !markup.includes("<")) return "";
+  try {
+    const $ = cheerio.load(markup);
+    const selectors = [
+      'meta[property="og:image"]',
+      'meta[name="twitter:image"]',
+      'meta[name="twitter:image:src"]',
+      "img",
+    ];
+    for (const selector of selectors) {
+      const node = $(selector).first();
+      if (!node.length) continue;
+      const candidate = node.attr("content") || node.attr("src");
+      const resolved = resolveHttpUrl(candidate, baseUrl);
+      if (resolved) return resolved;
+    }
+  } catch (_) {
+    return "";
+  }
+  return "";
+}
+
+function buildArticleSummary(text, fallback = "") {
+  const summary = truncateText(text || fallback, 240);
+  return summary || truncateText(fallback, 240);
+}
+
+function storeThreatArticle(feed, article) {
+  if (!feed?.id || !article?.articleHash || !article?.headline) return null;
+  return db.createOrUpdateThreatArticle({
+    feedId: feed.id,
+    articleHash: article.articleHash,
+    headline: truncateText(article.headline, 255) || "Threat intelligence article",
+    summary: buildArticleSummary(article.summary, article.content),
+    content: safeText(article.content).slice(0, MAX_ALERT_CONTENT_LENGTH),
+    articleUrl: article.articleUrl || null,
+    imageUrl: article.imageUrl || null,
+    apiMetadata: article.apiMetadata || {},
+    publishedAt: article.publishedAt || null,
+  });
+}
+
+function pickImageFromMetadata(metadata, baseUrl = "") {
+  const source = metadata && typeof metadata === "object" ? metadata : {};
+  const candidates = [
+    source.image,
+    source.imageUrl,
+    source.image_url,
+    source.thumbnail,
+    source.thumbnail_url,
+    source.cover,
+    source.cover_image,
+    source.featured_image,
+    source.banner,
+    source.banner_url,
+    source.logo,
+    source.media_url,
+  ];
+  for (const candidate of candidates) {
+    const resolved = resolveHttpUrl(candidate, baseUrl);
+    if (resolved) return resolved;
+  }
+  return "";
+}
+
 // ---------------------------------------------------------------------------
 // Feed Fetchers
 // ---------------------------------------------------------------------------
 
 async function fetchRssFeed(url) {
-  const parser = new Parser({ timeout: 30000 });
+  const parser = new Parser({
+    timeout: 30000,
+    customFields: {
+      item: [
+        ["media:content", "mediaContent", { keepArray: true }],
+        ["media:thumbnail", "mediaThumbnail", { keepArray: true }],
+        ["content:encoded", "contentEncoded"],
+        ["description", "description"],
+      ],
+    },
+  });
   const feed = await parser.parseURL(url);
   const content = JSON.stringify(feed);
   const hash = sha256(content);
   const entries = (feed.items || []).map((item) => ({
     title: item.title || "",
     link: item.link || "",
-    content: item.content || item.contentSnippet || "",
+    content: item.content || item.contentEncoded || item.description || item.contentSnippet || "",
     pubDate: item.pubDate || item.isoDate || "",
     creator: item.creator || "",
+    imageUrl: resolveHttpUrl(
+      item.enclosure?.url
+      || item.mediaContent?.[0]?.$?.url
+      || item.mediaContent?.[0]?.url
+      || item.mediaThumbnail?.[0]?.$?.url
+      || item.mediaThumbnail?.[0]?.url
+      || extractFirstImageFromHtml(item.content || item.contentEncoded || item.description || "", item.link || url),
+      item.link || url
+    ),
   }));
   return { success: true, content, hash, entries };
 }
@@ -47,8 +164,18 @@ async function fetchWebsiteFeed(url) {
   const $ = cheerio.load(html);
   // Extract visible text from body
   const bodyText = $("body").text().replace(/\s+/g, " ").trim();
+  const title = $("head title").first().text().trim() || $('meta[property="og:title"]').attr("content") || "";
+  const summary = $('meta[name="description"]').attr("content")
+    || $('meta[property="og:description"]').attr("content")
+    || bodyText.slice(0, 280);
+  const imageUrl = resolveHttpUrl(
+    $('meta[property="og:image"]').attr("content")
+    || $('meta[name="twitter:image"]').attr("content")
+    || $("img").first().attr("src"),
+    url
+  );
   const hash = sha256(bodyText);
-  return { success: true, content: bodyText, hash };
+  return { success: true, content: bodyText, hash, title, summary, imageUrl, articleUrl: url };
 }
 
 async function fetchApiFeed(url, templateConfig) {
@@ -578,6 +705,22 @@ function createRssAlerts(feed, fetchResult, userKeywordSets) {
     if (!articleText) continue;
 
     const articleHash = sha256(`${feed.id}:${entry.link || entry.title || articleText}`);
+    storeThreatArticle(feed, {
+      articleHash,
+      headline: entry.title || "Threat intelligence article",
+      summary: buildArticleSummary(plainContent, entry.title || ""),
+      content: articleText,
+      articleUrl: entry.link || null,
+      imageUrl: entry.imageUrl || null,
+      publishedAt: parsePublishedAt(entry.pubDate),
+      apiMetadata: {
+        title: entry.title || "",
+        link: entry.link || "",
+        pubDate: entry.pubDate || "",
+        imageUrl: entry.imageUrl || "",
+        iocs: extractIOCs(articleText),
+      },
+    });
     if (db.isThreatAlertSuppressed(feed.id, articleHash, null, null)) continue;
 
     const userMatches = collectMatchedUsers(articleText, userKeywordSets);
@@ -594,6 +737,7 @@ function createRssAlerts(feed, fetchResult, userKeywordSets) {
         title: entry.title || "",
         link: entry.link || "",
         pubDate: entry.pubDate || "",
+        imageUrl: entry.imageUrl || "",
         iocs: extractIOCs(articleText),
       },
     }, userMatches);
@@ -608,10 +752,25 @@ function createWebsiteAlerts(feed, fetchResult, userKeywordSets) {
   const content = String(fetchResult.content || "").trim();
   if (!content) return [];
 
+  const articleHash = sha256(`${feed.id}:${fetchResult.hash || content}`);
+  storeThreatArticle(feed, {
+    articleHash,
+    headline: fetchResult.title || feed.name || "Threat intelligence article",
+    summary: buildArticleSummary(fetchResult.summary || content, content),
+    content,
+    articleUrl: fetchResult.articleUrl || feed.url || null,
+    imageUrl: fetchResult.imageUrl || null,
+    apiMetadata: {
+      title: fetchResult.title || "",
+      sourceUrl: feed.url || null,
+      imageUrl: fetchResult.imageUrl || "",
+      iocs: extractIOCs(content),
+    },
+  });
+
   const userMatches = collectMatchedUsers(content, userKeywordSets);
   if (!userMatches.length) return [];
 
-  const articleHash = sha256(`${feed.id}:${fetchResult.hash || content}`);
   if (db.isThreatAlertSuppressed(feed.id, articleHash, null, null)) return [];
 
   const firstMatch = userMatches[0].matches[0];
@@ -622,7 +781,9 @@ function createWebsiteAlerts(feed, fetchResult, userKeywordSets) {
     articleHash,
     articleUrl: feed.url || null,
     apiMetadata: {
+      title: fetchResult.title || "",
       sourceUrl: feed.url || null,
+      imageUrl: fetchResult.imageUrl || "",
       iocs: extractIOCs(content),
     },
   }, userMatches);
@@ -640,11 +801,35 @@ function createApiAlerts(feed, fetchResult, userKeywordSets) {
     const recordText = String(record.content || "").trim();
     if (!recordText) continue;
 
+    const recordUrl = record.metadata?.url || record.metadata?.link || record.metadata?.victim_website || null;
+    const articleHash = sha256(`${feed.id}:${recordUrl || JSON.stringify(record.metadata || {}) || recordText}`);
+    storeThreatArticle(feed, {
+      articleHash,
+      headline: record.metadata?.victim_name
+        || record.metadata?.title
+        || record.metadata?.post_title
+        || feed.name
+        || "Threat intelligence article",
+      summary: buildArticleSummary(record.metadata?.description || recordText, recordText),
+      content: recordText,
+      articleUrl: recordUrl,
+      imageUrl: pickImageFromMetadata(record.metadata, recordUrl || feed.url || ""),
+      publishedAt: parsePublishedAt(
+        record.metadata?.published_at
+        || record.metadata?.publishedAt
+        || record.metadata?.pubDate
+        || record.metadata?.date
+      ),
+      apiMetadata: {
+        record: record.metadata || {},
+        imageUrl: pickImageFromMetadata(record.metadata, recordUrl || feed.url || ""),
+        iocs: extractIOCs(recordText),
+      },
+    });
+
     const userMatches = collectMatchedUsers(recordText, userKeywordSets);
     if (!userMatches.length) continue;
 
-    const recordUrl = record.metadata?.url || record.metadata?.link || record.metadata?.victim_website || null;
-    const articleHash = sha256(`${feed.id}:${recordUrl || JSON.stringify(record.metadata || {}) || recordText}`);
     if (db.isThreatAlertSuppressed(feed.id, articleHash, null, null)) continue;
 
     const firstMatch = userMatches[0].matches[0];
@@ -738,10 +923,6 @@ async function checkFeed(feedId, options = {}) {
     if (!contentChanged && !forceKeywordScan && userKeywordSets.length === 0) {
       db.updateThreatFeedFetchStatus(feed.id, { hash: fetchResult.hash, failures: 0 });
       return { checked: true, alerts: 0, unchanged: true };
-    }
-    if (!userKeywordSets.length) {
-      db.updateThreatFeedFetchStatus(feed.id, { hash: fetchResult.hash, failures: 0 });
-      return { checked: true, alerts: 0, unchanged: !contentChanged };
     }
 
     // Create alerts based on feed type
