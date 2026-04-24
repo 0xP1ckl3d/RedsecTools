@@ -5,6 +5,12 @@ const { attachUserAccess } = require("../middleware/permissions");
 const db = require("../database");
 const { backfillAlertOwnershipForUser } = require("../threat-feed-service");
 const { getThreatNotificationPolicy } = require("../threat-notify-service");
+const {
+  enrichAlert,
+  enrichAlerts,
+  buildNewsBrief,
+  buildMitreOverview,
+} = require("../threat-intel-insights");
 
 const router = Router();
 
@@ -89,11 +95,11 @@ router.get("/threat/bootstrap", requireUser, attachUserAccess, requireThreatView
     backfillAlertOwnershipForUser(req.user.id);
   }
   const stats = db.getThreatStatsForUser(req.user.id);
-  const recentAlerts = db.listThreatAlerts({ userId: req.user.id, limit: 10, offset: 0 });
+  const recentAlerts = enrichAlerts(db.listThreatAlerts({ userId: req.user.id, limit: 10, offset: 0 }));
   const feedHealth = db.getThreatFeedHealth();
   const settings = {
     autoFetchEnabled: db.getSetting("threat_auto_fetch_enabled") === "true",
-    fetchIntervalSeconds: parseInt(db.getSetting("threat_fetch_interval_seconds"), 10) || 60,
+    fetchIntervalSeconds: parseInt(db.getSetting("threat_fetch_interval_seconds"), 10) || 1800,
   };
   const userNotifications = db.listThreatUserNotifications(req.user.id);
   const notificationPolicy = getThreatNotificationPolicy();
@@ -318,6 +324,62 @@ router.post("/threat/tags/alerts/:id", writeLimiter, requireUser, attachUserAcce
 });
 
 // ===========================================================================
+// News / MITRE
+// ===========================================================================
+
+router.get("/threat/news", requireUser, attachUserAccess, requireThreatView, (req, res) => {
+  const hours = parseInt(req.query.hours, 10);
+  const limit = Math.min(48, Math.max(1, parseInt(req.query.limit, 10) || 24));
+  const alerts = db.listThreatAlerts({
+    userId: req.user.id,
+    hours: Number.isFinite(hours) && hours > 0 ? hours : 24 * 14,
+    limit: 250,
+    offset: 0,
+  });
+  res.json({ items: buildNewsBrief(alerts, limit) });
+});
+
+router.get("/threat/news-image/:id", requireUser, attachUserAccess, requireThreatView, async (req, res) => {
+  if (!validateId(req.params.id)) return res.status(400).json({ error: "Invalid alert ID" });
+  const alert = db.getThreatAlertByIdForUser(req.user.id, req.params.id);
+  if (!alert) return res.status(404).json({ error: "Alert not found" });
+
+  const imageUrl = enrichAlert(alert).heroImage;
+  if (!imageUrl) return res.status(404).json({ error: "No cover image available" });
+
+  try {
+    const upstream = await fetch(imageUrl, {
+      redirect: "follow",
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!upstream.ok) {
+      return res.status(502).json({ error: "Unable to load cover image" });
+    }
+    const contentType = String(upstream.headers.get("content-type") || "");
+    if (!contentType.startsWith("image/")) {
+      return res.status(415).json({ error: "Cover image response was not an image" });
+    }
+    const body = Buffer.from(await upstream.arrayBuffer());
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Cache-Control", "private, max-age=900");
+    res.send(body);
+  } catch (error) {
+    res.status(502).json({ error: "Unable to load cover image" });
+  }
+});
+
+router.get("/threat/mitre", requireUser, attachUserAccess, requireThreatView, (req, res) => {
+  const hours = parseInt(req.query.hours, 10);
+  const alerts = db.listThreatAlerts({
+    userId: req.user.id,
+    hours: Number.isFinite(hours) && hours > 0 ? hours : 24 * 14,
+    limit: 300,
+    offset: 0,
+  });
+  res.json(buildMitreOverview(alerts));
+});
+
+// ===========================================================================
 // Alerts
 // ===========================================================================
 
@@ -347,14 +409,14 @@ router.get("/threat/alerts", requireUser, attachUserAccess, requireThreatView, (
     offset,
   });
 
-  res.json({ alerts });
+  res.json({ alerts: enrichAlerts(alerts) });
 });
 
 router.get("/threat/alerts/:id", requireUser, attachUserAccess, requireThreatView, (req, res) => {
   if (!validateId(req.params.id)) return res.status(400).json({ error: "Invalid alert ID" });
   const alert = db.getThreatAlertByIdForUser(req.user.id, req.params.id);
   if (!alert) return res.status(404).json({ error: "Alert not found" });
-  res.json({ alert });
+  res.json({ alert: enrichAlert(alert) });
 });
 
 router.put("/threat/alerts/:id", writeLimiter, requireUser, attachUserAccess, requireThreatView, (req, res) => {

@@ -17,6 +17,8 @@ const state = {
   feedErrors: [],
   stats: null,
   recentAlerts: [],
+  newsItems: [],
+  mitreOverview: null,
   settings: {},
   notificationPolicy: {},
   allowedChannels: [],
@@ -152,6 +154,14 @@ function formatLocalDateTime(timestamp) {
 function formatRelativeTimeWithTitle(timestamp) {
   const local = formatLocalDateTime(timestamp);
   return '<span title="' + escapeHtml(local) + '">' + escapeHtml(relativeTime(timestamp)) + "</span>";
+}
+
+function getSourceHost(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./i, "");
+  } catch (_) {
+    return "";
+  }
 }
 
 function dedupeKeywordList(keywords) {
@@ -394,6 +404,16 @@ function buildCriticalityChart(dist) {
   );
 }
 
+function mitreBadges(matches) {
+  if (!Array.isArray(matches) || !matches.length) return "";
+  return matches.map((match) =>
+    '<span class="threat-mitre-chip">' +
+      '<span class="threat-mitre-chip-id">' + escapeHtml(match.techniqueId || match.tacticId || "") + "</span>" +
+      '<span class="threat-mitre-chip-label">' + escapeHtml(match.technique || match.tactic || "ATT&CK") + "</span>" +
+    "</span>"
+  ).join("");
+}
+
 // ---------------------------------------------------------------------------
 // View switching
 // ---------------------------------------------------------------------------
@@ -425,10 +445,12 @@ function loadCurrentView() {
   clearAutoRefresh();
   switch (state.currentView) {
     case "dashboard": loadDashboard(); break;
+    case "news": loadNews(); break;
     case "feeds": loadFeeds(); break;
     case "keywords": loadKeywords(); break;
     case "tags": loadTags(); break;
     case "alerts": loadAlerts(); break;
+    case "mitre": loadMitre(); break;
     case "notifications": loadNotifications(); break;
     case "logs": loadLogs(); break;
   }
@@ -555,6 +577,147 @@ function renderDashboard(stats, recentAlerts, feedHealth) {
     card.dataset.threatNavBound = "true";
     card.addEventListener("click", () => setCurrentView(card.dataset.threatNav));
   });
+}
+
+// ---------------------------------------------------------------------------
+// Intel Brief
+// ---------------------------------------------------------------------------
+
+async function loadNews() {
+  try {
+    const data = await api("/news?limit=24");
+    state.newsItems = data.items || [];
+    renderNews(state.newsItems);
+  } catch (err) {
+    console.error("Failed to load intel brief:", err);
+  }
+}
+
+function renderNews(items) {
+  const gridEl = document.getElementById("threat-news-grid");
+  const emptyEl = document.getElementById("threat-news-empty");
+  if (!gridEl) return;
+
+  if (!Array.isArray(items) || !items.length) {
+    gridEl.innerHTML = "";
+    if (emptyEl) emptyEl.classList.remove("hidden");
+    return;
+  }
+
+  if (emptyEl) emptyEl.classList.add("hidden");
+  gridEl.innerHTML = items.map((item) => {
+    const imageSrc = item.imageUrl && item.alertId ? ("/api/threat/news-image/" + encodeURIComponent(item.alertId)) : "";
+    const image = item.imageUrl
+      ? '<div class="threat-news-media"><img src="' + escapeHtml(imageSrc) + '" alt="' + escapeHtml(item.headline || item.feedName || "Threat article") + '" loading="lazy"></div>'
+      : '<div class="threat-news-media threat-news-placeholder"><span>' + escapeHtml((item.feedName || "Intel").slice(0, 32)) + "</span></div>";
+    const sourceHost = getSourceHost(item.articleUrl);
+    const keywordText = keywordChips(item.keywords || []);
+    const mitreText = mitreBadges(item.mitre || []);
+    return (
+      '<article class="threat-news-card">' +
+        image +
+        '<div class="threat-news-content">' +
+          '<div class="threat-news-meta">' +
+            feedTypeBadge(item.feedType) +
+            '<span class="text-xs text-muted">' + escapeHtml(item.feedName || "Threat feed") + "</span>" +
+            '<span class="text-xs text-muted">' + formatRelativeTimeWithTitle(item.createdAt) + "</span>" +
+          "</div>" +
+          '<h3 class="threat-news-title">' + escapeHtml(item.headline || "Threat intelligence article") + "</h3>" +
+          '<p class="threat-news-summary">' + escapeHtml(item.summary || "Open the article for the full write-up.") + "</p>" +
+          '<div class="threat-news-taxonomy">' +
+            (keywordText !== '<span class="text-muted text-sm">-</span>' ? keywordText : "") +
+            (mitreText || "") +
+          "</div>" +
+          '<div class="threat-news-actions">' +
+            '<button type="button" class="btn-secondary btn-xs" data-action="view-alert" data-id="' + escapeHtml(item.alertId || item.id) + '">Open Alert</button>' +
+            '<a class="btn-primary btn-xs" href="' + escapeHtml(item.articleUrl) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(sourceHost ? "Read " + sourceHost : "Open Article") + "</a>" +
+          "</div>" +
+        "</div>" +
+      "</article>"
+    );
+  }).join("");
+
+  applyTagColors(gridEl);
+}
+
+// ---------------------------------------------------------------------------
+// MITRE ATT&CK
+// ---------------------------------------------------------------------------
+
+async function loadMitre() {
+  try {
+    const data = await api("/mitre");
+    state.mitreOverview = data || null;
+    renderMitre(data || {});
+  } catch (err) {
+    console.error("Failed to load MITRE overview:", err);
+  }
+}
+
+function renderMitre(data) {
+  const summary = data?.summary || {};
+  const tactics = Array.isArray(data?.tactics) ? data.tactics : [];
+  const techniques = Array.isArray(data?.techniques) ? data.techniques : [];
+  const recentAlerts = Array.isArray(data?.recentAlerts) ? data.recentAlerts : [];
+
+  const mappedAlertsEl = document.getElementById("threat-mitre-mapped-alerts");
+  const tacticCountEl = document.getElementById("threat-mitre-tactic-count");
+  const techniqueCountEl = document.getElementById("threat-mitre-technique-count");
+  const topTechniqueEl = document.getElementById("threat-mitre-top-technique");
+  if (mappedAlertsEl) mappedAlertsEl.textContent = summary.mappedAlerts ?? 0;
+  if (tacticCountEl) tacticCountEl.textContent = summary.uniqueTactics ?? 0;
+  if (techniqueCountEl) techniqueCountEl.textContent = summary.uniqueTechniques ?? 0;
+  if (topTechniqueEl) topTechniqueEl.textContent = summary.topTechnique?.techniqueId || "-";
+
+  const tacticsEl = document.getElementById("threat-mitre-tactics");
+  if (tacticsEl) {
+    tacticsEl.innerHTML = tactics.length
+      ? tactics.slice(0, 12).map((item) =>
+        '<div class="threat-mitre-row">' +
+          '<div class="threat-mitre-row-title">' + escapeHtml(item.tactic) + "</div>" +
+          '<div class="threat-mitre-row-meta">' +
+            '<span class="threat-mitre-id">' + escapeHtml(item.tacticId) + "</span>" +
+            '<span class="threat-mitre-count">' + escapeHtml(String(item.count)) + " alerts</span>" +
+          "</div>" +
+        "</div>"
+      ).join("")
+      : '<p class="text-sm text-muted">No ATT&CK mappings yet.</p>';
+  }
+
+  const techniquesEl = document.getElementById("threat-mitre-techniques");
+  if (techniquesEl) {
+    techniquesEl.innerHTML = techniques.length
+      ? techniques.slice(0, 12).map((item) =>
+        '<div class="threat-mitre-row">' +
+          '<div class="threat-mitre-row-title">' + escapeHtml(item.technique) + "</div>" +
+          '<div class="threat-mitre-row-meta">' +
+            '<span class="threat-mitre-id">' + escapeHtml(item.techniqueId) + "</span>" +
+            '<span class="text-xs text-muted">' + escapeHtml(item.tactic) + "</span>" +
+            '<span class="threat-mitre-count">' + escapeHtml(String(item.count)) + " alerts</span>" +
+          "</div>" +
+        "</div>"
+      ).join("")
+      : '<p class="text-sm text-muted">No ATT&CK mappings yet.</p>';
+  }
+
+  const recentEl = document.getElementById("threat-mitre-recent");
+  if (recentEl) {
+    recentEl.innerHTML = recentAlerts.length
+      ? recentAlerts.slice(0, 12).map((alert) =>
+        '<button type="button" class="threat-recent-item threat-recent-item-button" data-action="view-alert" data-id="' + escapeHtml(alert.id) + '">' +
+          '<div class="threat-recent-item-header">' +
+            '<div class="threat-recent-item-heading">' +
+              criticalityBadge(alert.criticality) +
+              '<span class="threat-recent-item-title">' + escapeHtml(getAlertHeadline(alert)) + "</span>" +
+            "</div>" +
+            '<span class="text-xs text-muted">' + formatRelativeTimeWithTitle(alert.createdAt) + "</span>" +
+          "</div>" +
+          '<div class="threat-recent-item-source">' + escapeHtml(alert.feedName || "Threat feed") + "</div>" +
+          '<div class="threat-news-taxonomy">' + mitreBadges(alert.mitre || []) + "</div>" +
+        "</button>"
+      ).join("")
+      : '<p class="text-sm text-muted">No ATT&CK-mapped alerts yet.</p>';
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1164,6 +1327,7 @@ async function openAlertDetail(alert) {
   const sourceUrl = alert.articleUrl || apiMeta.link || apiMeta.sourceUrl || null;
   const hasMetaContent = apiMeta.title || apiMeta.link || apiMeta.pubDate || apiMeta.record;
   const headline = getAlertHeadline(alert);
+  const mitreMatches = Array.isArray(alert.mitre) ? alert.mitre : [];
   const matchedTexts = (() => {
     const seen = new Set();
     const keywordNames = new Set(kwList.map((keyword) => String(keyword?.keyword || keyword?.text || "").trim().toLowerCase()).filter(Boolean));
@@ -1215,6 +1379,14 @@ async function openAlertDetail(alert) {
       ? '<div class="threat-detail-section">' +
           '<h3 class="threat-detail-heading">Indicators of Compromise</h3>' +
           '<div class="threat-detail-iocs">' + iocChips(iocs) + "</div>" +
+        "</div>"
+      : "") +
+
+    // MITRE
+    (mitreMatches.length
+      ? '<div class="threat-detail-section">' +
+          '<h3 class="threat-detail-heading">MITRE ATT&amp;CK Mapping</h3>' +
+          '<div class="threat-detail-iocs">' + mitreBadges(mitreMatches) + "</div>" +
         "</div>"
       : "") +
 
@@ -1679,8 +1851,20 @@ async function handleAction(action, id) {
 
     // Alerts
     case "view-alert": {
-      const alert = state.alerts.find((a) => a.id === id) || state.recentAlerts.find((a) => a.id === id);
+      const mitreAlert = Array.isArray(state.mitreOverview?.recentAlerts)
+        ? state.mitreOverview.recentAlerts.find((a) => a.id === id)
+        : null;
+      const newsAlert = Array.isArray(state.newsItems)
+        ? state.newsItems.find((item) => item.alertId === id || item.id === id)
+        : null;
+      const alert = state.alerts.find((a) => a.id === id)
+        || state.recentAlerts.find((a) => a.id === id)
+        || mitreAlert
+        || null;
       if (alert) openAlertDetail(alert);
+      else if (newsAlert?.alertId) {
+        openAlertDetail({ id: newsAlert.alertId });
+      }
       break;
     }
     case "toggle-alert-read": {

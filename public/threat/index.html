@@ -37,6 +37,14 @@
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
           <span class="sidebar-nav-text">Alerts</span>
         </button>
+        <button type="button" class="sidebar-nav-item" data-threat-view="news">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10l6 6v8a2 2 0 01-2 2z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 3v6h6M8 13h8M8 17h5M8 9h2"/></svg>
+          <span class="sidebar-nav-text">Intel Brief</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-threat-view="mitre">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-6m3 6V7m3 10v-3m3 3V4M6 20h12"/></svg>
+          <span class="sidebar-nav-text">MITRE ATT&amp;CK</span>
+        </button>
         <button type="button" class="sidebar-nav-item" data-threat-view="notifications">
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
           <span class="sidebar-nav-text">Notifications</span>
@@ -77,6 +85,8 @@
         <button type="button" class="mobile-tab" data-threat-view="feeds">Feeds</button>
         <button type="button" class="mobile-tab" data-threat-view="keywords">Keywords</button>
         <button type="button" class="mobile-tab" data-threat-view="alerts">Alerts</button>
+        <button type="button" class="mobile-tab" data-threat-view="news">Intel Brief</button>
+        <button type="button" class="mobile-tab" data-threat-view="mitre">MITRE</button>
         <button type="button" class="mobile-tab" data-threat-view="logs">Logs</button>
       </div>
 
@@ -129,6 +139,22 @@
             <div id="threat-dash-feed-activity" class="threat-feed-activity-grid">
               <p class="text-sm text-muted">No feed activity.</p>
             </div>
+          </div>
+        </section>
+
+        <!-- ===== INTEL BRIEF VIEW ===== -->
+        <section id="threat-view-news" class="threat-dashboard-view hidden">
+          <div class="card">
+            <div class="card-header flex justify-between items-center gap-3">
+              <div>
+                <h2 class="text-lg font-semibold">Intel Brief</h2>
+                <p class="text-sm text-muted mt-1">A curated digest built from your recent threat hits across reputable cyber reporting sources.</p>
+              </div>
+            </div>
+            <div id="threat-news-grid" class="threat-news-grid">
+              <p class="text-sm text-muted">Loading intel brief...</p>
+            </div>
+            <div id="threat-news-empty" class="threat-empty hidden">No recent news articles matched your current watchlist yet.</div>
           </div>
         </section>
 
@@ -280,6 +306,56 @@
             </div>
             <div id="threat-alerts-empty" class="threat-empty hidden">No alerts found.</div>
             <div id="threat-alerts-pagination" class="threat-pagination hidden"></div>
+          </div>
+        </section>
+
+        <!-- ===== MITRE VIEW ===== -->
+        <section id="threat-view-mitre" class="threat-dashboard-view hidden">
+          <div class="threat-stat-grid threat-stat-grid-4 mb-4">
+            <div class="threat-stat-card threat-stat-blue">
+              <div class="threat-stat-value" id="threat-mitre-mapped-alerts">-</div>
+              <div class="threat-stat-label">Mapped Alerts</div>
+            </div>
+            <div class="threat-stat-card threat-stat-purple">
+              <div class="threat-stat-value" id="threat-mitre-tactic-count">-</div>
+              <div class="threat-stat-label">Observed Tactics</div>
+            </div>
+            <div class="threat-stat-card threat-stat-amber">
+              <div class="threat-stat-value" id="threat-mitre-technique-count">-</div>
+              <div class="threat-stat-label">Observed Techniques</div>
+            </div>
+            <div class="threat-stat-card threat-stat-red">
+              <div class="threat-stat-value" id="threat-mitre-top-technique">-</div>
+              <div class="threat-stat-label">Top Technique</div>
+            </div>
+          </div>
+
+          <div class="threat-dash-grid">
+            <div class="card threat-dash-section">
+              <div class="card-header">
+                <h2 class="text-lg font-semibold">Top Tactics</h2>
+              </div>
+              <div id="threat-mitre-tactics" class="threat-mitre-list">
+                <p class="text-sm text-muted">No ATT&amp;CK mappings yet.</p>
+              </div>
+            </div>
+            <div class="card threat-dash-section">
+              <div class="card-header">
+                <h2 class="text-lg font-semibold">Top Techniques</h2>
+              </div>
+              <div id="threat-mitre-techniques" class="threat-mitre-list">
+                <p class="text-sm text-muted">No ATT&amp;CK mappings yet.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="card threat-dash-section mt-4">
+            <div class="card-header">
+              <h2 class="text-lg font-semibold">Recent ATT&amp;CK-Mapped Alerts</h2>
+            </div>
+            <div id="threat-mitre-recent" class="threat-recent-list">
+              <p class="text-sm text-muted">No ATT&amp;CK-mapped alerts yet.</p>
+            </div>
           </div>
         </section>
 
