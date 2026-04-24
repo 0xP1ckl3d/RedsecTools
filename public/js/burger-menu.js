@@ -11,6 +11,7 @@ const TOOL_LINKS = [
   { href: "/calendar", label: "RedSecCal", key: "calendar" },
   { href: "/survey", label: "RedSecSurvey", key: "survey" },
   { href: "/wiki", label: "RedSecWiki", key: "wiki" },
+  { href: "/threat", label: "RedSecThreat", key: "threat" },
 ];
 
 // Contextual about links based on current page path
@@ -23,6 +24,7 @@ const ABOUT_LINKS = [
   { pathPrefix: "/calendar", href: "/calendar/about", label: "About this tool" },
   { pathPrefix: "/survey", href: "/survey/about", label: "About this tool" },
   { pathPrefix: "/wiki", href: "/wiki/about", label: "About this tool" },
+  { pathPrefix: "/threat", href: "/threat/about", label: "About this tool" },
 ];
 
 export function initBurgerMenu() {

@@ -2,6 +2,8 @@ services:
   redsectools:
     build: .
     container_name: redsectools
+    depends_on:
+      - tor-proxy
     ports:
       - "${HOST:-0.0.0.0}:${PORT:-3000}:3000"
     env_file: .env
@@ -9,8 +11,13 @@ services:
       - NODE_ENV=production
       - PORT=3000
       - HOST=0.0.0.0
+      - TOR_PROXY=socks5h://tor-proxy:9050
     volumes:
       - redsectools-data:/app/data
+    restart: unless-stopped
+  tor-proxy:
+    image: dperson/torproxy:latest
+    container_name: redsectools-tor
     restart: unless-stopped
 
 volumes:

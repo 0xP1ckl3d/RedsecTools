@@ -28,6 +28,7 @@ const {
   buildBulletinCapabilities,
   buildVisibleBulletinFeed,
   canEditBulletin,
+  canDeleteBulletin,
   deleteBulletinWithAssets,
   generateBulletinId,
   sanitizeBulletinForSave,
@@ -136,9 +137,9 @@ router.get("/bulletins", requireUser, attachUserAccess, (req, res) => {
 
 router.get("/bulletins/manage", requireUser, attachUserAccess, (req, res) => {
   const capabilities = buildBulletinCapabilities(req);
-  const editableBulletins = capabilities.canCreate
-    ? listBulletinsByAuthor(req.user.id, 1, 50)
-    : [];
+  const editableBulletins = capabilities.canManage || capabilities.canEditAny
+    ? listAllBulletins()
+    : (capabilities.canCreate ? listBulletinsByAuthor(req.user.id, 1, 50) : []);
 
   res.json({
     capabilities,
@@ -207,7 +208,7 @@ router.put("/bulletins/:id", settingsLimiter, requireUser, attachUserAccess, (re
 router.delete("/bulletins/:id", settingsLimiter, requireUser, attachUserAccess, (req, res) => {
   const bulletin = getBulletinById(req.params.id);
   if (!bulletin) return res.status(404).json({ error: "Bulletin not found" });
-  if (!canEditBulletin(req, bulletin)) {
+  if (!canDeleteBulletin(req, bulletin)) {
     return res.status(403).json({ error: "Bulletin delete denied" });
   }
 
@@ -215,7 +216,7 @@ router.delete("/bulletins/:id", settingsLimiter, requireUser, attachUserAccess, 
   res.json({ success: true });
 });
 
-router.post("/bulletin-assets", settingsLimiter, upload.single("image"), requireUser, attachUserAccess, async (req, res) => {
+router.post("/bulletin-assets", settingsLimiter, requireUser, attachUserAccess, upload.single("image"), async (req, res) => {
   if (!req.access.permissionSet.has("bulletin.create")) {
     return res.status(403).json({ error: "Bulletin asset upload denied" });
   }

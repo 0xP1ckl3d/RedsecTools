@@ -60,6 +60,20 @@ function formatTime(unix) {
   return new Date(unix * 1000).toLocaleString();
 }
 
+function formatRelativeTimeShort(unix) {
+  if (!unix) return "Never";
+  const diffSeconds = Math.max(0, Math.floor(Date.now() / 1000) - unix);
+  if (diffSeconds < 60) return "Just now";
+  if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m ago`;
+  if (diffSeconds < 86400) return `${Math.floor(diffSeconds / 3600)}h ago`;
+  return `${Math.floor(diffSeconds / 86400)}d ago`;
+}
+
+function formatRelativeTimeWithTitle(unix) {
+  if (!unix) return '<span class="text-muted">Never</span>';
+  return `<span title="${escapeHtml(formatTime(unix))}">${escapeHtml(formatRelativeTimeShort(unix))}</span>`;
+}
+
 function formatExpiry(expiresAt) {
   const now = Math.floor(Date.now() / 1000);
   const diff = expiresAt - now;
@@ -138,12 +152,12 @@ logoutBtn.addEventListener("click", async () => {
 // --- Tabs ---
 
 const tabBtns = document.querySelectorAll(".admin-tab[data-tab]");
-const childTabs = ["settings", "security", "roles", "bulletins", "weather", "team-shortcuts", "invites", "users", "chat", "pastes", "files", "survey-tool-settings", "vaults", "calendar-tool-settings", "wiki-tool-settings"];
+const childTabs = ["settings", "security", "roles", "bulletins", "weather", "team-shortcuts", "invites", "users", "chat", "pastes", "files", "survey-tool-settings", "vaults", "calendar-tool-settings", "wiki-tool-settings", "threat-tool-settings"];
 const adminTabGroups = {
   server: ["settings", "security", "roles"],
   homepage: ["weather", "bulletins", "team-shortcuts"],
   "users-admin": ["users", "invites"],
-  tools: ["calendar-tool-settings", "wiki-tool-settings", "chat", "pastes", "files", "survey-tool-settings", "vaults"],
+  tools: ["calendar-tool-settings", "wiki-tool-settings", "chat", "pastes", "files", "survey-tool-settings", "vaults", "threat-tool-settings"],
 };
 const adminSubtabLabels = {
   settings: "SMTP",
@@ -161,6 +175,7 @@ const adminSubtabLabels = {
   files: "RedSecShare",
   "survey-tool-settings": "RedSecSurvey",
   vaults: "RedSecVault",
+  "threat-tool-settings": "RedSecThreat",
 };
 let activeAdminParentTab = "server";
 let activeAdminChildTab = "settings";
@@ -237,6 +252,12 @@ function updateAdminVisibleTabs() {
   }
   if (visibleTabs.has("bulletins")) {
     loadBulletinsAdmin();
+  }
+  if (visibleTabs.has("threat-tool-settings")) {
+    loadThreatAdminStats();
+    loadThreatAdminFeeds();
+    loadThreatAdminTemplates();
+    loadThreatAdminSettings();
   }
 }
 
@@ -995,8 +1016,16 @@ saveSmtpBtn.addEventListener("click", async () => {
 });
 
 testSmtpBtn.addEventListener("click", async () => {
-  const to = prompt("Enter email address to send test to:");
-  if (!to) return;
+  const toInput = document.getElementById("test-smtp-to");
+  const to = toInput ? toInput.value.trim() : "";
+  if (!to) {
+    if (smtpResult) {
+      smtpResult.textContent = "Enter a recipient email address above.";
+      smtpResult.className = "text-sm text-warning";
+      smtpResult.classList.remove("hidden");
+    }
+    return;
+  }
 
   testSmtpBtn.disabled = true;
   smtpResult.classList.add("hidden");
@@ -1127,8 +1156,7 @@ async function loadChatConversations(page = 1) {
 
     for (const conv of data.conversations) {
       const tr = document.createElement("tr");
-      tr.className = "border-b";
-      tr.style.borderColor = "var(--border)";
+      tr.className = "border-b border-[var(--border)]";
       tr.innerHTML = `
         <td class="py-2 px-3 font-mono text-xs">${escapeHtml(conv.id.substring(0, 8))}...</td>
         <td class="py-2 px-3">${escapeHtml(conv.name || "-")}</td>
@@ -1938,7 +1966,7 @@ async function loadRoles() {
               <div class="text-xs text-muted mt-1">${escapeHtml(role.description || "No description")}</div>
               <div class="mt-2">${permHtml || '<span class="text-xs text-muted">No permissions</span>'}</div>
             </div>
-            ${role.isSystem ? "" : `<button class="btn-danger text-xs role-delete-btn" data-id="${role.id}">Delete</button>`}
+            ${role.isSystem ? "" : `<button class="btn-secondary text-xs role-edit-btn" data-id="${role.id}" data-index="${cachedRoles.indexOf(role)}">Edit</button> <button class="btn-danger text-xs role-delete-btn" data-id="${role.id}">Delete</button>`}
           </div>
         </div>`;
       }).join("")
@@ -1947,12 +1975,33 @@ async function loadRoles() {
     list.querySelectorAll(".role-delete-btn").forEach((button) => {
       button.addEventListener("click", async () => {
         if (!await showConfirmModal({ title: "Delete Role", message: "Delete this role? Users with this role will lose its permissions.", confirmLabel: "Delete", danger: true })) return;
-        await api(`/api/roles/${button.dataset.id}`, { method: "DELETE" });
+        await api("/api/roles/" + button.dataset.id, { method: "DELETE" });
         loadRoles();
         loadUsers();
       });
     });
+
+    list.querySelectorAll(".role-edit-btn").forEach((button) => {
+      button.addEventListener("click", () => {
+        const role = cachedRoles[parseInt(button.dataset.index, 10)];
+        if (role) populateRoleForm(role);
+      });
+    });
   } catch {}
+}
+
+let editingRoleId = null;
+
+function populateRoleForm(role) {
+  document.getElementById("role-name").value = role ? role.name : "";
+  document.getElementById("role-description").value = role ? (role.description || "") : "";
+  const btn = document.getElementById("create-role-btn");
+  if (btn) btn.textContent = role ? "Update Role" : "Save Role";
+  editingRoleId = role ? role.id : null;
+  // Check the role's permissions in the grid
+  document.querySelectorAll('#role-permissions-grid input[type="checkbox"]').forEach((input) => {
+    input.checked = role ? (role.permissions || []).includes(input.value) : false;
+  });
 }
 
 document.getElementById("create-role-btn")?.addEventListener("click", async () => {
@@ -1962,13 +2011,23 @@ document.getElementById("create-role-btn")?.addEventListener("click", async () =
   const result = document.getElementById("role-result");
   result.classList.add("hidden");
   try {
-    await api("/api/roles", {
-      method: "POST",
-      body: JSON.stringify({ name, description, permissions }),
-    });
+    if (editingRoleId) {
+      await api("/api/roles/" + editingRoleId, {
+        method: "PUT",
+        body: JSON.stringify({ name, description, permissions }),
+      });
+    } else {
+      await api("/api/roles", {
+        method: "POST",
+        body: JSON.stringify({ name, description, permissions }),
+      });
+    }
     document.getElementById("role-name").value = "";
     document.getElementById("role-description").value = "";
     document.querySelectorAll('#role-permissions-grid input[type="checkbox"]').forEach((input) => { input.checked = false; });
+    editingRoleId = null;
+    const btn = document.getElementById("create-role-btn");
+    if (btn) btn.textContent = "Save Role";
     result.textContent = "Role saved.";
     result.className = "text-sm text-accent";
     await loadRoles();
@@ -2094,6 +2153,579 @@ document.getElementById("bulletin-purge-all-btn")?.addEventListener("click", asy
 });
 
 document.getElementById("bulletin-preview-refresh")?.addEventListener("click", loadBulletinsAdmin);
+
+// ============================================================
+// REDSECTHREAT
+// ============================================================
+
+const THREAT_FEED_TYPE_ORDER = { rss: 0, website: 1, api: 2, onion: 3 };
+const THREAT_FEED_TYPE_LABELS = { rss: "RSS / Atom", website: "Website", api: "REST API", onion: "Onion (Tor)" };
+
+function threatFeedTypeBadge(type) {
+  const label = THREAT_FEED_TYPE_LABELS[type] || type || "Unknown";
+  const colorClass = {
+    rss: "badge-green",
+    website: "badge-blue",
+    api: "badge-purple",
+    onion: "badge-gray",
+  }[type] || "badge-gray";
+  return '<span class="badge ' + colorClass + '">' + escapeHtml(label) + '</span>';
+}
+
+async function threatAdminJson(path, options) {
+  const response = await api(path, options);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || "Request failed");
+  }
+  return data;
+}
+
+async function loadThreatAdminStats() {
+  try {
+    const stats = await threatAdminJson("/api/threat/stats");
+    document.getElementById("threat-stat-feed-sources").textContent = stats.feedSources || 0;
+    document.getElementById("threat-stat-active-feeds").textContent = stats.activeFeeds || 0;
+    document.getElementById("threat-stat-total-alerts").textContent = stats.totalAlerts || 0;
+    document.getElementById("threat-stat-unresolved").textContent = stats.unresolved || 0;
+  } catch {}
+}
+
+async function loadThreatAdminFeeds() {
+  try {
+    const data = await threatAdminJson("/api/threat/feeds");
+    const tbody = document.getElementById("threat-feeds-body");
+    if (!tbody) return;
+
+    const feeds = data.feeds || [];
+    if (!feeds.length) {
+      tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-8">No feed sources configured.</td></tr>';
+      return;
+    }
+
+    // Sort by type group then name
+    const sorted = [...feeds].sort((a, b) => {
+      const ta = THREAT_FEED_TYPE_ORDER[a.feedType] ?? 9;
+      const tb = THREAT_FEED_TYPE_ORDER[b.feedType] ?? 9;
+      if (ta !== tb) return ta - tb;
+      return (a.name || "").localeCompare(b.name || "");
+    });
+
+    // Group by type
+    let currentType = "";
+    const rows = [];
+    for (const feed of sorted) {
+      const feedType = feed.feedType || "rss";
+      if (feedType !== currentType) {
+        currentType = feedType;
+        const label = THREAT_FEED_TYPE_LABELS[feedType] || feedType;
+        const isOnion = feedType === "onion";
+        rows.push(
+          '<tr class="threat-feed-group-row">' +
+            '<td colspan="8" class="text-xs font-semibold uppercase tracking-wide text-muted py-2 px-3">' +
+              threatFeedTypeBadge(feedType) +
+              (isOnion ? ' <span class="text-warning text-xs">(requires Tor proxy in General Settings)</span>' : '') +
+            '</td>' +
+          '</tr>'
+        );
+      }
+      rows.push(
+        '<tr>' +
+          '<td class="text-sm font-medium">' + escapeHtml(feed.name || feed.url) + '</td>' +
+          '<td class="text-xs">' + threatFeedTypeBadge(feedType) + '</td>' +
+          '<td><label class="custom-checkbox gap-2"><input type="checkbox" class="threat-feed-enabled-toggle" data-id="' + escapeHtml(feed.id) + '"' + (feed.enabled ? ' checked' : '') + '><span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span></label></td>' +
+          '<td><label class="custom-checkbox gap-2"><input type="checkbox" class="threat-feed-default-toggle" data-id="' + escapeHtml(feed.id) + '"' + (feed.isDefault ? ' checked' : '') + '><span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span></label></td>' +
+          '<td class="text-xs">' + (feed.fetchInterval ? Math.round(feed.fetchInterval / 60) + " min" : "-") + '</td>' +
+          '<td class="text-xs">' + formatRelativeTimeWithTitle(feed.lastFetchedAt || feed.lastChecked) + '</td>' +
+          '<td class="text-xs text-muted" title="' + escapeHtml(feed.url || "") + '">' + escapeHtml((feed.url || "").length > 40 ? feed.url.substring(0, 40) + "..." : feed.url) + '</td>' +
+          '<td>' +
+            '<button class="threat-feed-edit-btn text-accent text-xs hover:underline" data-id="' + escapeHtml(feed.id) + '">Edit</button> ' +
+            '<button class="threat-feed-delete-btn text-error text-xs hover:underline" data-id="' + escapeHtml(feed.id) + '">Delete</button>' +
+          '</td>' +
+        '</tr>'
+      );
+    }
+    tbody.innerHTML = rows.join("");
+  } catch {}
+}
+
+async function loadThreatAdminTemplates() {
+  try {
+    const data = await threatAdminJson("/api/threat/templates");
+    const tbody = document.getElementById("threat-templates-body");
+    if (!tbody) return;
+    const templates = data.templates || [];
+    if (!templates.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-8">No API templates configured.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = templates.map((template) => {
+      const endpoint = template.configuration?.endpoint || "-";
+      const typeBadge = template.isSystem
+        ? '<span class="badge badge-purple">System</span>'
+        : '<span class="badge badge-blue">Custom</span>';
+      return (
+        '<tr>' +
+          '<td class="text-sm font-medium">' + escapeHtml(template.name || "Untitled template") + '</td>' +
+          '<td class="text-xs text-muted" title="' + escapeHtml(endpoint) + '">' + escapeHtml(endpoint.length > 56 ? endpoint.slice(0, 56) + "..." : endpoint) + '</td>' +
+          '<td>' + typeBadge + '</td>' +
+          '<td>' + (template.enabled ? '<span class="badge badge-green">Enabled</span>' : '<span class="badge badge-gray">Disabled</span>') + '</td>' +
+          '<td>' +
+            '<button class="threat-template-test-btn text-accent text-xs hover:underline" data-id="' + escapeHtml(template.id) + '">Test</button> ' +
+            '<button class="threat-template-edit-btn text-accent text-xs hover:underline" data-id="' + escapeHtml(template.id) + '">Edit</button> ' +
+            (template.isSystem
+              ? '<button class="text-muted text-xs" type="button" disabled>Delete</button>'
+              : '<button class="threat-template-delete-btn text-error text-xs hover:underline" data-id="' + escapeHtml(template.id) + '">Delete</button>') +
+          '</td>' +
+        '</tr>'
+      );
+    }).join("");
+  } catch (error) {
+    const tbody = document.getElementById("threat-templates-body");
+    if (tbody) {
+      tbody.innerHTML = '<tr><td colspan="5" class="text-center text-error py-8">' + escapeHtml(error.message || "Failed to load templates") + '</td></tr>';
+    }
+  }
+}
+
+function applyThreatNotificationPolicy(policy = {}) {
+  const email = policy.email || {};
+  const webhook = policy.webhook || {};
+  const discord = policy.discord || {};
+
+  const emailEnabled = document.getElementById("threat-notify-email-enabled");
+  const emailFrom = document.getElementById("threat-notify-email-from");
+  const webhookEnabled = document.getElementById("threat-notify-webhook-enabled");
+  const discordEnabled = document.getElementById("threat-notify-discord-enabled");
+  const discordUsername = document.getElementById("threat-notify-discord-username");
+  const discordAvatar = document.getElementById("threat-notify-discord-avatar");
+
+  if (emailEnabled) emailEnabled.checked = email.enabled !== false;
+  if (emailFrom) emailFrom.value = email.fromOverride || "";
+  if (webhookEnabled) webhookEnabled.checked = webhook.enabled !== false;
+  if (discordEnabled) discordEnabled.checked = discord.enabled !== false;
+  if (discordUsername) discordUsername.value = discord.username || "RedSecThreat";
+  if (discordAvatar) discordAvatar.value = discord.avatarUrl || "";
+}
+
+function readThreatNotificationPolicy() {
+  return {
+    email: {
+      enabled: document.getElementById("threat-notify-email-enabled")?.checked ?? true,
+      fromOverride: document.getElementById("threat-notify-email-from")?.value.trim() || "",
+    },
+    webhook: {
+      enabled: document.getElementById("threat-notify-webhook-enabled")?.checked ?? true,
+    },
+    discord: {
+      enabled: document.getElementById("threat-notify-discord-enabled")?.checked ?? true,
+      username: document.getElementById("threat-notify-discord-username")?.value.trim() || "RedSecThreat",
+      avatarUrl: document.getElementById("threat-notify-discord-avatar")?.value.trim() || "",
+    },
+  };
+}
+
+async function loadThreatAdminSettings() {
+  try {
+    const settings = await threatAdminJson("/api/threat/settings");
+    const autoFetch = document.getElementById("threat-auto-fetch");
+    const fetchInterval = document.getElementById("threat-fetch-interval");
+    const retentionDays = document.getElementById("threat-retention-days");
+    const torProxy = document.getElementById("threat-tor-proxy");
+    if (autoFetch) autoFetch.checked = !!settings.autoFetch;
+    if (fetchInterval) fetchInterval.value = settings.fetchInterval || 30;
+    if (retentionDays) retentionDays.value = settings.alertRetentionDays || 14;
+    if (torProxy) torProxy.value = settings.torProxyUrl || "";
+    applyThreatNotificationPolicy(settings.notificationChannels || {});
+  } catch {}
+}
+
+async function saveThreatSettings() {
+  return saveThreatSettingsSection({
+    saveButtonId: "threat-settings-save-btn",
+    resultId: "threat-settings-result",
+    successMessage: "Threat settings saved.",
+  });
+}
+
+async function saveThreatNotificationSettings() {
+  return saveThreatSettingsSection({
+    saveButtonId: "threat-notification-settings-save-btn",
+    resultId: "threat-notification-settings-result",
+    successMessage: "Notification policy saved.",
+  });
+}
+
+async function saveThreatSettingsSection({
+  saveButtonId,
+  resultId,
+  successMessage,
+}) {
+  const saveBtn = document.getElementById(saveButtonId);
+  const resultEl = document.getElementById(resultId);
+  if (!saveBtn) return;
+  saveBtn.disabled = true;
+  resultEl?.classList.add("hidden");
+
+  try {
+    const res = await threatAdminJson("/api/threat/settings", {
+      method: "PUT",
+      body: JSON.stringify({
+        autoFetch: document.getElementById("threat-auto-fetch")?.checked || false,
+        fetchInterval: parseInt(document.getElementById("threat-fetch-interval")?.value, 10) || 30,
+        alertRetentionDays: parseInt(document.getElementById("threat-retention-days")?.value, 10) || 14,
+        torProxyUrl: document.getElementById("threat-tor-proxy")?.value || "",
+        notificationChannels: readThreatNotificationPolicy(),
+      }),
+    });
+    if (res.success) {
+      if (resultEl) {
+        resultEl.textContent = successMessage;
+        resultEl.className = "text-sm text-accent";
+      }
+      applyThreatNotificationPolicy(res.notificationChannels || {});
+    } else {
+      if (resultEl) {
+        resultEl.textContent = res.error || "Failed to save threat settings.";
+        resultEl.className = "text-sm text-error";
+      }
+    }
+  } catch {
+    if (resultEl) {
+      resultEl.textContent = "Network error";
+      resultEl.className = "text-sm text-error";
+    }
+  } finally {
+    resultEl?.classList.remove("hidden");
+    saveBtn.disabled = false;
+  }
+}
+
+function renderThreatForceRefreshResults(results) {
+  const container = document.getElementById("threat-force-refresh-results");
+  if (!container) return;
+  if (!Array.isArray(results) || !results.length) {
+    container.classList.add("hidden");
+    container.innerHTML = "";
+    return;
+  }
+
+  container.classList.remove("hidden");
+  container.innerHTML = '<div class="rounded-lg border border-primary/10 p-4 bg-black/10">' +
+    '<div class="font-medium mb-2">Last Force Refresh Results</div>' +
+    '<div class="space-y-1">' +
+      results.map((result) => {
+        const outcome = result.error
+          ? '<span class="text-error">Error: ' + escapeHtml(result.error) + "</span>"
+          : result.contentChanged
+            ? '<span class="text-accent">Content changed</span>'
+            : result.unchanged
+              ? '<span class="text-muted">No change</span>'
+              : '<span class="text-accent">Checked</span>';
+        return '<div class="flex flex-wrap items-center justify-between gap-3 border-t border-primary/10 py-2 first:border-t-0 first:pt-0">' +
+          '<div><span class="font-medium">' + escapeHtml(result.name || "Unknown feed") + '</span></div>' +
+          '<div class="text-xs text-muted">Alerts: ' + escapeHtml(result.alerts ?? 0) + '</div>' +
+          '<div class="text-xs">' + outcome + '</div>' +
+        '</div>';
+      }).join("") +
+    "</div>" +
+  "</div>";
+}
+
+function openThreatTemplateModal(template) {
+  const modal = document.getElementById("threat-template-modal");
+  const heading = document.getElementById("threat-template-modal-heading");
+  const idField = document.getElementById("threat-template-edit-id");
+  const nameField = document.getElementById("threat-template-name");
+  const descriptionField = document.getElementById("threat-template-description");
+  const configField = document.getElementById("threat-template-config");
+  const enabledField = document.getElementById("threat-template-enabled");
+  const resultEl = document.getElementById("threat-template-result");
+  if (!modal) return;
+
+  if (heading) heading.textContent = template ? "Edit API Template" : "Add API Template";
+  if (idField) idField.value = template?.id || "";
+  if (nameField) nameField.value = template?.name || "";
+  if (descriptionField) descriptionField.value = template?.description || "";
+  if (configField) configField.value = JSON.stringify(template?.configuration || {}, null, 2);
+  if (enabledField) enabledField.checked = template?.enabled !== false;
+  if (resultEl) resultEl.classList.add("hidden");
+  modal.classList.remove("hidden");
+}
+
+function closeThreatTemplateModal() {
+  document.getElementById("threat-template-modal")?.classList.add("hidden");
+}
+
+function closeThreatTemplateTestModal() {
+  document.getElementById("threat-template-test-modal")?.classList.add("hidden");
+}
+
+async function runThreatTemplateTest(templateId) {
+  const modal = document.getElementById("threat-template-test-modal");
+  const content = document.getElementById("threat-template-test-content");
+  if (!modal || !content) return;
+  modal.classList.remove("hidden");
+  content.innerHTML = '<p class="text-sm text-muted">Running template test...</p>';
+
+  try {
+    const result = await threatAdminJson("/api/threat/templates/" + templateId + "/test", { method: "POST" });
+    content.innerHTML = '<pre class="threat-template-test-pre">' + escapeHtml(JSON.stringify(result.result || result, null, 2)) + '</pre>';
+  } catch (error) {
+    content.innerHTML = '<p class="text-sm text-error">' + escapeHtml(error.message || "Template test failed") + "</p>";
+  }
+}
+
+// --- Threat Feed Modal ---
+function openThreatFeedModal(feed) {
+  const modal = document.getElementById("threat-feed-modal");
+  const heading = document.getElementById("threat-feed-modal-heading");
+  const idField = document.getElementById("threat-feed-edit-id");
+  const nameField = document.getElementById("threat-feed-name");
+  const urlField = document.getElementById("threat-feed-url");
+  const typeField = document.getElementById("threat-feed-type");
+  const intervalField = document.getElementById("threat-feed-interval");
+  const enabledField = document.getElementById("threat-feed-enabled");
+  const defaultField = document.getElementById("threat-feed-default");
+  const warning = document.getElementById("threat-feed-onion-warning");
+  const resultEl = document.getElementById("threat-feed-result");
+  if (!modal) return;
+
+  if (feed) {
+    heading.textContent = "Edit Feed Source";
+    idField.value = feed.id;
+    nameField.value = feed.name || "";
+    urlField.value = feed.url || "";
+    typeField.value = feed.feedType || "rss";
+    intervalField.value = feed.fetchInterval || 3600;
+    enabledField.checked = feed.enabled !== false;
+    defaultField.checked = !!feed.isDefault;
+  } else {
+    heading.textContent = "Add Feed Source";
+    idField.value = "";
+    nameField.value = "";
+    urlField.value = "";
+    typeField.value = "rss";
+    intervalField.value = 3600;
+    enabledField.checked = true;
+    defaultField.checked = false;
+  }
+  warning.classList.toggle("hidden", typeField.value !== "onion");
+  resultEl.classList.add("hidden");
+  modal.classList.remove("hidden");
+}
+
+function closeThreatFeedModal() {
+  document.getElementById("threat-feed-modal")?.classList.add("hidden");
+}
+
+document.getElementById("threat-feed-type")?.addEventListener("change", (e) => {
+  const warning = document.getElementById("threat-feed-onion-warning");
+  if (warning) warning.classList.toggle("hidden", e.target.value !== "onion");
+});
+
+document.getElementById("threat-feed-modal-close")?.addEventListener("click", closeThreatFeedModal);
+
+document.getElementById("threat-feed-save-btn")?.addEventListener("click", async () => {
+  const idField = document.getElementById("threat-feed-edit-id");
+  const resultEl = document.getElementById("threat-feed-result");
+  const saveBtn = document.getElementById("threat-feed-save-btn");
+  const body = {
+    name: document.getElementById("threat-feed-name")?.value.trim() || "",
+    url: document.getElementById("threat-feed-url")?.value.trim(),
+    feedType: document.getElementById("threat-feed-type")?.value,
+    fetchInterval: parseInt(document.getElementById("threat-feed-interval")?.value, 10) || 3600,
+    enabled: document.getElementById("threat-feed-enabled")?.checked ?? true,
+    isDefault: document.getElementById("threat-feed-default")?.checked ?? false,
+  };
+  if (!body.url) {
+    resultEl.textContent = "URL is required.";
+    resultEl.className = "text-sm text-error";
+    resultEl.classList.remove("hidden");
+    return;
+  }
+  saveBtn.disabled = true;
+  resultEl.classList.add("hidden");
+  try {
+    const editId = idField.value;
+    await (editId
+      ? threatAdminJson("/api/threat/feeds/" + editId, { method: "PUT", body: JSON.stringify(body) })
+      : threatAdminJson("/api/threat/feeds", { method: "POST", body: JSON.stringify(body) }));
+    closeThreatFeedModal();
+    loadThreatAdminStats();
+    loadThreatAdminFeeds();
+  } catch (error) {
+    resultEl.textContent = error.message || "Network error";
+    resultEl.className = "text-sm text-error";
+    resultEl.classList.remove("hidden");
+  } finally {
+    saveBtn.disabled = false;
+  }
+});
+
+document.getElementById("threat-add-feed-btn")?.addEventListener("click", () => openThreatFeedModal(null));
+document.getElementById("threat-template-add-btn")?.addEventListener("click", () => openThreatTemplateModal(null));
+document.getElementById("threat-template-refresh-btn")?.addEventListener("click", loadThreatAdminTemplates);
+document.getElementById("threat-template-modal-close")?.addEventListener("click", closeThreatTemplateModal);
+document.getElementById("threat-template-test-modal-close")?.addEventListener("click", closeThreatTemplateTestModal);
+
+document.getElementById("threat-template-save-btn")?.addEventListener("click", async () => {
+  const idField = document.getElementById("threat-template-edit-id");
+  const resultEl = document.getElementById("threat-template-result");
+  const saveBtn = document.getElementById("threat-template-save-btn");
+  let configuration = {};
+
+  try {
+    configuration = JSON.parse(document.getElementById("threat-template-config")?.value || "{}");
+  } catch (error) {
+    if (resultEl) {
+      resultEl.textContent = "Invalid JSON: " + error.message;
+      resultEl.className = "text-sm text-error";
+      resultEl.classList.remove("hidden");
+    }
+    return;
+  }
+
+  const body = {
+    name: document.getElementById("threat-template-name")?.value.trim() || "",
+    description: document.getElementById("threat-template-description")?.value.trim() || "",
+    configuration,
+    enabled: document.getElementById("threat-template-enabled")?.checked ?? true,
+  };
+
+  if (!body.name) {
+    if (resultEl) {
+      resultEl.textContent = "Template name is required.";
+      resultEl.className = "text-sm text-error";
+      resultEl.classList.remove("hidden");
+    }
+    return;
+  }
+
+  saveBtn.disabled = true;
+  if (resultEl) resultEl.classList.add("hidden");
+  try {
+    const editId = idField?.value;
+    await (editId
+      ? threatAdminJson("/api/threat/templates/" + editId, { method: "PUT", body: JSON.stringify(body) })
+      : threatAdminJson("/api/threat/templates", { method: "POST", body: JSON.stringify(body) }));
+    closeThreatTemplateModal();
+    loadThreatAdminTemplates();
+  } catch (error) {
+    if (resultEl) {
+      resultEl.textContent = error.message || "Failed to save template.";
+      resultEl.className = "text-sm text-error";
+      resultEl.classList.remove("hidden");
+    }
+  } finally {
+    saveBtn.disabled = false;
+  }
+});
+
+// Threat feed toggle handlers (event delegation)
+document.getElementById("threat-feeds-body")?.addEventListener("change", async (e) => {
+  const enabledToggle = e.target.closest(".threat-feed-enabled-toggle");
+  if (enabledToggle) {
+    try {
+      await threatAdminJson("/api/threat/feeds/" + enabledToggle.dataset.id, {
+        method: "PUT",
+        body: JSON.stringify({ enabled: enabledToggle.checked }),
+      });
+    } catch {
+      enabledToggle.checked = !enabledToggle.checked;
+    }
+    return;
+  }
+  const defaultToggle = e.target.closest(".threat-feed-default-toggle");
+  if (defaultToggle) {
+    try {
+      await threatAdminJson("/api/threat/feeds/" + defaultToggle.dataset.id, {
+        method: "PUT",
+        body: JSON.stringify({ isDefault: defaultToggle.checked }),
+      });
+    } catch {
+      defaultToggle.checked = !defaultToggle.checked;
+    }
+  }
+});
+
+// Threat feed edit/delete handlers (event delegation)
+document.getElementById("threat-feeds-body")?.addEventListener("click", async (e) => {
+  const editBtn = e.target.closest(".threat-feed-edit-btn");
+  if (editBtn) {
+    const data = await threatAdminJson("/api/threat/feeds");
+    const feed = (data.feeds || []).find((f) => f.id === editBtn.dataset.id);
+    if (feed) openThreatFeedModal(feed);
+    return;
+  }
+  const btn = e.target.closest(".threat-feed-delete-btn");
+  if (!btn) return;
+  if (!await showConfirmModal({ title: "Delete Feed", message: "Remove this threat feed source? This will also delete related alerts.", confirmLabel: "Delete", danger: true })) return;
+  try {
+    await threatAdminJson("/api/threat/feeds/" + btn.dataset.id, { method: "DELETE" });
+    loadThreatAdminStats();
+    loadThreatAdminFeeds();
+  } catch {}
+});
+
+document.getElementById("threat-templates-body")?.addEventListener("click", async (e) => {
+  const editBtn = e.target.closest(".threat-template-edit-btn");
+  if (editBtn) {
+    const data = await threatAdminJson("/api/threat/templates");
+    const template = (data.templates || []).find((item) => item.id === editBtn.dataset.id);
+    if (template) openThreatTemplateModal(template);
+    return;
+  }
+
+  const testBtn = e.target.closest(".threat-template-test-btn");
+  if (testBtn) {
+    await runThreatTemplateTest(testBtn.dataset.id);
+    return;
+  }
+
+  const deleteBtn = e.target.closest(".threat-template-delete-btn");
+  if (!deleteBtn) return;
+  if (!await showConfirmModal({ title: "Delete API Template", message: "Remove this API template from RedSecThreat?", confirmLabel: "Delete", danger: true })) return;
+  try {
+    await threatAdminJson("/api/threat/templates/" + deleteBtn.dataset.id, { method: "DELETE" });
+    loadThreatAdminTemplates();
+  } catch (error) {
+    await showAlertModal({ title: "Template Delete Failed", message: error.message || "Failed to delete template." });
+  }
+});
+
+document.getElementById("threat-settings-save-btn")?.addEventListener("click", saveThreatSettings);
+document.getElementById("threat-notification-settings-save-btn")?.addEventListener("click", saveThreatNotificationSettings);
+
+document.getElementById("threat-refresh-btn")?.addEventListener("click", () => {
+  loadThreatAdminStats();
+  loadThreatAdminFeeds();
+  loadThreatAdminTemplates();
+  loadThreatAdminSettings();
+});
+
+// Force refresh all feeds
+document.getElementById("threat-force-refresh-btn")?.addEventListener("click", async () => {
+  const btn = document.getElementById("threat-force-refresh-btn");
+  if (!btn) return;
+  const originalText = btn.textContent;
+  btn.textContent = "Fetching...";
+  btn.disabled = true;
+  try {
+    const data = await threatAdminJson("/api/threat/feeds/refresh-all", { method: "POST" });
+    btn.textContent = "Fetched " + (data.checked || 0) + " feeds";
+    renderThreatForceRefreshResults(data.results || []);
+    setTimeout(() => { btn.textContent = originalText; }, 3000);
+    loadThreatAdminStats();
+    loadThreatAdminFeeds();
+    loadThreatAdminTemplates();
+  } catch (error) {
+    btn.textContent = error.message || "Network error";
+    setTimeout(() => { btn.textContent = originalText; }, 3000);
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 // --- Init ---
 checkAuth();

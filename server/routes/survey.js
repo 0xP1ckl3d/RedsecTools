@@ -118,7 +118,7 @@ function mapSurvey(survey) {
 // --- Survey CRUD ---
 
 router.get("/survey/list", requireUser, attachUserAccess, (req, res) => {
-  const surveys = req.access.permissionSet.has("survey.manage_any")
+  const surveys = (req.access.permissionSet.has("survey.manage_any") || req.access.permissionSet.has("survey.view_results_any"))
     ? listAllSurveys()
     : listSurveysByOwner(req.user.id);
   res.json({ surveys: surveys.map(mapSurvey) });

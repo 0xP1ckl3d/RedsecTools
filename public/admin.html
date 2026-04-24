@@ -411,9 +411,12 @@
                 <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
                 <span class="text-sm">Use TLS (port 465)</span>
               </label>
-              <div class="flex gap-3">
+              <div class="flex gap-3 items-end flex-wrap">
                 <button type="button" id="save-smtp-btn" class="btn-primary">Save Configuration</button>
-                <button type="button" id="test-smtp-btn" class="btn-secondary">Send Test Email</button>
+                <div class="flex gap-2 items-center">
+                  <input type="email" id="test-smtp-to" placeholder="Test recipient email" class="input-field text-sm" style="max-width:240px">
+                  <button type="button" id="test-smtp-btn" class="btn-secondary">Send Test</button>
+                </div>
               </div>
               <p id="smtp-result" class="text-sm hidden"></p>
             </div>
@@ -814,7 +817,266 @@
           </div>
         </div>
       </div>
-    </div>
+
+      <!-- Threat Tool Settings Tab -->
+      <div id="threat-tool-settings-tab" class="hidden admin-page-stack">
+        <div class="admin-stat-grid admin-stat-grid-4">
+          <div class="stat-card"><div class="stat-value" id="threat-stat-feed-sources">-</div><div class="stat-label">Feed Sources</div></div>
+          <div class="stat-card"><div class="stat-value" id="threat-stat-active-feeds">-</div><div class="stat-label">Active Feeds</div></div>
+          <div class="stat-card"><div class="stat-value" id="threat-stat-total-alerts">-</div><div class="stat-label">Total Alerts</div></div>
+          <div class="stat-card"><div class="stat-value" id="threat-stat-unresolved">-</div><div class="stat-label">Unresolved</div></div>
+        </div>
+        <div class="card admin-section-card">
+          <div class="admin-card-header">
+            <div>
+              <p class="admin-card-kicker">Tool Settings</p>
+              <h2 class="admin-card-title">RedSecThreat Feed Sources</h2>
+              <p class="admin-card-copy">Manage threat intelligence feed sources grouped by type, toggle activation, and set defaults. Onion / dark web feeds require a Tor or SOCKS proxy.</p>
+            </div>
+            <div class="admin-card-actions">
+              <button type="button" id="threat-refresh-btn" class="btn-secondary text-sm">Refresh</button>
+              <button type="button" id="threat-force-refresh-btn" class="btn-secondary text-sm">Force Fetch All Feeds</button>
+              <button type="button" id="threat-add-feed-btn" class="btn-primary text-sm">Add Feed</button>
+            </div>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Type</th>
+                  <th>Enabled</th>
+                  <th>Default</th>
+                  <th>Feed Cadence</th>
+                  <th>Last Fetched</th>
+                  <th>URL</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="threat-feeds-body">
+                <tr><td colspan="8" class="text-center text-muted py-8">Loading feeds...</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div id="threat-force-refresh-results" class="mt-4 text-sm text-muted hidden"></div>
+        </div>
+        <div class="card admin-section-card">
+          <div class="admin-card-header">
+            <div>
+              <p class="admin-card-kicker">Tool Settings</p>
+              <h2 class="admin-card-title">RedSecThreat API Templates</h2>
+              <p class="admin-card-copy">Manage API feed templates from the admin panel. Template testing is constrained in a scrollable modal so large responses stay readable.</p>
+            </div>
+            <div class="admin-card-actions">
+              <button type="button" id="threat-template-refresh-btn" class="btn-secondary text-sm">Refresh</button>
+              <button type="button" id="threat-template-add-btn" class="btn-primary text-sm">Add Template</button>
+            </div>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Endpoint</th>
+                  <th>Type</th>
+                  <th>Enabled</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="threat-templates-body">
+                <tr><td colspan="5" class="text-center text-muted py-8">Loading templates...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card admin-section-card">
+          <div class="admin-card-header">
+            <div>
+              <p class="admin-card-kicker">Tool Settings</p>
+              <h2 class="admin-card-title">RedSecThreat General Settings</h2>
+              <p class="admin-card-copy">Configure the scheduler loop, alert retention, and proxy routing. Per-feed cadence is set in the table above.</p>
+            </div>
+          </div>
+          <div class="space-y-4">
+            <label class="custom-checkbox gap-2">
+              <input type="checkbox" id="threat-auto-fetch">
+              <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+              <span class="text-sm">Enable automatic checks for due feeds</span>
+            </label>
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-medium mb-1.5" for="threat-fetch-interval">Check for Due Feeds Every (minutes)</label>
+                <input type="number" id="threat-fetch-interval" min="1" max="1440" class="input-field" placeholder="30">
+              </div>
+              <div>
+                <label class="block text-sm font-medium mb-1.5" for="threat-retention-days">Alert Retention (days)</label>
+                <input type="number" id="threat-retention-days" min="1" max="365" class="input-field" placeholder="14">
+              </div>
+            </div>
+            <p class="text-xs text-muted">Each feed source has its own cadence above, such as every 60 minutes. This scheduler value only controls how often RedSecThreat wakes up to check which feeds are due.</p>
+            <div>
+              <label class="block text-sm font-medium mb-1.5" for="threat-tor-proxy">Tor / SOCKS Proxy URL</label>
+              <input type="text" id="threat-tor-proxy" class="input-field" placeholder="socks5h://127.0.0.1:9050">
+              <p class="text-xs text-muted mt-1">SOCKS5 proxy for fetching .onion (dark web) threat feeds. Required for onion feeds to work unless your Docker stack includes a Tor sidecar. See README for the recommended setup.</p>
+            </div>
+            <div class="flex items-center gap-3">
+              <button type="button" id="threat-settings-save-btn" class="btn-primary">Save Threat Settings</button>
+              <p id="threat-settings-result" class="text-sm hidden"></p>
+            </div>
+          </div>
+        </div>
+        <div class="card admin-section-card">
+          <div class="admin-card-header">
+            <div>
+              <p class="admin-card-kicker">Tool Settings</p>
+              <h2 class="admin-card-title">RedSecThreat Notification Policy</h2>
+              <p class="admin-card-copy">Admins control which notification types are allowed and the shared delivery behavior. Users only opt in and configure their own destinations.</p>
+            </div>
+          </div>
+          <div class="space-y-4">
+            <div class="grid gap-4 lg:grid-cols-3">
+              <div class="rounded-lg border border-primary/10 p-4 space-y-3">
+                <label class="custom-checkbox gap-2">
+                  <input type="checkbox" id="threat-notify-email-enabled">
+                  <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+                  <span class="text-sm">Allow email notifications</span>
+                </label>
+                <div>
+                  <label class="block text-sm font-medium mb-1.5" for="threat-notify-email-from">Optional From Email Override</label>
+                  <input type="email" id="threat-notify-email-from" class="input-field" placeholder="alerts@redsec.local">
+                  <p class="text-xs text-muted mt-1">If your SMTP provider allows a custom sender, RedSecThreat will use this address instead of the default SMTP from address.</p>
+                </div>
+              </div>
+              <div class="rounded-lg border border-primary/10 p-4 space-y-3">
+                <label class="custom-checkbox gap-2">
+                  <input type="checkbox" id="threat-notify-webhook-enabled">
+                  <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+                  <span class="text-sm">Allow generic webhooks</span>
+                </label>
+                <p class="text-xs text-muted">Users can supply their own webhook destinations when this channel is enabled.</p>
+              </div>
+              <div class="rounded-lg border border-primary/10 p-4 space-y-3">
+                <label class="custom-checkbox gap-2">
+                  <input type="checkbox" id="threat-notify-discord-enabled">
+                  <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+                  <span class="text-sm">Allow Discord webhooks</span>
+                </label>
+                <div>
+                  <label class="block text-sm font-medium mb-1.5" for="threat-notify-discord-username">Discord Sender Name</label>
+                  <input type="text" id="threat-notify-discord-username" class="input-field" placeholder="RedSecThreat">
+                </div>
+                <div>
+                  <label class="block text-sm font-medium mb-1.5" for="threat-notify-discord-avatar">Discord Avatar URL</label>
+                  <input type="url" id="threat-notify-discord-avatar" class="input-field" placeholder="https://example.com/redsecthreat.png">
+                </div>
+              </div>
+            </div>
+            <p class="text-xs text-muted">Email notifications always deliver to the user’s account email. Discord and webhook destinations are configured per user.</p>
+            <div class="flex items-center gap-3">
+              <button type="button" id="threat-notification-settings-save-btn" class="btn-primary">Save Notification Settings</button>
+              <p id="threat-notification-settings-result" class="text-sm hidden"></p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Threat Feed Edit Modal -->
+      <div id="threat-feed-modal" class="modal-overlay hidden">
+        <div class="modal-card">
+          <div class="flex justify-between items-center mb-4">
+            <h3 class="text-sm font-semibold" id="threat-feed-modal-heading">Add Feed Source</h3>
+            <button type="button" id="threat-feed-modal-close" class="text-muted hover:text-primary text-lg cursor-pointer" title="Close">&times;</button>
+          </div>
+          <div class="space-y-3">
+            <input type="hidden" id="threat-feed-edit-id">
+            <div>
+              <label class="block text-sm font-medium mb-1" for="threat-feed-name">Name</label>
+              <input type="text" id="threat-feed-name" class="input-field" placeholder="Feed name">
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1" for="threat-feed-url">URL</label>
+              <input type="text" id="threat-feed-url" class="input-field" placeholder="https://example.com/feed.xml">
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-sm font-medium mb-1" for="threat-feed-type">Type</label>
+                <select id="threat-feed-type" class="input-field">
+                  <option value="rss">RSS / Atom</option>
+                  <option value="website">Website (HTML)</option>
+                  <option value="api">REST API</option>
+                  <option value="onion">Onion (Tor)</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-sm font-medium mb-1" for="threat-feed-interval">Fetch Every (seconds)</label>
+                <input type="number" id="threat-feed-interval" class="input-field" min="60" max="86400" value="3600">
+              </div>
+            </div>
+            <p id="threat-feed-onion-warning" class="text-xs text-warning hidden">Onion feeds require a Tor proxy to be configured in General Settings.</p>
+            <div class="flex items-center gap-4">
+              <label class="custom-checkbox gap-2">
+                <input type="checkbox" id="threat-feed-enabled" checked>
+                <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+                <span class="text-sm">Enabled</span>
+              </label>
+              <label class="custom-checkbox gap-2">
+                <input type="checkbox" id="threat-feed-default">
+                <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+                <span class="text-sm">Default</span>
+              </label>
+            </div>
+            <div class="flex items-center gap-3 pt-2">
+              <button type="button" id="threat-feed-save-btn" class="btn-primary">Save Feed</button>
+              <p id="threat-feed-result" class="text-sm hidden"></p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="threat-template-modal" class="modal-overlay hidden">
+        <div class="modal-card">
+          <div class="flex justify-between items-center mb-4">
+            <h3 class="text-sm font-semibold" id="threat-template-modal-heading">Add API Template</h3>
+            <button type="button" id="threat-template-modal-close" class="text-muted hover:text-primary text-lg cursor-pointer" title="Close">&times;</button>
+          </div>
+          <div class="space-y-3">
+            <input type="hidden" id="threat-template-edit-id">
+            <div>
+              <label class="block text-sm font-medium mb-1" for="threat-template-name">Name</label>
+              <input type="text" id="threat-template-name" class="input-field" placeholder="Template name">
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1" for="threat-template-description">Description</label>
+              <textarea id="threat-template-description" class="input-field" rows="2" placeholder="Describe the upstream API mapping"></textarea>
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1" for="threat-template-config">Configuration JSON</label>
+              <textarea id="threat-template-config" class="input-field font-mono text-xs" rows="12" placeholder='{"endpoint":"","method":"GET","headers":{},"field_mapping":{"content_fields":[],"metadata_fields":{}}}'></textarea>
+            </div>
+            <label class="custom-checkbox gap-2">
+              <input type="checkbox" id="threat-template-enabled" checked>
+              <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+              <span class="text-sm">Enabled</span>
+            </label>
+            <div class="flex items-center gap-3">
+              <button type="button" id="threat-template-save-btn" class="btn-primary">Save Template</button>
+              <p id="threat-template-result" class="text-sm hidden"></p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="threat-template-test-modal" class="modal-overlay hidden">
+        <div class="modal-card threat-template-test-modal">
+          <div class="flex justify-between items-center mb-4">
+            <h3 class="text-sm font-semibold">API Template Test Result</h3>
+            <button type="button" id="threat-template-test-modal-close" class="text-muted hover:text-primary text-lg cursor-pointer" title="Close">&times;</button>
+          </div>
+          <div id="threat-template-test-content" class="threat-template-test-content">
+            <p class="text-sm text-muted">Running test...</p>
+          </div>
+        </div>
+      </div>
 
     <!-- Team Shortcut Modal (Admin) -->
     <div id="team-shortcut-modal" class="modal-overlay hidden">

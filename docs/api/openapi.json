@@ -3,7 +3,7 @@
   "info": {
     "title": "RedSecTools API",
     "version": "2.0.0",
-    "description": "Repository-only OpenAPI documentation for RedSecTools. This file is not served by the live application. It documents the current HTTP API, including auth requirements for main app, guest-link, extension, and admin routes. Survey and Wiki now include their active create/manage/respond/results/documentation route groups alongside the existing Paste, Share, Vault, Chat, Calendar, Homepage, Extension, and Admin surfaces."
+    "description": "Repository-only OpenAPI documentation for RedSecTools. This file is not served by the live application. It documents the current HTTP API, including auth requirements for main app, guest-link, extension, and admin routes. RedSecThreat now includes user-scoped keyword, tag, and alert ownership on top of shared feed ingestion, plus admin-managed feed, template, and notification policy routes. Survey and Wiki include their active create/manage/respond/results/documentation route groups alongside the existing Paste, Share, Vault, Chat, Calendar, Homepage, Extension, and Admin surfaces."
   },
   "servers": [
     {
@@ -20,6 +20,7 @@
     { "name": "Calendar", "description": "RedSecCal projects and calendar entries" },
     { "name": "Survey", "description": "RedSecSurvey placeholder routes and public response flows under active development" },
     { "name": "Wiki", "description": "RedSecWiki team/personal spaces, page trees, markdown preview, revision history, and admin settings" },
+    { "name": "Threat", "description": "RedSecThreat user workspace plus supporting admin-managed feed, template, and notification policy endpoints" },
     { "name": "Vault", "description": "Vaults, vault entries, sharing, and audit" },
     { "name": "Chat", "description": "Encrypted chat keys, conversations, and messages" },
     { "name": "Extension", "description": "Chrome extension bearer-token API" },
@@ -750,6 +751,152 @@
           "from": { "type": ["string", "null"] },
           "secure": { "type": "boolean" }
         }
+      },
+      "ThreatFeed": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "url": { "type": "string" },
+          "feedType": { "type": "string", "enum": ["rss", "website", "api", "onion"] },
+          "enabled": { "type": "boolean" },
+          "isDefault": { "type": "boolean" },
+          "fetchInterval": { "type": "integer", "description": "Polling interval in seconds (minimum 60)" },
+          "feedMetadata": { "type": "string", "description": "JSON string with feed-type-specific configuration" },
+          "lastFetchedAt": { "type": ["string", "null"], "format": "date-time" },
+          "lastHash": { "type": ["string", "null"] },
+          "lastError": { "type": ["string", "null"] },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ThreatFeedRequest": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "url": { "type": "string" },
+          "feedType": { "type": "string", "enum": ["rss", "website", "api", "onion"] },
+          "enabled": { "type": "boolean", "default": true },
+          "isDefault": { "type": "boolean", "default": false },
+          "fetchInterval": { "type": "integer", "description": "Seconds between fetches (minimum 60, default 3600)" },
+          "feedMetadata": { "type": "object", "description": "Feed-type-specific config (auth, headers, field mapping for API feeds; proxy config for onion)" },
+          "tagIds": { "type": "array", "items": { "type": "string" } },
+          "keywordIds": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["name", "url", "feedType"]
+      },
+      "ThreatKeyword": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "keyword": { "type": "string", "maxLength": 255 },
+          "caseSensitive": { "type": "boolean" },
+          "isRegex": { "type": "boolean" },
+          "enabled": { "type": "boolean" },
+          "isSystem": { "type": "boolean", "description": "True for shared default keywords" },
+          "disabledByUser": { "type": "boolean", "description": "True when a shared default keyword is disabled for the current user" },
+          "criticality": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ThreatKeywordRequest": {
+        "type": "object",
+        "properties": {
+          "keyword": { "type": "string", "maxLength": 255 },
+          "caseSensitive": { "type": "boolean", "default": false },
+          "isRegex": { "type": "boolean", "default": false },
+          "enabled": { "type": "boolean", "default": true },
+          "criticality": { "type": "string", "enum": ["low", "medium", "high", "critical"], "default": "medium" },
+          "tagIds": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["keyword"]
+      },
+      "ThreatTag": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string", "maxLength": 100 },
+          "color": { "type": "string", "description": "Hex colour code" },
+          "isSystem": { "type": "boolean", "description": "True for shared default tags" },
+          "description": { "type": ["string", "null"] },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ThreatAlert": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "feedId": { "type": "string" },
+          "keywordId": { "type": ["string", "null"] },
+          "criticality": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
+          "matchedContent": { "type": "string" },
+          "context": { "type": ["string", "null"] },
+          "articleUrl": { "type": ["string", "null"], "description": "Direct source URL when available" },
+          "keywords": { "type": "array", "items": { "$ref": "#/components/schemas/ThreatKeyword" } },
+          "tags": { "type": "array", "items": { "$ref": "#/components/schemas/ThreatTag" } },
+          "iocs": {
+            "type": "object",
+            "description": "Structured IOC summary derived from the stored alert content",
+            "properties": {
+              "cves": { "type": "array", "items": { "type": "string" } },
+              "ipv4": { "type": "array", "items": { "type": "string" } },
+              "sha256": { "type": "array", "items": { "type": "string" } },
+              "sha1": { "type": "array", "items": { "type": "string" } },
+              "md5": { "type": "array", "items": { "type": "string" } },
+              "urls": { "type": "array", "items": { "type": "string" } },
+              "domains": { "type": "array", "items": { "type": "string" } }
+            }
+          },
+          "isRead": { "type": "boolean" },
+          "triggeredAt": { "type": "string", "format": "date-time" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ThreatNotificationConfig": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "channelType": { "type": "string", "enum": ["webhook", "email", "discord"] },
+          "destination": { "type": "string" },
+          "enabled": { "type": "boolean" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ThreatNotificationRequest": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "channelType": { "type": "string", "enum": ["webhook", "email", "discord"] },
+          "destination": { "type": "string" },
+          "enabled": { "type": "boolean", "default": true }
+        },
+        "required": ["name", "channelType", "destination"]
+      },
+      "ThreatApiTemplate": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "description": { "type": ["string", "null"] },
+          "configuration": { "type": "object", "description": "Endpoint, method, headers, auth, field_mapping" },
+          "enabled": { "type": "boolean" },
+          "isSystem": { "type": "boolean", "description": "System templates cannot be deleted" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ThreatApiTemplateRequest": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "description": { "type": ["string", "null"] },
+          "configuration": { "type": "object" },
+          "enabled": { "type": "boolean", "default": true }
+        },
+        "required": ["name"]
       }
     },
     "responses": {
@@ -5830,6 +5977,698 @@
             "description": "Icon uploaded",
             "content": { "application/json": { "schema": { "type": "object" } } }
           }
+        }
+      }
+    },
+    "/api/threat/bootstrap": {
+      "get": {
+        "tags": ["Threat"],
+        "summary": "Bootstrap threat intel dashboard",
+        "description": "Returns the current user's threat dashboard bootstrap payload, including user-scoped keyword and alert stats, recent user-owned alerts, shared feed health, and personal notification preferences. Requires threat.view permission.",
+        "security": [{ "UserSessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "Dashboard bootstrap data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "stats": { "type": "object", "description": "Alert counts by criticality and total feed/keyword counts" },
+                    "recentAlerts": { "type": "array", "items": { "$ref": "#/components/schemas/ThreatAlert" } },
+                    "feedHealth": { "type": "array", "items": { "type": "object" } },
+                    "settings": {
+                      "type": "object",
+                      "properties": {
+                        "autoFetchEnabled": { "type": "boolean" },
+                        "fetchIntervalSeconds": { "type": "integer" }
+                      }
+                    },
+                    "userNotifications": { "type": "array", "items": { "type": "object" } }
+                  }
+                }
+              }
+            }
+          },
+          "403": { "description": "Threat intel access denied (missing threat.view permission)" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/threat/feeds": {
+      "get": {
+        "tags": ["Threat"],
+        "summary": "List threat feeds",
+        "description": "Returns all configured feed sources. Query param ?enabled=true filters to enabled only. Requires threat.view.",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "enabled", "in": "query", "required": false, "schema": { "type": "string", "enum": ["true", "1"] }, "description": "Filter to enabled feeds only" }
+        ],
+        "responses": {
+          "200": { "description": "Feed list", "content": { "application/json": { "schema": { "type": "object", "properties": { "feeds": { "type": "array", "items": { "$ref": "#/components/schemas/ThreatFeed" } } } } } } },
+          "403": { "description": "Access denied" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "post": {
+        "tags": ["Threat"],
+        "summary": "Create a threat feed",
+        "description": "Public user sessions cannot create feeds here. Feed source management lives in the admin panel under /admin/api/threat/feeds.",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ThreatFeedRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Feed created", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "feed": { "$ref": "#/components/schemas/ThreatFeed" } } } } } },
+          "400": { "description": "Validation error (missing name/url, invalid feed type)" },
+          "403": { "description": "Feed source changes are only available in the admin panel" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/threat/feeds/{id}": {
+      "get": {
+        "tags": ["Threat"],
+        "summary": "Get a single threat feed",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Feed details", "content": { "application/json": { "schema": { "type": "object", "properties": { "feed": { "$ref": "#/components/schemas/ThreatFeed" } } } } } },
+          "404": { "description": "Feed not found" },
+          "403": { "description": "Access denied" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "put": {
+        "tags": ["Threat"],
+        "summary": "Update a threat feed",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ThreatFeedRequest" } } }
+        },
+        "responses": {
+          "200": { "description": "Feed updated", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "feed": { "$ref": "#/components/schemas/ThreatFeed" } } } } } },
+          "400": { "description": "Validation error" },
+          "404": { "description": "Feed not found" },
+          "403": { "description": "Management denied" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "delete": {
+        "tags": ["Threat"],
+        "summary": "Delete a threat feed",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Feed deleted", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "400": { "description": "Invalid feed ID" },
+          "403": { "description": "Management denied" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/threat/feeds/{id}/check": {
+      "post": {
+        "tags": ["Threat"],
+        "summary": "Manually trigger a feed check",
+        "description": "Public user sessions cannot trigger feed checks here. Use the admin panel feed refresh controls instead.",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Feed check completed", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "alerts": { "type": "array", "items": { "type": "object" } } } } } } },
+          "400": { "description": "Invalid feed ID" },
+          "500": { "description": "Feed check failed" },
+          "403": { "description": "Feed source changes are only available in the admin panel" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/threat/feeds/{id}/keywords": {
+      "post": {
+        "tags": ["Threat"],
+        "summary": "Set keyword associations for a feed",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "object", "properties": { "keywordIds": { "type": "array", "items": { "type": "string" } } }, "required": ["keywordIds"] } } }
+        },
+        "responses": {
+          "200": { "description": "Keywords updated", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "keywords": { "type": "array", "items": { "type": "object" } } } } } } },
+          "404": { "description": "Feed not found" },
+          "403": { "description": "Feed source changes are only available in the admin panel" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/threat/keywords": {
+      "get": {
+        "tags": ["Threat"],
+        "summary": "List threat keywords",
+        "description": "Returns the current user's effective keyword list, including shared default keywords plus personal keywords. Shared defaults can be disabled per user without being deleted. Query param ?enabled=true filters to enabled only. Requires threat.view.",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "enabled", "in": "query", "required": false, "schema": { "type": "string", "enum": ["true", "1"] }, "description": "Filter to enabled keywords only" }
+        ],
+        "responses": {
+          "200": { "description": "Keyword list", "content": { "application/json": { "schema": { "type": "object", "properties": { "keywords": { "type": "array", "items": { "$ref": "#/components/schemas/ThreatKeyword" } } } } } } },
+          "403": { "description": "Access denied" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "post": {
+        "tags": ["Threat"],
+        "summary": "Create a threat keyword",
+        "description": "Creates a personal keyword rule for the current user with optional regex support and criticality level. Requires threat.view.",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/ThreatKeywordRequest" } }
+          }
+        },
+        "responses": {
+          "200": { "description": "Keyword created", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "keyword": { "$ref": "#/components/schemas/ThreatKeyword" } } } } } },
+          "400": { "description": "Validation error (empty keyword, too long)" },
+          "403": { "description": "Access denied" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/threat/keywords/{id}": {
+      "get": {
+        "tags": ["Threat"],
+        "summary": "Get a single keyword",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Keyword details", "content": { "application/json": { "schema": { "type": "object", "properties": { "keyword": { "$ref": "#/components/schemas/ThreatKeyword" } } } } } },
+          "404": { "description": "Keyword not found" },
+          "403": { "description": "Access denied" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "put": {
+        "tags": ["Threat"],
+        "summary": "Update a keyword",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ThreatKeywordRequest" } } } },
+        "responses": {
+          "200": { "description": "Keyword updated", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "keyword": { "$ref": "#/components/schemas/ThreatKeyword" } } } } } },
+          "400": { "description": "Validation error" },
+          "404": { "description": "Keyword not found" },
+          "403": { "description": "Default keywords can only be enabled, disabled, or tagged per user" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "delete": {
+        "tags": ["Threat"],
+        "summary": "Delete a keyword",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Keyword deleted", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "403": { "description": "Default keywords cannot be deleted" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/threat/tags": {
+      "get": {
+        "tags": ["Threat"],
+        "summary": "List all threat tags",
+        "security": [{ "UserSessionCookie": [] }],
+        "responses": {
+          "200": { "description": "Tag list", "content": { "application/json": { "schema": { "type": "object", "properties": { "tags": { "type": "array", "items": { "$ref": "#/components/schemas/ThreatTag" } } } } } } },
+          "403": { "description": "Access denied" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "post": {
+        "tags": ["Threat"],
+        "summary": "Create a threat tag",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string", "maxLength": 100 },
+                  "color": { "type": "string", "description": "Hex colour code", "default": "#E53935" },
+                  "description": { "type": ["string", "null"] }
+                },
+                "required": ["name"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Tag created", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "tag": { "$ref": "#/components/schemas/ThreatTag" } } } } } },
+          "400": { "description": "Validation error (empty name, too long)" },
+          "403": { "description": "Access denied" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/threat/tags/{id}": {
+      "put": {
+        "tags": ["Threat"],
+        "summary": "Update a threat tag",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string", "maxLength": 100 },
+                  "color": { "type": "string" },
+                  "description": { "type": ["string", "null"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Tag updated", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "tag": { "$ref": "#/components/schemas/ThreatTag" } } } } } },
+          "400": { "description": "Validation error" },
+          "404": { "description": "Tag not found" },
+          "403": { "description": "Default tags cannot be edited" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "delete": {
+        "tags": ["Threat"],
+        "summary": "Delete a threat tag",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Tag deleted", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "403": { "description": "Default tags cannot be deleted" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/threat/tags/feeds/{id}": {
+      "post": {
+        "tags": ["Threat"],
+        "summary": "Set tags for a feed",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Feed ID" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "tagIds": { "type": "array", "items": { "type": "string" } } }, "required": ["tagIds"] } } } },
+        "responses": {
+          "200": { "description": "Feed tags updated", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "tags": { "type": "array", "items": { "$ref": "#/components/schemas/ThreatTag" } } } } } } },
+          "404": { "description": "Feed not found" },
+          "403": { "description": "Feed source changes are only available in the admin panel" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/threat/tags/keywords/{id}": {
+      "post": {
+        "tags": ["Threat"],
+        "summary": "Set tags for a keyword",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Keyword ID" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "tagIds": { "type": "array", "items": { "type": "string" } } }, "required": ["tagIds"] } } } },
+        "responses": {
+          "200": { "description": "Keyword tags updated", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "tags": { "type": "array", "items": { "$ref": "#/components/schemas/ThreatTag" } } } } } } },
+          "404": { "description": "Keyword not found" },
+          "403": { "description": "Access denied" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/threat/tags/alerts/{id}": {
+      "post": {
+        "tags": ["Threat"],
+        "summary": "Set tags for an alert",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Alert ID" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "tagIds": { "type": "array", "items": { "type": "string" } } }, "required": ["tagIds"] } } } },
+        "responses": {
+          "200": { "description": "Alert tags updated", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "tags": { "type": "array", "items": { "$ref": "#/components/schemas/ThreatTag" } } } } } } },
+          "404": { "description": "Alert not found" },
+          "403": { "description": "Access denied" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/threat/alerts": {
+      "get": {
+        "tags": ["Threat"],
+        "summary": "List threat alerts",
+        "description": "Returns alerts owned by the current user, with filtering by criticality, read state, feed, keyword, and time window. Requires threat.view.",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "criticality", "in": "query", "required": false, "schema": { "type": "string", "enum": ["low", "medium", "high", "critical"] } },
+          { "name": "isRead", "in": "query", "required": false, "schema": { "type": "string", "enum": ["true", "false"] } },
+          { "name": "feedId", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "keywordId", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "hours", "in": "query", "required": false, "schema": { "type": "integer" }, "description": "Only alerts from the last N hours" },
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "maximum": 200, "minimum": 1 }, "description": "Default 50" },
+          { "name": "offset", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 0 }, "description": "Default 0" }
+        ],
+        "responses": {
+          "200": { "description": "Alert list", "content": { "application/json": { "schema": { "type": "object", "properties": { "alerts": { "type": "array", "items": { "$ref": "#/components/schemas/ThreatAlert" } } } } } } },
+          "403": { "description": "Access denied" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/threat/alerts/read-all": {
+      "put": {
+        "tags": ["Threat"],
+        "summary": "Mark all alerts as read",
+        "security": [{ "UserSessionCookie": [] }],
+        "responses": {
+          "200": { "description": "Alerts marked read", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "markedRead": { "type": "integer" } } } } } },
+          "403": { "description": "Access denied" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/threat/alerts/cleanup": {
+      "delete": {
+        "tags": ["Threat"],
+        "summary": "Delete alerts older than N days",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "days", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 1 }, "description": "Delete alerts older than this many days" }
+        ],
+        "responses": {
+          "200": { "description": "Alerts cleaned up", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "removed": { "type": "integer" } } } } } },
+          "400": { "description": "Days parameter must be a positive integer" },
+          "403": { "description": "Threat alert cleanup is only available in the admin panel" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/threat/alerts/{id}": {
+      "get": {
+        "tags": ["Threat"],
+        "summary": "Get a single alert",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Alert details", "content": { "application/json": { "schema": { "type": "object", "properties": { "alert": { "$ref": "#/components/schemas/ThreatAlert" } } } } } },
+          "404": { "description": "Alert not found" },
+          "403": { "description": "Access denied" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "put": {
+        "tags": ["Threat"],
+        "summary": "Update an alert",
+        "description": "Updates the current user's read state for an alert. Alert criticality is derived from matched keywords and cannot be overridden here.",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "isRead": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Alert updated", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "alert": { "$ref": "#/components/schemas/ThreatAlert" } } } } } },
+          "400": { "description": "Invalid alert ID" },
+          "404": { "description": "Alert not found" },
+          "403": { "description": "Alert criticality cannot be changed here, or access was denied" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "delete": {
+        "tags": ["Threat"],
+        "summary": "Hide an alert for the current user",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Alert hidden for the current user", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "403": { "description": "Access denied" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/threat/notifications": {
+      "get": {
+        "tags": ["Threat"],
+        "summary": "List admin notification configs",
+        "security": [{ "UserSessionCookie": [] }],
+        "responses": {
+          "200": { "description": "Notification configs", "content": { "application/json": { "schema": { "type": "object", "properties": { "notifications": { "type": "array", "items": { "$ref": "#/components/schemas/ThreatNotificationConfig" } } } } } } },
+          "403": { "description": "Threat notification policy is only available in the admin panel" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "post": {
+        "tags": ["Threat"],
+        "summary": "Create a notification config",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ThreatNotificationRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Notification created", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "notification": { "$ref": "#/components/schemas/ThreatNotificationConfig" } } } } } },
+          "400": { "description": "Validation error" },
+          "403": { "description": "Threat notification policy is only available in the admin panel" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/threat/notifications/{id}": {
+      "put": {
+        "tags": ["Threat"],
+        "summary": "Update a notification config",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "destination": { "type": "string" },
+                  "enabled": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Notification updated", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "notification": { "$ref": "#/components/schemas/ThreatNotificationConfig" } } } } } },
+          "404": { "description": "Notification not found" },
+          "403": { "description": "Threat notification policy is only available in the admin panel" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "delete": {
+        "tags": ["Threat"],
+        "summary": "Delete a notification config",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Notification deleted", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "403": { "description": "Threat notification policy is only available in the admin panel" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/threat/notifications/{id}/test": {
+      "post": {
+        "tags": ["Threat"],
+        "summary": "Send a test notification",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Test result", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "message": { "type": "string" } } } } } },
+          "404": { "description": "Notification not found" },
+          "500": { "description": "Test notification failed" },
+          "403": { "description": "Threat notification policy is only available in the admin panel" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/threat/user-notifications": {
+      "get": {
+        "tags": ["Threat"],
+        "summary": "List current user's notification preferences",
+        "description": "Requires threat.view.",
+        "security": [{ "UserSessionCookie": [] }],
+        "responses": {
+          "200": { "description": "User notifications", "content": { "application/json": { "schema": { "type": "object", "properties": { "notifications": { "type": "array", "items": { "type": "object" } } } } } } },
+          "403": { "description": "Access denied" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "post": {
+        "tags": ["Threat"],
+        "summary": "Upsert a user notification preference",
+        "description": "Creates or updates a notification channel for the current user. Requires threat.view.",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "channelType": { "type": "string", "enum": ["webhook", "email", "discord"] },
+                  "destination": { "type": "string" },
+                  "enabled": { "type": "boolean" }
+                },
+                "required": ["channelType", "destination"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "User notification upserted", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "notifications": { "type": "array", "items": { "type": "object" } } } } } } },
+          "400": { "description": "Validation error" },
+          "403": { "description": "Access denied" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/threat/user-notifications/{id}": {
+      "delete": {
+        "tags": ["Threat"],
+        "summary": "Delete a user notification preference",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "User notification deleted", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "403": { "description": "Access denied" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/threat/templates": {
+      "get": {
+        "tags": ["Threat"],
+        "summary": "List API feed templates",
+        "security": [{ "UserSessionCookie": [] }],
+        "responses": {
+          "200": { "description": "Template list", "content": { "application/json": { "schema": { "type": "object", "properties": { "templates": { "type": "array", "items": { "$ref": "#/components/schemas/ThreatApiTemplate" } } } } } } },
+          "403": { "description": "Threat API templates are only available in the admin panel" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "post": {
+        "tags": ["Threat"],
+        "summary": "Create an API feed template",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ThreatApiTemplateRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Template created", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "template": { "$ref": "#/components/schemas/ThreatApiTemplate" } } } } } },
+          "400": { "description": "Validation error" },
+          "403": { "description": "Threat API templates are only available in the admin panel" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/threat/templates/{id}": {
+      "put": {
+        "tags": ["Threat"],
+        "summary": "Update an API feed template",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/ThreatApiTemplateRequest" } }
+          }
+        },
+        "responses": {
+          "200": { "description": "Template updated", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "template": { "$ref": "#/components/schemas/ThreatApiTemplate" } } } } } },
+          "404": { "description": "Template not found" },
+          "403": { "description": "Threat API templates are only available in the admin panel" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "delete": {
+        "tags": ["Threat"],
+        "summary": "Delete an API feed template",
+        "description": "Public user sessions cannot delete templates here. Template management lives in the admin panel.",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Template deleted", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "403": { "description": "Threat API templates are only available in the admin panel" },
+          "404": { "description": "Template not found" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/threat/templates/{id}/test": {
+      "post": {
+        "tags": ["Threat"],
+        "summary": "Test an API feed template",
+        "description": "Public user sessions cannot test templates here. Template testing lives in the admin panel.",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Template test result", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "result": { "type": "object" } } } } } },
+          "404": { "description": "Template not found" },
+          "500": { "description": "Template test failed" },
+          "403": { "description": "Threat API templates are only available in the admin panel" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/threat/health": {
+      "get": {
+        "tags": ["Threat"],
+        "summary": "Get feed health summary",
+        "security": [{ "UserSessionCookie": [] }],
+        "responses": {
+          "200": { "description": "Feed health data", "content": { "application/json": { "schema": { "type": "object", "properties": { "health": { "type": "array", "items": { "type": "object" } } } } } } },
+          "403": { "description": "Access denied" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/threat/feed-errors": {
+      "get": {
+        "tags": ["Threat"],
+        "summary": "Get recent feed errors",
+        "security": [{ "UserSessionCookie": [] }],
+        "responses": {
+          "200": { "description": "Feed error log", "content": { "application/json": { "schema": { "type": "object", "properties": { "errors": { "type": "array", "items": { "type": "object" } } } } } } },
+          "403": { "description": "Access denied" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
         }
       }
     }

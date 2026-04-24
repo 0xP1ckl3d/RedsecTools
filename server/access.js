@@ -116,6 +116,18 @@ const PERMISSION_DEFINITIONS = [
     label: "Manage",
     description: "Manage wiki settings, structure, search defaults, and all wiki spaces.",
   },
+  {
+    key: "threat.view",
+    category: "Threat Intel",
+    label: "View",
+    description: "Use the personal threat dashboard, manage your own keywords and tags, and review your own alerts and IOC data.",
+  },
+  {
+    key: "threat.manage",
+    category: "Threat Intel",
+    label: "Manage",
+    description: "Legacy elevated RedSecThreat access. Global feed, template, and notification policy changes still require the admin panel.",
+  },
 ];
 
 const ALL_PERMISSIONS = PERMISSION_DEFINITIONS.map((permission) => permission.key);
@@ -124,7 +136,7 @@ const SYSTEM_ROLE_DEFINITIONS = [
   {
     key: "viewer",
     name: "Viewer",
-    description: "Read-only access to shared collaboration content and personal calendar views.",
+    description: "Read-only access to shared collaboration content and personal calendar views. No threat intel access.",
     permissions: [
       "bulletin.view",
       "calendar.view",
@@ -134,7 +146,7 @@ const SYSTEM_ROLE_DEFINITIONS = [
   {
     key: "member",
     name: "Member",
-    description: "Standard team member access with self-service calendar and content creation.",
+    description: "Standard team member with self-service calendar, content creation, and threat intel read access.",
     permissions: [
       "bulletin.view",
       "bulletin.create",
@@ -142,6 +154,7 @@ const SYSTEM_ROLE_DEFINITIONS = [
       "calendar.create",
       "survey.create",
       "survey.respond_public",
+      "threat.view",
       "wiki.view",
       "wiki.create_personal",
       "wiki.create_team",
@@ -150,7 +163,7 @@ const SYSTEM_ROLE_DEFINITIONS = [
   {
     key: "manager",
     name: "Manager",
-    description: "Team-level visibility and operational management across collaboration tools.",
+    description: "Team-level visibility and operational management across all tools including threat intel feed management.",
     permissions: [
       "bulletin.view",
       "bulletin.create",
@@ -165,6 +178,8 @@ const SYSTEM_ROLE_DEFINITIONS = [
       "survey.manage_any",
       "survey.respond_public",
       "survey.view_results_any",
+      "threat.view",
+      "threat.manage",
       "wiki.view",
       "wiki.create_personal",
       "wiki.create_team",
@@ -179,9 +194,10 @@ const TOOL_DEFINITIONS = [
   { key: "share", name: "RedSecShare", href: "/share" },
   { key: "chat", name: "RedSecTeam", href: "/chat" },
   { key: "vault", name: "RedSecVault", href: "/vault" },
-  { key: "calendar", name: "RedSecCal", href: "/calendar", permissionsAny: ["calendar.view"] },
+  { key: "calendar", name: "RedSecCal", href: "/calendar", permissionsAny: ["calendar.view", "calendar.view_team", "calendar.manage"] },
   { key: "survey", name: "RedSecSurvey", href: "/survey", permissionsAny: ["survey.create", "survey.manage_any", "survey.view_results_any"] },
   { key: "wiki", name: "RedSecWiki", href: "/wiki", permissionsAny: ["wiki.view", "wiki.create_personal", "wiki.create_team", "wiki.edit_team", "wiki.manage"] },
+  { key: "threat", name: "RedSecThreat", href: "/threat", permissionsAny: ["threat.view", "threat.manage"] },
 ];
 
 function canonicalizePermission(permission) {

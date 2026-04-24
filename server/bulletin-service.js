@@ -201,8 +201,20 @@ function buildVisibleBulletinFeed(bulletins, page = 1, limit = 20, now = Math.fl
 
 function canEditBulletin(req, bulletin) {
   if (!req?.user || !bulletin) return false;
-  return bulletin.authorId === req.user.id
-    && req.access?.permissionSet?.has("bulletin.create");
+  const permissionSet = req.access?.permissionSet || new Set();
+  if (permissionSet.has("bulletin.manage") || permissionSet.has("bulletin.edit_any")) {
+    return true;
+  }
+  return bulletin.authorId === req.user.id && permissionSet.has("bulletin.create");
+}
+
+function canDeleteBulletin(req, bulletin) {
+  if (!req?.user || !bulletin) return false;
+  const permissionSet = req.access?.permissionSet || new Set();
+  if (permissionSet.has("bulletin.manage")) {
+    return true;
+  }
+  return bulletin.authorId === req.user.id && permissionSet.has("bulletin.create");
 }
 
 function sanitizeBulletinForSave(req, body, existingBulletin = null) {
@@ -348,6 +360,7 @@ module.exports = {
   buildBulletinCapabilities,
   buildVisibleBulletinFeed,
   canEditBulletin,
+  canDeleteBulletin,
   deleteBulletinWithAssets,
   extractBulletinAssetIds,
   generateBulletinId,

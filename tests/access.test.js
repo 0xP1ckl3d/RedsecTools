@@ -44,3 +44,13 @@ test("survey tool availability supports any configured permission", () => {
     true
   );
 });
+
+test("calendar tool availability supports team and manage permissions", () => {
+  const calendarTool = {
+    key: "calendar",
+    permissionsAny: ["calendar.view", "calendar.view_team", "calendar.manage"],
+  };
+
+  assert.equal(isToolAvailable(calendarTool, new Set(["calendar.view_team"])), true);
+  assert.equal(isToolAvailable(calendarTool, new Set(["calendar.manage"])), true);
+});

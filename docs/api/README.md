@@ -14,6 +14,7 @@ The current spec now includes the collaboration feature set introduced in the ap
 - RedSecCal bootstrap, weekly schedule, project management, team allocation, statistics, and admin calendar-setting route groups
 - RedSecWiki bootstrap, page management, search, preview, revision, and admin settings routes
 - RedSecSurvey create/manage/respond/results/export route groups
+- RedSecThreat bootstrap, read-only feed catalogue, user-scoped keyword/tag/alert management, personal notifications, admin-managed template/feed policy endpoints, and feed health route groups
 - RedSecShare upload/download routes plus live upload-config endpoints used by the app and extension
 
 Important:
@@ -58,3 +59,4 @@ The spec documents the auth required for each route using these schemes:
 - This spec documents the current routes and payload shapes used by the app today, including the collaboration and extension endpoints.
 - Bulletin content is intentionally documented as sanitized HTML plus preset-driven presentation metadata. Raw CSS, JavaScript, and arbitrary asset URLs are not accepted by the live app.
 - RedSecSurvey and RedSecWiki are now first-class documented tool surfaces rather than placeholder route groups.
+- RedSecThreat user routes are permission-gated with `threat.view` for the personal threat workspace (dashboard, feeds, personal keywords/tags/alerts, health, user notifications). Global feed sources, API templates, and notification policy are managed from the admin panel and documented separately under `/admin/api/threat/*`.

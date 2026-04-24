@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <title>RedSecThreat</title>
+  <link rel="icon" href="/assets/favicon.ico" type="image/x-icon">
+  <script src="/js/theme-init.js"></script>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="dashboard-layout threat-dashboard-shell">
+    <aside id="threat-sidebar" class="dashboard-sidebar">
+      <button type="button" id="threat-sidebar-collapse-btn" class="sidebar-collapse-btn" title="Collapse sidebar">
+        <svg class="sidebar-collapse-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+      </button>
+
+      <nav class="sidebar-nav">
+        <button type="button" class="sidebar-nav-item active" data-threat-view="dashboard">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
+          <span class="sidebar-nav-text">Dashboard</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-threat-view="feeds">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 5c7.18 0 13 5.82 13 13M6 11a7 7 0 017 7m-6 0a1 1 0 11-2 0 1 1 0 012 0z"/></svg>
+          <span class="sidebar-nav-text">Feeds</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-threat-view="keywords">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/></svg>
+          <span class="sidebar-nav-text">Keywords</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-threat-view="tags">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3l3.057-3 9.943 9.943-3 3.057L5 3zm0 0L3 5l3.057 3.057m9.943 9.943L18 21l2-2-3.057-3.057"/></svg>
+          <span class="sidebar-nav-text">Tags</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-threat-view="alerts">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+          <span class="sidebar-nav-text">Alerts</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-threat-view="notifications">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+          <span class="sidebar-nav-text">Notifications</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-threat-view="logs">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
+          <span class="sidebar-nav-text">Logs</span>
+        </button>
+      </nav>
+    </aside>
+
+    <div class="dashboard-content">
+      <header class="dashboard-header">
+        <div>
+          <h1 class="text-xl font-bold">
+            <a href="/" class="hover:underline transition-colors">
+              <span class="text-accent">RedSec</span><span class="text-secondary">Threat</span>
+            </a>
+          </h1>
+          <p class="text-sm text-muted mt-1">Threat intelligence monitoring, keyword alerts, and IOC extraction.</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <div class="relative">
+            <button id="burger-btn" class="burger-btn" aria-label="Menu" aria-expanded="false">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+            <nav id="burger-nav" class="burger-nav hidden"></nav>
+          </div>
+          <button type="button" class="theme-toggle" id="theme-toggle" title="Toggle theme">
+            <svg class="w-5 h-5 dark-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+            <svg class="w-5 h-5 light-icon hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="mobile-tabs">
+        <button type="button" class="mobile-tab active" data-threat-view="dashboard">Dashboard</button>
+        <button type="button" class="mobile-tab" data-threat-view="feeds">Feeds</button>
+        <button type="button" class="mobile-tab" data-threat-view="keywords">Keywords</button>
+        <button type="button" class="mobile-tab" data-threat-view="alerts">Alerts</button>
+        <button type="button" class="mobile-tab" data-threat-view="logs">Logs</button>
+      </div>
+
+      <div class="dashboard-main">
+
+        <!-- ===== DASHBOARD VIEW ===== -->
+        <section id="threat-view-dashboard" class="threat-dashboard-view">
+          <div class="threat-stat-grid threat-stat-grid-4">
+            <div class="threat-stat-card threat-stat-blue" data-threat-nav="alerts">
+              <div class="threat-stat-value" id="threat-dash-total-alerts">-</div>
+              <div class="threat-stat-label">Total Alerts</div>
+            </div>
+            <div class="threat-stat-card threat-stat-red" data-threat-nav="alerts">
+              <div class="threat-stat-value" id="threat-dash-unread">-</div>
+              <div class="threat-stat-label">Unread Alerts</div>
+            </div>
+            <div class="threat-stat-card threat-stat-purple" data-threat-nav="feeds">
+              <div class="threat-stat-value" id="threat-dash-healthy-feeds">-</div>
+              <div class="threat-stat-label">Healthy Feeds</div>
+            </div>
+            <div class="threat-stat-card threat-stat-amber" data-threat-nav="keywords">
+              <div class="threat-stat-value" id="threat-dash-keywords">-</div>
+              <div class="threat-stat-label">Active Keywords</div>
+            </div>
+          </div>
+
+          <div class="threat-dash-grid">
+            <div class="card threat-dash-section">
+              <div class="card-header">
+                <h2 class="text-lg font-semibold">Alerts by Criticality</h2>
+              </div>
+              <div id="threat-dash-chart" class="threat-chart-container">
+                <p class="text-sm text-muted">No alerts yet.</p>
+              </div>
+            </div>
+            <div class="card threat-dash-section">
+              <div class="card-header">
+                <h2 class="text-lg font-semibold">Latest Alerts</h2>
+              </div>
+              <div id="threat-dash-recent-alerts" class="threat-recent-list">
+                <p class="text-sm text-muted">No alerts yet.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="card threat-dash-section mt-4">
+            <div class="card-header">
+              <h2 class="text-lg font-semibold">Recent Feed Activity</h2>
+            </div>
+            <div id="threat-dash-feed-activity" class="threat-feed-activity-grid">
+              <p class="text-sm text-muted">No feed activity.</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- ===== FEEDS VIEW ===== -->
+        <section id="threat-view-feeds" class="threat-dashboard-view hidden">
+          <div class="card">
+            <div class="card-header flex justify-between items-center">
+              <h2 class="text-lg font-semibold">Feed Sources</h2>
+              <div class="flex gap-2">
+                <input type="text" id="threat-feeds-filter" class="input-field threat-input-sm" placeholder="Filter feeds...">
+                <select id="threat-feeds-status-filter" class="input-field threat-input-xs">
+                  <option value="all">All</option>
+                  <option value="enabled">Enabled</option>
+                  <option value="disabled">Disabled</option>
+                </select>
+              </div>
+            </div>
+            <p class="text-sm text-muted mb-4">Feed source administration is handled in the admin panel. This view is read-only so users can review configured sources and their latest check times.</p>
+            <div class="threat-table-wrap">
+              <table class="threat-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>URL</th>
+                    <th>Status</th>
+                    <th>Interval</th>
+                    <th>Tags</th>
+                    <th>Last Checked</th>
+                  </tr>
+                </thead>
+                <tbody id="threat-feeds-tbody"></tbody>
+              </table>
+            </div>
+            <div id="threat-feeds-empty" class="threat-empty hidden">No feeds found.</div>
+          </div>
+        </section>
+
+        <!-- ===== KEYWORDS VIEW ===== -->
+        <section id="threat-view-keywords" class="threat-dashboard-view hidden">
+          <div class="card">
+            <div class="card-header flex justify-between items-center">
+              <h2 class="text-lg font-semibold">Keywords</h2>
+              <div class="flex gap-2">
+                <input type="text" id="threat-keywords-filter" class="input-field threat-input-sm" placeholder="Filter keywords...">
+                <select id="threat-keywords-status-filter" class="input-field threat-input-xs">
+                  <option value="all">All</option>
+                  <option value="enabled">Enabled</option>
+                  <option value="disabled">Disabled</option>
+                </select>
+                <button type="button" id="threat-keyword-add-btn" class="btn-primary">Add Keyword</button>
+              </div>
+            </div>
+            <div id="threat-keywords-bulk-bar" class="threat-bulk-bar hidden">
+              <span id="threat-keywords-selected-count">0 selected</span>
+              <button type="button" class="btn-secondary" data-threat-bulk="enable">Enable</button>
+              <button type="button" class="btn-secondary" data-threat-bulk="disable">Disable</button>
+              <button type="button" class="btn-danger" data-threat-bulk="delete">Delete</button>
+            </div>
+            <div class="threat-table-wrap">
+              <table class="threat-table">
+                <thead>
+                  <tr>
+                    <th class="threat-th-check"><input type="checkbox" id="threat-keywords-check-all"></th>
+                    <th>Keyword</th>
+                    <th>Criticality</th>
+                    <th>Regex</th>
+                    <th>Enabled</th>
+                    <th>Tags</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="threat-keywords-tbody"></tbody>
+              </table>
+            </div>
+            <div id="threat-keywords-empty" class="threat-empty hidden">No keywords found.</div>
+          </div>
+        </section>
+
+        <!-- ===== TAGS VIEW ===== -->
+        <section id="threat-view-tags" class="threat-dashboard-view hidden">
+          <div class="card">
+            <div class="card-header flex justify-between items-center">
+              <h2 class="text-lg font-semibold">Tags</h2>
+              <button type="button" id="threat-tag-add-btn" class="btn-primary">Add Tag</button>
+            </div>
+            <div class="threat-table-wrap">
+              <table class="threat-table">
+                <thead>
+                  <tr>
+                    <th>Tag</th>
+                    <th>Description</th>
+                    <th>Color</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="threat-tags-tbody"></tbody>
+              </table>
+            </div>
+            <div id="threat-tags-empty" class="threat-empty hidden">No tags found.</div>
+          </div>
+        </section>
+
+        <!-- ===== ALERTS VIEW ===== -->
+        <section id="threat-view-alerts" class="threat-dashboard-view hidden">
+          <div class="card">
+            <div class="card-header flex justify-between items-center">
+              <h2 class="text-lg font-semibold">Alerts</h2>
+              <div class="flex gap-2">
+                <input type="text" id="threat-alerts-filter" class="input-field threat-input-sm" placeholder="Filter alerts...">
+                <select id="threat-alerts-status-filter" class="input-field threat-input-xs">
+                  <option value="all">All</option>
+                  <option value="unread">Unread</option>
+                  <option value="read">Read</option>
+                </select>
+                <select id="threat-alerts-criticality-filter" class="input-field threat-input-sm">
+                  <option value="all">All Levels</option>
+                  <option value="critical">Critical</option>
+                  <option value="high">High</option>
+                  <option value="medium">Medium</option>
+                  <option value="low">Low</option>
+                </select>
+                <button type="button" id="threat-alerts-read-all-btn" class="btn-secondary">Mark All Read</button>
+              </div>
+            </div>
+            <div id="threat-alerts-bulk-bar" class="threat-bulk-bar hidden">
+              <span id="threat-alerts-selected-count">0 selected</span>
+              <button type="button" class="btn-secondary" data-threat-bulk="read">Mark Read</button>
+              <button type="button" class="btn-secondary" data-threat-bulk="unread">Mark Unread</button>
+              <button type="button" class="btn-danger" data-threat-bulk="delete">Delete</button>
+            </div>
+            <div class="threat-table-wrap">
+              <table class="threat-table">
+                <thead>
+                  <tr>
+                    <th class="threat-th-check"><input type="checkbox" id="threat-alerts-check-all"></th>
+                    <th>Level</th>
+                    <th>Feed</th>
+                    <th>Keyword</th>
+                    <th>Content</th>
+                    <th>Time</th>
+                    <th>Status</th>
+                    <th>Tags</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="threat-alerts-tbody"></tbody>
+              </table>
+            </div>
+            <div id="threat-alerts-empty" class="threat-empty hidden">No alerts found.</div>
+            <div id="threat-alerts-pagination" class="threat-pagination hidden"></div>
+          </div>
+        </section>
+
+        <!-- ===== NOTIFICATIONS VIEW ===== -->
+        <section id="threat-view-notifications" class="threat-dashboard-view hidden">
+          <div class="card mb-4">
+            <div class="card-header">
+              <h2 class="text-lg font-semibold">Available Notification Types</h2>
+              <p class="text-sm text-muted mt-1">Managed by admins in the RedSecThreat admin panel. Users can opt in only to the channels enabled here.</p>
+            </div>
+            <div id="threat-notification-policy" class="space-y-3"></div>
+          </div>
+          <div class="card">
+            <div class="card-header flex justify-between items-center gap-3">
+              <div>
+                <h2 class="text-lg font-semibold">My Notifications</h2>
+                <p class="text-sm text-muted mt-1">Email notifications use your account email automatically. Discord and webhook channels use your own recipient destinations.</p>
+              </div>
+              <button type="button" id="threat-user-notif-add-btn" class="btn-primary">Add / Update Channel</button>
+            </div>
+            <div id="threat-user-notifs-container"></div>
+          </div>
+        </section>
+
+        <!-- ===== LOGS VIEW ===== -->
+        <section id="threat-view-logs" class="threat-dashboard-view hidden">
+          <div class="threat-stat-grid threat-stat-grid-5 mb-4">
+            <div class="threat-stat-card threat-stat-green" id="threat-log-overall">
+              <div class="threat-stat-value" id="threat-log-overall-status">-</div>
+              <div class="threat-stat-label">Overall</div>
+            </div>
+            <div class="threat-stat-card threat-stat-green">
+              <div class="threat-stat-value" id="threat-log-healthy">-</div>
+              <div class="threat-stat-label">Healthy</div>
+            </div>
+            <div class="threat-stat-card threat-stat-amber">
+              <div class="threat-stat-value" id="threat-log-warning">-</div>
+              <div class="threat-stat-label">Warning</div>
+            </div>
+            <div class="threat-stat-card threat-stat-red">
+              <div class="threat-stat-value" id="threat-log-error">-</div>
+              <div class="threat-stat-label">Error</div>
+            </div>
+            <div class="threat-stat-card threat-stat-gray">
+              <div class="threat-stat-value" id="threat-log-disabled">-</div>
+              <div class="threat-stat-label">Disabled</div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header flex justify-between items-center">
+              <h2 class="text-lg font-semibold">Feed Status</h2>
+              <button type="button" id="threat-logs-refresh-btn" class="btn-secondary">Refresh</button>
+            </div>
+            <div class="threat-table-wrap">
+              <table class="threat-table">
+                <thead>
+                  <tr>
+                    <th>Status</th>
+                    <th>Feed Name</th>
+                    <th>Type</th>
+                    <th>Failures</th>
+                    <th>Last Checked</th>
+                    <th>Last Error</th>
+                  </tr>
+                </thead>
+                <tbody id="threat-logs-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <footer class="footer">
+          <p>&copy; <span id="footer-year"></span> <a href="/" class="text-accent hover:underline">RedSec</a> Offensive Security &mdash; RedSecThreat</p>
+        </footer>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== FEED MODAL ===== -->
+  <div id="threat-feed-modal" class="modal-overlay hidden">
+    <div class="modal-card threat-modal-md">
+      <div class="modal-card-header">
+        <h2 id="threat-feed-modal-title" class="text-lg font-bold">Add Feed</h2>
+        <button type="button" class="modal-close-btn" data-threat-close-modal="feed">&times;</button>
+      </div>
+      <form id="threat-feed-form" class="space-y-3">
+        <input type="hidden" id="threat-feed-edit-id">
+        <div><label class="input-label">Name</label><input type="text" id="threat-feed-name" class="input-field" required></div>
+        <div><label class="input-label">Feed Type</label>
+          <select id="threat-feed-type" class="input-field">
+            <option value="rss">RSS</option><option value="website">Website</option>
+            <option value="api">API</option><option value="onion">Onion</option>
+          </select>
+        </div>
+        <div id="threat-feed-template-row" class="hidden">
+          <label class="input-label">API Template</label>
+          <select id="threat-feed-template" class="input-field"></select>
+        </div>
+        <div><label class="input-label">URL</label><input type="url" id="threat-feed-url" class="input-field" required></div>
+        <div><label class="input-label">Fetch Interval (seconds)</label><input type="number" id="threat-feed-interval" class="input-field" value="3600" min="60"></div>
+        <div class="threat-checkbox-stack">
+          <label class="custom-checkbox threat-checkbox-option" for="threat-feed-enabled">
+            <input type="checkbox" id="threat-feed-enabled" checked>
+            <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+            <span class="threat-checkbox-copy">
+              <span class="threat-checkbox-title">Enabled</span>
+              <span class="threat-checkbox-help">Include this source in scheduled threat collection.</span>
+            </span>
+          </label>
+          <label class="custom-checkbox threat-checkbox-option" for="threat-feed-default">
+            <input type="checkbox" id="threat-feed-default">
+            <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+            <span class="threat-checkbox-copy">
+              <span class="threat-checkbox-title">Default source</span>
+              <span class="threat-checkbox-help">Keep this feed in the default RedSecThreat catalogue.</span>
+            </span>
+          </label>
+        </div>
+        <div><label class="input-label">Tags</label><select id="threat-feed-tags" class="input-field threat-select-multi" multiple></select></div>
+        <div class="threat-modal-actions">
+          <button type="button" class="btn-secondary" data-threat-close-modal="feed">Cancel</button>
+          <button type="submit" class="btn-primary">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== KEYWORD MODAL ===== -->
+  <div id="threat-keyword-modal" class="modal-overlay hidden">
+    <div class="modal-card threat-modal-sm">
+      <div class="modal-card-header">
+        <h2 id="threat-keyword-modal-title" class="text-lg font-bold">Add Keyword</h2>
+        <button type="button" class="modal-close-btn" data-threat-close-modal="keyword">&times;</button>
+      </div>
+      <form id="threat-keyword-form" class="space-y-3">
+        <input type="hidden" id="threat-keyword-edit-id">
+        <div><label class="input-label">Keyword</label><input type="text" id="threat-keyword-text" class="input-field" required placeholder="Enter keyword or regex pattern"></div>
+        <div><label class="input-label">Criticality</label>
+          <select id="threat-keyword-criticality" class="input-field">
+            <option value="low">Low</option><option value="medium" selected>Medium</option>
+            <option value="high">High</option><option value="critical">Critical</option>
+          </select>
+        </div>
+        <div class="threat-checkbox-stack">
+          <label class="custom-checkbox threat-checkbox-option" for="threat-keyword-regex">
+            <input type="checkbox" id="threat-keyword-regex">
+            <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+            <span class="threat-checkbox-copy">
+              <span class="threat-checkbox-title">Regex pattern</span>
+              <span class="threat-checkbox-help">Treat this entry as a regular expression for broader matching.</span>
+            </span>
+          </label>
+          <label class="custom-checkbox threat-checkbox-option" for="threat-keyword-case">
+            <input type="checkbox" id="threat-keyword-case">
+            <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+            <span class="threat-checkbox-copy">
+              <span class="threat-checkbox-title">Case sensitive</span>
+              <span class="threat-checkbox-help">Only match the exact letter casing.</span>
+            </span>
+          </label>
+          <label class="custom-checkbox threat-checkbox-option" for="threat-keyword-enabled">
+            <input type="checkbox" id="threat-keyword-enabled" checked>
+            <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+            <span class="threat-checkbox-copy">
+              <span class="threat-checkbox-title">Enabled</span>
+              <span class="threat-checkbox-help">Include this keyword in active threat matching.</span>
+            </span>
+          </label>
+        </div>
+        <div><label class="input-label">Tags</label><select id="threat-keyword-tags" class="input-field threat-select-multi" multiple></select></div>
+        <div class="threat-modal-actions">
+          <button type="button" class="btn-secondary" data-threat-close-modal="keyword">Cancel</button>
+          <button type="submit" class="btn-primary">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== TAG MODAL ===== -->
+  <div id="threat-tag-modal" class="modal-overlay hidden">
+    <div class="modal-card threat-modal-xs">
+      <div class="modal-card-header">
+        <h2 id="threat-tag-modal-title" class="text-lg font-bold">Add Tag</h2>
+        <button type="button" class="modal-close-btn" data-threat-close-modal="tag">&times;</button>
+      </div>
+      <form id="threat-tag-form" class="space-y-3">
+        <input type="hidden" id="threat-tag-edit-id">
+        <div><label class="input-label">Tag Name</label><input type="text" id="threat-tag-name" class="input-field" required></div>
+        <div><label class="input-label">Color</label>
+          <div class="flex items-center gap-2">
+            <input type="color" id="threat-tag-color" value="#E53935" class="threat-color-input">
+            <input type="text" id="threat-tag-color-hex" class="input-field threat-input-xs" value="#E53935">
+            <span id="threat-tag-preview" class="threat-tag-chip threat-tag-preview-chip">Preview</span>
+          </div>
+        </div>
+        <div><label class="input-label">Description</label><textarea id="threat-tag-desc" class="input-field" rows="2"></textarea></div>
+        <div class="threat-modal-actions">
+          <button type="button" class="btn-secondary" data-threat-close-modal="tag">Cancel</button>
+          <button type="submit" class="btn-primary">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== ALERT DETAIL MODAL ===== -->
+  <div id="threat-alert-modal" class="modal-overlay hidden">
+    <div class="modal-card threat-modal-lg">
+      <div class="modal-card-header">
+        <h2 class="text-lg font-bold">Alert Detail</h2>
+        <button type="button" class="modal-close-btn" data-threat-close-modal="alert">&times;</button>
+      </div>
+      <div id="threat-alert-detail-content" class="space-y-3"></div>
+      <div class="threat-modal-actions">
+        <button type="button" class="btn-secondary" data-threat-close-modal="alert">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== NOTIFICATION MODAL ===== -->
+  <div id="threat-notif-modal" class="modal-overlay hidden">
+    <div class="modal-card threat-modal-sm">
+      <div class="modal-card-header">
+        <h2 id="threat-notif-modal-title" class="text-lg font-bold">Add Channel</h2>
+        <button type="button" class="modal-close-btn" data-threat-close-modal="notif">&times;</button>
+      </div>
+      <form id="threat-notif-form" class="space-y-3">
+        <input type="hidden" id="threat-notif-edit-id">
+        <div><label class="input-label">Name</label><input type="text" id="threat-notif-name" class="input-field" required placeholder="A friendly name"></div>
+        <div><label class="input-label">Type</label>
+          <select id="threat-notif-type" class="input-field">
+            <option value="webhook">Webhook</option><option value="email">Email</option><option value="discord">Discord</option>
+          </select>
+        </div>
+        <div><label class="input-label">Destination</label><input type="text" id="threat-notif-dest" class="input-field" required placeholder="URL or email address"></div>
+        <label class="custom-checkbox threat-checkbox-option" for="threat-notif-enabled">
+          <input type="checkbox" id="threat-notif-enabled" checked>
+          <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+          <span class="threat-checkbox-copy">
+            <span class="threat-checkbox-title">Enabled</span>
+            <span class="threat-checkbox-help">Allow this delivery channel to receive threat alerts.</span>
+          </span>
+        </label>
+        <div class="threat-modal-actions">
+          <button type="button" class="btn-secondary" data-threat-close-modal="notif">Cancel</button>
+          <button type="submit" class="btn-primary">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== USER NOTIF MODAL ===== -->
+  <div id="threat-user-notif-modal" class="modal-overlay hidden">
+    <div class="modal-card threat-modal-xs">
+      <div class="modal-card-header">
+        <h2 id="threat-user-notif-modal-title" class="text-lg font-bold">Add Personal Channel</h2>
+        <button type="button" class="modal-close-btn" data-threat-close-modal="user-notif">&times;</button>
+      </div>
+      <form id="threat-user-notif-form" class="space-y-3">
+        <input type="hidden" id="threat-user-notif-edit-id">
+        <div><label class="input-label">Type</label>
+          <select id="threat-user-notif-type" class="input-field">
+            <option value="webhook">Webhook</option><option value="email">Email</option><option value="discord">Discord</option>
+          </select>
+        </div>
+        <div>
+          <label class="input-label">Destination</label>
+          <input type="text" id="threat-user-notif-dest" class="input-field" required>
+          <p id="threat-user-notif-help" class="text-xs text-muted mt-1">Enter the recipient for this channel.</p>
+        </div>
+        <label class="custom-checkbox threat-checkbox-option" for="threat-user-notif-enabled">
+          <input type="checkbox" id="threat-user-notif-enabled" checked>
+          <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+          <span class="threat-checkbox-copy">
+            <span class="threat-checkbox-title">Enabled</span>
+            <span class="threat-checkbox-help">Use this personal recipient when notifications are allowed.</span>
+          </span>
+        </label>
+        <div class="threat-modal-actions">
+          <button type="button" class="btn-secondary" data-threat-close-modal="user-notif">Cancel</button>
+          <button type="submit" class="btn-primary">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script type="module" src="/js/burger-menu.js"></script>
+  <script type="module" src="/js/theme.js"></script>
+  <script type="module" src="/js/threat.js"></script>
+</body>
+</html>

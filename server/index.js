@@ -18,8 +18,10 @@ const homepageDashboardRouter = require("./routes/homepage-dashboard");
 const calendarRouter = require("./routes/calendar");
 const surveyRouter = require("./routes/survey");
 const wikiRouter = require("./routes/wiki");
+const threatRouter = require("./routes/threat");
 const adminCollabRouter = require("./routes/admin-collab");
 const { runBulletinAutoPurge } = require("./bulletin-service");
+const { startFeedFetchInterval, seedDefaults: seedThreatDefaults } = require("./threat-feed-service");
 const { initWebSocket } = require("./chat-ws");
 const {
   deleteExpired, deleteExpiredFiles,
@@ -27,7 +29,7 @@ const {
   deleteExpiredGuestLinks, deleteExpiredPasswordResets,
   deleteExpiredMessages, deleteExpiredVaultShares,
   deleteExpiredPendingLogins, deleteExpiredTrustedDevices, deleteExpiredAdminSessions, deleteExpiredExtensionSessions,
-  closeExpiredSurveys,
+  closeExpiredSurveys, cleanupOldThreatAlerts, getSetting,
 } = require("./database");
 const { pageRequireUser, pageRequireGuestOrUser } = require("./middleware/auth");
 const { pageRequirePermission, pageRequireAnyPermission } = require("./middleware/permissions");
@@ -41,8 +43,29 @@ if (!COOKIE_SECRET || COOKIE_SECRET === "default-secret-change-me") {
   process.exit(1);
 }
 
-// Trust first proxy (for X-Forwarded-For header)
-app.set("trust proxy", 1);
+function resolveTrustProxySetting(value) {
+  if (value === undefined || value === null || String(value).trim() === "") {
+    return false;
+  }
+
+  const normalized = String(value).trim().toLowerCase();
+  if (["false", "0", "no", "off"].includes(normalized)) {
+    return false;
+  }
+  if (["true", "1", "yes", "on"].includes(normalized)) {
+    return 1;
+  }
+
+  const parsed = parseInt(normalized, 10);
+  if (Number.isInteger(parsed) && parsed >= 0) {
+    return parsed;
+  }
+
+  return value;
+}
+
+// Only trust proxy headers when explicitly configured.
+app.set("trust proxy", resolveTrustProxySetting(process.env.TRUST_PROXY));
 
 // --- Security headers ---
 app.use(
@@ -83,6 +106,7 @@ app.use("/api", vaultRouter);
 app.use("/api", calendarRouter);
 app.use("/api", surveyRouter);
 app.use("/api", wikiRouter);
+app.use("/api", threatRouter);
 app.use("/api/ext", extensionRouter);
 app.use("/api/homepage", homepageRouter);
 app.use("/api/homepage", homepageDashboardRouter);
@@ -113,7 +137,7 @@ app.get("/chat", pageRequireUser, (req, res) => res.sendFile(page("chat/index.ht
 app.get("/chat/about", (req, res) => res.sendFile(page("chat/about.html")));
 app.get("/vault", pageRequireUser, (req, res) => res.sendFile(page("vault/index.html")));
 app.get("/vault/about", (req, res) => res.sendFile(page("vault/about.html")));
-app.get("/calendar", pageRequireUser, pageRequirePermission("calendar.view"), (req, res) => res.sendFile(page("calendar/index.html")));
+app.get("/calendar", pageRequireUser, pageRequireAnyPermission(["calendar.view", "calendar.view_team", "calendar.manage"]), (req, res) => res.sendFile(page("calendar/index.html")));
 app.get("/calendar/about", (req, res) => res.sendFile(page("calendar/about.html")));
 app.get("/survey", pageRequireUser, pageRequireAnyPermission(["survey.create", "survey.manage_any", "survey.view_results_any"]), (req, res) => res.sendFile(page("survey/index.html")));
 app.get("/survey/results", pageRequireUser, pageRequireAnyPermission(["survey.create", "survey.manage_any", "survey.view_results_any"]), (req, res) => res.sendFile(page("survey/results.html")));
@@ -121,6 +145,8 @@ app.get("/survey/about", (req, res) => res.sendFile(page("survey/about.html")));
 app.get("/survey/r/:token", (req, res) => res.sendFile(page("survey/respond.html")));
 app.get("/wiki", pageRequireUser, pageRequireAnyPermission(["wiki.view", "wiki.create_personal", "wiki.create_team", "wiki.edit_team", "wiki.manage"]), (req, res) => res.sendFile(page("wiki/index.html")));
 app.get("/wiki/about", (req, res) => res.sendFile(page("wiki/about.html")));
+app.get("/threat", pageRequireUser, pageRequireAnyPermission(["threat.view", "threat.manage"]), (req, res) => res.sendFile(page("threat/index.html")));
+app.get("/threat/about", (req, res) => res.sendFile(page("threat/about.html")));
 app.get("/admin", (req, res) => res.sendFile(page("admin.html")));
 
 // Guest link redemption
@@ -152,8 +178,13 @@ setInterval(() => {
   const extensionSessions = deleteExpiredExtensionSessions();
   const expiredSurveys = closeExpiredSurveys();
   const bulletinPurge = runBulletinAutoPurge();
+  const parsedThreatRetentionDays = parseInt(getSetting("threat_alert_retention_days"), 10);
+  const threatRetentionDays = Number.isFinite(parsedThreatRetentionDays) && parsedThreatRetentionDays > 0
+    ? parsedThreatRetentionDays
+    : 14;
+  const threatAlerts = cleanupOldThreatAlerts(threatRetentionDays);
   if (shareRouter.cleanupTmp) shareRouter.cleanupTmp();
-  const total = pastes + files + sessions + invites + guestLinks + passwordResets + messages + vaultShares + pendingLogins + trustedDevices + adminSessions + extensionSessions + expiredSurveys + bulletinPurge.deletedBulletins + bulletinPurge.deletedAssets;
+  const total = pastes + files + sessions + invites + guestLinks + passwordResets + messages + vaultShares + pendingLogins + trustedDevices + adminSessions + extensionSessions + expiredSurveys + bulletinPurge.deletedBulletins + bulletinPurge.deletedAssets + threatAlerts;
   if (total > 0) {
     console.log(JSON.stringify({
       ts: new Date().toISOString(),
@@ -171,6 +202,8 @@ setInterval(() => {
       adminSessions,
       extensionSessions,
       expiredSurveys,
+      threatRetentionDays,
+      threatAlerts,
       bulletinPurge,
     }));
   }
@@ -181,6 +214,8 @@ const server = http.createServer(app);
 initWebSocket(server);
 server.listen(PORT, HOST, () => {
   console.log(JSON.stringify({ ts: new Date().toISOString(), action: "start", host: HOST, port: PORT, name: "RedSecTools" }));
+  seedThreatDefaults();
+  startFeedFetchInterval();
 });
 
 module.exports = { server };

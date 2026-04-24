@@ -38,14 +38,14 @@ const writeLimiter = rateLimit({
 });
 
 function requireCalendarView(req, res, next) {
-  if (!req.access.permissionSet.has("calendar.view")) {
+  if (!req.access.permissionSet.has("calendar.view") && !req.access.permissionSet.has("calendar.view_team") && !req.access.permissionSet.has("calendar.manage")) {
     return res.status(403).json({ error: "Calendar access denied" });
   }
   next();
 }
 
 function requireCalendarCreate(req, res, next) {
-  if (!req.access.permissionSet.has("calendar.create")) {
+  if (!req.access.permissionSet.has("calendar.create") && !req.access.permissionSet.has("calendar.manage")) {
     return res.status(403).json({ error: "Calendar create access denied" });
   }
   next();
@@ -202,8 +202,8 @@ function getPeriodRange(period, anchorUnix) {
 
 function getCalendarCapabilities(req) {
   return {
-    canView: req.access.permissionSet.has("calendar.view"),
-    canCreate: req.access.permissionSet.has("calendar.create"),
+    canView: req.access.permissionSet.has("calendar.view") || canViewTeamCalendar(req),
+    canCreate: req.access.permissionSet.has("calendar.create") || canManageCalendar(req),
     canViewTeam: canViewTeamCalendar(req),
     canAssignOthers: canAssignOthers(req),
     canManageProjects: canManageCalendar(req),

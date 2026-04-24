@@ -15,6 +15,7 @@ A multi-tool security platform by [RedSec Offensive Security](https://github.com
 | **BulletinBoard** | Workspace bulletin feed on the homepage with rich-text notices, scheduling, pinning, preset styling, and WebP image support |
 | **RedSecCal** | Team and individual scheduling for assignments, tasks, reminders, utilisation tracking, and project-linked calendar entries |
 | **RedSecSurvey** | Role-aware survey builder with public or internal response modes, live results, CSV export, expiry windows, and admin oversight |
+| **RedSecThreat** | Threat intelligence monitor with RSS/website/API/onion feed ingestion, keyword and regex matching, automatic IOC extraction, alert triage with criticality levels, and webhook/email/Discord notifications |
 | **RedSecWiki** | Team and personal Markdown wiki with page trees, subpages, live preview, published rendering, revision history, and search |
 | **RedSecTools Chrome Extension** | Chrome Manifest V3 extension for Vault access, autofill, Paste creation, and Share creation using the same server and encryption model |
 
@@ -94,6 +95,7 @@ Users are now assigned one primary role. Roles are managed in Admin and map to a
 - `bulletin.view`, `bulletin.create`, `bulletin.edit_any`, `bulletin.pin`, `bulletin.manage`
 - `calendar.view`, `calendar.create`, `calendar.view_team`, `calendar.manage`
 - `survey.create`, `survey.manage_any`, `survey.view_results_any`
+- `threat.view`, `threat.manage`
 - `wiki.view`, `wiki.create_personal`, `wiki.create_team`, `wiki.edit_team`, `wiki.manage`
 
 UI visibility follows the user's granted permissions, but enforcement is server-side on the protected APIs and the new tool pages.
@@ -320,6 +322,35 @@ RedSecSurvey provides an internal survey workspace with:
 - Basic anti-abuse protections for public responses using per-survey browser response sessions plus duplicate-user submission blocking for authenticated responders
 - Admin visibility and deletion controls from the Admin tool settings area
 
+### Threat Intel (`/threat`)
+
+RedSecThreat provides a threat intelligence monitoring dashboard with:
+
+- **Feed sources** — RSS, website (HTML scraping), REST API, and Tor onion (.onion via SOCKS proxy). Each source runs on its own configurable polling interval with SHA-256 content hashing for deduplication
+- **User-scoped monitoring** — Default watchlist keywords are shared, but each user can disable defaults, create personal keywords and tags, and maintain their own read state without duplicating stored feed content in the database
+- **IOC extraction** — Automatic extraction of IPs, domains, file hashes, URLs, and email addresses from matched content
+- **Alert system** — Matched items generate a shared stored alert per source item, then attach user-owned keyword matches, tags, and read state on top. Alert detail includes source links, full stored context, and local-time timestamps in the UI
+- **Notifications** — Admin-controlled email/webhook/Discord policy with per-user opt-in delivery. Email alerts always use the user account email; Discord and generic webhook destinations are user-configured
+- **API templates** — Reusable feed templates with preconfigured endpoint, auth, headers, and field mapping, managed from the admin panel alongside feeds and policy
+- **Tags** — Shared default tags plus personal user tags, applied independently to each user’s keywords and alerts
+- **Permissions** — `threat.view` grants access to the personal threat workspace; global feed sources, API templates, and notification policy are administered from the separate admin panel
+
+#### Dark Web / Onion Feed Setup
+
+RedSecThreat can poll `.onion` feeds, but those feeds require a Tor-capable SOCKS proxy.
+
+- **Docker deployments** — `docker-compose.yml` now includes a `tor-proxy` sidecar and sets `TOR_PROXY=socks5h://tor-proxy:9050` for the app container. In most Docker installs, onion feeds work as soon as the stack is up.
+- **Admin override** — Admins can set **Admin > RedSecThreat > Tor / SOCKS Proxy URL** to override the default Docker sidecar address or point at another Tor/SOCKS gateway.
+- **Non-Docker deployments** — Run a local Tor service and set the admin proxy field to something like `socks5h://127.0.0.1:9050`.
+- **Operational note** — Onion feeds remain visible in the admin feed list even if no proxy is configured, but they will not fetch successfully until a Tor/SOCKS proxy is available.
+
+#### Threat Notifications
+
+Threat notifications are split between admin policy and user preferences:
+
+- **Admins** decide which notification types are allowed and configure shared sender behavior such as the optional email from-override and Discord sender branding.
+- **Users** only opt in to the channels admins allow. Email notifications go to the user’s login email automatically. Discord and webhook recipients are configured by the user.
+
 ### Wiki (`/wiki`)
 
 RedSecWiki is the internal knowledge hub for RedSecTools. It now provides:
@@ -374,7 +405,7 @@ All encryption uses the Web Crypto API. The server performs zero cryptographic o
 
 ### Tech Stack
 
-- **Backend:** Express.js, SQLite (better-sqlite3 with WAL mode), Helmet, bcrypt, Nodemailer
+- **Backend:** Express.js, SQLite (better-sqlite3 with WAL mode), Helmet, bcrypt, Nodemailer, rss-parser, cheerio, socks-proxy-agent
 - **Frontend:** Vanilla JS (ES modules), Tailwind CSS, Web Crypto API
 - **Real-time:** WebSocket (ws library) for chat
 - **Storage:** SQLite database + encrypted files on disk
@@ -396,6 +427,9 @@ All encryption uses the Web Crypto API. The server performs zero cryptographic o
 | `server/routes/homepage-dashboard.js` | Bulletin feed, bulletin assets, and built-in tool favourite APIs |
 | `server/routes/calendar.js` | RedSecCal API |
 | `server/routes/survey.js` | RedSecSurvey API |
+| `server/routes/threat.js` | RedSecThreat user API (read-only feed catalogue, personal keywords/tags/alerts, personal notifications, health) |
+| `server/threat-feed-service.js` | Feed fetch engine (RSS, website, API, onion), keyword matching, IOC extraction |
+| `server/threat-notify-service.js` | Notification dispatch (webhook, email, Discord) |
 | `server/routes/wiki.js` | RedSecWiki API |
 | `public/js/crypto.js` | AES-256-GCM + PBKDF2 (zero dependencies) |
 | `public/js/file-crypto.js` | File encryption module |
@@ -414,6 +448,9 @@ The SQLite database now includes the original encrypted content/auth/chat/vault 
 - `surveys`, `survey_questions`, `survey_question_options`, `survey_responses`, `survey_answers` — RedSecSurvey
 - `wiki_pages`, `wiki_page_revisions` — RedSecWiki team/personal page tree, published markdown render, and revision history
 - `homepage_settings` — homepage layout plus built-in tool favourites
+- `threat_feeds`, `threat_keywords`, `threat_tags`, `threat_alerts`, `threat_api_templates`, `threat_notification_configs`, `threat_user_notifications`, `threat_suppressed_alerts` — RedSecThreat shared feed, template, and alert content tables
+- `threat_feed_keywords`, `threat_feed_tags`, `threat_keyword_tags`, `threat_alert_tags` — RedSecThreat shared many-to-many relationship tables
+- `threat_user_keyword_disabled`, `threat_user_keyword_tags`, `threat_user_alert_keywords`, `threat_user_alert_state`, `threat_user_alert_tags`, `threat_user_hidden_alerts` — per-user overrides, alert ownership, read state, and personal tagging without duplicating alert payloads
 
 ---
 

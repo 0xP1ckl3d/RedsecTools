@@ -566,6 +566,177 @@ db.exec(`
     created_at INTEGER NOT NULL DEFAULT (unixepoch())
   );
   CREATE INDEX IF NOT EXISTS idx_wiki_revisions_page ON wiki_page_revisions(page_id, created_at);
+
+  -- Threat Intel tables
+  CREATE TABLE IF NOT EXISTS threat_feeds (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    url TEXT NOT NULL,
+    feed_type TEXT NOT NULL CHECK(feed_type IN ('rss','website','api','onion')),
+    enabled INTEGER NOT NULL DEFAULT 1,
+    is_default INTEGER NOT NULL DEFAULT 0,
+    fetch_interval INTEGER NOT NULL DEFAULT 3600,
+    last_fetched_at INTEGER,
+    last_content_hash TEXT,
+    feed_metadata TEXT DEFAULT '{}',
+    last_error TEXT,
+    last_error_at INTEGER,
+    consecutive_failures INTEGER DEFAULT 0,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+  CREATE INDEX IF NOT EXISTS idx_threat_feeds_type ON threat_feeds(feed_type);
+  CREATE INDEX IF NOT EXISTS idx_threat_feeds_enabled ON threat_feeds(enabled);
+
+  CREATE TABLE IF NOT EXISTS threat_keywords (
+    id TEXT PRIMARY KEY,
+    keyword TEXT NOT NULL,
+    case_sensitive INTEGER NOT NULL DEFAULT 0,
+    is_regex INTEGER NOT NULL DEFAULT 0,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    criticality TEXT NOT NULL DEFAULT 'medium' CHECK(criticality IN ('low','medium','high','critical')),
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+  CREATE INDEX IF NOT EXISTS idx_threat_keywords_enabled ON threat_keywords(enabled);
+
+  CREATE TABLE IF NOT EXISTS threat_tags (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    color TEXT NOT NULL DEFAULT '#E53935',
+    description TEXT,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+
+  CREATE TABLE IF NOT EXISTS threat_alerts (
+    id TEXT PRIMARY KEY,
+    feed_id TEXT NOT NULL,
+    keyword_id TEXT NOT NULL,
+    matched_content TEXT NOT NULL,
+    context TEXT,
+    context_hash TEXT,
+    article_hash TEXT,
+    matched_keywords TEXT DEFAULT '[]',
+    api_metadata TEXT DEFAULT '{}',
+    criticality TEXT NOT NULL DEFAULT 'medium' CHECK(criticality IN ('low','medium','high','critical')),
+    is_read INTEGER NOT NULL DEFAULT 0,
+    triggered_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+  CREATE INDEX IF NOT EXISTS idx_threat_alerts_feed ON threat_alerts(feed_id);
+  CREATE INDEX IF NOT EXISTS idx_threat_alerts_criticality ON threat_alerts(criticality);
+  CREATE INDEX IF NOT EXISTS idx_threat_alerts_created ON threat_alerts(triggered_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_threat_alerts_read ON threat_alerts(is_read);
+
+  CREATE TABLE IF NOT EXISTS threat_api_templates (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT,
+    configuration TEXT NOT NULL DEFAULT '{}',
+    is_system INTEGER NOT NULL DEFAULT 0,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+
+  CREATE TABLE IF NOT EXISTS threat_notification_configs (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    channel_type TEXT NOT NULL CHECK(channel_type IN ('webhook','email','discord')),
+    destination TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+
+  CREATE TABLE IF NOT EXISTS threat_user_notifications (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    channel_type TEXT NOT NULL CHECK(channel_type IN ('webhook','email','discord')),
+    destination TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    UNIQUE(user_id, channel_type)
+  );
+  CREATE INDEX IF NOT EXISTS idx_threat_user_notif_user ON threat_user_notifications(user_id);
+
+  CREATE TABLE IF NOT EXISTS threat_suppressed_alerts (
+    id TEXT PRIMARY KEY,
+    feed_id TEXT NOT NULL,
+    article_hash TEXT,
+    context_hash TEXT,
+    keyword_id TEXT,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+  CREATE INDEX IF NOT EXISTS idx_threat_suppressed_feed ON threat_suppressed_alerts(feed_id);
+  CREATE INDEX IF NOT EXISTS idx_threat_suppressed_hash ON threat_suppressed_alerts(article_hash);
+
+  CREATE TABLE IF NOT EXISTS threat_feed_keywords (
+    feed_id TEXT NOT NULL,
+    keyword_id TEXT NOT NULL,
+    PRIMARY KEY (feed_id, keyword_id)
+  );
+  CREATE TABLE IF NOT EXISTS threat_feed_tags (
+    feed_id TEXT NOT NULL,
+    tag_id TEXT NOT NULL,
+    PRIMARY KEY (feed_id, tag_id)
+  );
+  CREATE TABLE IF NOT EXISTS threat_keyword_tags (
+    keyword_id TEXT NOT NULL,
+    tag_id TEXT NOT NULL,
+    PRIMARY KEY (keyword_id, tag_id)
+  );
+  CREATE TABLE IF NOT EXISTS threat_alert_tags (
+    alert_id TEXT NOT NULL,
+    tag_id TEXT NOT NULL,
+    PRIMARY KEY (alert_id, tag_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS threat_user_keyword_tags (
+    user_id TEXT NOT NULL,
+    keyword_id TEXT NOT NULL,
+    tag_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (user_id, keyword_id, tag_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS threat_user_alert_keywords (
+    user_id TEXT NOT NULL,
+    alert_id TEXT NOT NULL,
+    keyword_id TEXT NOT NULL,
+    matched_text TEXT,
+    criticality TEXT NOT NULL DEFAULT 'medium' CHECK(criticality IN ('low','medium','high','critical')),
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (user_id, alert_id, keyword_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_threat_user_alert_keywords_user_alert ON threat_user_alert_keywords(user_id, alert_id);
+  CREATE INDEX IF NOT EXISTS idx_threat_user_alert_keywords_alert ON threat_user_alert_keywords(alert_id);
+
+  CREATE TABLE IF NOT EXISTS threat_user_alert_state (
+    user_id TEXT NOT NULL,
+    alert_id TEXT NOT NULL,
+    is_read INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (user_id, alert_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_threat_user_alert_state_user_read ON threat_user_alert_state(user_id, is_read);
+
+  CREATE TABLE IF NOT EXISTS threat_user_alert_tags (
+    user_id TEXT NOT NULL,
+    alert_id TEXT NOT NULL,
+    tag_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (user_id, alert_id, tag_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS threat_user_hidden_alerts (
+    user_id TEXT NOT NULL,
+    alert_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (user_id, alert_id)
+  );
 `);
 
 // Add avatar column to users table (safe migration)
@@ -606,6 +777,84 @@ try { db.exec("UPDATE wiki_pages SET scope = 'team' WHERE scope IS NULL OR scope
 try { db.exec("UPDATE wiki_pages SET last_editor_id = author_id WHERE last_editor_id IS NULL OR last_editor_id = ''"); } catch {}
 try { db.exec("UPDATE wiki_pages SET published_at = coalesce(updated_at, created_at) WHERE published_at IS NULL OR published_at = 0"); } catch {}
 try { db.exec("CREATE INDEX IF NOT EXISTS idx_wiki_pages_scope_owner ON wiki_pages(scope, owner_id, updated_at)"); } catch {}
+
+try { db.exec("ALTER TABLE threat_alerts ADD COLUMN article_url TEXT"); } catch {}
+try { db.exec("ALTER TABLE threat_alerts ADD COLUMN user_id TEXT"); } catch {}
+try { db.exec("ALTER TABLE threat_keywords ADD COLUMN user_id TEXT"); } catch {}
+try { db.exec("ALTER TABLE threat_tags ADD COLUMN user_id TEXT"); } catch {}
+try { db.exec(`
+  CREATE TABLE IF NOT EXISTS threat_user_keyword_disabled (
+    user_id TEXT NOT NULL,
+    keyword_id TEXT NOT NULL,
+    PRIMARY KEY (user_id, keyword_id)
+  )
+`); } catch {}
+try { db.exec("CREATE INDEX IF NOT EXISTS idx_threat_alerts_user ON threat_alerts(user_id)"); } catch {}
+try { db.exec("CREATE INDEX IF NOT EXISTS idx_threat_keywords_user ON threat_keywords(user_id)"); } catch {}
+try { db.exec("CREATE INDEX IF NOT EXISTS idx_threat_tags_user ON threat_tags(user_id)"); } catch {}
+
+function migrateThreatScopedTables() {
+  const keywordSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'threat_keywords'").get()?.sql || "";
+  if (/keyword\s+TEXT\s+NOT\s+NULL\s+UNIQUE/i.test(keywordSql)) {
+    db.exec(`
+      BEGIN;
+      ALTER TABLE threat_keywords RENAME TO threat_keywords_legacy;
+      CREATE TABLE threat_keywords (
+        id TEXT PRIMARY KEY,
+        keyword TEXT NOT NULL,
+        case_sensitive INTEGER NOT NULL DEFAULT 0,
+        is_regex INTEGER NOT NULL DEFAULT 0,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        criticality TEXT NOT NULL DEFAULT 'medium' CHECK(criticality IN ('low','medium','high','critical')),
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        user_id TEXT
+      );
+      INSERT INTO threat_keywords (id, keyword, case_sensitive, is_regex, enabled, criticality, created_at, updated_at, user_id)
+      SELECT id, keyword, case_sensitive, is_regex, enabled, criticality, created_at, updated_at, user_id
+      FROM threat_keywords_legacy;
+      DROP TABLE threat_keywords_legacy;
+      CREATE INDEX IF NOT EXISTS idx_threat_keywords_enabled ON threat_keywords(enabled);
+      CREATE INDEX IF NOT EXISTS idx_threat_keywords_user ON threat_keywords(user_id);
+      COMMIT;
+    `);
+  }
+
+  const tagSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'threat_tags'").get()?.sql || "";
+  if (/name\s+TEXT\s+NOT\s+NULL\s+UNIQUE/i.test(tagSql)) {
+    db.exec(`
+      BEGIN;
+      ALTER TABLE threat_tags RENAME TO threat_tags_legacy;
+      CREATE TABLE threat_tags (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        color TEXT NOT NULL DEFAULT '#E53935',
+        description TEXT,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        user_id TEXT
+      );
+      INSERT INTO threat_tags (id, name, color, description, created_at, user_id)
+      SELECT id, name, color, description, created_at, user_id
+      FROM threat_tags_legacy;
+      DROP TABLE threat_tags_legacy;
+      CREATE INDEX IF NOT EXISTS idx_threat_tags_user ON threat_tags(user_id);
+      COMMIT;
+    `);
+  }
+
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_threat_keywords_system_unique
+      ON threat_keywords(keyword) WHERE user_id IS NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_threat_keywords_user_unique
+      ON threat_keywords(user_id, keyword) WHERE user_id IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_threat_tags_system_unique
+      ON threat_tags(name) WHERE user_id IS NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_threat_tags_user_unique
+      ON threat_tags(user_id, name) WHERE user_id IS NOT NULL;
+  `);
+}
+
+migrateThreatScopedTables();
 
 // Per-user favourite shortcuts (junction table — works for personal AND team shortcuts)
 db.exec(`CREATE TABLE IF NOT EXISTS user_favourite_shortcuts (
@@ -1549,6 +1798,327 @@ const stmts = {
     INSERT INTO homepage_settings (user_id, layout) VALUES (@userId, @layout)
     ON CONFLICT(user_id) DO UPDATE SET layout = @layout, updated_at = unixepoch()
   `),
+
+  // --- Threat Intel: Feeds ---
+  createThreatFeed: db.prepare(`
+    INSERT INTO threat_feeds (id, name, url, feed_type, enabled, is_default, fetch_interval, feed_metadata)
+    VALUES (@id, @name, @url, @feedType, @enabled, @isDefault, @fetchInterval, @feedMetadata)
+  `),
+  listThreatFeeds: db.prepare("SELECT * FROM threat_feeds ORDER BY name ASC"),
+  listThreatFeedsEnabled: db.prepare("SELECT * FROM threat_feeds WHERE enabled = 1 ORDER BY name ASC"),
+  getThreatFeedById: db.prepare("SELECT * FROM threat_feeds WHERE id = ?"),
+  updateThreatFeed: db.prepare(`
+    UPDATE threat_feeds SET name = @name, url = @url, feed_type = @feedType, enabled = @enabled,
+      is_default = @isDefault, fetch_interval = @fetchInterval, feed_metadata = @feedMetadata,
+      updated_at = unixepoch()
+    WHERE id = @id
+  `),
+  deleteThreatFeedById: db.prepare("DELETE FROM threat_feeds WHERE id = ?"),
+  updateThreatFeedFetchStatus: db.prepare(`
+    UPDATE threat_feeds SET last_fetched_at = unixepoch(), last_content_hash = @hash,
+      last_error = @error, last_error_at = @errorAt, consecutive_failures = @failures,
+      updated_at = unixepoch()
+    WHERE id = @id
+  `),
+  countThreatFeeds: db.prepare("SELECT COUNT(*) AS total FROM threat_feeds"),
+  countThreatFeedsEnabled: db.prepare("SELECT COUNT(*) AS total FROM threat_feeds WHERE enabled = 1"),
+  countThreatFeedsHealthy: db.prepare("SELECT COUNT(*) AS total FROM threat_feeds WHERE enabled = 1 AND consecutive_failures = 0"),
+
+  // --- Threat Intel: Feed-Keyword M2M ---
+  setThreatFeedKeywords: db.prepare(`
+    DELETE FROM threat_feed_keywords WHERE feed_id = ?
+  `),
+  insertThreatFeedKeyword: db.prepare(`
+    INSERT OR IGNORE INTO threat_feed_keywords (feed_id, keyword_id) VALUES (?, ?)
+  `),
+  getThreatFeedKeywords: db.prepare(`
+    SELECT k.* FROM threat_keywords k
+    JOIN threat_feed_keywords fk ON k.id = fk.keyword_id
+    WHERE fk.feed_id = ?
+  `),
+  getThreatFeedsForKeyword: db.prepare(`
+    SELECT f.* FROM threat_feeds f
+    JOIN threat_feed_keywords fk ON f.id = fk.feed_id
+    WHERE fk.keyword_id = ?
+  `),
+
+  // --- Threat Intel: Feed-Tag M2M ---
+  setThreatFeedTags: db.prepare("DELETE FROM threat_feed_tags WHERE feed_id = ?"),
+  insertThreatFeedTag: db.prepare("INSERT OR IGNORE INTO threat_feed_tags (feed_id, tag_id) VALUES (?, ?)"),
+  getThreatFeedTags: db.prepare(`
+    SELECT t.* FROM threat_tags t
+    JOIN threat_feed_tags ft ON t.id = ft.tag_id
+    WHERE ft.feed_id = ?
+  `),
+
+  // --- Threat Intel: Keywords ---
+  createThreatKeyword: db.prepare(`
+    INSERT INTO threat_keywords (id, keyword, case_sensitive, is_regex, enabled, criticality, user_id)
+    VALUES (@id, @keyword, @caseSensitive, @isRegex, @enabled, @criticality, @userId)
+  `),
+  listThreatKeywords: db.prepare("SELECT * FROM threat_keywords ORDER BY keyword ASC"),
+  listThreatKeywordsEnabled: db.prepare("SELECT * FROM threat_keywords WHERE enabled = 1 ORDER BY keyword ASC"),
+  listThreatKeywordsByUser: db.prepare("SELECT * FROM threat_keywords WHERE user_id = ? ORDER BY keyword ASC"),
+  listSystemKeywords: db.prepare("SELECT * FROM threat_keywords WHERE user_id IS NULL ORDER BY keyword ASC"),
+  listSystemKeywordsEnabled: db.prepare("SELECT * FROM threat_keywords WHERE user_id IS NULL AND enabled = 1 ORDER BY keyword ASC"),
+  getThreatKeywordByTextSystem: db.prepare("SELECT * FROM threat_keywords WHERE user_id IS NULL AND keyword = ?"),
+  getThreatKeywordByTextForUser: db.prepare("SELECT * FROM threat_keywords WHERE user_id = ? AND keyword = ?"),
+  getThreatKeywordById: db.prepare("SELECT * FROM threat_keywords WHERE id = ?"),
+  getThreatKeywordByText: db.prepare("SELECT * FROM threat_keywords WHERE keyword = ?"),
+  updateThreatKeyword: db.prepare(`
+    UPDATE threat_keywords SET keyword = @keyword, case_sensitive = @caseSensitive,
+      is_regex = @isRegex, enabled = @enabled, criticality = @criticality, updated_at = unixepoch()
+    WHERE id = @id
+  `),
+  deleteThreatKeywordById: db.prepare("DELETE FROM threat_keywords WHERE id = ?"),
+  countThreatKeywords: db.prepare("SELECT COUNT(*) AS total FROM threat_keywords"),
+  countThreatKeywordsEnabled: db.prepare("SELECT COUNT(*) AS total FROM threat_keywords WHERE enabled = 1"),
+
+  // --- Threat Intel: Keyword-Tag M2M ---
+  setThreatKeywordTags: db.prepare("DELETE FROM threat_keyword_tags WHERE keyword_id = ?"),
+  insertThreatKeywordTag: db.prepare("INSERT OR IGNORE INTO threat_keyword_tags (keyword_id, tag_id) VALUES (?, ?)"),
+  getThreatKeywordTags: db.prepare(`
+    SELECT t.* FROM threat_tags t
+    JOIN threat_keyword_tags kt ON t.id = kt.tag_id
+    WHERE kt.keyword_id = ?
+  `),
+
+  // --- Threat Intel: Tags ---
+  createThreatTag: db.prepare(`
+    INSERT INTO threat_tags (id, name, color, description, user_id) VALUES (@id, @name, @color, @description, @userId)
+  `),
+  listThreatTags: db.prepare("SELECT * FROM threat_tags ORDER BY name ASC"),
+  listThreatTagsByUser: db.prepare("SELECT * FROM threat_tags WHERE user_id = ? ORDER BY name ASC"),
+  listSystemTags: db.prepare("SELECT * FROM threat_tags WHERE user_id IS NULL ORDER BY name ASC"),
+  getThreatTagById: db.prepare("SELECT * FROM threat_tags WHERE id = ?"),
+  getThreatTagByName: db.prepare("SELECT * FROM threat_tags WHERE name = ?"),
+  getThreatTagByNameSystem: db.prepare("SELECT * FROM threat_tags WHERE user_id IS NULL AND name = ?"),
+  getThreatTagByNameForUser: db.prepare("SELECT * FROM threat_tags WHERE user_id = ? AND name = ?"),
+  updateThreatTag: db.prepare(`
+    UPDATE threat_tags SET name = @name, color = @color, description = @description WHERE id = @id
+  `),
+  deleteThreatTagById: db.prepare("DELETE FROM threat_tags WHERE id = ?"),
+
+  // --- Threat Intel: Alerts ---
+  createThreatAlert: db.prepare(`
+    INSERT INTO threat_alerts (id, feed_id, keyword_id, matched_content, context, context_hash,
+      article_hash, article_url, user_id, matched_keywords, api_metadata, criticality, is_read, triggered_at)
+    VALUES (@id, @feedId, @keywordId, @matchedContent, @context, @contextHash,
+      @articleHash, @articleUrl, @userId, @matchedKeywords, @apiMetadata, @criticality, @isRead, @triggeredAt)
+  `),
+  listThreatAlerts: db.prepare(`
+    SELECT a.*, f.name AS feed_name, f.feed_type AS feed_feed_type, f.url AS feed_url,
+      k.keyword AS keyword_text, k.criticality AS keyword_criticality
+    FROM threat_alerts a
+    LEFT JOIN threat_feeds f ON a.feed_id = f.id
+    LEFT JOIN threat_keywords k ON a.keyword_id = k.id
+    WHERE 1=1
+    ORDER BY a.triggered_at DESC
+    LIMIT ? OFFSET ?
+  `),
+  listThreatAlertsByCriticality: db.prepare(`
+    SELECT a.*, f.name AS feed_name, f.feed_type AS feed_feed_type, f.url AS feed_url,
+      k.keyword AS keyword_text, k.criticality AS keyword_criticality
+    FROM threat_alerts a
+    LEFT JOIN threat_feeds f ON a.feed_id = f.id
+    LEFT JOIN threat_keywords k ON a.keyword_id = k.id
+    WHERE a.criticality = ?
+    ORDER BY a.triggered_at DESC
+    LIMIT ? OFFSET ?
+  `),
+  listThreatAlertsUnread: db.prepare(`
+    SELECT a.*, f.name AS feed_name, f.feed_type AS feed_feed_type, f.url AS feed_url,
+      k.keyword AS keyword_text, k.criticality AS keyword_criticality
+    FROM threat_alerts a
+    LEFT JOIN threat_feeds f ON a.feed_id = f.id
+    LEFT JOIN threat_keywords k ON a.keyword_id = k.id
+    WHERE a.is_read = 0
+    ORDER BY a.triggered_at DESC
+    LIMIT ? OFFSET ?
+  `),
+  getThreatAlertById: db.prepare(`
+    SELECT a.*, f.name AS feed_name, f.feed_type AS feed_feed_type, f.url AS feed_url,
+      k.keyword AS keyword_text, k.criticality AS keyword_criticality
+    FROM threat_alerts a
+    LEFT JOIN threat_feeds f ON a.feed_id = f.id
+    LEFT JOIN threat_keywords k ON a.keyword_id = k.id
+    WHERE a.id = ?
+  `),
+  updateThreatAlertRead: db.prepare("UPDATE threat_alerts SET is_read = @isRead WHERE id = @id"),
+  markAllThreatAlertsRead: db.prepare("UPDATE threat_alerts SET is_read = 1 WHERE is_read = 0"),
+  updateThreatAlertCriticality: db.prepare("UPDATE threat_alerts SET criticality = @criticality WHERE id = @id"),
+  deleteThreatAlertById: db.prepare("DELETE FROM threat_alerts WHERE id = ?"),
+  cleanupOldThreatAlerts: db.prepare(`
+    DELETE FROM threat_alerts WHERE triggered_at < unixepoch() - ? * 86400
+  `),
+  countThreatAlerts: db.prepare("SELECT COUNT(*) AS total FROM threat_alerts"),
+  countThreatAlertsUnread: db.prepare("SELECT COUNT(*) AS total FROM threat_alerts WHERE is_read = 0"),
+  countThreatAlertsByCriticality: db.prepare(`
+    SELECT criticality, COUNT(*) AS count FROM threat_alerts GROUP BY criticality
+  `),
+  countThreatAlertsLast24h: db.prepare("SELECT COUNT(*) AS total FROM threat_alerts WHERE triggered_at > unixepoch() - 86400"),
+  listRecentThreatAlerts: db.prepare(`
+    SELECT a.*, f.name AS feed_name, f.feed_type AS feed_feed_type, f.url AS feed_url,
+      k.keyword AS keyword_text
+    FROM threat_alerts a
+    LEFT JOIN threat_feeds f ON a.feed_id = f.id
+    LEFT JOIN threat_keywords k ON a.keyword_id = k.id
+    ORDER BY a.triggered_at DESC LIMIT ?
+  `),
+  alertExistsByArticleHash: db.prepare("SELECT id FROM threat_alerts WHERE feed_id = ? AND article_hash = ?"),
+  alertExistsByContextHash: db.prepare("SELECT id FROM threat_alerts WHERE feed_id = ? AND keyword_id = ? AND context_hash = ?"),
+  alertExistsByFeedKeyword: db.prepare("SELECT id FROM threat_alerts WHERE feed_id = ? AND keyword_id = ?"),
+
+  // --- Threat Intel: Alert-Tag M2M ---
+  setThreatAlertTags: db.prepare("DELETE FROM threat_alert_tags WHERE alert_id = ?"),
+  insertThreatAlertTag: db.prepare("INSERT OR IGNORE INTO threat_alert_tags (alert_id, tag_id) VALUES (?, ?)"),
+  getThreatAlertTags: db.prepare(`
+    SELECT t.* FROM threat_tags t
+    JOIN threat_alert_tags at2 ON t.id = at2.tag_id
+    WHERE at2.alert_id = ?
+  `),
+
+  // --- Threat Intel: User Keyword Tags ---
+  setThreatUserKeywordTags: db.prepare("DELETE FROM threat_user_keyword_tags WHERE user_id = ? AND keyword_id = ?"),
+  insertThreatUserKeywordTag: db.prepare("INSERT OR IGNORE INTO threat_user_keyword_tags (user_id, keyword_id, tag_id) VALUES (?, ?, ?)"),
+  getThreatUserKeywordTags: db.prepare(`
+    SELECT t.* FROM threat_tags t
+    JOIN threat_user_keyword_tags ukt ON t.id = ukt.tag_id
+    WHERE ukt.user_id = ? AND ukt.keyword_id = ?
+    ORDER BY t.name ASC
+  `),
+
+  // --- Threat Intel: User Alert Keyword Matches ---
+  upsertThreatUserAlertKeyword: db.prepare(`
+    INSERT INTO threat_user_alert_keywords (user_id, alert_id, keyword_id, matched_text, criticality)
+    VALUES (@userId, @alertId, @keywordId, @matchedText, @criticality)
+    ON CONFLICT(user_id, alert_id, keyword_id) DO UPDATE SET
+      matched_text = @matchedText,
+      criticality = @criticality,
+      updated_at = unixepoch()
+  `),
+  listThreatUserAlertKeywordRows: db.prepare(`
+    SELECT uak.*, k.keyword, k.case_sensitive, k.is_regex, k.user_id AS keyword_user_id
+    FROM threat_user_alert_keywords uak
+    JOIN threat_keywords k ON k.id = uak.keyword_id
+    WHERE uak.user_id = ? AND uak.alert_id = ?
+    ORDER BY k.keyword ASC
+  `),
+  listThreatUserAlertKeywordRowsForAlert: db.prepare(`
+    SELECT * FROM threat_user_alert_keywords WHERE alert_id = ?
+  `),
+  deleteThreatUserAlertKeywordRowsByAlert: db.prepare("DELETE FROM threat_user_alert_keywords WHERE alert_id = ?"),
+
+  // --- Threat Intel: User Alert State ---
+  upsertThreatUserAlertState: db.prepare(`
+    INSERT INTO threat_user_alert_state (user_id, alert_id, is_read)
+    VALUES (@userId, @alertId, @isRead)
+    ON CONFLICT(user_id, alert_id) DO UPDATE SET
+      is_read = @isRead,
+      updated_at = unixepoch()
+  `),
+  getThreatUserAlertState: db.prepare("SELECT * FROM threat_user_alert_state WHERE user_id = ? AND alert_id = ?"),
+  deleteThreatUserAlertStateByAlert: db.prepare("DELETE FROM threat_user_alert_state WHERE alert_id = ?"),
+
+  // --- Threat Intel: User Alert Tags ---
+  setThreatUserAlertTags: db.prepare("DELETE FROM threat_user_alert_tags WHERE user_id = ? AND alert_id = ?"),
+  insertThreatUserAlertTag: db.prepare("INSERT OR IGNORE INTO threat_user_alert_tags (user_id, alert_id, tag_id) VALUES (?, ?, ?)"),
+  getThreatUserAlertTags: db.prepare(`
+    SELECT t.* FROM threat_tags t
+    JOIN threat_user_alert_tags uat ON t.id = uat.tag_id
+    WHERE uat.user_id = ? AND uat.alert_id = ?
+    ORDER BY t.name ASC
+  `),
+  deleteThreatUserAlertTagsByAlert: db.prepare("DELETE FROM threat_user_alert_tags WHERE alert_id = ?"),
+
+  // --- Threat Intel: User Hidden Alerts ---
+  hideThreatAlertForUser: db.prepare("INSERT OR IGNORE INTO threat_user_hidden_alerts (user_id, alert_id) VALUES (?, ?)"),
+  isThreatAlertHiddenForUser: db.prepare("SELECT alert_id FROM threat_user_hidden_alerts WHERE user_id = ? AND alert_id = ?"),
+  deleteThreatHiddenAlertByAlert: db.prepare("DELETE FROM threat_user_hidden_alerts WHERE alert_id = ?"),
+
+  // --- Threat Intel: Suppressed Alerts ---
+  isThreatAlertSuppressed: db.prepare(`
+    SELECT id FROM threat_suppressed_alerts
+    WHERE feed_id = ? AND (article_hash = ? OR context_hash = ? OR (keyword_id = ? AND article_hash IS NULL AND context_hash IS NULL))
+    LIMIT 1
+  `),
+  createThreatSuppressedAlert: db.prepare(`
+    INSERT INTO threat_suppressed_alerts (id, feed_id, article_hash, context_hash, keyword_id)
+    VALUES (@id, @feedId, @articleHash, @contextHash, @keywordId)
+  `),
+
+  // --- Threat Intel: API Templates ---
+  createThreatApiTemplate: db.prepare(`
+    INSERT INTO threat_api_templates (id, name, description, configuration, is_system, enabled)
+    VALUES (@id, @name, @description, @configuration, @isSystem, @enabled)
+  `),
+  listThreatApiTemplates: db.prepare("SELECT * FROM threat_api_templates ORDER BY name ASC"),
+  getThreatApiTemplateById: db.prepare("SELECT * FROM threat_api_templates WHERE id = ?"),
+  getThreatApiTemplateByName: db.prepare("SELECT * FROM threat_api_templates WHERE name = ?"),
+  updateThreatApiTemplate: db.prepare(`
+    UPDATE threat_api_templates SET name = @name, description = @description,
+      configuration = @configuration, enabled = @enabled, updated_at = unixepoch()
+    WHERE id = @id
+  `),
+  deleteThreatApiTemplateById: db.prepare("DELETE FROM threat_api_templates WHERE id = ?"),
+
+  // --- Threat Intel: Notification Configs ---
+  createThreatNotificationConfig: db.prepare(`
+    INSERT INTO threat_notification_configs (id, name, channel_type, destination, enabled)
+    VALUES (@id, @name, @channelType, @destination, @enabled)
+  `),
+  listThreatNotificationConfigs: db.prepare("SELECT * FROM threat_notification_configs ORDER BY name ASC"),
+  listThreatNotificationConfigsEnabled: db.prepare("SELECT * FROM threat_notification_configs WHERE enabled = 1"),
+  getThreatNotificationConfigById: db.prepare("SELECT * FROM threat_notification_configs WHERE id = ?"),
+  updateThreatNotificationConfig: db.prepare(`
+    UPDATE threat_notification_configs SET name = @name, destination = @destination, enabled = @enabled
+    WHERE id = @id
+  `),
+  deleteThreatNotificationConfigById: db.prepare("DELETE FROM threat_notification_configs WHERE id = ?"),
+
+  // --- Threat Intel: User Notifications ---
+  createThreatUserNotification: db.prepare(`
+    INSERT INTO threat_user_notifications (id, user_id, channel_type, destination, enabled)
+    VALUES (@id, @userId, @channelType, @destination, @enabled)
+    ON CONFLICT(user_id, channel_type) DO UPDATE SET
+      destination = @destination, enabled = @enabled, updated_at = unixepoch()
+  `),
+  listThreatUserNotifications: db.prepare("SELECT * FROM threat_user_notifications WHERE user_id = ?"),
+  getThreatUserNotificationById: db.prepare("SELECT * FROM threat_user_notifications WHERE id = ? AND user_id = ?"),
+  deleteThreatUserNotificationById: db.prepare("DELETE FROM threat_user_notifications WHERE id = ? AND user_id = ?"),
+
+  // --- Threat Intel: Health ---
+  getThreatFeedHealth: db.prepare(`
+    SELECT
+      SUM(CASE WHEN enabled = 0 THEN 1 ELSE 0 END) AS disabled,
+      SUM(CASE WHEN enabled = 1 AND consecutive_failures = 0 THEN 1 ELSE 0 END) AS healthy,
+      SUM(CASE WHEN enabled = 1 AND consecutive_failures BETWEEN 1 AND 2 THEN 1 ELSE 0 END) AS warning,
+      SUM(CASE WHEN enabled = 1 AND consecutive_failures >= 3 THEN 1 ELSE 0 END) AS error,
+      COUNT(*) AS total
+    FROM threat_feeds
+  `),
+  getThreatFeedErrors: db.prepare(`
+    SELECT id, name, feed_type, url, enabled, consecutive_failures,
+      last_fetched_at, last_error, last_error_at
+    FROM threat_feeds
+    ORDER BY consecutive_failures DESC, last_error_at DESC
+  `),
+
+  // --- Threat Intel: Seed ---
+  getThreatFeedByUrl: db.prepare("SELECT id FROM threat_feeds WHERE url = ?"),
+
+  // --- Threat Intel: User Keyword Overrides ---
+  disableSystemKeywordForUser: db.prepare("INSERT OR IGNORE INTO threat_user_keyword_disabled (user_id, keyword_id) VALUES (?, ?)"),
+  enableSystemKeywordForUser: db.prepare("DELETE FROM threat_user_keyword_disabled WHERE user_id = ? AND keyword_id = ?"),
+  isSystemKeywordDisabledForUser: db.prepare("SELECT keyword_id FROM threat_user_keyword_disabled WHERE user_id = ? AND keyword_id = ?"),
+  getDisabledKeywordIdsForUser: db.prepare("SELECT keyword_id FROM threat_user_keyword_disabled WHERE user_id = ?"),
+
+  listThreatEligibleUsers: db.prepare(`
+    SELECT id, email, username, suspended, role_id
+    FROM users
+    WHERE suspended = 0
+    ORDER BY created_at ASC
+  `),
 };
 
 // Default security settings (must be after stmts initialization)
@@ -1567,9 +2137,43 @@ const DEFAULTS = {
   wiki_personal_spaces_enabled: "true",
   wiki_search_result_limit: "20",
   wiki_team_home_page_id: "",
+  threat_auto_fetch_enabled: "true",
+  threat_fetch_interval_seconds: "1800",
+  threat_alert_retention_days: "14",
+  threat_tor_proxy_url: "",
+  threat_notify_email_enabled: "true",
+  threat_notify_email_from_override: "",
+  threat_notify_webhook_enabled: "true",
+  threat_notify_discord_enabled: "true",
+  threat_notify_discord_username: "RedSecThreat",
+  threat_notify_discord_avatar_url: "",
 };
 for (const [key, value] of Object.entries(DEFAULTS)) {
   if (!getSetting(key)) setSetting(key, value);
+}
+
+const legacyThreatAutoFetch = getSetting("threat_auto_fetch");
+if (legacyThreatAutoFetch && legacyThreatAutoFetch !== getSetting("threat_auto_fetch_enabled")) {
+  setSetting("threat_auto_fetch_enabled", legacyThreatAutoFetch);
+}
+const legacyThreatFetchInterval = parseInt(getSetting("threat_fetch_interval"), 10);
+if (Number.isFinite(legacyThreatFetchInterval) && legacyThreatFetchInterval > 0) {
+  const legacyIntervalSeconds = legacyThreatFetchInterval * 60;
+  if (String(legacyIntervalSeconds) !== String(getSetting("threat_fetch_interval_seconds"))) {
+    setSetting("threat_fetch_interval_seconds", String(legacyIntervalSeconds));
+  }
+}
+
+// Promote untouched legacy threat defaults to the newer baseline without
+// overwriting deployments that have already been customized.
+if (
+  getSetting("threat_auto_fetch_enabled") === "false" &&
+  getSetting("threat_fetch_interval_seconds") === "60" &&
+  getSetting("threat_alert_retention_days") === "30"
+) {
+  setSetting("threat_auto_fetch_enabled", "true");
+  setSetting("threat_fetch_interval_seconds", "1800");
+  setSetting("threat_alert_retention_days", "14");
 }
 
 db.prepare("UPDATE role_permissions SET permission = 'calendar.view_team' WHERE permission = 'calendar.edit_any'").run();
@@ -3617,6 +4221,989 @@ function mapWikiPageRow(row) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Threat Intel Functions
+// ---------------------------------------------------------------------------
+
+function _tid() { return crypto.randomBytes(16).toString("base64url"); }
+const THREAT_VALID_FEED_TYPES = new Set(["rss", "website", "api", "onion"]);
+const THREAT_VALID_CRITICALITIES = new Set(["low", "medium", "high", "critical"]);
+const THREAT_VALID_CHANNEL_TYPES = new Set(["webhook", "email", "discord"]);
+
+// --- Feeds ---
+function createThreatFeed({ name, url, feedType, enabled = true, isDefault = false, fetchInterval = 3600, feedMetadata = "{}" }) {
+  const id = _tid();
+  stmts.createThreatFeed.run({ id, name, url, feedType, enabled: enabled ? 1 : 0, isDefault: isDefault ? 1 : 0, fetchInterval, feedMetadata });
+  return getThreatFeedById(id);
+}
+
+function listThreatFeeds(enabledOnly = false) {
+  const rows = enabledOnly ? stmts.listThreatFeedsEnabled.all() : stmts.listThreatFeeds.all();
+  return rows.map(_mapThreatFeed);
+}
+
+function getThreatFeedById(id) {
+  const row = stmts.getThreatFeedById.get(id);
+  if (!row) return null;
+  const feed = _mapThreatFeed(row);
+  feed.keywords = stmts.getThreatFeedKeywords.all(id).map(_mapThreatKeyword);
+  feed.tags = stmts.getThreatFeedTags.all(id).map(_mapThreatTag);
+  return feed;
+}
+
+function updateThreatFeed(id, { name, url, feedType, enabled, isDefault, fetchInterval, feedMetadata }) {
+  const existing = stmts.getThreatFeedById.get(id);
+  if (!existing) return null;
+  stmts.updateThreatFeed.run({
+    id, name: name ?? existing.name, url: url ?? existing.url,
+    feedType: feedType ?? existing.feed_type, enabled: enabled != null ? (enabled ? 1 : 0) : existing.enabled,
+    isDefault: isDefault != null ? (isDefault ? 1 : 0) : existing.is_default,
+    fetchInterval: fetchInterval ?? existing.fetch_interval,
+    feedMetadata: feedMetadata ?? existing.feed_metadata,
+  });
+  return getThreatFeedById(id);
+}
+
+function deleteThreatFeedById(id) {
+  return stmts.deleteThreatFeedById.run(id).changes > 0;
+}
+
+function updateThreatFeedFetchStatus(id, { hash, error, errorAt, failures }) {
+  stmts.updateThreatFeedFetchStatus.run({ id, hash: hash || null, error: error || null, errorAt: errorAt || null, failures: failures || 0 });
+}
+
+// --- Feed-Keyword M2M ---
+const _setThreatFeedKeywords = db.transaction((feedId, keywordIds) => {
+  stmts.setThreatFeedKeywords.run(feedId);
+  for (const kid of keywordIds) stmts.insertThreatFeedKeyword.run(feedId, kid);
+});
+function setThreatFeedKeywords(feedId, keywordIds) { _setThreatFeedKeywords(feedId, keywordIds); }
+function getThreatFeedKeywords(feedId) { return stmts.getThreatFeedKeywords.all(feedId).map(_mapThreatKeyword); }
+function getThreatFeedsForKeyword(keywordId) { return stmts.getThreatFeedsForKeyword.all(keywordId).map(_mapThreatFeed); }
+
+// --- Feed-Tag M2M ---
+const _setThreatFeedTags = db.transaction((feedId, tagIds) => {
+  stmts.setThreatFeedTags.run(feedId);
+  for (const tid of tagIds) stmts.insertThreatFeedTag.run(feedId, tid);
+});
+function setThreatFeedTags(feedId, tagIds) { _setThreatFeedTags(feedId, tagIds); }
+function getThreatFeedTags(feedId) { return stmts.getThreatFeedTags.all(feedId).map(_mapThreatTag); }
+
+// --- Keywords ---
+function createThreatKeyword({ keyword, caseSensitive = false, isRegex = false, enabled = true, criticality = "medium", userId = null }) {
+  const existing = userId
+    ? stmts.getThreatKeywordByTextForUser.get(userId, keyword)
+    : stmts.getThreatKeywordByTextSystem.get(keyword);
+  if (existing) {
+    throw new Error(userId ? "You already have a keyword with that text" : "System keyword already exists");
+  }
+  const id = _tid();
+  stmts.createThreatKeyword.run({ id, keyword, caseSensitive: caseSensitive ? 1 : 0, isRegex: isRegex ? 1 : 0, enabled: enabled ? 1 : 0, criticality, userId });
+  return getThreatKeywordById(id);
+}
+
+function listThreatKeywords(enabledOnly = false) {
+  const rows = enabledOnly ? stmts.listThreatKeywordsEnabled.all() : stmts.listThreatKeywords.all();
+  return rows.map(_mapThreatKeyword);
+}
+
+function listThreatKeywordsForUser(userId) {
+  const system = stmts.listSystemKeywords.all().map(_mapThreatKeyword);
+  const personal = stmts.listThreatKeywordsByUser.all(userId).map(_mapThreatKeyword);
+  const disabledIds = new Set(getDisabledKeywordIdsForUser(userId));
+  return [
+    ...system.map((kw) => {
+      const disabledByUser = disabledIds.has(kw.id);
+      return {
+        ...kw,
+        isSystem: true,
+        disabledByUser,
+        enabled: kw.enabled && !disabledByUser,
+        baseEnabled: kw.enabled,
+        tags: getThreatKeywordTagsForUser(userId, kw.id),
+      };
+    }),
+    ...personal.map((kw) => ({
+      ...kw,
+      isSystem: false,
+      disabledByUser: false,
+      baseEnabled: kw.enabled,
+      tags: getThreatKeywordTagsForUser(userId, kw.id),
+    })),
+  ];
+}
+
+function listSystemKeywordsForMatching() {
+  return stmts.listSystemKeywordsEnabled.all().map(_mapThreatKeyword);
+}
+
+function listUserKeywordsForMatching(userId) {
+  return stmts.listThreatKeywordsByUser.all(userId)
+    .filter((r) => r.enabled)
+    .map(_mapThreatKeyword);
+}
+
+function listEffectiveThreatKeywordsForUser(userId) {
+  const disabledIds = new Set(getDisabledKeywordIdsForUser(userId));
+  const system = stmts.listSystemKeywordsEnabled.all()
+    .filter((row) => !disabledIds.has(row.id))
+    .map(_mapThreatKeyword);
+  const personal = stmts.listThreatKeywordsByUser.all(userId)
+    .filter((row) => row.enabled)
+    .map(_mapThreatKeyword);
+  return [...system, ...personal];
+}
+
+function getThreatKeywordById(id) {
+  const row = stmts.getThreatKeywordById.get(id);
+  if (!row) return null;
+  const kw = _mapThreatKeyword(row);
+  kw.feeds = stmts.getThreatFeedsForKeyword.all(id).map(_mapThreatFeed);
+  kw.tags = stmts.getThreatKeywordTags.all(id).map(_mapThreatTag);
+  return kw;
+}
+
+function getThreatKeywordByIdForUser(userId, id) {
+  const keyword = getThreatKeywordById(id);
+  if (!keyword) return null;
+  if (keyword.userId && keyword.userId !== userId) return null;
+  const disabledByUser = !keyword.userId && isSystemKeywordDisabledForUser(userId, id);
+  return {
+    ...keyword,
+    disabledByUser,
+    enabled: keyword.userId ? keyword.enabled : (keyword.enabled && !disabledByUser),
+    baseEnabled: keyword.enabled,
+    tags: getThreatKeywordTagsForUser(userId, id),
+  };
+}
+
+function updateThreatKeyword(id, { keyword, caseSensitive, isRegex, enabled, criticality }) {
+  const existing = stmts.getThreatKeywordById.get(id);
+  if (!existing) return null;
+  const nextKeyword = keyword ?? existing.keyword;
+  const conflict = existing.user_id
+    ? stmts.getThreatKeywordByTextForUser.get(existing.user_id, nextKeyword)
+    : stmts.getThreatKeywordByTextSystem.get(nextKeyword);
+  if (conflict && conflict.id !== id) {
+    throw new Error(existing.user_id ? "You already have a keyword with that text" : "System keyword already exists");
+  }
+  stmts.updateThreatKeyword.run({
+    id, keyword: nextKeyword,
+    caseSensitive: caseSensitive != null ? (caseSensitive ? 1 : 0) : existing.case_sensitive,
+    isRegex: isRegex != null ? (isRegex ? 1 : 0) : existing.is_regex,
+    enabled: enabled != null ? (enabled ? 1 : 0) : existing.enabled,
+    criticality: criticality ?? existing.criticality,
+  });
+  return getThreatKeywordById(id);
+}
+
+function deleteThreatKeywordById(id) { stmts.deleteThreatKeywordById.run(id); }
+
+// --- Keyword-Tag M2M ---
+const _setThreatKeywordTags = db.transaction((keywordId, tagIds) => {
+  stmts.setThreatKeywordTags.run(keywordId);
+  for (const tid of tagIds) stmts.insertThreatKeywordTag.run(keywordId, tid);
+});
+function setThreatKeywordTags(keywordId, tagIds) { _setThreatKeywordTags(keywordId, tagIds); }
+function getThreatKeywordTags(keywordId) { return stmts.getThreatKeywordTags.all(keywordId).map(_mapThreatTag); }
+const _setThreatUserKeywordTags = db.transaction((userId, keywordId, tagIds) => {
+  stmts.setThreatUserKeywordTags.run(userId, keywordId);
+  for (const tid of tagIds) stmts.insertThreatUserKeywordTag.run(userId, keywordId, tid);
+});
+function setThreatKeywordTagsForUser(userId, keywordId, tagIds) { _setThreatUserKeywordTags(userId, keywordId, tagIds); }
+function getThreatKeywordTagsForUser(userId, keywordId) {
+  const systemTags = getThreatKeywordTags(keywordId);
+  const userTags = stmts.getThreatUserKeywordTags.all(userId, keywordId).map(_mapThreatTag);
+  const merged = [...systemTags];
+  const seen = new Set(systemTags.map((tag) => tag.id));
+  for (const tag of userTags) {
+    if (!seen.has(tag.id)) {
+      seen.add(tag.id);
+      merged.push(tag);
+    }
+  }
+  return merged;
+}
+
+// --- Tags ---
+function createThreatTag({ name, color = "#E53935", description = null, userId = null }) {
+  const existing = userId
+    ? stmts.getThreatTagByNameForUser.get(userId, name)
+    : stmts.getThreatTagByNameSystem.get(name);
+  if (existing) {
+    throw new Error(userId ? "You already have a tag with that name" : "System tag already exists");
+  }
+  const id = _tid();
+  stmts.createThreatTag.run({ id, name, color, description, userId });
+  return _mapThreatTag(stmts.getThreatTagById.get(id));
+}
+function listThreatTags(userId) {
+  if (userId) {
+    const system = stmts.listSystemTags.all().map(_mapThreatTag);
+    const personal = stmts.listThreatTagsByUser.all(userId).map(_mapThreatTag);
+    return [...system.map((t) => ({ ...t, isSystem: true })), ...personal.map((t) => ({ ...t, isSystem: false }))];
+  }
+  return stmts.listThreatTags.all().map(_mapThreatTag);
+}
+function updateThreatTag(id, { name, color, description }) {
+  const existing = stmts.getThreatTagById.get(id);
+  if (!existing) return null;
+  const nextName = name ?? existing.name;
+  const conflict = existing.user_id
+    ? stmts.getThreatTagByNameForUser.get(existing.user_id, nextName)
+    : stmts.getThreatTagByNameSystem.get(nextName);
+  if (conflict && conflict.id !== id) {
+    throw new Error(existing.user_id ? "You already have a tag with that name" : "System tag already exists");
+  }
+  stmts.updateThreatTag.run({ id, name: nextName, color: color ?? existing.color, description: description ?? existing.description });
+  return _mapThreatTag(stmts.getThreatTagById.get(id));
+}
+function deleteThreatTagById(id) { stmts.deleteThreatTagById.run(id); }
+
+// --- Alerts ---
+function createThreatAlert({ feedId, keywordId, matchedContent, context, contextHash, articleHash, articleUrl, userId, matchedKeywords, apiMetadata, criticality, triggeredAt }) {
+  const id = _tid();
+  stmts.createThreatAlert.run({
+    id, feedId, keywordId, matchedContent, context: context || null,
+    contextHash: contextHash || null, articleHash: articleHash || null,
+    articleUrl: articleUrl || null, userId: userId || null,
+    matchedKeywords: JSON.stringify(matchedKeywords || []),
+    apiMetadata: JSON.stringify(apiMetadata || {}),
+    criticality: criticality || "medium", isRead: 0,
+    triggeredAt: triggeredAt || Math.floor(Date.now() / 1000),
+  });
+  return getThreatAlertById(id);
+}
+
+function listThreatAlerts({ criticality, isRead, feedId, keywordId, hours, userId, limit = 50, offset = 0 } = {}) {
+  if (userId) {
+    return listThreatAlertsForUser({ criticality, isRead, feedId, keywordId, hours, userId, limit, offset });
+  }
+  let sql = `SELECT a.*, f.name AS feed_name, f.feed_type AS feed_feed_type, f.url AS feed_url,
+    k.keyword AS keyword_text, k.criticality AS keyword_criticality
+    FROM threat_alerts a
+    LEFT JOIN threat_feeds f ON a.feed_id = f.id
+    LEFT JOIN threat_keywords k ON a.keyword_id = k.id WHERE 1=1`;
+  const params = [];
+  if (userId) {
+    sql += " AND (a.user_id IS NULL OR a.user_id = ?)";
+    params.push(userId);
+  }
+  if (criticality && THREAT_VALID_CRITICALITIES.has(criticality)) { sql += " AND a.criticality = ?"; params.push(criticality); }
+  if (isRead != null) { sql += " AND a.is_read = ?"; params.push(isRead ? 1 : 0); }
+  if (feedId) { sql += " AND a.feed_id = ?"; params.push(feedId); }
+  if (keywordId) { sql += " AND a.keyword_id = ?"; params.push(keywordId); }
+  if (hours) { sql += " AND a.triggered_at > unixepoch() - ? * 3600"; params.push(hours); }
+  sql += " ORDER BY a.triggered_at DESC LIMIT ? OFFSET ?";
+  params.push(limit, offset);
+  const rows = db.prepare(sql).all(...params);
+  return rows.map(r => { const a = _mapThreatAlert(r); a.tags = stmts.getThreatAlertTags.all(r.id).map(_mapThreatTag); return a; });
+}
+
+function getThreatAlertById(id) {
+  const row = stmts.getThreatAlertById.get(id);
+  if (!row) return null;
+  const a = _mapThreatAlert(row);
+  a.tags = stmts.getThreatAlertTags.all(id).map(_mapThreatTag);
+  return a;
+}
+
+function groupThreatAlertRowsForUser(rows, userId) {
+  const grouped = new Map();
+  for (const row of rows) {
+    if (!grouped.has(row.id)) {
+      const alert = _mapThreatAlert(row);
+      alert.isRead = !!row.user_is_read;
+      alert.tags = [];
+      alert.keywords = [];
+      alert.matchedKeywords = [];
+      alert.keywordText = null;
+      alert.criticality = row.user_criticality || alert.criticality;
+      alert._keywordKeys = new Set();
+      grouped.set(row.id, alert);
+    }
+    const alert = grouped.get(row.id);
+    const keywordText = row.matched_keyword_text || row.keyword_text || null;
+    const keywordId = row.matched_keyword_id || row.keyword_id || null;
+    const keywordKey = `${keywordId || ""}:${keywordText || ""}`;
+    if (keywordText && !alert._keywordKeys.has(keywordKey)) {
+      alert._keywordKeys.add(keywordKey);
+      const keywordEntry = {
+        keywordId,
+        keyword: keywordText,
+        matchedText: row.user_matched_text || null,
+        criticality: row.user_keyword_criticality || row.keyword_criticality || alert.criticality,
+      };
+      alert.keywords.push(keywordEntry);
+      alert.matchedKeywords.push(keywordEntry);
+    }
+  }
+
+  return [...grouped.values()].map((alert) => {
+    const keywordIds = new Set((alert.keywords || []).map((item) => item.keywordId).filter(Boolean));
+    const globalTags = getThreatAlertTags(alert.id);
+    const explicitUserTags = stmts.getThreatUserAlertTags.all(userId, alert.id).map(_mapThreatTag);
+    const derivedKeywordTags = [];
+    for (const keywordId of keywordIds) {
+      derivedKeywordTags.push(...getThreatKeywordTagsForUser(userId, keywordId));
+    }
+    const mergedTags = new Map();
+    [...globalTags, ...derivedKeywordTags, ...explicitUserTags].forEach((tag) => {
+      if (tag && !mergedTags.has(tag.id)) mergedTags.set(tag.id, tag);
+    });
+    alert.tags = [...mergedTags.values()];
+    alert.keywordText = alert.keywords[0]?.keyword || alert.keywordText || null;
+    delete alert._keywordKeys;
+    return alert;
+  });
+}
+
+function listThreatAlertsForUser({ criticality, isRead, feedId, keywordId, hours, userId, limit = 50, offset = 0 } = {}) {
+  let sql = `
+    SELECT
+      a.*,
+      f.name AS feed_name,
+      f.feed_type AS feed_feed_type,
+      f.url AS feed_url,
+      k.keyword AS keyword_text,
+      uas.is_read AS user_is_read,
+      uak.keyword_id AS matched_keyword_id,
+      uak.matched_text AS user_matched_text,
+      uak.criticality AS user_keyword_criticality,
+      mk.keyword AS matched_keyword_text,
+      (
+        SELECT CASE MAX(
+          CASE uak2.criticality
+            WHEN 'critical' THEN 4
+            WHEN 'high' THEN 3
+            WHEN 'medium' THEN 2
+            ELSE 1
+          END
+        )
+          WHEN 4 THEN 'critical'
+          WHEN 3 THEN 'high'
+          WHEN 2 THEN 'medium'
+          ELSE 'low'
+        END
+        FROM threat_user_alert_keywords uak2
+        WHERE uak2.user_id = ? AND uak2.alert_id = a.id
+      ) AS user_criticality
+    FROM threat_alerts a
+    JOIN threat_user_alert_keywords uak
+      ON uak.alert_id = a.id AND uak.user_id = ?
+    LEFT JOIN threat_keywords mk ON mk.id = uak.keyword_id
+    LEFT JOIN threat_feeds f ON a.feed_id = f.id
+    LEFT JOIN threat_keywords k ON a.keyword_id = k.id
+    LEFT JOIN threat_user_alert_state uas
+      ON uas.alert_id = a.id AND uas.user_id = ?
+    LEFT JOIN threat_user_hidden_alerts uha
+      ON uha.alert_id = a.id AND uha.user_id = ?
+    WHERE uha.alert_id IS NULL
+  `;
+  const params = [userId, userId, userId, userId];
+  if (criticality && THREAT_VALID_CRITICALITIES.has(criticality)) {
+    sql += " AND uak.criticality = ?";
+    params.push(criticality);
+  }
+  if (isRead != null) {
+    sql += " AND COALESCE(uas.is_read, 0) = ?";
+    params.push(isRead ? 1 : 0);
+  }
+  if (feedId) {
+    sql += " AND a.feed_id = ?";
+    params.push(feedId);
+  }
+  if (keywordId) {
+    sql += " AND uak.keyword_id = ?";
+    params.push(keywordId);
+  }
+  if (hours) {
+    sql += " AND a.triggered_at > unixepoch() - ? * 3600";
+    params.push(hours);
+  }
+  sql += " ORDER BY a.triggered_at DESC";
+  const rows = db.prepare(sql).all(...params);
+  const alerts = groupThreatAlertRowsForUser(rows, userId);
+  return alerts.slice(offset, offset + limit);
+}
+
+function getThreatAlertByIdForUser(userId, id) {
+  const rows = db.prepare(`
+    SELECT
+      a.*,
+      f.name AS feed_name,
+      f.feed_type AS feed_feed_type,
+      f.url AS feed_url,
+      k.keyword AS keyword_text,
+      uas.is_read AS user_is_read,
+      uak.keyword_id AS matched_keyword_id,
+      uak.matched_text AS user_matched_text,
+      uak.criticality AS user_keyword_criticality,
+      mk.keyword AS matched_keyword_text,
+      (
+        SELECT CASE MAX(
+          CASE uak2.criticality
+            WHEN 'critical' THEN 4
+            WHEN 'high' THEN 3
+            WHEN 'medium' THEN 2
+            ELSE 1
+          END
+        )
+          WHEN 4 THEN 'critical'
+          WHEN 3 THEN 'high'
+          WHEN 2 THEN 'medium'
+          ELSE 'low'
+        END
+        FROM threat_user_alert_keywords uak2
+        WHERE uak2.user_id = ? AND uak2.alert_id = a.id
+      ) AS user_criticality
+    FROM threat_alerts a
+    JOIN threat_user_alert_keywords uak
+      ON uak.alert_id = a.id AND uak.user_id = ?
+    LEFT JOIN threat_keywords mk ON mk.id = uak.keyword_id
+    LEFT JOIN threat_feeds f ON a.feed_id = f.id
+    LEFT JOIN threat_keywords k ON a.keyword_id = k.id
+    LEFT JOIN threat_user_alert_state uas
+      ON uas.alert_id = a.id AND uas.user_id = ?
+    LEFT JOIN threat_user_hidden_alerts uha
+      ON uha.alert_id = a.id AND uha.user_id = ?
+    WHERE a.id = ? AND uha.alert_id IS NULL
+    ORDER BY a.triggered_at DESC
+  `).all(userId, userId, userId, userId, id);
+  if (!rows.length) return null;
+  return groupThreatAlertRowsForUser(rows, userId)[0] || null;
+}
+
+function updateThreatAlert(id, updates) {
+  if (updates.isRead != null) stmts.updateThreatAlertRead.run({ id, isRead: updates.isRead ? 1 : 0 });
+  if (updates.criticality && THREAT_VALID_CRITICALITIES.has(updates.criticality))
+    stmts.updateThreatAlertCriticality.run({ id, criticality: updates.criticality });
+}
+
+function updateThreatAlertForUser(userId, id, updates) {
+  if (updates.isRead != null) {
+    stmts.upsertThreatUserAlertState.run({ userId, alertId: id, isRead: updates.isRead ? 1 : 0 });
+  }
+  return getThreatAlertByIdForUser(userId, id);
+}
+
+function markAllThreatAlertsRead() {
+  const result = stmts.markAllThreatAlertsRead.run();
+  return result.changes;
+}
+
+function markAllThreatAlertsReadForUser(userId) {
+  const alerts = listThreatAlertsForUser({ userId, limit: 100000, offset: 0 });
+  let changed = 0;
+  for (const alert of alerts) {
+    if (!alert.isRead) {
+      stmts.upsertThreatUserAlertState.run({ userId, alertId: alert.id, isRead: 1 });
+      changed += 1;
+    }
+  }
+  return changed;
+}
+
+function deleteThreatAlertById(id) {
+  const alert = stmts.getThreatAlertById.get(id);
+  if (alert) {
+    stmts.createThreatSuppressedAlert.run({
+      id: _tid(), feedId: alert.feed_id, articleHash: alert.article_hash,
+      contextHash: alert.context_hash, keywordId: alert.keyword_id,
+    });
+  }
+  stmts.deleteThreatUserAlertKeywordRowsByAlert.run(id);
+  stmts.deleteThreatUserAlertStateByAlert.run(id);
+  stmts.deleteThreatUserAlertTagsByAlert.run(id);
+  stmts.deleteThreatHiddenAlertByAlert.run(id);
+  stmts.deleteThreatAlertById.run(id);
+}
+
+function hideThreatAlertForUser(userId, alertId) {
+  stmts.hideThreatAlertForUser.run(userId, alertId);
+}
+
+function cleanupOldThreatAlerts(days) {
+  const result = stmts.cleanupOldThreatAlerts.run(days);
+  return result.changes;
+}
+
+// --- Alert-Tag M2M ---
+const _setThreatAlertTags = db.transaction((alertId, tagIds) => {
+  stmts.setThreatAlertTags.run(alertId);
+  for (const tid of tagIds) stmts.insertThreatAlertTag.run(alertId, tid);
+});
+function setThreatAlertTags(alertId, tagIds) { _setThreatAlertTags(alertId, tagIds); }
+function getThreatAlertTags(alertId) { return stmts.getThreatAlertTags.all(alertId).map(_mapThreatTag); }
+const _setThreatAlertTagsForUser = db.transaction((userId, alertId, tagIds) => {
+  stmts.setThreatUserAlertTags.run(userId, alertId);
+  for (const tid of tagIds) stmts.insertThreatUserAlertTag.run(userId, alertId, tid);
+});
+function setThreatAlertTagsForUser(userId, alertId, tagIds) { _setThreatAlertTagsForUser(userId, alertId, tagIds); }
+function getThreatAlertTagsForUser(userId, alertId) {
+  const globalTags = getThreatAlertTags(alertId);
+  const userTags = stmts.getThreatUserAlertTags.all(userId, alertId).map(_mapThreatTag);
+  const seen = new Set();
+  return [...globalTags, ...userTags].filter((tag) => {
+    if (!tag || seen.has(tag.id)) return false;
+    seen.add(tag.id);
+    return true;
+  });
+}
+
+// --- User Keyword Overrides ---
+function disableSystemKeywordForUser(userId, keywordId) {
+  stmts.disableSystemKeywordForUser.run(userId, keywordId);
+}
+function enableSystemKeywordForUser(userId, keywordId) {
+  stmts.enableSystemKeywordForUser.run(userId, keywordId);
+}
+function isSystemKeywordDisabledForUser(userId, keywordId) {
+  return !!stmts.isSystemKeywordDisabledForUser.get(userId, keywordId);
+}
+function getDisabledKeywordIdsForUser(userId) {
+  return stmts.getDisabledKeywordIdsForUser.all(userId).map((r) => r.keyword_id);
+}
+
+function upsertThreatUserAlertKeyword({ userId, alertId, keywordId, matchedText, criticality }) {
+  stmts.upsertThreatUserAlertKeyword.run({
+    userId,
+    alertId,
+    keywordId,
+    matchedText: matchedText || null,
+    criticality: criticality || "medium",
+  });
+}
+
+function listThreatUsersEligibleForAlerts() {
+  return stmts.listThreatEligibleUsers.all().map((row) => ({
+    id: row.id,
+    email: row.email,
+    username: row.username,
+    suspended: !!row.suspended,
+    roleId: row.role_id || null,
+  }));
+}
+
+// --- Suppressed Alerts ---
+function isThreatAlertSuppressed(feedId, articleHash, contextHash, keywordId) {
+  return !!stmts.isThreatAlertSuppressed.get(feedId, articleHash || null, contextHash || null, keywordId || null);
+}
+function threatAlertExistsByArticleHash(feedId, articleHash) {
+  return !!stmts.alertExistsByArticleHash.get(feedId, articleHash || null);
+}
+function getThreatAlertByArticleHash(feedId, articleHash) {
+  if (!feedId || !articleHash) return null;
+  const row = db.prepare(`
+    SELECT a.*, f.name AS feed_name, f.feed_type AS feed_feed_type, f.url AS feed_url,
+      k.keyword AS keyword_text, k.criticality AS keyword_criticality
+    FROM threat_alerts a
+    LEFT JOIN threat_feeds f ON a.feed_id = f.id
+    LEFT JOIN threat_keywords k ON a.keyword_id = k.id
+    WHERE a.feed_id = ? AND a.article_hash = ?
+    ORDER BY a.triggered_at DESC
+    LIMIT 1
+  `).get(feedId, articleHash);
+  if (!row) return null;
+  const alert = _mapThreatAlert(row);
+  alert.tags = stmts.getThreatAlertTags.all(alert.id).map(_mapThreatTag);
+  return alert;
+}
+function threatAlertExistsByContextHash(feedId, keywordId, contextHash) {
+  return !!stmts.alertExistsByContextHash.get(feedId, keywordId || null, contextHash || null);
+}
+function threatAlertExistsByFeedKeyword(feedId, keywordId) {
+  return !!stmts.alertExistsByFeedKeyword.get(feedId, keywordId || null);
+}
+function listThreatAlertUserIds(alertId) {
+  return db.prepare(`
+    SELECT DISTINCT user_id
+    FROM threat_user_alert_keywords
+    WHERE alert_id = ?
+  `).all(alertId).map((row) => row.user_id);
+}
+
+// --- API Templates ---
+function createThreatApiTemplate({ name, description, configuration, isSystem = false, enabled = true }) {
+  const id = _tid();
+  stmts.createThreatApiTemplate.run({ id, name, description: description || null, configuration: JSON.stringify(configuration || {}), isSystem: isSystem ? 1 : 0, enabled: enabled ? 1 : 0 });
+  return stmts.getThreatApiTemplateById.get(id);
+}
+function listThreatApiTemplates() { return stmts.listThreatApiTemplates.all().map(_mapThreatApiTemplate); }
+function getThreatApiTemplateById(id) { const r = stmts.getThreatApiTemplateById.get(id); return r ? _mapThreatApiTemplate(r) : null; }
+function updateThreatApiTemplate(id, { name, description, configuration, enabled }) {
+  const existing = stmts.getThreatApiTemplateById.get(id);
+  if (!existing) return null;
+  stmts.updateThreatApiTemplate.run({ id, name: name ?? existing.name, description: description ?? existing.description, configuration: configuration ? JSON.stringify(configuration) : existing.configuration, enabled: enabled != null ? (enabled ? 1 : 0) : existing.enabled });
+  return _mapThreatApiTemplate(stmts.getThreatApiTemplateById.get(id));
+}
+function deleteThreatApiTemplateById(id) { return stmts.deleteThreatApiTemplateById.run(id).changes > 0; }
+
+// --- Notification Configs ---
+function createThreatNotificationConfig({ name, channelType, destination, enabled = true }) {
+  const id = _tid();
+  stmts.createThreatNotificationConfig.run({ id, name, channelType, destination, enabled: enabled ? 1 : 0 });
+  return stmts.getThreatNotificationConfigById.get(id);
+}
+function listThreatNotificationConfigs() { return stmts.listThreatNotificationConfigs.all().map(_mapThreatNotifConfig); }
+function listThreatNotificationConfigsEnabled() { return stmts.listThreatNotificationConfigsEnabled.all().map(_mapThreatNotifConfig); }
+function updateThreatNotificationConfig(id, { name, destination, enabled }) {
+  const existing = stmts.getThreatNotificationConfigById.get(id);
+  if (!existing) return null;
+  stmts.updateThreatNotificationConfig.run({ id, name: name ?? existing.name, destination: destination ?? existing.destination, enabled: enabled != null ? (enabled ? 1 : 0) : existing.enabled });
+  return stmts.getThreatNotificationConfigById.get(id);
+}
+function deleteThreatNotificationConfigById(id) { return stmts.deleteThreatNotificationConfigById.run(id).changes > 0; }
+
+// --- User Notifications ---
+function upsertThreatUserNotification({ userId, channelType, destination, enabled = true }) {
+  const id = _tid();
+  stmts.createThreatUserNotification.run({ id, userId, channelType, destination, enabled: enabled ? 1 : 0 });
+  return stmts.listThreatUserNotifications.all(userId).map(_mapThreatUserNotif);
+}
+function listThreatUserNotifications(userId) { return stmts.listThreatUserNotifications.all(userId).map(_mapThreatUserNotif); }
+function deleteThreatUserNotificationById(id, userId) { return stmts.deleteThreatUserNotificationById.run(id, userId).changes > 0; }
+
+// --- Stats & Health ---
+function getThreatStats() {
+  const feeds = stmts.countThreatFeeds.get();
+  const feedsEnabled = stmts.countThreatFeedsEnabled.get();
+  const feedsHealthy = stmts.countThreatFeedsHealthy.get();
+  const keywords = stmts.countThreatKeywords.get();
+  const keywordsEnabled = stmts.countThreatKeywordsEnabled.get();
+  const alerts = stmts.countThreatAlerts.get();
+  const alertsUnread = stmts.countThreatAlertsUnread.get();
+  const alertsLast24h = stmts.countThreatAlertsLast24h.get();
+  const criticalityDistribution = {
+    critical: 0,
+    high: 0,
+    medium: 0,
+    low: 0,
+  };
+  for (const row of stmts.countThreatAlertsByCriticality.all()) {
+    if (row?.criticality && Object.prototype.hasOwnProperty.call(criticalityDistribution, row.criticality)) {
+      criticalityDistribution[row.criticality] = row.count;
+    }
+  }
+  return {
+    totalFeeds: feeds.total, activeFeeds: feedsEnabled.total, healthyFeeds: feedsHealthy.total,
+    totalKeywords: keywords.total, activeKeywords: keywordsEnabled.total,
+    totalAlerts: alerts.total, unreadAlerts: alertsUnread.total, alertsLast24h: alertsLast24h.total,
+    criticalityDistribution,
+  };
+}
+
+function getThreatStatsForUser(userId) {
+  const feeds = stmts.countThreatFeeds.get();
+  const feedsEnabled = stmts.countThreatFeedsEnabled.get();
+  const feedsHealthy = stmts.countThreatFeedsHealthy.get();
+  const keywords = listThreatKeywordsForUser(userId);
+  const activeKeywords = keywords.filter((keyword) => keyword.enabled);
+  const alerts = listThreatAlertsForUser({ userId, limit: 100000, offset: 0 });
+  const criticalityDistribution = {
+    critical: 0,
+    high: 0,
+    medium: 0,
+    low: 0,
+  };
+  let unreadAlerts = 0;
+  let alertsLast24h = 0;
+  const dayAgo = Math.floor(Date.now() / 1000) - 86400;
+
+  for (const alert of alerts) {
+    if (Object.prototype.hasOwnProperty.call(criticalityDistribution, alert.criticality)) {
+      criticalityDistribution[alert.criticality] += 1;
+    }
+    if (!alert.isRead) unreadAlerts += 1;
+    if ((alert.triggeredAt || 0) >= dayAgo) alertsLast24h += 1;
+  }
+
+  return {
+    totalFeeds: feeds.total,
+    activeFeeds: feedsEnabled.total,
+    healthyFeeds: feedsHealthy.total,
+    totalKeywords: keywords.length,
+    activeKeywords: activeKeywords.length,
+    totalAlerts: alerts.length,
+    unreadAlerts,
+    alertsLast24h,
+    criticalityDistribution,
+  };
+}
+
+function getThreatFeedHealth() {
+  const feeds = listThreatFeeds(false).map((feed) => ({
+    ...feed,
+    status: feed.status || "unknown",
+  }));
+  const counts = {
+    total: feeds.length,
+    healthy: 0,
+    warning: 0,
+    error: 0,
+    disabled: 0,
+    unknown: 0,
+  };
+
+  for (const feed of feeds) {
+    switch (feed.status) {
+      case "disabled":
+        counts.disabled += 1;
+        break;
+      case "error":
+        counts.error += 1;
+        break;
+      case "warning":
+        counts.warning += 1;
+        break;
+      case "healthy":
+        counts.healthy += 1;
+        break;
+      default:
+        counts.unknown += 1;
+        break;
+    }
+  }
+
+  let overall = "healthy";
+  if (counts.error > 0) overall = "error";
+  else if (counts.warning > 0 || counts.unknown > 0) overall = "warning";
+
+  return {
+    counts,
+    feeds,
+    overallStatus: overall,
+  };
+}
+
+function getThreatFeedErrors() { return stmts.getThreatFeedErrors.all().map(_mapThreatFeed); }
+
+// --- Seed ---
+function seedDefaultThreatData() {
+  const summary = {
+    templatesCreated: 0,
+    tagsCreated: 0,
+    feedsCreated: 0,
+    feedsUpdated: 0,
+    keywordsCreated: 0,
+  };
+  const templates = [
+    { name: "RansomFeed.it", description: "Ransomware victim data from RansomFeed.it API", configuration: { endpoint: "https://api.ransomfeed.it/", method: "GET", headers: { "User-Agent": "ThreatAlert/1.0" }, auth: { type: "none" }, field_mapping: { content_fields: ["victim", "gang", "description", "country", "work_sector"], metadata_fields: { victim_name: "victim", threat_actor: "gang", country: "country", industry: "work_sector", attack_date: "date", victim_website: "website" } } }, isSystem: true },
+    { name: "RansomLook Recent", description: "Recent ransomware posts from RansomLook API", configuration: { endpoint: "https://www.ransomlook.io/api/recent", method: "GET", headers: {}, auth: { type: "none" }, field_mapping: { content_fields: ["post_title", "group_name", "discovered"], metadata_fields: { victim_name: "post_title", threat_actor: "group_name", attack_date: "discovered", victim_website: "post_url" } } }, isSystem: true },
+  ];
+  const templateIds = {};
+  for (const t of templates) {
+    const existing = stmts.getThreatApiTemplateByName.get(t.name);
+    if (existing) {
+      stmts.updateThreatApiTemplate.run({
+        id: existing.id,
+        name: t.name,
+        description: t.description,
+        configuration: JSON.stringify(t.configuration),
+        enabled: 1,
+      });
+      templateIds[t.name] = existing.id;
+      continue;
+    }
+    const id = _tid();
+    stmts.createThreatApiTemplate.run({ id, name: t.name, description: t.description, configuration: JSON.stringify(t.configuration), isSystem: t.isSystem ? 1 : 0, enabled: 1 });
+    summary.templatesCreated += 1;
+    templateIds[t.name] = id;
+  }
+
+  const tags = [
+    { name: "X (Twitter)", color: "#000000", description: "Sources pulled from X/Twitter via nitter.net" },
+    { name: "Ransomware Gang", color: "#540ed8", description: "Ransomware group onion sites" },
+    { name: "Default Watchlist", color: "#E53935", description: "Default RedSecThreat keyword pack for out-of-box detections" },
+  ];
+  const tagIds = {};
+  for (const t of tags) {
+    const existing = stmts.getThreatTagByName.get(t.name);
+    if (existing) {
+      stmts.updateThreatTag.run({ id: existing.id, name: t.name, color: t.color, description: t.description });
+      tagIds[t.name] = existing.id;
+      continue;
+    }
+    const id = _tid();
+    stmts.createThreatTag.run({ id, name: t.name, color: t.color, description: t.description });
+    summary.tagsCreated += 1;
+    tagIds[t.name] = id;
+  }
+
+  const defaultKeywords = [
+    { keyword: "ransomware", criticality: "critical" },
+    { keyword: "breach", criticality: "high" },
+    { keyword: "vulnerability", criticality: "medium" },
+    { keyword: "phishing", criticality: "high" },
+    { keyword: "exploit", criticality: "high" },
+    { keyword: "infostealer", criticality: "high" },
+    { keyword: "data leak", criticality: "high" },
+    { keyword: "zero[ -]?day", criticality: "critical", isRegex: true },
+    { keyword: "CVE-\\d{4}-\\d{4,7}", criticality: "high", isRegex: true },
+  ];
+  const defaultKeywordTagId = tagIds["Default Watchlist"] || null;
+  for (const keywordDef of defaultKeywords) {
+    const existing = stmts.getThreatKeywordByText.get(keywordDef.keyword);
+    let keywordId = existing?.id || null;
+    if (!existing) {
+      const created = createThreatKeyword({
+        keyword: keywordDef.keyword,
+        criticality: keywordDef.criticality,
+        isRegex: keywordDef.isRegex === true,
+        enabled: true,
+      });
+      keywordId = created.id;
+      summary.keywordsCreated += 1;
+    }
+    if (defaultKeywordTagId && keywordId) {
+      const existingTagIds = getThreatKeywordTags(keywordId).map((tag) => tag.id);
+      setThreatKeywordTags(keywordId, [...new Set([...existingTagIds, defaultKeywordTagId])]);
+    }
+  }
+
+  const feeds = [
+    { name: "Bleeping Computer Security", url: "https://www.bleepingcomputer.com/feed/", type: "rss", interval: 3600 },
+    { name: "CISA Advisories", url: "https://www.cisa.gov/cybersecurity-advisories/all.xml", type: "rss", interval: 3600, legacyUrls: ["https://www.cisa.gov/news.xml"] },
+    { name: "Dark Reading", url: "https://www.darkreading.com/rss.xml", type: "rss", interval: 3600 },
+    { name: "Dark Web Informer (RSS)", url: "https://nitter.net/DarkWebInformer/rss", type: "rss", interval: 3600, tag: "X (Twitter)", matchNames: ["Dark Web Informer (RSS)", "Dark Web Informer"], legacyUrls: ["https://nitter.net/DWInformer/rss"] },
+    { name: "Hackmanac", url: "https://nitter.net/H4ckmanac/rss", type: "rss", interval: 3600, tag: "X (Twitter)", legacyUrls: ["https://nitter.net/hackmanac/rss"] },
+    { name: "HaveIBeenPwned Breach Feed", url: "https://haveibeenpwned.com/feed/breaches", type: "rss", interval: 3600, matchNames: ["HaveIBeenPwned Breach Feed", "HIBP Breach Feed"], legacyUrls: ["https://haveibeenpwned.com/feed"] },
+    { name: "Krebs on Security", url: "https://krebsonsecurity.com/feed/", type: "rss", interval: 7200 },
+    { name: "LuemmelSec", url: "https://nitter.net/theluemmel/rss", type: "rss", interval: 3600, tag: "X (Twitter)", legacyUrls: ["https://nitter.net/luemmelSec/rss"] },
+    { name: "Security Affairs", url: "https://securityaffairs.com/feed", type: "rss", interval: 7200, legacyUrls: ["https://securityaffairs.co/wordpress/feed"] },
+    { name: "The Hacker News", url: "https://feeds.feedburner.com/TheHackersNews", type: "rss", interval: 3600 },
+    { name: "Threat Post", url: "https://threatpost.com/feed/", type: "rss", interval: 3600 },
+    { name: "International Cyber Digest", url: "https://nitter.net/IntCyberDigest/rss", type: "rss", interval: 3600, tag: "X (Twitter)", legacyUrls: ["https://nitter.net/cyberdigest/rss"] },
+    { name: "Dark Web Intelligence", url: "https://nitter.net/DailyDarkWeb/rss", type: "rss", interval: 3600, tag: "X (Twitter)" },
+    { name: "Defused", url: "https://nitter.net/DefusedCyber/rss", type: "rss", interval: 3600, tag: "X (Twitter)", legacyUrls: ["https://nitter.net/defused/rss"] },
+    { name: "Dark Web Informer", url: "https://darkwebinformer.com/", type: "website", interval: 3600 },
+    { name: "Infostealers.com", url: "https://www.infostealers.com/infostealer-victims/", type: "website", interval: 3600 },
+    { name: "Ransomware.live", url: "https://www.ransomware.live/", type: "website", interval: 3600 },
+    { name: "RansomFeed.it", url: "https://api.ransomfeed.it/", type: "api", interval: 3600, templateId: templateIds["RansomFeed.it"], matchNames: ["RansomFeed.it", "Ransomfeed.it"] },
+    { name: "RansomLook API Recent", url: "https://www.ransomlook.io/api/recent", type: "api", interval: 3600, templateId: templateIds["RansomLook Recent"] },
+    { name: "Coinbasecartel", url: "http://fjg4zi4opkxkvdz7mvwp7h6goe4tcby3hhkrz43pht4j3vakhy75znyd.onion", type: "onion", interval: 3600, tag: "Ransomware Gang", disabled: true, legacyUrls: ["http://coinbasecartel4sgdkafgk3e4p6r5yrsuktrkcrlpjsojnrt7ipg5qflbid.onion"] },
+    { name: "DragonForce", url: "http://z3wqggtxft7id3ibr7srivv5gjof5fwg76slewnzwwakjuf3nlhukdid.onion/blog", type: "onion", interval: 3600, tag: "Ransomware Gang", disabled: true, legacyUrls: ["http://dragonforce5ukrugcopagffebdepkzghyoqwekw3jy5hr7gkye3c3ja6id.onion"] },
+    { name: "LockBit", url: "http://lockbit3753ekiocyo5epmpy6klmejchjtzddoekjlnt6mu3qh4de2id.onion/", type: "onion", interval: 3600, tag: "Ransomware Gang", disabled: true, legacyUrls: ["http://lockbit3753ekiocyo5epmxsfipsmai2olavxdqbtn5fc6qsxjggd.onion"] },
+    { name: "Qilin", url: "http://ijzn3sicrcy7guixkzjkib4ukbiilwc3xhnmby4mcbccnsd7j2rekvqd.onion/", type: "onion", interval: 3600, tag: "Ransomware Gang", disabled: true, legacyUrls: ["http://kbsqoivihgciok4s4wpgesuqrtvopsohro3omksqbfk6yoxjdtf3u2id.onion"] },
+    { name: "ShadowByt3$ LEAKS", url: "http://sdwbytqeb664krp2wz2qs3lxxah2rhneuotot5hy7g4jpn2pindigcad.onion/leaks.php", type: "onion", interval: 3600, tag: "Ransomware Gang", disabled: true, matchNames: ["ShadowByt3$", "ShadowByt3$ LEAKS"], legacyUrls: ["http://6s7uetnhnpcokjv4r7v3q24wtsvi2z7yox6shmnzebq2smutyzclq3ad.onion"] },
+  ];
+
+  const existingFeeds = stmts.listThreatFeeds.all().map(_mapThreatFeed);
+  for (const f of feeds) {
+    const metadata = f.templateId ? JSON.stringify({ template_id: f.templateId }) : "{}";
+    const matchNames = new Set([f.name, ...(f.matchNames || [])]);
+    const matchUrls = new Set([f.url, ...(f.legacyUrls || [])]);
+    const existing = existingFeeds.find((row) =>
+      row.feedType === f.type &&
+      (matchNames.has(row.name) || matchUrls.has(row.url))
+    );
+
+    let feedId;
+    if (existing) {
+      const updated = updateThreatFeed(existing.id, {
+        name: f.name,
+        url: f.url,
+        feedType: f.type,
+        enabled: existing.enabled,
+        isDefault: true,
+        fetchInterval: f.interval,
+        feedMetadata: metadata,
+      });
+      feedId = updated?.id || existing.id;
+      summary.feedsUpdated += 1;
+    } else {
+      const created = createThreatFeed({
+        name: f.name,
+        url: f.url,
+        feedType: f.type,
+        enabled: !f.disabled,
+        isDefault: true,
+        fetchInterval: f.interval,
+        feedMetadata: metadata,
+      });
+      feedId = created.id;
+      summary.feedsCreated += 1;
+    }
+
+    if (f.tag && tagIds[f.tag]) {
+      const existingTagIds = getThreatFeedTags(feedId).map((tag) => tag.id);
+      setThreatFeedTags(feedId, [...new Set([...existingTagIds, tagIds[f.tag]])]);
+    }
+  }
+
+  return summary;
+}
+
+// --- Mappers ---
+function _mapThreatFeed(r) {
+  const lastChecked = r.last_fetched_at || null;
+  const lastErrorAt = r.last_error_at || null;
+  let status = "unknown";
+  if (!r.enabled) status = "disabled";
+  else if ((r.consecutive_failures || 0) >= 3) status = "error";
+  else if ((r.consecutive_failures || 0) >= 1) status = "warning";
+  else if (lastChecked) status = "healthy";
+  return {
+    id: r.id, name: r.name, url: r.url, feedType: r.feed_type,
+    enabled: !!r.enabled, isDefault: !!r.is_default,
+    fetchInterval: r.fetch_interval, lastFetchedAt: r.last_fetched_at,
+    lastContentHash: r.last_content_hash, feedMetadata: r.feed_metadata ? JSON.parse(r.feed_metadata) : {},
+    lastError: r.last_error, lastErrorAt: r.last_error_at,
+    consecutiveFailures: r.consecutive_failures,
+    lastChecked,
+    status,
+    createdAt: r.created_at, updatedAt: r.updated_at,
+  };
+}
+function _mapThreatKeyword(r) {
+  return {
+    id: r.id, keyword: r.keyword, caseSensitive: !!r.case_sensitive,
+    isRegex: !!r.is_regex, enabled: !!r.enabled, criticality: r.criticality,
+    userId: r.user_id || null, isSystem: !r.user_id,
+    createdAt: r.created_at, updatedAt: r.updated_at,
+  };
+}
+function _mapThreatTag(r) {
+  return { id: r.id, name: r.name, color: r.color, description: r.description, userId: r.user_id || null, isSystem: !r.user_id, createdAt: r.created_at };
+}
+function _mapThreatAlert(r) {
+  const matchedKeywords = JSON.parse(r.matched_keywords || "[]");
+  const apiMeta = JSON.parse(r.api_metadata || "{}");
+  return {
+    id: r.id, feedId: r.feed_id, keywordId: r.keyword_id,
+    matchedContent: r.matched_content, context: r.context,
+    contextHash: r.context_hash, articleHash: r.article_hash,
+    articleUrl: r.article_url || null,
+    userId: r.user_id || null, isPersonal: !!r.user_id,
+    matchedKeywords,
+    keywords: matchedKeywords,
+    apiMetadata: apiMeta,
+    iocs: apiMeta.iocs || {},
+    criticality: r.criticality, isRead: !!r.is_read,
+    triggeredAt: r.triggered_at, createdAt: r.created_at,
+    feedName: r.feed_name || null,
+    feedType: r.feed_feed_type || null,
+    feedUrl: r.feed_url || null,
+    keywordText: r.keyword_text || null,
+    feed: r.feed_name ? { name: r.feed_name, feedType: r.feed_feed_type, url: r.feed_url } : null,
+    keyword: r.keyword_text || null,
+  };
+}
+function _mapThreatApiTemplate(r) {
+  return {
+    id: r.id, name: r.name, description: r.description,
+    configuration: JSON.parse(r.configuration || "{}"),
+    isSystem: !!r.is_system, enabled: !!r.enabled,
+    createdAt: r.created_at, updatedAt: r.updated_at,
+  };
+}
+function _mapThreatNotifConfig(r) {
+  return { id: r.id, name: r.name, channelType: r.channel_type, destination: r.destination, enabled: !!r.enabled, createdAt: r.created_at };
+}
+function _mapThreatUserNotif(r) {
+  return { id: r.id, userId: r.user_id, channelType: r.channel_type, destination: r.destination, enabled: !!r.enabled, createdAt: r.created_at, updatedAt: r.updated_at };
+}
+
 module.exports = {
   // Paste
   createPaste,
@@ -3878,4 +5465,80 @@ module.exports = {
   FILES_DIR,
   TMP_DIR,
   BULLETIN_ASSETS_DIR,
+  // Threat Intel
+  THREAT_VALID_FEED_TYPES,
+  THREAT_VALID_CRITICALITIES,
+  THREAT_VALID_CHANNEL_TYPES,
+  createThreatFeed,
+  listThreatFeeds,
+  getThreatFeedById,
+  updateThreatFeed,
+  deleteThreatFeedById,
+  updateThreatFeedFetchStatus,
+  setThreatFeedKeywords,
+  getThreatFeedKeywords,
+  getThreatFeedsForKeyword,
+  setThreatFeedTags,
+  getThreatFeedTags,
+  createThreatKeyword,
+  listThreatKeywords,
+  listThreatKeywordsForUser,
+  listEffectiveThreatKeywordsForUser,
+  getThreatKeywordById,
+  getThreatKeywordByIdForUser,
+  updateThreatKeyword,
+  deleteThreatKeywordById,
+  disableSystemKeywordForUser,
+  enableSystemKeywordForUser,
+  isSystemKeywordDisabledForUser,
+  setThreatKeywordTags,
+  setThreatKeywordTagsForUser,
+  getThreatKeywordTags,
+  getThreatKeywordTagsForUser,
+  createThreatTag,
+  listThreatTags,
+  updateThreatTag,
+  deleteThreatTagById,
+  createThreatAlert,
+  listThreatAlerts,
+  listThreatAlertsForUser,
+  getThreatAlertById,
+  getThreatAlertByIdForUser,
+  updateThreatAlert,
+  updateThreatAlertForUser,
+  markAllThreatAlertsRead,
+  markAllThreatAlertsReadForUser,
+  deleteThreatAlertById,
+  hideThreatAlertForUser,
+  cleanupOldThreatAlerts,
+  setThreatAlertTags,
+  setThreatAlertTagsForUser,
+  getThreatAlertTags,
+  getThreatAlertTagsForUser,
+  upsertThreatUserAlertKeyword,
+  listThreatUsersEligibleForAlerts,
+  isThreatAlertSuppressed,
+  threatAlertExistsByArticleHash,
+  getThreatAlertByArticleHash,
+  threatAlertExistsByContextHash,
+  threatAlertExistsByFeedKeyword,
+  listThreatAlertUserIds,
+  createThreatApiTemplate,
+  listThreatApiTemplates,
+  getThreatApiTemplateById,
+  updateThreatApiTemplate,
+  deleteThreatApiTemplateById,
+  createThreatNotificationConfig,
+  listThreatNotificationConfigs,
+  listThreatNotificationConfigsEnabled,
+  updateThreatNotificationConfig,
+  deleteThreatNotificationConfigById,
+  upsertThreatUserNotification,
+  listThreatUserNotifications,
+  deleteThreatUserNotificationById,
+  getThreatStats,
+  getThreatStatsForUser,
+  getThreatFeedHealth,
+  getThreatFeedErrors,
+  seedDefaultThreatData,
 };

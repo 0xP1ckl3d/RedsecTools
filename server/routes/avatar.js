@@ -42,7 +42,7 @@ function logAction(action, req, extra = {}) {
 // --- Routes ---
 
 // POST /api/avatar — Upload/replace avatar
-router.post("/avatar", uploadLimiter, upload.single("avatar"), requireUser, async (req, res) => {
+router.post("/avatar", uploadLimiter, requireUser, upload.single("avatar"), async (req, res) => {
   const file = req.file;
 
   if (!file) {
