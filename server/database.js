@@ -5025,7 +5025,7 @@ function seedDefaultThreatData() {
       continue;
     }
     const id = _tid();
-    stmts.createThreatTag.run({ id, name: t.name, color: t.color, description: t.description });
+    stmts.createThreatTag.run({ id, name: t.name, color: t.color, description: t.description, userId: null });
     summary.tagsCreated += 1;
     tagIds[t.name] = id;
   }
