@@ -11,6 +11,7 @@ const { SocksProxyAgent } = require("socks-proxy-agent");
 
 const db = require("./database");
 const { deliverAlertNotifications } = require("./threat-notify-service");
+const { assertPublicHttpUrl } = require("./core/security/fetch-targets");
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -21,6 +22,8 @@ const DEFAULT_FETCH_INTERVAL_SEC = 3600;
 const MAX_ALERT_CONTENT_LENGTH = 12000;
 const CONTEXT_WINDOW = 200;
 const HTTP_TIMEOUT_MS = 30000;
+const HTTP_MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
+const HTTP_MAX_REDIRECTS = 3;
 const IPV4_RETRY_CODES = new Set(["ETIMEDOUT", "ECONNRESET", "ECONNREFUSED", "EHOSTUNREACH", "ENETUNREACH", "EAI_AGAIN"]);
 
 function safeText(value) {
@@ -137,7 +140,8 @@ async function fetchRssFeed(url) {
       ],
     },
   });
-  const feed = await parser.parseURL(url);
+  const xml = await httpGet(url);
+  const feed = await parser.parseString(xml);
   const content = JSON.stringify(feed);
   const hash = sha256(content);
   const entries = (feed.items || []).map((item) => ({
@@ -306,14 +310,32 @@ function httpGetInternal(url, headers = {}, agent = null, options = {}) {
     }
 
     const req = mod.request(options, (res) => {
+      const statusCode = res.statusCode || 0;
+      const location = res.headers.location;
+      if (statusCode >= 300 && statusCode < 400 && location) {
+        res.resume();
+        resolve({ redirectUrl: new URL(location, url).toString() });
+        return;
+      }
+
       const chunks = [];
-      res.on("data", (chunk) => chunks.push(chunk));
+      let totalBytes = 0;
+      res.on("data", (chunk) => {
+        totalBytes += chunk.length;
+        if (totalBytes > HTTP_MAX_RESPONSE_BYTES) {
+          const error = new Error("Response too large");
+          error.code = "ERESPONSETOOLARGE";
+          req.destroy(error);
+          return;
+        }
+        chunks.push(chunk);
+      });
       res.on("end", () => {
         const body = Buffer.concat(chunks).toString("utf-8");
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          resolve(body);
+        if (statusCode >= 200 && statusCode < 300) {
+          resolve({ body });
         } else {
-          reject(new Error(`HTTP ${res.statusCode} for ${url}`));
+          reject(new Error(`HTTP ${statusCode} for ${url}`));
         }
       });
     });
@@ -328,7 +350,7 @@ function httpGetInternal(url, headers = {}, agent = null, options = {}) {
   });
 }
 
-async function httpGet(url, headers = {}, agent = null) {
+async function httpGetOnce(url, headers = {}, agent = null) {
   try {
     return await httpGetInternal(url, headers, agent);
   } catch (error) {
@@ -337,6 +359,25 @@ async function httpGet(url, headers = {}, agent = null) {
     }
     throw error;
   }
+}
+
+async function httpGet(url, headers = {}, agent = null) {
+  let currentUrl = url;
+  for (let redirectCount = 0; redirectCount <= HTTP_MAX_REDIRECTS; redirectCount++) {
+    if (!agent) {
+      await assertPublicHttpUrl(currentUrl);
+    }
+    const result = await httpGetOnce(currentUrl, headers, agent);
+    if (result.redirectUrl) {
+      if (redirectCount === HTTP_MAX_REDIRECTS) {
+        throw new Error("Too many redirects");
+      }
+      currentUrl = result.redirectUrl;
+      continue;
+    }
+    return result.body;
+  }
+  throw new Error("Too many redirects");
 }
 
 // ---------------------------------------------------------------------------

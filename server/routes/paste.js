@@ -4,6 +4,8 @@ const crypto = require("crypto");
 const { createPaste, getPaste, VALID_EXPIRY_OPTIONS, VALID_SYNTAX_OPTIONS, redeemGuestLink } = require("../database");
 const { requireGuestOrUserFor } = require("../middleware/auth");
 const { decodeBase64Strict } = require("../base64");
+const { validateBase64Field, validateBase64UrlId } = require("../core/validation");
+const { logEvent } = require("../core/logger");
 
 const router = Router();
 
@@ -28,30 +30,9 @@ const readLimiter = rateLimit({
 
 const MAX_CIPHERTEXT_SIZE = 512 * 1024; // 512KB decoded
 
-function validateBase64Field(value, name, requiredLength) {
-  if (typeof value !== "string") return `${name} must be a string`;
-  if (!value.length) return `${name} is empty`;
-  try {
-    const decoded = decodeBase64Strict(value);
-    if (requiredLength && decoded.length !== requiredLength) {
-      return `${name} must decode to ${requiredLength} bytes (got ${decoded.length})`;
-    }
-    return null;
-  } catch {
-    return `${name} is not valid base64`;
-  }
-}
-
 function toBase64(buffer) {
   if (!buffer) return null;
   return Buffer.from(buffer).toString("base64");
-}
-
-// --- Logging ---
-
-function logAction(action, req, extra = {}) {
-  const ip = req.ip || req.connection?.remoteAddress;
-  console.log(JSON.stringify({ ts: new Date().toISOString(), action, ip, ...extra }));
 }
 
 // --- Routes ---
@@ -132,7 +113,7 @@ router.post("/paste", createLimiter, requireGuestOrUserFor("paste"), (req, res) 
       guestInvitedBy: req.guest ? req.guest.invitedBy : null,
     });
 
-    logAction("paste:create", req, { id, hasPassword: !!hasPassword, burnAfterReading: !!burnAfterReading, expiresIn });
+    logEvent("paste:create", req, { id, hasPassword: !!hasPassword, burnAfterReading: !!burnAfterReading, expiresIn });
 
     // Clear guest cookie after successful creation
     if (req.guest) {
@@ -141,7 +122,7 @@ router.post("/paste", createLimiter, requireGuestOrUserFor("paste"), (req, res) 
 
     res.status(201).json({ id: paste.id });
   } catch (err) {
-    logAction("paste:create_error", req, { error: err.message });
+    logEvent("paste:create_error", req, { error: err.message });
     res.status(500).json({ error: "Failed to create paste" });
   }
 });
@@ -150,23 +131,23 @@ router.post("/paste", createLimiter, requireGuestOrUserFor("paste"), (req, res) 
 router.get("/paste/:id", readLimiter, (req, res) => {
   const { id } = req.params;
 
-  if (typeof id !== "string" || !/^[A-Za-z0-9_-]{22}$/.test(id)) {
+  if (validateBase64UrlId(id, "Paste ID")) {
     return res.status(400).json({ error: "Invalid paste ID" });
   }
 
   const paste = getPaste(id);
 
   if (!paste) {
-    logAction("paste:not_found", req, { id });
+    logEvent("paste:not_found", req, { id });
     return res.status(404).json({ error: "Paste not found" });
   }
 
   if (paste.expired) {
-    logAction("paste:expired", req, { id });
+    logEvent("paste:expired", req, { id });
     return res.status(410).json({ error: "Paste has expired" });
   }
 
-  logAction("paste:read", req, { id, burned: !!paste.burned });
+  logEvent("paste:read", req, { id, burned: !!paste.burned });
 
   res.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.set("Pragma", "no-cache");

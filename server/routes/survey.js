@@ -3,6 +3,7 @@ const rateLimit = require("express-rate-limit");
 const crypto = require("crypto");
 const { requireUser, optionalUser } = require("../middleware/auth");
 const { attachUserAccess } = require("../middleware/permissions");
+const { getCookieSecure } = require("../core/security/cookies");
 const {
   createSurvey,
   updateSurvey,
@@ -66,7 +67,7 @@ function writeSurveyResponseCookie(res, entries, now = Math.floor(Date.now() / 1
   }, {
     httpOnly: true,
     sameSite: "strict",
-    secure: process.env.NODE_ENV === "production",
+    secure: getCookieSecure(),
     signed: true,
     maxAge: SURVEY_RESPONSE_COOKIE_TTL * 1000,
     path: "/api/survey",

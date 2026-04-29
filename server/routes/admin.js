@@ -27,9 +27,16 @@ const {
   getShortcutsByUser, deleteShortcutById, deleteFavouritesByShortcut, AVATARS_DIR,
   getVault, getVaultMembersList, updateVaultMemberPermission, removeVaultMember,
   listAllSurveys, getSurveyStats, deleteSurveyById,
+  createAuditEvent, listAuditEvents, listSchemaMigrations, getDeploymentCounts,
+  db, DB_PATH,
 } = require("../database");
 const { sendInviteEmail, sendPasswordResetEmail, sendTestEmail } = require("../email");
 const { buildAbsoluteUrl } = require("../public-origin");
+const { createEncryptedDatabaseBackup } = require("../core/backup");
+const { getCookieSecure } = require("../core/security/cookies");
+const { buildBasePosture } = require("../core/security/posture");
+const { logEvent, redactObject } = require("../core/logger");
+const { parseInteger } = require("../core/validation");
 
 const router = Router();
 
@@ -42,8 +49,48 @@ function adminCookieOptions() {
     sameSite: "strict",
     maxAge: 24 * 60 * 60 * 1000,
     path: "/admin",
-    secure: process.env.NODE_ENV === "production",
+    secure: getCookieSecure(),
   };
+}
+
+function auditAdmin(req, { category = "admin", action, targetType = null, targetId = null, outcome = "success", metadata = {} }) {
+  try {
+    createAuditEvent({
+      actorUserId: req.user?.id || null,
+      actorUsername: req.user?.username || null,
+      actorType: "admin",
+      ipAddress: req.ip || null,
+      userAgent: req.get("user-agent") || null,
+      category,
+      action,
+      targetType,
+      targetId,
+      outcome,
+      metadata: redactObject(metadata),
+    });
+  } catch (error) {
+    logEvent("audit:write_failed", req, { action, error: error.message });
+  }
+}
+
+function getDirectorySize(dirPath) {
+  let total = 0;
+  try {
+    for (const entry of fs.readdirSync(dirPath, { withFileTypes: true })) {
+      const fullPath = path.join(dirPath, entry.name);
+      if (entry.isDirectory()) total += getDirectorySize(fullPath);
+      else if (entry.isFile()) total += fs.statSync(fullPath).size;
+    }
+  } catch {}
+  return total;
+}
+
+function parseAuditTimestamp(value) {
+  if (!value) return null;
+  const numeric = parseInteger(value, { min: 0, fallback: null });
+  if (numeric != null) return numeric;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? Math.floor(parsed / 1000) : null;
 }
 
 function clearAdminCookie(res) {
@@ -199,9 +246,27 @@ router.post("/login", adminLoginLimiter, (req, res) => {
   const b = Buffer.from(String(ADMIN_PASSWORD), "utf8");
   if (a.length !== b.length) {
     crypto.timingSafeEqual(a, a); // Constant-time dummy
+    createAuditEvent({
+      actorType: "admin",
+      ipAddress: req.ip || null,
+      userAgent: req.get("user-agent") || null,
+      category: "auth",
+      action: "admin_login",
+      outcome: "failure",
+      metadata: { reason: "invalid_password" },
+    });
     return res.status(401).json({ error: "Invalid password" });
   }
   if (!crypto.timingSafeEqual(a, b)) {
+    createAuditEvent({
+      actorType: "admin",
+      ipAddress: req.ip || null,
+      userAgent: req.get("user-agent") || null,
+      category: "auth",
+      action: "admin_login",
+      outcome: "failure",
+      metadata: { reason: "invalid_password" },
+    });
     return res.status(401).json({ error: "Invalid password" });
   }
 
@@ -217,7 +282,18 @@ router.post("/login", adminLoginLimiter, (req, res) => {
   });
   res.cookie("redsec_admin", sessionToken, adminCookieOptions());
 
-  console.log(JSON.stringify({ ts: new Date().toISOString(), action: "admin:login", ip: req.ip }));
+  logEvent("admin:login", req, { userId: linkedUserSession?.id || null });
+  createAuditEvent({
+    actorUserId: linkedUserSession?.id || null,
+    actorUsername: linkedUserSession?.username || null,
+    actorType: "admin",
+    ipAddress: req.ip || null,
+    userAgent: req.get("user-agent") || null,
+    category: "auth",
+    action: "admin_login",
+    targetType: "admin_session",
+    outcome: "success",
+  });
   res.json({ success: true });
 });
 
@@ -262,6 +338,85 @@ router.get("/api/auth-status", (req, res) => {
   }
 
   return res.json({ authenticated: true });
+});
+
+// GET /admin/api/security-posture
+router.get("/api/security-posture", requireAdmin, (req, res) => {
+  const base = buildBasePosture();
+  const dbStat = (() => {
+    try { return fs.statSync(DB_PATH); } catch { return null; }
+  })();
+  res.json({
+    ...base,
+    database: {
+      path: path.relative(path.join(__dirname, "..", ".."), DB_PATH),
+      sizeBytes: dbStat?.size || 0,
+      migrations: listSchemaMigrations(),
+      latestMigration: listSchemaMigrations().slice(-1)[0]?.id || null,
+    },
+    counts: getDeploymentCounts(),
+    storage: {
+      dataBytes: getDirectorySize(path.join(__dirname, "..", "..", "data")),
+    },
+  });
+});
+
+// GET /admin/api/audit-events
+router.get("/api/audit-events", requireAdmin, (req, res) => {
+  const limit = Math.min(500, Math.max(1, parseInt(req.query.limit, 10) || 100));
+  const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
+  res.json(listAuditEvents({
+    limit,
+    offset,
+    actorUserId: typeof req.query.actorUserId === "string" && req.query.actorUserId ? req.query.actorUserId : null,
+    category: typeof req.query.category === "string" && req.query.category ? req.query.category : null,
+    action: typeof req.query.action === "string" && req.query.action ? req.query.action : null,
+    outcome: typeof req.query.outcome === "string" && req.query.outcome ? req.query.outcome : null,
+    targetType: typeof req.query.targetType === "string" && req.query.targetType ? req.query.targetType : null,
+    targetId: typeof req.query.targetId === "string" && req.query.targetId ? req.query.targetId : null,
+    fromTs: parseAuditTimestamp(req.query.from),
+    toTs: parseAuditTimestamp(req.query.to),
+  }));
+});
+
+// GET /admin/api/audit-events.csv
+router.get("/api/audit-events.csv", requireAdmin, (req, res) => {
+  const data = listAuditEvents({ limit: 500, offset: 0 });
+  const headers = ["createdAt", "actorUsername", "actorUserId", "category", "action", "targetType", "targetId", "outcome", "metadata"];
+  const rows = data.events.map((event) => headers.map((field) => {
+    const value = field === "metadata" ? JSON.stringify(event.metadata) : event[field];
+    return `"${String(value ?? "").replace(/"/g, '""')}"`;
+  }).join(","));
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", "attachment; filename=\"redsectools-audit-events.csv\"");
+  res.send([headers.join(","), ...rows].join("\n"));
+});
+
+// POST /admin/api/backup/export
+router.post("/api/backup/export", requireAdmin, async (req, res) => {
+  const passphrase = req.body?.passphrase;
+  try {
+    const backup = await createEncryptedDatabaseBackup({ db, dbPath: DB_PATH, passphrase });
+    auditAdmin(req, {
+      category: "deployment",
+      action: "backup_export",
+      targetType: "database",
+      outcome: "success",
+      metadata: { bytes: backup.length },
+    });
+    res.setHeader("Content-Type", "application/octet-stream");
+    res.setHeader("Content-Disposition", `attachment; filename="redsectools-backup-${new Date().toISOString().slice(0, 10)}.rsecbackup"`);
+    res.send(backup);
+  } catch (error) {
+    auditAdmin(req, {
+      category: "deployment",
+      action: "backup_export",
+      targetType: "database",
+      outcome: "failure",
+      metadata: { error: error.message },
+    });
+    res.status(400).json({ error: error.message || "Backup export failed" });
+  }
 });
 
 // ============================================================
@@ -317,6 +472,12 @@ router.post("/api/settings/share", requireAdmin, (req, res) => {
 
   setSetting("share_max_file_size_mb", String(maxFileSizeMb));
   setSetting("share_max_files_per_share", String(maxFilesPerShare));
+  auditAdmin(req, {
+    category: "settings",
+    action: "share_limits_update",
+    targetType: "share_settings",
+    metadata: { maxFileSizeMb, maxFilesPerShare },
+  });
 
   console.log(JSON.stringify({
     ts: new Date().toISOString(),
@@ -394,6 +555,7 @@ router.delete("/api/paste/:id", requireAdmin, (req, res) => {
   if (!deleted) {
     return res.status(404).json({ error: "Paste not found" });
   }
+  auditAdmin(req, { category: "content", action: "paste_delete", targetType: "paste", targetId: id });
   res.json({ success: true });
 });
 
@@ -405,6 +567,7 @@ router.delete("/api/file/:id", requireAdmin, (req, res) => {
   }
 
   deleteFile(id);
+  auditAdmin(req, { category: "content", action: "share_delete", targetType: "share", targetId: id });
   res.json({ success: true });
 });
 
@@ -416,6 +579,7 @@ router.delete("/api/survey/:id", requireAdmin, (req, res) => {
   }
 
   deleteSurveyById(id);
+  auditAdmin(req, { category: "content", action: "survey_delete", targetType: "survey", targetId: id });
   res.json({ success: true });
 });
 
@@ -436,6 +600,7 @@ router.post("/api/pastes/bulk-delete", requireAdmin, (req, res) => {
   }
 
   const deleted = bulkDeletePastes(ids);
+  auditAdmin(req, { category: "content", action: "paste_bulk_delete", targetType: "paste", metadata: { count: ids.length, deleted } });
   res.json({ success: true, deleted });
 });
 
@@ -456,6 +621,7 @@ router.post("/api/files/bulk-delete", requireAdmin, (req, res) => {
   }
 
   const deleted = bulkDeleteFiles(ids);
+  auditAdmin(req, { category: "content", action: "share_bulk_delete", targetType: "share", metadata: { count: ids.length, deleted } });
   res.json({ success: true, deleted });
 });
 
@@ -518,6 +684,7 @@ router.put("/api/users/:id", requireAdmin, (req, res) => {
     email: email || user.email,
     username: username || user.username,
   });
+  auditAdmin(req, { category: "identity", action: "user_update", targetType: "user", targetId: id, metadata: { emailChanged: !!(email && email !== user.email), usernameChanged: !!(username && username !== user.username) } });
 
   console.log(JSON.stringify({ ts: new Date().toISOString(), action: "admin:update_user", ip: req.ip, userId: id }));
   res.json({ success: true });
@@ -532,6 +699,7 @@ router.post("/api/users/:id/suspend", requireAdmin, (req, res) => {
   if (!user) return res.status(404).json({ error: "User not found" });
 
   suspendUserById(req.params.id);
+  auditAdmin(req, { category: "identity", action: "user_suspend", targetType: "user", targetId: req.params.id });
   console.log(JSON.stringify({ ts: new Date().toISOString(), action: "admin:suspend_user", ip: req.ip, userId: req.params.id }));
   res.json({ success: true });
 });
@@ -545,6 +713,7 @@ router.post("/api/users/:id/unsuspend", requireAdmin, (req, res) => {
   if (!user) return res.status(404).json({ error: "User not found" });
 
   unsuspendUserById(req.params.id);
+  auditAdmin(req, { category: "identity", action: "user_unsuspend", targetType: "user", targetId: req.params.id });
   console.log(JSON.stringify({ ts: new Date().toISOString(), action: "admin:unsuspend_user", ip: req.ip, userId: req.params.id }));
   res.json({ success: true });
 });
@@ -568,6 +737,7 @@ router.delete("/api/users/:id", requireAdmin, (req, res) => {
   }
 
   deleteUserById(req.params.id);
+  auditAdmin(req, { category: "identity", action: "user_delete", targetType: "user", targetId: req.params.id });
   console.log(JSON.stringify({ ts: new Date().toISOString(), action: "admin:delete_user", ip: req.ip, userId: req.params.id }));
   res.json({ success: true });
 });
@@ -604,9 +774,11 @@ router.post("/api/users/:id/reset-password", requireAdmin, async (req, res) => {
 
   try {
     const smtpInfo = await sendPasswordResetEmail(user.email, resetUrl);
+    auditAdmin(req, { category: "identity", action: "password_reset_create", targetType: "user", targetId: user.id, metadata: { emailSent: true } });
     console.log(JSON.stringify({ ts: new Date().toISOString(), action: "admin:reset_password_email", ip: req.ip, userId: user.id }));
     res.json({ success: true, emailSent: true, smtpResponse: smtpInfo.response });
   } catch (err) {
+    auditAdmin(req, { category: "identity", action: "password_reset_create", targetType: "user", targetId: user.id, metadata: { emailSent: false, error: err.message } });
     console.log(JSON.stringify({ ts: new Date().toISOString(), action: "admin:reset_password_fallback", ip: req.ip, userId: user.id, error: err.message }));
     res.json({ success: true, emailSent: false, resetUrl, error: "Failed to send email" });
   }
@@ -652,6 +824,7 @@ router.post("/api/invites", requireAdmin, async (req, res) => {
     roleId: roleId || null,
     expiresAt,
   });
+  auditAdmin(req, { category: "identity", action: "invite_create", targetType: "invite", targetId: id, metadata: { email, roleId: roleId || null } });
 
   const registrationUrl = buildAbsoluteUrl(req, `/register?token=${encodeURIComponent(token)}`);
   if (!registrationUrl) {
@@ -688,6 +861,7 @@ router.delete("/api/invites/:id", requireAdmin, (req, res) => {
   if (!deleted) {
     return res.status(404).json({ error: "Invite not found or already used" });
   }
+  auditAdmin(req, { category: "identity", action: "invite_revoke", targetType: "invite", targetId: req.params.id });
   console.log(JSON.stringify({ ts: new Date().toISOString(), action: "admin:revoke_invite", ip: req.ip, inviteId: req.params.id }));
   res.json({ success: true });
 });
@@ -728,6 +902,7 @@ router.post("/api/settings/smtp", requireAdmin, (req, res) => {
     from: typeof from === "string" ? from : "",
     secure: !!secure,
   });
+  auditAdmin(req, { category: "settings", action: "smtp_update", targetType: "smtp", metadata: { host, port, from, secure: !!secure, passwordChanged: actualPass !== currentConfig.smtpPass } });
 
   console.log(JSON.stringify({ ts: new Date().toISOString(), action: "admin:update_smtp", ip: req.ip }));
   res.json({ success: true });
@@ -1022,6 +1197,17 @@ router.post("/api/settings/security", requireAdmin, (req, res) => {
     setSetting("mfa_required", mfaRequired ? "true" : "false");
   }
 
+  auditAdmin(req, {
+    category: "settings",
+    action: "security_update",
+    targetType: "security_settings",
+    metadata: {
+      sessionTTL,
+      sessionTTLExtended,
+      mfaRememberDays,
+      mfaRequired: mfaRequired !== undefined ? !!mfaRequired : undefined,
+    },
+  });
   console.log(JSON.stringify({ ts: new Date().toISOString(), action: "admin:update_security", ip: req.ip }));
   res.json({ success: true });
 });
@@ -1045,6 +1231,7 @@ router.post("/api/users/:id/reset-mfa", requireAdmin, (req, res) => {
   deleteExtensionSessionsByUserId(user.id);
   deleteTrustedDevicesByUser(user.id);
 
+  auditAdmin(req, { category: "identity", action: "mfa_reset", targetType: "user", targetId: user.id });
   console.log(JSON.stringify({ ts: new Date().toISOString(), action: "admin:reset_mfa", ip: req.ip, userId: user.id }));
   res.json({ success: true });
 });

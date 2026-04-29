@@ -57,6 +57,22 @@ if [ -n "$TRUSTED_ORIGINS_INPUT" ]; then
     fi
 fi
 
+COOKIE_SECURE_DEFAULT="false"
+if printf '%s' "$TRUSTED_PUBLIC_ORIGINS" | grep -qi 'https://'; then
+    COOKIE_SECURE_DEFAULT="true"
+fi
+
+echo ""
+echo "Secure cookies should be enabled when users access RedSecTools over HTTPS."
+echo "Choose false only for direct plain-HTTP/local deployments."
+read -rp "Enable secure cookies? [${COOKIE_SECURE_DEFAULT}]: " COOKIE_SECURE_INPUT
+case "$(printf '%s' "$COOKIE_SECURE_INPUT" | tr '[:upper:]' '[:lower:]')" in
+    "" ) COOKIE_SECURE="$COOKIE_SECURE_DEFAULT" ;;
+    y|yes|true|1 ) COOKIE_SECURE="true" ;;
+    n|no|false|0 ) COOKIE_SECURE="false" ;;
+    * ) COOKIE_SECURE="$COOKIE_SECURE_DEFAULT" ;;
+esac
+
 # Generate random admin password (24 chars, base64)
 ADMIN_PASSWORD=$(openssl rand -base64 18 | tr -d '=/+' | head -c 24)
 
@@ -74,6 +90,9 @@ ADMIN_PASSWORD=${ADMIN_PASSWORD}
 
 # Secret for signing cookies (auto-generated)
 COOKIE_SECRET=${COOKIE_SECRET}
+
+# Secure cookies. Required for HTTPS deployments; set false only for direct HTTP.
+COOKIE_SECURE=${COOKIE_SECURE}
 
 # Database path (default: ./data/pastes.db)
 # DB_PATH=./data/pastes.db
@@ -94,6 +113,7 @@ echo ""
 echo "  Admin password: ${ADMIN_PASSWORD}"
 echo ""
 echo "  Listening:      ${HOST}:${PORT}"
+echo "  Secure cookies: ${COOKIE_SECURE}"
 echo ""
 echo "  Write this down — you'll need it to log in"
 echo "  at http://localhost:${PORT}/admin"

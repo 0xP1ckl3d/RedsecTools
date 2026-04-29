@@ -30,7 +30,9 @@ const {
   getThreatApiTemplateById,
   updateThreatApiTemplate,
   deleteThreatApiTemplateById,
+  createAuditEvent,
 } = require("../database");
+const { logEvent, redactObject } = require("../core/logger");
 const { ALL_PERMISSIONS, PERMISSION_DEFINITIONS } = require("../access");
 const {
   buildVisibleBulletinFeed,
@@ -53,6 +55,26 @@ const writeLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+function auditAdmin(req, { category = "admin", action, targetType = null, targetId = null, outcome = "success", metadata = {} }) {
+  try {
+    createAuditEvent({
+      actorUserId: req.user?.id || null,
+      actorUsername: req.user?.username || null,
+      actorType: "admin",
+      ipAddress: req.ip || null,
+      userAgent: req.get("user-agent") || null,
+      category,
+      action,
+      targetType,
+      targetId,
+      outcome,
+      metadata: redactObject(metadata),
+    });
+  } catch (error) {
+    logEvent("audit:write_failed", req, { action, error: error.message });
+  }
+}
+
 router.get("/api/roles", requireAdmin, (req, res) => {
   res.json({ roles: listRoles(), permissions: ALL_PERMISSIONS, permissionDefinitions: PERMISSION_DEFINITIONS });
 });
@@ -69,6 +91,7 @@ router.post("/api/roles", writeLimiter, requireAdmin, (req, res) => {
     description: typeof description === "string" ? description.trim() : "",
     permissions,
   });
+  auditAdmin(req, { category: "identity", action: "role_create", targetType: "role", targetId: id, metadata: { name } });
   res.json({ success: true, id });
 });
 
@@ -81,6 +104,7 @@ router.put("/api/roles/:id", writeLimiter, requireAdmin, (req, res) => {
     description: typeof req.body?.description === "string" ? req.body.description.trim() : role.description,
     permissions: Array.isArray(req.body?.permissions) ? req.body.permissions : role.permissions,
   });
+  auditAdmin(req, { category: "identity", action: "role_update", targetType: "role", targetId: role.id, metadata: { name: req.body?.name || role.name } });
   res.json({ success: true });
 });
 
@@ -89,6 +113,7 @@ router.delete("/api/roles/:id", writeLimiter, requireAdmin, (req, res) => {
   if (!deleted) {
     return res.status(400).json({ error: "Role could not be deleted" });
   }
+  auditAdmin(req, { category: "identity", action: "role_delete", targetType: "role", targetId: req.params.id });
   res.json({ success: true });
 });
 
@@ -98,6 +123,7 @@ router.put("/api/users/:id/role", writeLimiter, requireAdmin, (req, res) => {
   const role = getRoleById(req.body?.roleId);
   if (!role) return res.status(400).json({ error: "Role not found" });
   setUserRole(user.id, role.id);
+  auditAdmin(req, { category: "identity", action: "user_role_update", targetType: "user", targetId: user.id, metadata: { roleId: role.id, roleName: role.name } });
   res.json({ success: true });
 });
 

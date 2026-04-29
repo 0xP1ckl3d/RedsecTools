@@ -33,6 +33,8 @@ const {
 } = require("./database");
 const { pageRequireUser, pageRequireGuestOrUser } = require("./middleware/auth");
 const { pageRequirePermission, pageRequireAnyPermission } = require("./middleware/permissions");
+const { buildDeploymentWarnings } = require("./core/security/posture");
+const { logWarn } = require("./core/logger");
 
 const app = express();
 const PORT = parseInt(process.env.PORT, 10) || 3000;
@@ -97,6 +99,10 @@ app.use(cookieParser(COOKIE_SECRET));
 app.use(express.static(path.join(__dirname, "..", "public"), {
   index: false,
   setHeaders(res, filePath) {
+    if (filePath.endsWith(`${path.sep}admin.js`) || filePath.endsWith(`${path.sep}admin.html`)) {
+      res.setHeader("Cache-Control", "no-store");
+      return;
+    }
     if (filePath.endsWith(".css") || filePath.endsWith(".js")) {
       res.setHeader("Cache-Control", "public, max-age=3600, must-revalidate");
     }
@@ -154,7 +160,10 @@ app.get("/wiki", pageRequireUser, pageRequireAnyPermission(["wiki.view", "wiki.c
 app.get("/wiki/about", (req, res) => res.sendFile(page("wiki/about.html")));
 app.get("/threat", pageRequireUser, pageRequireAnyPermission(["threat.view", "threat.manage"]), (req, res) => res.sendFile(page("threat/index.html")));
 app.get("/threat/about", (req, res) => res.sendFile(page("threat/about.html")));
-app.get("/admin", (req, res) => res.sendFile(page("admin.html")));
+app.get("/admin", (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.sendFile(page("admin.html"));
+});
 
 // Guest link redemption
 app.get("/guest/:token", authRouter.getGuestRedirect);
@@ -223,6 +232,9 @@ const server = http.createServer(app);
 initWebSocket(server);
 server.listen(PORT, HOST, () => {
   console.log(JSON.stringify({ ts: new Date().toISOString(), action: "start", host: HOST, port: PORT, name: "RedSecTools" }));
+  for (const warning of buildDeploymentWarnings({ host: HOST })) {
+    logWarn("deployment:posture_warning", warning);
+  }
   seedThreatDefaults();
   startFeedFetchInterval();
 });

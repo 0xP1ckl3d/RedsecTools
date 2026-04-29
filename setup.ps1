@@ -54,6 +54,28 @@ if (-not [string]::IsNullOrWhiteSpace($TrustedOriginsInput)) {
     }
 }
 
+$CookieSecureDefault = "false"
+if ($TrustedPublicOrigins -match "https://") {
+    $CookieSecureDefault = "true"
+}
+
+Write-Host ""
+Write-Host "Secure cookies should be enabled when users access RedSecTools over HTTPS."
+Write-Host "Choose false only for direct plain-HTTP/local deployments."
+$CookieSecureInput = Read-Host "Enable secure cookies? [$CookieSecureDefault]"
+switch ($CookieSecureInput.Trim().ToLowerInvariant()) {
+    "" { $CookieSecure = $CookieSecureDefault }
+    "y" { $CookieSecure = "true" }
+    "yes" { $CookieSecure = "true" }
+    "true" { $CookieSecure = "true" }
+    "1" { $CookieSecure = "true" }
+    "n" { $CookieSecure = "false" }
+    "no" { $CookieSecure = "false" }
+    "false" { $CookieSecure = "false" }
+    "0" { $CookieSecure = "false" }
+    default { $CookieSecure = $CookieSecureDefault }
+}
+
 # Generate random admin password (24 chars)
 $passwordBytes = [Security.Cryptography.RandomNumberGenerator]::GetBytes(18)
 $AdminPassword = [Convert]::ToBase64String($passwordBytes) -replace '[/+=]', ''
@@ -74,6 +96,9 @@ ADMIN_PASSWORD=$AdminPassword
 
 # Secret for signing cookies (auto-generated)
 COOKIE_SECRET=$CookieSecret
+
+# Secure cookies. Required for HTTPS deployments; set false only for direct HTTP.
+COOKIE_SECURE=$CookieSecure
 
 # Database path (default: ./data/pastes.db)
 # DB_PATH=./data/pastes.db
@@ -97,6 +122,7 @@ Write-Host "  Admin password: " -NoNewline
 Write-Host $AdminPassword -ForegroundColor Yellow
 Write-Host ""
 Write-Host "  Listening:      $Host`:$Port"
+Write-Host "  Secure cookies: $CookieSecure"
 Write-Host ""
 Write-Host "  Write this down -- you'll need it to log in"
 Write-Host "  at http://localhost`:$Port/admin"

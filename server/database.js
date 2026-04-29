@@ -1,29 +1,18 @@
-const Database = require("better-sqlite3");
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
 const { SYSTEM_ROLE_DEFINITIONS, normalizePermissionList } = require("./access");
+const {
+  openDatabase,
+  DB_PATH,
+  FILES_DIR,
+  TMP_DIR,
+  AVATARS_DIR,
+  BULLETIN_ASSETS_DIR,
+} = require("./core/db/connection");
+const { runMigrations } = require("./core/db/migrations");
 
-const DB_PATH = process.env.DB_PATH || path.join(__dirname, "..", "data", "pastes.db");
-
-// Ensure data directory exists
-const dbDir = path.dirname(DB_PATH);
-if (!fs.existsSync(dbDir)) {
-  fs.mkdirSync(dbDir, { recursive: true });
-}
-
-// Ensure files directories exist
-const FILES_DIR = path.join(__dirname, "..", "data", "files");
-const TMP_DIR = path.join(__dirname, "..", "data", "tmp");
-const AVATARS_DIR = path.join(__dirname, "..", "data", "avatars");
-const BULLETIN_ASSETS_DIR = path.join(__dirname, "..", "data", "bulletin-assets");
-if (!fs.existsSync(FILES_DIR)) fs.mkdirSync(FILES_DIR, { recursive: true });
-if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR, { recursive: true });
-if (!fs.existsSync(AVATARS_DIR)) fs.mkdirSync(AVATARS_DIR, { recursive: true });
-if (!fs.existsSync(BULLETIN_ASSETS_DIR)) fs.mkdirSync(BULLETIN_ASSETS_DIR, { recursive: true });
-
-const db = new Database(DB_PATH);
-db.pragma("journal_mode = WAL");
+const db = openDatabase();
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS pastes (
@@ -758,6 +747,8 @@ db.exec(`
     PRIMARY KEY (user_id, alert_id)
   );
 `);
+
+runMigrations(db);
 
 // Add avatar column to users table (safe migration)
 try { db.exec("ALTER TABLE users ADD COLUMN avatar_updated_at INTEGER"); } catch {}
@@ -2188,6 +2179,41 @@ const stmts = {
     WHERE suspended = 0
     ORDER BY created_at ASC
   `),
+
+  createAuditEvent: db.prepare(`
+    INSERT INTO audit_events (
+      id, actor_user_id, actor_username, actor_type, ip_address, user_agent,
+      category, action, target_type, target_id, outcome, metadata_json
+    ) VALUES (
+      @id, @actorUserId, @actorUsername, @actorType, @ipAddress, @userAgent,
+      @category, @action, @targetType, @targetId, @outcome, @metadataJson
+    )
+  `),
+  listAuditEvents: db.prepare(`
+    SELECT * FROM audit_events
+    WHERE (@actorUserId IS NULL OR actor_user_id = @actorUserId)
+      AND (@category IS NULL OR category = @category)
+      AND (@action IS NULL OR action = @action)
+      AND (@outcome IS NULL OR outcome = @outcome)
+      AND (@targetType IS NULL OR target_type = @targetType)
+      AND (@targetId IS NULL OR target_id = @targetId)
+      AND (@fromTs IS NULL OR created_at >= @fromTs)
+      AND (@toTs IS NULL OR created_at <= @toTs)
+    ORDER BY created_at DESC
+    LIMIT @limit OFFSET @offset
+  `),
+  countAuditEventsFiltered: db.prepare(`
+    SELECT COUNT(*) AS total FROM audit_events
+    WHERE (@actorUserId IS NULL OR actor_user_id = @actorUserId)
+      AND (@category IS NULL OR category = @category)
+      AND (@action IS NULL OR action = @action)
+      AND (@outcome IS NULL OR outcome = @outcome)
+      AND (@targetType IS NULL OR target_type = @targetType)
+      AND (@targetId IS NULL OR target_id = @targetId)
+      AND (@fromTs IS NULL OR created_at >= @fromTs)
+      AND (@toTs IS NULL OR created_at <= @toTs)
+  `),
+  listSchemaMigrations: db.prepare("SELECT * FROM schema_migrations ORDER BY id ASC"),
 };
 
 // Default security settings (must be after stmts initialization)
@@ -2532,6 +2558,10 @@ function deleteShare(id) {
   stmts.deleteFilesByShareId.run(id);
   stmts.deleteShareById.run(id);
   return true;
+}
+
+function listShareFileRowsByShareId(id) {
+  return stmts.getFilesByShareId.all(id);
 }
 
 function cleanupShare(id) {
@@ -5393,7 +5423,126 @@ function _mapThreatUserNotif(r) {
   return { id: r.id, userId: r.user_id, channelType: r.channel_type, destination: r.destination, enabled: !!r.enabled, createdAt: r.created_at, updatedAt: r.updated_at };
 }
 
+function _mapAuditEvent(r) {
+  let metadata = {};
+  try {
+    metadata = JSON.parse(r.metadata_json || "{}");
+  } catch {
+    metadata = {};
+  }
+  return {
+    id: r.id,
+    actorUserId: r.actor_user_id || null,
+    actorUsername: r.actor_username || null,
+    actorType: r.actor_type || "system",
+    ipAddress: r.ip_address || null,
+    userAgent: r.user_agent || null,
+    category: r.category,
+    action: r.action,
+    targetType: r.target_type || null,
+    targetId: r.target_id || null,
+    outcome: r.outcome || "success",
+    metadata,
+    createdAt: r.created_at,
+  };
+}
+
+function createAuditEvent(event) {
+  const payload = {
+    id: event.id || crypto.randomBytes(16).toString("base64url"),
+    actorUserId: event.actorUserId || null,
+    actorUsername: event.actorUsername || null,
+    actorType: event.actorType || (event.actorUserId ? "user" : "system"),
+    ipAddress: event.ipAddress || null,
+    userAgent: event.userAgent || null,
+    category: event.category || "general",
+    action: event.action || "unknown",
+    targetType: event.targetType || null,
+    targetId: event.targetId || null,
+    outcome: event.outcome || "success",
+    metadataJson: JSON.stringify(event.metadata || {}),
+  };
+  stmts.createAuditEvent.run(payload);
+  return payload.id;
+}
+
+function listAuditEvents(filters = {}) {
+  const limit = Math.min(500, Math.max(1, parseInt(filters.limit, 10) || 100));
+  const offset = Math.max(0, parseInt(filters.offset, 10) || 0);
+  const params = {
+    actorUserId: filters.actorUserId || null,
+    category: filters.category || null,
+    action: filters.action || null,
+    outcome: filters.outcome || null,
+    targetType: filters.targetType || null,
+    targetId: filters.targetId || null,
+    fromTs: Number.isFinite(filters.fromTs) ? filters.fromTs : null,
+    toTs: Number.isFinite(filters.toTs) ? filters.toTs : null,
+    limit,
+    offset,
+  };
+  const events = stmts.listAuditEvents.all(params).map(_mapAuditEvent);
+  const total = stmts.countAuditEventsFiltered.get(params).total;
+  return { events, total, limit, offset };
+}
+
+function listSchemaMigrations() {
+  return stmts.listSchemaMigrations.all().map((row) => ({
+    id: row.id,
+    description: row.description || "",
+    appliedAt: row.applied_at,
+  }));
+}
+
+function tableHasColumn(tableName, columnName) {
+  try {
+    return db.prepare(`PRAGMA table_info(${tableName})`).all().some((column) => column.name === columnName);
+  } catch {
+    return false;
+  }
+}
+
+function getCountSafe(sql, fallback = 0) {
+  try {
+    return db.prepare(sql).get().total || 0;
+  } catch {
+    return fallback;
+  }
+}
+
+function getDeploymentCounts() {
+  const oneHourAgo = Math.floor(Date.now() / 1000) - 3600;
+  const activeResetLinksSql = tableHasColumn("password_resets", "used")
+    ? "SELECT COUNT(*) AS total FROM password_resets WHERE used = 0 AND expires_at > unixepoch()"
+    : "SELECT COUNT(*) AS total FROM password_resets WHERE expires_at > unixepoch()";
+  const activeGuestLinksSql = tableHasColumn("guest_links", "use_count") && tableHasColumn("guest_links", "max_uses")
+    ? "SELECT COUNT(*) AS total FROM guest_links WHERE use_count < max_uses AND expires_at > unixepoch()"
+    : "SELECT COUNT(*) AS total FROM guest_links WHERE expires_at > unixepoch()";
+
+  return {
+    users: getCountSafe("SELECT COUNT(*) AS total FROM users"),
+    usersWithoutMfa: getCountSafe(`
+      SELECT COUNT(*) AS total
+      FROM users u
+      LEFT JOIN user_mfa m ON m.user_id = u.id AND m.enabled = 1
+      WHERE u.suspended = 0 AND m.user_id IS NULL
+    `),
+    activeAdminSessions: getCountSafe("SELECT COUNT(*) AS total FROM admin_sessions WHERE expires_at > unixepoch()"),
+    activeResetLinks: getCountSafe(activeResetLinksSql),
+    activeGuestLinks: getCountSafe(activeGuestLinksSql),
+    recentAuditEvents: (() => {
+      try {
+        return db.prepare("SELECT COUNT(*) AS total FROM audit_events WHERE created_at >= ?").get(oneHourAgo).total || 0;
+      } catch {
+        return 0;
+      }
+    })(),
+  };
+}
+
 module.exports = {
+  db,
+  DB_PATH,
   // Paste
   createPaste,
   getPaste,
@@ -5407,6 +5556,7 @@ module.exports = {
   getShare,
   getShareFile,
   deleteShareFile,
+  listShareFileRowsByShareId,
   deleteShare,
   deleteExpiredFiles,
   getFileStats,
@@ -5736,4 +5886,8 @@ module.exports = {
   getThreatFeedHealth,
   getThreatFeedErrors,
   seedDefaultThreatData,
+  createAuditEvent,
+  listAuditEvents,
+  listSchemaMigrations,
+  getDeploymentCounts,
 };

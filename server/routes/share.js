@@ -7,6 +7,8 @@ const fs = require("fs");
 const { createShare, getShare, getShareFile, deleteShareFile, VALID_EXPIRY_OPTIONS, TMP_DIR, FILES_DIR, redeemGuestLink, getShareConfig } = require("../database");
 const { requireGuestOrUserFor } = require("../middleware/auth");
 const { decodeBase64Strict } = require("../base64");
+const { sanitizeMimeType, validateBase64Field, validateBase64UrlId } = require("../core/validation");
+const { logEvent } = require("../core/logger");
 
 const router = Router();
 
@@ -58,33 +60,9 @@ function runShareUpload(req, res, next) {
 
 // --- Validation helpers ---
 
-const MIME_REGEX = /^[a-z0-9][a-z0-9!#$&\-^_.+]*\/[a-z0-9][a-z0-9!#$&\-^_.+]*$/i;
-const MAX_MIME_LENGTH = 128;
-
-function validateBase64Field(value, name, requiredLength) {
-  if (typeof value !== "string") return `${name} must be a string`;
-  if (!value.length) return `${name} is empty`;
-  try {
-    const decoded = decodeBase64Strict(value);
-    if (requiredLength && decoded.length !== requiredLength) {
-      return `${name} must decode to ${requiredLength} bytes (got ${decoded.length})`;
-    }
-    return null;
-  } catch {
-    return `${name} is not valid base64`;
-  }
-}
-
 function toBase64(buffer) {
   if (!buffer) return null;
   return Buffer.from(buffer).toString("base64");
-}
-
-// --- Logging ---
-
-function logAction(action, req, extra = {}) {
-  const ip = req.ip || req.connection?.remoteAddress;
-  console.log(JSON.stringify({ ts: new Date().toISOString(), action, ip, ...extra }));
 }
 
 // --- Cleanup temp files older than 1 hour ---
@@ -184,10 +162,7 @@ router.post("/share", uploadLimiter, requireGuestOrUserFor("share"), runShareUpl
     }
 
     // Validate MIME type
-    const safeMime = typeof fm.mimeType === "string" && fm.mimeType.length <= MAX_MIME_LENGTH && MIME_REGEX.test(fm.mimeType)
-      ? fm.mimeType
-      : "application/octet-stream";
-    fm.mimeType = safeMime;
+    fm.mimeType = sanitizeMimeType(fm.mimeType);
 
     // Password: validate per-file ivPassword if present
     if (hasPassword && fm.ivPassword) {
@@ -243,7 +218,7 @@ router.post("/share", uploadLimiter, requireGuestOrUserFor("share"), runShareUpl
       guestInvitedBy: req.guest ? req.guest.invitedBy : null,
     });
 
-    logAction("share:create", req, {
+    logEvent("share:create", req, {
       id: shareId,
       hasPassword: !!hasPassword,
       burnAfterReading: !!burnAfterReading,
@@ -259,7 +234,7 @@ router.post("/share", uploadLimiter, requireGuestOrUserFor("share"), runShareUpl
 
     res.status(201).json({ id: shareId });
   } catch (err) {
-    logAction("share:create_error", req, { error: err.message });
+    logEvent("share:create_error", req, { error: err.message });
     // Clean up on error
     for (const uf of uploadedFiles) {
       try { fs.unlinkSync(uf.path); } catch {}
@@ -272,23 +247,23 @@ router.post("/share", uploadLimiter, requireGuestOrUserFor("share"), runShareUpl
 // GET /api/share/:id — share metadata + file list
 router.get("/share/:id", readLimiter, (req, res) => {
   const { id } = req.params;
-  if (typeof id !== "string" || !/^[A-Za-z0-9_-]{22}$/.test(id)) {
+  if (validateBase64UrlId(id, "Share ID")) {
     return res.status(400).json({ error: "Invalid share ID" });
   }
 
   const share = getShare(id);
 
   if (!share) {
-    logAction("share:not_found", req, { id });
+    logEvent("share:not_found", req, { id });
     return res.status(404).json({ error: "Share not found" });
   }
 
   if (share.expired) {
-    logAction("share:expired", req, { id });
+    logEvent("share:expired", req, { id });
     return res.status(410).json({ error: "Share has expired" });
   }
 
-  logAction("share:read_meta", req, { id, burned: !!share.burned, fileCount: share.files.length });
+  logEvent("share:read_meta", req, { id, burned: !!share.burned, fileCount: share.files.length });
 
   res.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.set("Pragma", "no-cache");
@@ -321,19 +296,22 @@ router.get("/share/:id", readLimiter, (req, res) => {
 // GET /api/share/:shareId/file/:fileId — download individual file
 router.get("/share/:shareId/file/:fileId", readLimiter, (req, res) => {
   const { shareId, fileId } = req.params;
-  if (typeof fileId !== "string" || !/^[A-Za-z0-9_-]{22}$/.test(fileId)) {
+  if (validateBase64UrlId(shareId, "Share ID")) {
+    return res.status(400).json({ error: "Invalid share ID" });
+  }
+  if (validateBase64UrlId(fileId, "File ID")) {
     return res.status(400).json({ error: "Invalid file ID" });
   }
 
   const file = getShareFile(fileId);
 
   if (!file) {
-    logAction("share:file_not_found", req, { shareId, fileId });
+    logEvent("share:file_not_found", req, { shareId, fileId });
     return res.status(404).json({ error: "File not found" });
   }
 
   if (file.expired) {
-    logAction("share:file_expired", req, { shareId, fileId });
+    logEvent("share:file_expired", req, { shareId, fileId });
     return res.status(410).json({ error: "Share has expired" });
   }
 
@@ -344,11 +322,11 @@ router.get("/share/:shareId/file/:fileId", readLimiter, (req, res) => {
 
   const filePath = file.filePath;
   if (!fs.existsSync(filePath)) {
-    logAction("share:file_missing_disk", req, { shareId, fileId });
+    logEvent("share:file_missing_disk", req, { shareId, fileId });
     return res.status(404).json({ error: "File data not found" });
   }
 
-  logAction("share:file_download", req, { shareId, fileId, burnAfterReading: file.burnAfterReading });
+  logEvent("share:file_download", req, { shareId, fileId, burnAfterReading: file.burnAfterReading });
 
   res.set("Content-Type", "application/octet-stream");
   res.set("Content-Length", fs.statSync(filePath).size);
@@ -374,9 +352,8 @@ function cleanupFiles(files) {
 }
 
 function cleanupShareFiles(shareId) {
-  const { getFilesByShareId } = require("../database");
-  const stmts = require("../database");
-  const files = getFilesByShareId.all(shareId);
+  const { listShareFileRowsByShareId } = require("../database");
+  const files = listShareFileRowsByShareId(shareId);
   for (const f of files) {
     try { fs.unlinkSync(path.join(FILES_DIR, `${f.id}.enc`)); } catch {}
   }

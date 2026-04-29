@@ -20,12 +20,15 @@ const {
   deletePersonalVaultsByUser, deleteUserKeyBackup, flagVaultMembersForRekey,
   getSetting, setSetting, getRolePermissionsByUserId,
   encryptValue, decryptValue,
+  createAuditEvent,
   VALID_GUEST_EXPIRY,
 } = require("../database");
 const { getAvailableTools } = require("../access");
 const { sendInviteEmail, sendPasswordResetEmail, sendShareLinkEmail } = require("../email");
 const totp = require("../totp");
 const { buildAbsoluteUrl, isTrustedAbsoluteUrl } = require("../public-origin");
+const { getCookieSecure } = require("../core/security/cookies");
+const { logEvent, redactObject } = require("../core/logger");
 
 const router = Router();
 
@@ -95,8 +98,34 @@ const mfaLimiter = rateLimit({
 
 // --- Logging ---
 function logAction(action, req, extra = {}) {
-  const ip = req.ip || req.connection?.remoteAddress;
-  console.log(JSON.stringify({ ts: new Date().toISOString(), action, ip, ...extra }));
+  logEvent(action, req, extra);
+}
+
+function auditAuth(req, {
+  action,
+  actorUser = null,
+  targetType = "user",
+  targetId = null,
+  outcome = "success",
+  metadata = {},
+}) {
+  try {
+    createAuditEvent({
+      actorUserId: actorUser?.id || req.user?.id || null,
+      actorUsername: actorUser?.username || req.user?.username || null,
+      actorType: actorUser || req.user ? "user" : "anonymous",
+      ipAddress: req.ip || null,
+      userAgent: req.get("user-agent") || null,
+      category: "auth",
+      action,
+      targetType,
+      targetId: targetId || actorUser?.id || req.user?.id || null,
+      outcome,
+      metadata: redactObject(metadata),
+    });
+  } catch (error) {
+    logEvent("audit:write_failed", req, { action, error: error.message });
+  }
 }
 
 // --- Validation helpers ---
@@ -130,7 +159,7 @@ function sessionCookieOptions(ttl) {
     sameSite: "strict",
     maxAge: ttl * 1000,
     path: "/",
-    secure: process.env.NODE_ENV === "production",
+    secure: getCookieSecure(),
   };
 }
 
@@ -318,7 +347,7 @@ function setTrustedDeviceCookie(res, userId, req) {
     sameSite: "strict",
     maxAge: expiresIn * 1000,
     path: "/",
-    secure: process.env.NODE_ENV === "production",
+    secure: getCookieSecure(),
   });
 }
 
@@ -361,6 +390,7 @@ router.post("/auth/login", loginLimiter, async (req, res) => {
   const user = getUserByEmail(normalizedEmail);
   if (!user) {
     logAction("auth:login_failed", req, { email, reason: "not_found" });
+    auditAuth(req, { action: "login", outcome: "failure", metadata: { email: normalizedEmail, reason: "not_found" } });
     const failure = recordLoginFailure(normalizedEmail);
     if (failure.cooldownSeconds > 0) {
       return res.status(429).json({
@@ -373,6 +403,7 @@ router.post("/auth/login", loginLimiter, async (req, res) => {
 
   if (user.suspended) {
     logAction("auth:login_failed", req, { email, reason: "suspended" });
+    auditAuth(req, { action: "login", actorUser: user, outcome: "failure", metadata: { reason: "suspended" } });
     recordLoginFailure(normalizedEmail);
     return res.status(403).json({ error: "Account suspended" });
   }
@@ -380,6 +411,7 @@ router.post("/auth/login", loginLimiter, async (req, res) => {
   const match = await bcrypt.compare(password, user.password_hash).catch(() => false);
   if (!match) {
     logAction("auth:login_failed", req, { email, reason: "wrong_password" });
+    auditAuth(req, { action: "login", actorUser: user, outcome: "failure", metadata: { reason: "wrong_password" } });
     const failure = recordLoginFailure(normalizedEmail);
     if (failure.cooldownSeconds > 0) {
       return res.status(429).json({
@@ -404,6 +436,7 @@ router.post("/auth/login", loginLimiter, async (req, res) => {
       rememberBrowser: false,
     });
     logAction("auth:mfa_setup_required", req, { userId: user.id });
+    auditAuth(req, { action: "login", actorUser: user, outcome: "pending", metadata: { reason: "mfa_setup_required" } });
     return res.json({ mfaSetupRequired: true, tempToken });
   }
 
@@ -417,6 +450,7 @@ router.post("/auth/login", loginLimiter, async (req, res) => {
         userAgent: req.get("user-agent"),
       });
       logAction("auth:login_trusted", req, { userId: user.id, username: user.username });
+      auditAuth(req, { action: "login", actorUser: user, outcome: "success", metadata: { mfa: "trusted_device" } });
       return res.json({ success: true, user: { username: user.username } });
     }
 
@@ -428,6 +462,7 @@ router.post("/auth/login", loginLimiter, async (req, res) => {
     const throttle = getMfaThrottleStatus(user.id);
 
     logAction("auth:mfa_required", req, { userId: user.id });
+    auditAuth(req, { action: "login", actorUser: user, outcome: "pending", metadata: { reason: "mfa_required" } });
     return res.json({
       mfaRequired: true,
       tempToken,
@@ -446,6 +481,7 @@ router.post("/auth/login", loginLimiter, async (req, res) => {
   });
 
   logAction("auth:login", req, { userId: user.id, username: user.username });
+  auditAuth(req, { action: "login", actorUser: user, outcome: "success", metadata: { mfa: "not_required" } });
 
   res.json({
     success: true,
@@ -515,6 +551,7 @@ router.post("/auth/login/mfa", async (req, res) => {
     if (attempts >= 3 || attempts < 0) {
       deletePendingLogin(tempToken);
       logAction("auth:mfa_locked", req, { userId: pending.user_id });
+      auditAuth(req, { action: "login_mfa", targetId: pending.user_id, outcome: "failure", metadata: { reason: "locked" } });
       if (mfaFailure.cooldownSeconds > 0) {
         return res.status(429).json({
           error: `Too many invalid MFA attempts. Try again in ${mfaFailure.cooldownSeconds} seconds.`,
@@ -525,6 +562,7 @@ router.post("/auth/login/mfa", async (req, res) => {
       return res.status(401).json({ error: "Too many failed attempts. Please log in again.", restartLogin: true });
     }
     logAction("auth:mfa_failed", req, { userId: pending.user_id, attempts });
+    auditAuth(req, { action: "login_mfa", targetId: pending.user_id, outcome: "failure", metadata: { attempts } });
     if (mfaFailure.cooldownSeconds > 0) {
       return res.status(429).json({
         error: `Invalid verification code. Please wait ${mfaFailure.cooldownSeconds} seconds before trying again.`,
@@ -552,6 +590,7 @@ router.post("/auth/login/mfa", async (req, res) => {
   const user = getUserById(pending.user_id);
 
   logAction("auth:mfa_success", req, { userId: pending.user_id });
+  auditAuth(req, { action: "login_mfa", actorUser: user, outcome: "success", metadata: { rememberBrowser: !!rememberBrowser } });
   res.json({ success: true, user: { username: user.username } });
 });
 
@@ -627,6 +666,7 @@ router.post("/auth/login/mfa/setup/verify", async (req, res) => {
     if (attempts >= 3 || attempts < 0) {
       deletePendingLogin(tempToken);
       logAction("auth:mfa_setup_locked", req, { userId: pending.user_id });
+      auditAuth(req, { action: "mfa_forced_setup", targetId: pending.user_id, outcome: "failure", metadata: { reason: "locked" } });
       if (mfaFailure.cooldownSeconds > 0) {
         return res.status(429).json({
           error: `Too many invalid MFA attempts. Try again in ${mfaFailure.cooldownSeconds} seconds.`,
@@ -662,6 +702,7 @@ router.post("/auth/login/mfa/setup/verify", async (req, res) => {
   const user = getUserById(pending.user_id);
 
   logAction("auth:mfa_forced_enabled", req, { userId: pending.user_id });
+  auditAuth(req, { action: "mfa_forced_setup", actorUser: user, outcome: "success" });
   res.json({ success: true, user: { username: user.username } });
 });
 
@@ -736,6 +777,12 @@ router.post("/auth/register", registerLimiter, async (req, res) => {
         rememberBrowser: false,
       });
       logAction("auth:register_mfa_setup_required", req, { userId, username, email: invite.email });
+      auditAuth(req, {
+        action: "register",
+        actorUser: { id: userId, username },
+        outcome: "pending",
+        metadata: { inviteId: invite.id, reason: "mfa_setup_required" },
+      });
       return res.json({ success: true, mfaSetupRequired: true, tempToken });
     }
 
@@ -747,6 +794,12 @@ router.post("/auth/register", registerLimiter, async (req, res) => {
     });
 
     logAction("auth:register", req, { userId, username, email: invite.email });
+    auditAuth(req, {
+      action: "register",
+      actorUser: { id: userId, username },
+      outcome: "success",
+      metadata: { inviteId: invite.id },
+    });
 
     res.json({
       success: true,
@@ -839,6 +892,7 @@ router.post("/auth/change-password", passwordLimiter, requireUser, async (req, r
   deleteExtensionSessionsByUserId(req.user.id);
 
   logAction("auth:change_password", req, { userId: req.user.id });
+  auditAuth(req, { action: "change_password", outcome: "success" });
   res.json({ success: true });
 });
 
@@ -876,6 +930,7 @@ router.post("/auth/update-username", usernameLimiter, requireUser, (req, res) =>
 
   updateUsername(req.user.id, username);
   logAction("auth:update_username", req, { userId: req.user.id, username });
+  auditAuth(req, { action: "update_username", outcome: "success", metadata: { username } });
   res.json({ success: true, username });
 });
 
@@ -938,6 +993,13 @@ router.post("/auth/guest-link", guestLinkLimiter, requireUser, (req, res) => {
   }
 
   logAction("auth:guest_link", req, { userId: req.user.id, tool, expiresAt });
+  auditAuth(req, {
+    action: "guest_link_create",
+    targetType: "guest_link",
+    targetId: id,
+    outcome: "success",
+    metadata: { tool, expiresAt },
+  });
 
   res.json({ success: true, url, expiresAt });
 });
@@ -974,9 +1036,23 @@ router.post("/auth/email-link", guestLinkLimiter, requireUser, async (req, res) 
   try {
     const smtpInfo = await sendShareLinkEmail(email, url, safeToolName);
     logAction("auth:email_link", req, { userId: req.user.id, to: email });
+    auditAuth(req, {
+      action: "email_link_send",
+      targetType: "email",
+      targetId: email.toLowerCase().trim(),
+      outcome: "success",
+      metadata: { toolName: safeToolName },
+    });
     res.json({ success: true, smtpResponse: smtpInfo.response });
   } catch (err) {
     logAction("auth:email_link_error", req, { error: err.message });
+    auditAuth(req, {
+      action: "email_link_send",
+      targetType: "email",
+      targetId: email.toLowerCase().trim(),
+      outcome: "failure",
+      metadata: { error: err.message },
+    });
     res.status(500).json({ error: "Failed to send email" });
   }
 });
@@ -1025,8 +1101,10 @@ router.post("/auth/forgot-password", passwordLimiter, async (req, res) => {
     }
 
     logAction("auth:forgot_password", req, { userId: user.id, email: user.email });
+    auditAuth(req, { action: "password_reset_request", actorUser: user, outcome: "success" });
   } catch (err) {
     logAction("auth:forgot_password_error", req, { error: err.message });
+    auditAuth(req, { action: "password_reset_request", outcome: "failure", metadata: { error: err.message } });
   }
 
   // Always return success
@@ -1076,6 +1154,7 @@ router.post("/auth/reset-password", passwordLimiter, async (req, res) => {
   // MFA stays active — TOTP secret is independent of password
 
   logAction("auth:reset_password", req, { userId: reset.user_id });
+  auditAuth(req, { action: "password_reset_complete", targetId: reset.user_id, outcome: "success" });
   res.json({ success: true });
 });
 
@@ -1147,6 +1226,7 @@ router.post("/auth/mfa/verify-setup", mfaLimiter, requireUser, (req, res) => {
   clearMfaThrottle(req.user.id);
 
   logAction("auth:mfa_enabled", req, { userId: req.user.id });
+  auditAuth(req, { action: "mfa_enable", outcome: "success" });
   res.json({ success: true });
 });
 
@@ -1166,6 +1246,7 @@ router.post("/auth/mfa/disable", passwordLimiter, requireUser, async (req, res) 
   clearMfaThrottle(req.user.id);
 
   logAction("auth:mfa_disabled", req, { userId: req.user.id });
+  auditAuth(req, { action: "mfa_disable", outcome: "success" });
   res.json({ success: true });
 });
 
@@ -1191,6 +1272,7 @@ router.post("/auth/mfa/regenerate-codes", passwordLimiter, requireUser, async (r
   updateRecoveryCodes(req.user.id, hashedCodes);
 
   logAction("auth:mfa_regenerate_codes", req, { userId: req.user.id });
+  auditAuth(req, { action: "mfa_recovery_codes_regenerate", outcome: "success" });
   res.json({ recoveryCodes });
 });
 
@@ -1199,6 +1281,7 @@ router.delete("/auth/mfa/trusted-devices", requireUser, (req, res) => {
   deleteTrustedDevicesByUser(req.user.id);
   res.clearCookie(TRUST_COOKIE_NAME, { path: "/" });
   logAction("auth:mfa_revoke_devices", req, { userId: req.user.id });
+  auditAuth(req, { action: "mfa_trusted_devices_revoke", outcome: "success" });
   res.json({ success: true });
 });
 
@@ -1228,10 +1311,17 @@ router.getGuestRedirect = function (req, res) {
     sameSite: "lax",
     maxAge: ttl * 1000,
     path: "/",
-    secure: process.env.NODE_ENV === "production",
+    secure: getCookieSecure(),
   });
 
   logAction("guest:visit", req, { tool: link.tool, invitedBy: link.created_by });
+  auditAuth(req, {
+    action: "guest_link_visit",
+    targetType: "guest_link",
+    targetId: link.id || null,
+    outcome: "success",
+    metadata: { tool: link.tool, invitedBy: link.created_by },
+  });
 
   res.redirect(link.tool === "share" ? "/share" : "/paste");
 };

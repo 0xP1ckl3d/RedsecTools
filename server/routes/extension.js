@@ -8,6 +8,7 @@ const fs = require("fs");
 const totp = require("../totp");
 const { requireExtensionUser } = require("../middleware/auth");
 const { decodeBase64Strict } = require("../base64");
+const { getCookieSecure } = require("../core/security/cookies");
 const {
   getUserByEmail,
   getUserById,
@@ -343,7 +344,7 @@ function setTrustedDeviceCookie(res, userId, req) {
     sameSite: "strict",
     maxAge: expiresIn * 1000,
     path: "/",
-    secure: process.env.NODE_ENV === "production",
+    secure: getCookieSecure(),
   });
 }
 

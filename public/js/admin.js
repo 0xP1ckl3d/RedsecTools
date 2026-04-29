@@ -152,9 +152,9 @@ logoutBtn.addEventListener("click", async () => {
 // --- Tabs ---
 
 const tabBtns = document.querySelectorAll(".admin-tab[data-tab]");
-const childTabs = ["settings", "security", "roles", "bulletins", "weather", "team-shortcuts", "invites", "users", "chat", "pastes", "files", "survey-tool-settings", "vaults", "calendar-tool-settings", "wiki-tool-settings", "threat-tool-settings"];
+const childTabs = ["settings", "security", "deployment", "roles", "bulletins", "weather", "team-shortcuts", "invites", "users", "chat", "pastes", "files", "survey-tool-settings", "vaults", "calendar-tool-settings", "wiki-tool-settings", "threat-tool-settings"];
 const adminTabGroups = {
-  server: ["settings", "security", "roles"],
+  server: ["settings", "security", "deployment", "roles"],
   homepage: ["weather", "bulletins", "team-shortcuts"],
   "users-admin": ["users", "invites"],
   tools: ["calendar-tool-settings", "wiki-tool-settings", "chat", "pastes", "files", "survey-tool-settings", "vaults", "threat-tool-settings"],
@@ -162,6 +162,7 @@ const adminTabGroups = {
 const adminSubtabLabels = {
   settings: "SMTP",
   security: "Session Security",
+  deployment: "Deployment",
   roles: "Access Controls",
   weather: "Weather",
   bulletins: "Bulletins",
@@ -222,6 +223,9 @@ function updateAdminVisibleTabs() {
   }
   if (visibleTabs.has("security")) {
     loadSecuritySettings();
+  }
+  if (visibleTabs.has("deployment")) {
+    loadDeploymentQuality();
   }
   if (visibleTabs.has("settings")) {
     loadSmtpSettings();
@@ -1313,6 +1317,192 @@ saveSecurityBtn.addEventListener("click", async () => {
     securityResult.classList.remove("hidden");
   } finally {
     saveSecurityBtn.disabled = false;
+  }
+});
+
+// ============================================================
+// DEPLOYMENT QUALITY
+// ============================================================
+
+const deploymentRefreshBtn = document.getElementById("deployment-refresh-btn");
+const deploymentWarnings = document.getElementById("deployment-warnings");
+const deploymentSummaryGrid = document.getElementById("deployment-summary-grid");
+const deploymentMigrationsBody = document.getElementById("deployment-migrations-body");
+const auditEventsBody = document.getElementById("audit-events-body");
+const auditRefreshBtn = document.getElementById("audit-refresh-btn");
+const auditExportBtn = document.getElementById("audit-export-btn");
+const backupPassphrase = document.getElementById("backup-passphrase");
+const backupExportBtn = document.getElementById("backup-export-btn");
+const backupResult = document.getElementById("backup-result");
+
+function formatBytes(bytes) {
+  const value = Number(bytes) || 0;
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  if (value < 1024 * 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+function renderDeploymentWarnings(warnings) {
+  if (!deploymentWarnings) return;
+  if (!warnings?.length) {
+    deploymentWarnings.innerHTML = '<div class="info-box text-sm text-accent">No deployment warnings detected.</div>';
+    return;
+  }
+  deploymentWarnings.innerHTML = warnings.map((warning) => {
+    const badgeClass = warning.level === "high" ? "badge-red" : warning.level === "medium" ? "badge-amber" : "badge-gray";
+    return `
+      <div class="info-box">
+        <div class="flex items-center gap-2 mb-1">
+          <span class="badge ${badgeClass}">${escapeHtml(warning.level || "info")}</span>
+          <span class="font-medium">${escapeHtml(warning.code || "warning")}</span>
+        </div>
+        <p class="text-sm text-muted">${escapeHtml(warning.message || "")}</p>
+      </div>
+    `;
+  }).join("");
+}
+
+function deploymentMetric(label, value, hint = "") {
+  return `
+    <div class="info-box">
+      <div class="text-xs text-muted uppercase tracking-wide">${escapeHtml(label)}</div>
+      <div class="text-lg font-semibold text-primary mt-1">${escapeHtml(String(value ?? ""))}</div>
+      ${hint ? `<div class="text-xs text-muted mt-1">${escapeHtml(hint)}</div>` : ""}
+    </div>
+  `;
+}
+
+function renderDeploymentSummary(data) {
+  if (!deploymentSummaryGrid) return;
+  deploymentSummaryGrid.innerHTML = [
+    deploymentMetric("Environment", data.app?.environment || "development", `Node ${data.app?.node || ""}`),
+    deploymentMetric("Version", data.app?.version || "local", data.app?.commit ? `Commit ${data.app.commit}` : data.app?.platform || ""),
+    deploymentMetric("Cookie Secure", data.deployment?.cookieSecure ? "Enabled" : "Disabled", data.deployment?.cookieSecureSource || ""),
+    deploymentMetric("Database", formatBytes(data.database?.sizeBytes), data.database?.path || ""),
+    deploymentMetric("Data Storage", formatBytes(data.storage?.dataBytes), `${data.counts?.recentAuditEvents || 0} audit events in the last hour`),
+    deploymentMetric("Users Without MFA", data.counts?.usersWithoutMfa || 0, `${data.counts?.users || 0} total users`),
+  ].join("");
+}
+
+function renderMigrations(migrations) {
+  if (!deploymentMigrationsBody) return;
+  if (!migrations?.length) {
+    deploymentMigrationsBody.innerHTML = '<tr><td colspan="3" class="text-muted">No tracked migrations have been applied.</td></tr>';
+    return;
+  }
+  deploymentMigrationsBody.innerHTML = migrations.map((migration) => `
+    <tr>
+      <td class="font-mono text-xs">${escapeHtml(migration.id)}</td>
+      <td>${escapeHtml(migration.description || "")}</td>
+      <td class="text-xs">${migration.appliedAt ? formatTime(migration.appliedAt) : "Unknown"}</td>
+    </tr>
+  `).join("");
+}
+
+function renderAuditEvents(events) {
+  if (!auditEventsBody) return;
+  if (!events?.length) {
+    auditEventsBody.innerHTML = '<tr><td colspan="5" class="text-muted">No audit events recorded yet.</td></tr>';
+    return;
+  }
+  auditEventsBody.innerHTML = events.map((event) => {
+    const actor = event.actorUsername || event.actorUserId || event.actorType || "system";
+    const target = [event.targetType, event.targetId].filter(Boolean).join(": ") || "-";
+    const badgeClass = event.outcome === "success" ? "badge-green" : event.outcome === "failure" ? "badge-red" : "badge-gray";
+    return `
+      <tr>
+        <td class="text-xs">${event.createdAt ? formatTime(event.createdAt) : "Unknown"}</td>
+        <td>${escapeHtml(actor)}</td>
+        <td>
+          <div class="font-medium">${escapeHtml(event.action || "unknown")}</div>
+          <div class="text-xs text-muted">${escapeHtml(event.category || "general")}</div>
+        </td>
+        <td class="text-xs">${escapeHtml(target)}</td>
+        <td><span class="badge ${badgeClass}">${escapeHtml(event.outcome || "unknown")}</span></td>
+      </tr>
+    `;
+  }).join("");
+}
+
+async function loadAuditEvents() {
+  if (!auditEventsBody) return;
+  try {
+    const res = await api("/api/audit-events?limit=25");
+    if (!res.ok) throw new Error("Audit request failed");
+    const data = await res.json();
+    renderAuditEvents(data.events || []);
+  } catch {
+    auditEventsBody.innerHTML = '<tr><td colspan="5" class="text-error">Failed to load audit events.</td></tr>';
+  }
+}
+
+async function loadDeploymentQuality() {
+  try {
+    const res = await api("/api/security-posture");
+    if (!res.ok) throw new Error("Posture request failed");
+    const data = await res.json();
+    renderDeploymentWarnings(data.warnings || []);
+    renderDeploymentSummary(data);
+    renderMigrations(data.database?.migrations || []);
+  } catch {
+    if (deploymentWarnings) {
+      deploymentWarnings.innerHTML = '<div class="info-box text-sm text-error">Failed to load deployment posture.</div>';
+    }
+  }
+  await loadAuditEvents();
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+deploymentRefreshBtn?.addEventListener("click", () => {
+  loadDeploymentQuality();
+});
+
+auditRefreshBtn?.addEventListener("click", () => {
+  loadAuditEvents();
+});
+
+auditExportBtn?.addEventListener("click", () => {
+  window.location.href = "/admin/api/audit-events.csv";
+});
+
+backupExportBtn?.addEventListener("click", async () => {
+  if (!backupResult || !backupPassphrase) return;
+  backupExportBtn.disabled = true;
+  backupResult.classList.add("hidden");
+
+  try {
+    const res = await api("/api/backup/export", {
+      method: "POST",
+      body: JSON.stringify({ passphrase: backupPassphrase.value }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || "Backup export failed");
+    }
+    const blob = await res.blob();
+    downloadBlob(blob, `redsectools-backup-${new Date().toISOString().slice(0, 10)}.rsecbackup`);
+    backupPassphrase.value = "";
+    backupResult.textContent = "Encrypted backup exported";
+    backupResult.className = "text-sm text-accent";
+    backupResult.classList.remove("hidden");
+    loadAuditEvents();
+  } catch (error) {
+    backupResult.textContent = error.message || "Backup export failed";
+    backupResult.className = "text-sm text-error";
+    backupResult.classList.remove("hidden");
+  } finally {
+    backupExportBtn.disabled = false;
   }
 });
 

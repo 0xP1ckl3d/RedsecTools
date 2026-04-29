@@ -11,6 +11,7 @@ services:
       - NODE_ENV=production
       - PORT=3000
       - HOST=0.0.0.0
+      - COOKIE_SECURE=${COOKIE_SECURE:-true}
       - TOR_PROXY=socks5h://tor-proxy:9050
     volumes:
       - redsectools-data:/app/data

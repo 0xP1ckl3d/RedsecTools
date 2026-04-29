@@ -414,7 +414,7 @@
               <div class="flex gap-3 items-end flex-wrap">
                 <button type="button" id="save-smtp-btn" class="btn-primary">Save Configuration</button>
                 <div class="flex gap-2 items-center">
-                  <input type="email" id="test-smtp-to" placeholder="Test recipient email" class="input-field text-sm" style="max-width:240px">
+                  <input type="email" id="test-smtp-to" placeholder="Test recipient email" class="input-field text-sm smtp-test-recipient">
                   <button type="button" id="test-smtp-btn" class="btn-secondary">Send Test</button>
                 </div>
               </div>
@@ -477,6 +477,99 @@
               <button type="button" id="save-security-btn" class="btn-primary">Save Security Settings</button>
             </div>
             <p id="security-result" class="text-sm hidden"></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Deployment Tab -->
+      <div id="deployment-tab" class="hidden admin-page-stack">
+        <div class="grid gap-6 lg:grid-cols-[1fr_360px]">
+          <div class="space-y-6">
+            <div class="card admin-section-card">
+              <div class="admin-card-header">
+                <div>
+                  <p class="admin-card-kicker">Server Settings</p>
+                  <h2 class="admin-card-title">Deployment Posture</h2>
+                  <p class="admin-card-copy">Review production readiness signals, schema state, and runtime storage health.</p>
+                </div>
+                <button type="button" id="deployment-refresh-btn" class="btn-secondary text-sm">Refresh</button>
+              </div>
+              <div id="deployment-warnings" class="space-y-2"></div>
+              <div id="deployment-summary-grid" class="grid gap-3 md:grid-cols-2 xl:grid-cols-3"></div>
+            </div>
+
+            <div class="card admin-section-card">
+              <div class="admin-card-header">
+                <div>
+                  <p class="admin-card-kicker">Server Settings</p>
+                  <h2 class="admin-card-title">Schema Migrations</h2>
+                  <p class="admin-card-copy">Confirm which idempotent migrations have been applied to the active SQLite database.</p>
+                </div>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Version</th>
+                      <th>Name</th>
+                      <th>Applied</th>
+                    </tr>
+                  </thead>
+                  <tbody id="deployment-migrations-body">
+                    <tr><td colspan="3" class="text-muted">Loading migrations...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="card admin-section-card">
+              <div class="admin-card-header">
+                <div>
+                  <p class="admin-card-kicker">Server Settings</p>
+                  <h2 class="admin-card-title">Audit Events</h2>
+                  <p class="admin-card-copy">Inspect high-value administrative and authentication actions recorded by the server.</p>
+                </div>
+                <div class="flex gap-2">
+                  <button type="button" id="audit-export-btn" class="btn-secondary text-sm">Export CSV</button>
+                  <button type="button" id="audit-refresh-btn" class="btn-secondary text-sm">Refresh</button>
+                </div>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Time</th>
+                      <th>Actor</th>
+                      <th>Action</th>
+                      <th>Target</th>
+                      <th>Outcome</th>
+                    </tr>
+                  </thead>
+                  <tbody id="audit-events-body">
+                    <tr><td colspan="5" class="text-muted">Loading audit events...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="card admin-section-card">
+            <div class="admin-card-header">
+              <div>
+                <p class="admin-card-kicker">Server Settings</p>
+                <h2 class="admin-card-title">Encrypted Backup</h2>
+                <p class="admin-card-copy">Export an encrypted copy of the active SQLite database without exposing plaintext at rest.</p>
+              </div>
+            </div>
+            <div class="space-y-4">
+              <div>
+                <label class="block text-sm font-medium mb-1.5">Backup Passphrase</label>
+                <input type="password" id="backup-passphrase" class="input-field" autocomplete="new-password" placeholder="Minimum 12 characters">
+                <p class="text-xs text-muted mt-1">The passphrase is used only for this export and is never stored.</p>
+              </div>
+              <button type="button" id="backup-export-btn" class="btn-primary w-full">Export Backup</button>
+              <p id="backup-result" class="text-sm hidden"></p>
+            </div>
           </div>
         </div>
       </div>
@@ -1115,7 +1208,7 @@
       </div>
     </div>
   </div>
-  <script type="module" src="/js/admin.js"></script>
+  <script type="module" src="/js/admin.js?v=20260429-admin-deployment"></script>
   <script type="module" src="/js/burger-menu.js"></script>
   <script type="module" src="/js/theme.js"></script>
 </body>
