@@ -1,5 +1,7 @@
 const http = require("http");
 const https = require("https");
+const fs = require("fs");
+const path = require("path");
 const { URL } = require("url");
 const { Router } = require("express");
 const rateLimit = require("express-rate-limit");
@@ -29,6 +31,8 @@ const THREAT_VALID_CHANNEL_TYPES = new Set(["webhook", "email", "discord"]);
 const IMAGE_TIMEOUT_MS = 10000;
 const IMAGE_MAX_REDIRECTS = 5;
 const IMAGE_IPV4_RETRY_CODES = new Set(["ETIMEDOUT", "ECONNRESET", "ECONNREFUSED", "EHOSTUNREACH", "ENETUNREACH", "EAI_AGAIN", "EACCES"]);
+const INTEL_BRIEF_COVER_DIR = path.join(__dirname, "..", "..", "public", "assets", "intelBriefCovers");
+const INTEL_BRIEF_COVER_EXTENSIONS = new Set([".apng", ".avif", ".gif", ".jpg", ".jpeg", ".png", ".webp"]);
 
 // ---------------------------------------------------------------------------
 // Rate limiter
@@ -88,6 +92,24 @@ function filterAccessibleTagIds(userId, tagIds) {
   if (!requested.length) return [];
   const accessible = new Set(db.listThreatTags(userId).map((tag) => tag.id));
   return requested.filter((id) => accessible.has(id));
+}
+
+function listIntelBriefCoverImages() {
+  try {
+    return fs.readdirSync(INTEL_BRIEF_COVER_DIR, { withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => {
+        const extension = path.extname(entry.name).toLowerCase();
+        if (!INTEL_BRIEF_COVER_EXTENSIONS.has(extension)) return null;
+        const filePath = path.join(INTEL_BRIEF_COVER_DIR, entry.name);
+        const version = Math.floor(fs.statSync(filePath).mtimeMs);
+        return `/assets/intelBriefCovers/${encodeURIComponent(entry.name)}?v=${version}`;
+      })
+      .filter(Boolean)
+      .sort();
+  } catch (_) {
+    return [];
+  }
 }
 
 function shouldRetryImageWithIpv4(error) {
@@ -434,7 +456,7 @@ router.get("/threat/news", requireUser, attachUserAccess, requireThreatView, (re
       linkedAlertId: linkedAlert?.id || null,
     };
   });
-  res.json({ items });
+  res.json({ items, coverImages: listIntelBriefCoverImages() });
 });
 
 router.get("/threat/news-image/:id", requireUser, attachUserAccess, requireThreatView, async (req, res) => {

@@ -714,14 +714,16 @@ async function loadUsers() {
           <td>${u.suspended ? '<span class="badge badge-red">Suspended</span>' : '<span class="badge badge-green">Active</span>'}</td>
           <td id="mfa-${u.id}"><span class="text-xs text-muted">Loading...</span></td>
           <td class="text-xs">${formatTime(u.createdAt)}</td>
-          <td class="flex gap-2 flex-wrap">
-            ${u.suspended
-              ? `<button class="user-unsuspend-btn text-xs hover:underline" data-id="${u.id}">Unsuspend</button>`
-              : `<button class="user-suspend-btn text-xs text-amber hover:underline" data-id="${u.id}">Suspend</button>`
-            }
-            <button class="user-reset-mfa-btn text-xs text-amber hover:underline hidden" data-id="${u.id}">Reset MFA</button>
-            <button class="user-reset-btn text-xs hover:underline" data-id="${u.id}">Reset PW</button>
-            <button class="user-delete-btn text-error text-xs hover:underline" data-id="${u.id}">Delete</button>
+          <td>
+            <div class="admin-table-actions">
+              ${u.suspended
+                ? `<button class="user-unsuspend-btn text-xs hover:underline" data-id="${u.id}">Unsuspend</button>`
+                : `<button class="user-suspend-btn text-xs text-amber hover:underline" data-id="${u.id}">Suspend</button>`
+              }
+              <button class="user-reset-mfa-btn text-xs text-amber hover:underline hidden" data-id="${u.id}">Reset MFA</button>
+              <button class="user-reset-btn text-xs hover:underline" data-id="${u.id}">Reset PW</button>
+              <button class="user-delete-btn text-error text-xs hover:underline" data-id="${u.id}">Delete</button>
+            </div>
           </td>
         `;
         usersBody.appendChild(tr);
@@ -812,7 +814,7 @@ async function loadInvites() {
           <td>${status}</td>
           <td class="text-xs">${formatTime(inv.createdAt)}</td>
           <td class="text-xs">${formatTime(inv.expiresAt)}</td>
-          <td class="flex gap-2">${actions}</td>
+          <td><div class="admin-table-actions">${actions}</div></td>
         `;
         invitesBody.appendChild(tr);
       }

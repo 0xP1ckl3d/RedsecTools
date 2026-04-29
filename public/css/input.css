@@ -369,6 +369,12 @@ html.light {
   .admin-table tbody tr { transition: background-color 0.1s ease; }
   .admin-table tbody tr:hover { background: var(--bg-elevated); }
   .admin-table tbody tr:hover td { color: var(--text-primary); }
+  .admin-table-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
 
   /* --- Utility --- */
   .text-accent { color: var(--accent); }

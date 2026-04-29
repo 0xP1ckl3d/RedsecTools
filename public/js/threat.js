@@ -18,6 +18,7 @@ const state = {
   stats: null,
   recentAlerts: [],
   newsItems: [],
+  intelBriefCovers: [],
   mitreOverview: null,
   settings: {},
   notificationPolicy: {},
@@ -53,6 +54,22 @@ function escapeHtml(str) {
   const div = document.createElement("div");
   div.textContent = str == null ? "" : String(str);
   return div.innerHTML;
+}
+
+function stableHash(value) {
+  const text = String(value || "");
+  let hash = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    hash = ((hash << 5) - hash + text.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash);
+}
+
+function getIntelBriefCover(item, index = 0) {
+  const covers = Array.isArray(state.intelBriefCovers) ? state.intelBriefCovers : [];
+  if (!covers.length) return "";
+  const key = item?.articleHash || item?.articleId || item?.id || item?.articleUrl || item?.headline || index;
+  return covers[stableHash(key) % covers.length];
 }
 
 let runtimeSheet = null;
@@ -587,6 +604,7 @@ async function loadNews() {
   try {
     const data = await api("/news?limit=24");
     state.newsItems = data.items || [];
+    state.intelBriefCovers = Array.isArray(data.coverImages) ? data.coverImages : [];
     renderNews(state.newsItems);
   } catch (err) {
     console.error("Failed to load intel brief:", err);
@@ -605,10 +623,13 @@ function renderNews(items) {
   }
 
   if (emptyEl) emptyEl.classList.add("hidden");
-  gridEl.innerHTML = items.map((item) => {
-    const imageSrc = item.imageUrl && item.articleId ? ("/api/threat/news-image/" + encodeURIComponent(item.articleId)) : "";
-    const image = item.imageUrl
-      ? '<div class="threat-news-media"><img src="' + escapeHtml(imageSrc) + '" alt="' + escapeHtml(item.headline || item.feedName || "Threat article") + '" loading="lazy"></div>'
+  gridEl.innerHTML = items.map((item, index) => {
+    const fallbackImage = getIntelBriefCover(item, index);
+    const imageSrc = item.imageUrl && item.articleId
+      ? ("/api/threat/news-image/" + encodeURIComponent(item.articleId))
+      : fallbackImage;
+    const image = imageSrc
+      ? '<div class="threat-news-media"><img src="' + escapeHtml(imageSrc) + '" data-fallback-src="' + escapeHtml(fallbackImage) + '" alt="' + escapeHtml(item.headline || item.feedName || "Threat article") + '" loading="lazy"></div>'
       : '<div class="threat-news-media threat-news-placeholder"><span>' + escapeHtml((item.feedName || "Intel").slice(0, 32)) + "</span></div>";
     const sourceHost = getSourceHost(item.articleUrl);
     const keywordText = keywordChips(item.keywords || []);
@@ -641,6 +662,18 @@ function renderNews(items) {
   }).join("");
 
   applyTagColors(gridEl);
+  gridEl.querySelectorAll("img[data-fallback-src]").forEach((img) => {
+    const useFallback = () => {
+      const fallback = img.dataset.fallbackSrc;
+      if (fallback && img.src !== new URL(fallback, window.location.origin).href) {
+        img.src = fallback;
+      }
+    };
+    img.addEventListener("error", useFallback, { once: true });
+    if (img.complete && img.naturalWidth === 0) {
+      useFallback();
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -933,8 +966,9 @@ async function loadAlerts() {
     syncAlertFilterOptions(state.alerts);
     renderAlerts(state.alerts);
 
-    // Auto-refresh every 10s
-    state.autoRefreshTimer = setInterval(() => loadAlerts(), 10000);
+    if (state.currentView === "alerts" && !state.autoRefreshTimer) {
+      state.autoRefreshTimer = setInterval(() => loadAlerts(), 10000);
+    }
   } catch (err) {
     console.error("Failed to load alerts:", err);
   }
@@ -1974,8 +2008,8 @@ async function handleAction(action, id) {
         || mitreAlert
         || null;
       if (alert) openAlertDetail(alert);
-      else if (newsAlert?.alertId) {
-        openAlertDetail({ id: newsAlert.alertId });
+      else if (newsAlert?.linkedAlertId) {
+        openAlertDetail({ id: newsAlert.linkedAlertId });
       }
       break;
     }
