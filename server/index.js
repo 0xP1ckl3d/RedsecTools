@@ -25,6 +25,7 @@ const redsecAiRouter = require("./routes/redsecai");
 const { runBulletinAutoPurge } = require("./bulletin-service");
 const { startFeedFetchInterval, seedDefaults: seedThreatDefaults } = require("./threat-feed-service");
 const { initWebSocket } = require("./chat-ws");
+const { initRedSecAiWebSocket } = require("./redsecai-ws");
 const {
   deleteExpired, deleteExpiredFiles,
   deleteExpiredSessions, deleteExpiredInvites,
@@ -237,6 +238,7 @@ setInterval(() => {
 // --- Start ---
 const server = http.createServer(app);
 initWebSocket(server);
+initRedSecAiWebSocket(server);
 server.listen(PORT, HOST, () => {
   console.log(JSON.stringify({ ts: new Date().toISOString(), action: "start", host: HOST, port: PORT, name: "RedSecTools" }));
   for (const warning of buildDeploymentWarnings({ host: HOST })) {

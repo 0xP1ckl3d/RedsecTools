@@ -125,6 +125,8 @@ Stage 1 is read-only for platform mutations. If a user asks RedSecAI to update a
 
 Admins control RedSecAI globally from **Admin > Tool Settings > RedSecAI** after installation. The `.env` values are bootstrap defaults and emergency overrides; database-backed Admin settings determine the live global enable flag, Ollama base URL, model name, timeout, autostart, and auto-pull behavior.
 
+RedSecAI uses a same-origin WebSocket at `/ws/redsecai` for streaming responses. The legacy `/api/ai/chat` POST route remains available for health checks and fallback use. If RedSecTools is behind a reverse proxy, make sure WebSocket upgrades are allowed for both `/ws` and `/ws/redsecai`.
+
 ### BulletinBoard
 
 BulletinBoard is part of the homepage rather than a standalone tool page. It supports:
@@ -273,6 +275,14 @@ docker compose up -d
 ```
 
 The app container talks to `http://redsecai:11434` internally. If you want to postpone model download, set `REDSECAI_ENABLED=false` in the remote `.env`, deploy, and later enable RedSecAI from the Admin panel after the model has been pulled into the `redsectools-ai` volume.
+
+Reverse proxies must pass WebSocket upgrade headers for RedSecAI streaming:
+
+```nginx
+proxy_set_header Upgrade $http_upgrade;
+proxy_set_header Connection "upgrade";
+proxy_http_version 1.1;
+```
 
 ### Trusted Public Origins
 

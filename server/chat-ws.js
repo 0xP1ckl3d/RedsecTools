@@ -145,7 +145,6 @@ function initWebSocket(server) {
   server.on("upgrade", (req, socket, head) => {
     // Only handle /ws path
     if (req.url !== "/ws") {
-      socket.destroy();
       return;
     }
 

@@ -1,4 +1,5 @@
 const STORAGE_KEY = "redsecai.messages.v1";
+const ACTIVE_JOB_KEY = "redsecai.activeJob.v1";
 const MAX_HISTORY = 12;
 
 function escapeHtml(value) {
@@ -29,6 +30,19 @@ function loadMessages() {
 
 function saveMessages(messages) {
   sessionStorage.setItem(STORAGE_KEY, JSON.stringify(messages.slice(-MAX_HISTORY)));
+}
+
+function getActiveJob() {
+  try {
+    return JSON.parse(sessionStorage.getItem(ACTIVE_JOB_KEY) || "null");
+  } catch (_) {
+    return null;
+  }
+}
+
+function setActiveJob(job) {
+  if (!job) sessionStorage.removeItem(ACTIVE_JOB_KEY);
+  else sessionStorage.setItem(ACTIVE_JOB_KEY, JSON.stringify(job));
 }
 
 async function checkStatus() {
@@ -96,6 +110,80 @@ function renderMessages(container, messages) {
   messages.forEach((message) => appendMessage(container, message));
 }
 
+function createJobId() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function createRedSecAiSocket({ onStart, onDelta, onDone, onError, onSnapshot }) {
+  let ws = null;
+  let connected = false;
+  let reconnectTimer = null;
+  let reconnectAttempts = 0;
+  const pending = [];
+
+  function connect() {
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+    const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+    ws = new WebSocket(`${protocol}//${location.host}/ws/redsecai`);
+
+    ws.onopen = () => {
+      connected = true;
+      reconnectAttempts = 0;
+      while (pending.length && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(pending.shift()));
+      }
+      const activeJob = getActiveJob();
+      if (activeJob?.jobId) {
+        send({ type: "redsecai_resume", jobId: activeJob.jobId });
+      }
+    };
+
+    ws.onmessage = (event) => {
+      let message;
+      try {
+        message = JSON.parse(event.data);
+      } catch (_) {
+        return;
+      }
+      if (message.type === "redsecai_start") onStart(message);
+      else if (message.type === "redsecai_delta") onDelta(message);
+      else if (message.type === "redsecai_done") onDone(message);
+      else if (message.type === "redsecai_error") onError(message);
+      else if (message.type === "redsecai_snapshot") onSnapshot(message);
+    };
+
+    ws.onclose = () => {
+      connected = false;
+      if (reconnectAttempts >= 8) return;
+      const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000);
+      reconnectAttempts += 1;
+      reconnectTimer = setTimeout(connect, delay);
+    };
+
+    ws.onerror = () => {};
+  }
+
+  function send(message) {
+    if (connected && ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(message));
+    } else {
+      pending.push(message);
+      connect();
+    }
+  }
+
+  function close() {
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    reconnectAttempts = 99;
+    if (ws) ws.close(1000, "closing");
+  }
+
+  connect();
+  return { send, close };
+}
+
 async function initRedSecAI() {
   let status;
   try {
@@ -115,8 +203,82 @@ async function initRedSecAI() {
   const send = widget.querySelector(".redsecai-send");
   const messagesEl = widget.querySelector(".redsecai-messages");
   let messages = loadMessages();
+  let activeAssistant = null;
+  let activeAssistantText = "";
 
   renderMessages(messagesEl, messages);
+
+  function ensureActiveAssistant() {
+    if (activeAssistant) return activeAssistant;
+    activeAssistant = document.createElement("article");
+    activeAssistant.className = "redsecai-message assistant";
+    activeAssistant.innerHTML = `<div class="redsecai-message-role">RedSecAI</div><div class="redsecai-message-body">Thinking...</div>`;
+    messagesEl.appendChild(activeAssistant);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    return activeAssistant;
+  }
+
+  function updateActiveAssistant(text) {
+    activeAssistantText = text;
+    const item = ensureActiveAssistant();
+    const body = item.querySelector(".redsecai-message-body");
+    if (body) body.innerHTML = renderMarkdownLite(text || "Thinking...");
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function finishActiveAssistant(text) {
+    const content = text || activeAssistantText || "No response.";
+    messages.push({ role: "assistant", content });
+    saveMessages(messages);
+    setActiveJob(null);
+    activeAssistant = null;
+    activeAssistantText = "";
+    renderMessages(messagesEl, messages);
+    send.disabled = false;
+    input.focus();
+  }
+
+  async function fallbackPost() {
+    const res = await fetch("/api/ai/chat", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({
+        messages,
+        page: {
+          path: window.location.pathname,
+          title: document.title,
+        },
+      }),
+    });
+    const body = await res.json().catch(() => ({}));
+    return res.ok ? (body.message || "No response.") : (body.error || "RedSecAI is unavailable.");
+  }
+
+  const aiSocket = createRedSecAiSocket({
+    onStart(message) {
+      setActiveJob({ jobId: message.jobId, startedAt: Date.now() });
+      send.disabled = true;
+      ensureActiveAssistant();
+    },
+    onDelta(message) {
+      updateActiveAssistant(activeAssistantText + (message.delta || ""));
+    },
+    onDone(message) {
+      finishActiveAssistant(message.message || activeAssistantText);
+    },
+    onError(message) {
+      finishActiveAssistant(message.error || "RedSecAI is unavailable.");
+    },
+    onSnapshot(message) {
+      if (!message.jobId) return;
+      if (message.error) {
+        finishActiveAssistant(message.error);
+        return;
+      }
+      updateActiveAssistant(message.message || "");
+      if (message.done) finishActiveAssistant(message.message || activeAssistantText);
+    },
+  });
 
   launcher.addEventListener("click", () => {
     panel.classList.toggle("hidden");
@@ -126,6 +288,9 @@ async function initRedSecAI() {
   clearBtn.addEventListener("click", () => {
     messages = [];
     saveMessages(messages);
+    setActiveJob(null);
+    activeAssistant = null;
+    activeAssistantText = "";
     renderMessages(messagesEl, messages);
   });
 
@@ -148,38 +313,32 @@ async function initRedSecAI() {
     input.value = "";
     send.disabled = true;
 
-    const pending = { role: "assistant", content: "Thinking..." };
-    appendMessage(messagesEl, pending);
+    activeAssistant = null;
+    activeAssistantText = "";
+    ensureActiveAssistant();
 
     try {
-      const res = await fetch("/api/ai/chat", {
-        method: "POST",
-        headers: { "content-type": "application/json", accept: "application/json" },
-        body: JSON.stringify({
-          messages,
-          page: {
-            path: window.location.pathname,
-            title: document.title,
-          },
-        }),
+      const jobId = createJobId();
+      setActiveJob({ jobId, startedAt: Date.now() });
+      aiSocket.send({
+        type: "redsecai_chat",
+        jobId,
+        messages,
+        page: {
+          path: window.location.pathname,
+          title: document.title,
+        },
       });
-      const body = await res.json().catch(() => ({}));
-      const assistant = {
-        role: "assistant",
-        content: res.ok ? (body.message || "No response.") : (body.error || "RedSecAI is unavailable."),
-      };
-      messages.push(assistant);
-      saveMessages(messages);
-      renderMessages(messagesEl, messages);
     } catch (_) {
-      messages.push({ role: "assistant", content: "RedSecAI is unavailable right now." });
-      saveMessages(messages);
-      renderMessages(messagesEl, messages);
-    } finally {
-      send.disabled = false;
-      input.focus();
+      try {
+        finishActiveAssistant(await fallbackPost());
+      } catch {
+        finishActiveAssistant("RedSecAI is unavailable right now.");
+      }
     }
   });
+
+  window.addEventListener("beforeunload", () => aiSocket.close());
 }
 
 initRedSecAI();

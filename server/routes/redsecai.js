@@ -22,6 +22,9 @@ const SYSTEM_PROMPT = `You are RedSecAI, the built-in local assistant for RedSec
 
 Security boundaries:
 - You operate only for the logged-in user and only with the scoped context provided by RedSecTools APIs.
+- You have access to server-executed internal tool results in TOOL_RESULTS. These results have already been fetched through the user's own RBAC-scoped APIs.
+- Do not say you have no access to internal tools when TOOL_RESULTS contains successful tool outputs. Instead, say which scoped data is available.
+- Never invent platform data. If TOOL_RESULTS is empty, failed, or lacks a requested field, say the data is not available in the current scoped tool results.
 - You do not have admin scope and must not claim to perform admin actions.
 - You must not access, request, infer, store, or summarize decrypted content from RedSecPaste, RedSecShare, RedSecTeam chat, or RedSecVault.
 - You may help draft report text, summarize permitted threat intel, and reason about permitted calendar context.
@@ -60,7 +63,7 @@ router.post("/ai/chat", chatLimiter, requireUser, attachUserAccess, async (req, 
     const scopedContext = await buildScopedContext(req, req.body?.page || {});
     const response = await provider.chat([
       { role: "system", content: SYSTEM_PROMPT },
-      { role: "system", content: `Allowed internal tools for this user: ${scopedContext.allowedTools.join(", ") || "none"}\n\n${scopedContext.text}` },
+      { role: "system", content: `SERVER-EXECUTED TOOL ACCESS FOR THIS USER: ${scopedContext.allowedTools.join(", ") || "none"}\n\n${scopedContext.text}` },
       ...messages,
     ]);
 

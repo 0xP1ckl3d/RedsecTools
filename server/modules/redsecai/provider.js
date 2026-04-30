@@ -123,6 +123,71 @@ async function chat(messages) {
   }
 }
 
+async function* chatStream(messages) {
+  const config = getConfig();
+  if (!config.enabled) {
+    const error = new Error("RedSecAI is disabled");
+    error.status = 503;
+    throw error;
+  }
+
+  if (config.autostart && config.isLocalhost) {
+    await ensureLocalModelService();
+  }
+
+  const { controller, timeout } = controllerWithTimeout(config.timeoutMs);
+  try {
+    const res = await fetch(`${config.baseUrl}/api/chat`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: config.model,
+        stream: true,
+        messages,
+        options: {
+          temperature: 0.2,
+          num_ctx: 8192,
+        },
+      }),
+    });
+    if (!res.ok) {
+      const error = new Error(`RedSecAI model service returned HTTP ${res.status}`);
+      error.status = 502;
+      throw error;
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for await (const chunk of res.body) {
+      buffer += decoder.decode(chunk, { stream: true });
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() || "";
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const payload = JSON.parse(line);
+        const content = payload?.message?.content;
+        if (content) yield content;
+        if (payload?.done) return;
+      }
+    }
+    if (buffer.trim()) {
+      const payload = JSON.parse(buffer);
+      const content = payload?.message?.content;
+      if (content) yield content;
+    }
+  } catch (error) {
+    if (error.name === "AbortError") {
+      const timeoutError = new Error("RedSecAI model request timed out");
+      timeoutError.status = 504;
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function spawnOllama(args, options = {}) {
   return spawn("ollama", args, {
     windowsHide: true,
@@ -202,6 +267,7 @@ module.exports = {
   getConfig,
   checkModelHealth,
   chat,
+  chatStream,
   ensureLocalModelService,
   ensureModelInstalled,
 };

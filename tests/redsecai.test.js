@@ -16,6 +16,16 @@ test("RedSecAI context compaction truncates oversized scoped API payloads", () =
   assert.ok(compacted.includes("[truncated]"));
 });
 
+test("RedSecAI exposes a clear scoped tool manifest", () => {
+  const { TOOL_ALLOWLIST } = require("../server/modules/redsecai/context");
+  assert.ok(TOOL_ALLOWLIST["calendar.bootstrap"].description.includes("calendar"));
+  assert.equal(TOOL_ALLOWLIST["calendar.bootstrap"].capability, "calendar.read");
+  assert.equal(TOOL_ALLOWLIST["threat.alerts"].capability, "threat.read");
+  assert.equal(TOOL_ALLOWLIST["reporter.projects"].capability, "reporter.read");
+  assert.equal(TOOL_ALLOWLIST["wiki.bootstrap"].capability, "wiki.read");
+  assert.equal(TOOL_ALLOWLIST["vault.entries"], undefined);
+});
+
 test("RedSecAI provider config uses safe local defaults", () => {
   const { getSetting, setSetting } = require("../server/database");
   const originalSettings = {
