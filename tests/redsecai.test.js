@@ -46,14 +46,14 @@ test("RedSecAI provider config uses safe local defaults", () => {
   try {
     setSetting("redsecai_enabled", "true");
     setSetting("redsecai_base_url", "http://127.0.0.1:11434");
-    setSetting("redsecai_model", "qwen2.5:3b-instruct");
+    setSetting("redsecai_model", "qwen3.5:4b");
     setSetting("redsecai_timeout_ms", "120000");
     setSetting("redsecai_autostart", "true");
     setSetting("redsecai_auto_pull", "true");
     const config = getConfig();
     assert.equal(config.enabled, true);
     assert.equal(config.baseUrl, "http://127.0.0.1:11434");
-    assert.equal(config.model, "qwen2.5:3b-instruct");
+    assert.equal(config.model, "qwen3.5:4b");
   } finally {
     if (originalBaseUrl === undefined) delete process.env.REDSECAI_BASE_URL;
     else process.env.REDSECAI_BASE_URL = originalBaseUrl;

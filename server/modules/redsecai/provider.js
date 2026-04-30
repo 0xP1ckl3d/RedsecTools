@@ -2,7 +2,7 @@
 
 const { spawn } = require("child_process");
 
-const DEFAULT_MODEL = "qwen2.5:3b-instruct";
+const DEFAULT_MODEL = "qwen3.5:4b";
 const DEFAULT_TIMEOUT_MS = 120000;
 const MODEL_PULL_STATES = new Map();
 let localServeProcess = null;

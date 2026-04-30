@@ -87,7 +87,7 @@ switch ($RedSecAiEnabledInput.Trim().ToLowerInvariant()) {
     default { $RedSecAiEnabled = "true" }
 }
 $RedSecAiBaseUrl = "http://127.0.0.1:11434"
-$RedSecAiModel = "qwen2.5:3b-instruct"
+$RedSecAiModel = "qwen3.5:4b"
 $RedSecAiAutostart = "true"
 $RedSecAiAutoPull = "true"
 

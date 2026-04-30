@@ -80,7 +80,7 @@ case "$(printf '%s' "$REDSECAI_ENABLED_INPUT" | tr '[:upper:]' '[:lower:]')" in
     n|no|false|0 ) REDSECAI_ENABLED="false" ;;
     * ) REDSECAI_ENABLED="true" ;;
 esac
-REDSECAI_MODEL="qwen2.5:3b-instruct"
+REDSECAI_MODEL="qwen3.5:4b"
 REDSECAI_BASE_URL="http://127.0.0.1:11434"
 REDSECAI_AUTOSTART="true"
 REDSECAI_AUTO_PULL="true"

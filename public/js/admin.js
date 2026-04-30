@@ -1161,7 +1161,7 @@ async function loadRedSecAiSettings() {
     if (redsecAiAutoPull) redsecAiAutoPull.checked = !!data.autoPull;
     if (redsecAiAutostart) redsecAiAutostart.checked = !!data.autostart;
     if (redsecAiBaseUrl) redsecAiBaseUrl.value = data.baseUrl || "http://127.0.0.1:11434";
-    if (redsecAiModel) redsecAiModel.value = data.model || "qwen2.5:3b-instruct";
+    if (redsecAiModel) redsecAiModel.value = data.model || "qwen3.5:4b";
     if (redsecAiTimeoutMs) redsecAiTimeoutMs.value = data.timeoutMs || 120000;
 
     setRedSecAiText("redsecai-stat-enabled", data.enabled ? "On" : "Off");

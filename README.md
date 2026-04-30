@@ -208,7 +208,7 @@ npm install
 npm run build
 
 # 5. Optional first-run warmup for RedSecAI local mode
-ollama pull qwen2.5:3b-instruct
+ollama pull qwen3.5:4b
 
 # 6. Start the server. If REDSECAI_AUTOSTART=true, RedSecTools will
 #    start the local Ollama service and pull the configured model if missing.
@@ -239,7 +239,7 @@ Configuration is managed through a `.env` file in the project root. The setup sc
 | `PUPPETEER_EXECUTABLE_PATH` | No | Auto-detected, `/usr/bin/chromium` in Docker | Chrome/Chromium executable used for RedSecReporter PDF rendering |
 | `REDSECAI_ENABLED` | No | `true` | Enables the authenticated RedSecAI chat API and widget |
 | `REDSECAI_BASE_URL` | No | `http://127.0.0.1:11434` | Ollama-compatible model endpoint. Docker Compose sets this to the `redsecai` service |
-| `REDSECAI_MODEL` | No | `qwen2.5:3b-instruct` | Local model name used by RedSecAI |
+| `REDSECAI_MODEL` | No | `qwen3.5:4b` | Local model name used by RedSecAI |
 | `REDSECAI_TIMEOUT_MS` | No | `120000` | Timeout for local model responses |
 | `REDSECAI_AUTOSTART` | No | `true` for local Ollama URLs | Starts local Ollama automatically when RedSecTools starts. Docker disables this because the AI runs in its own container |
 | `REDSECAI_AUTO_PULL` | No | `true` | Pulls the configured model in the background if Ollama is running but the model is missing |
@@ -255,7 +255,7 @@ For existing local npm installs, add these lines to `.env`, restart RedSecTools,
 ```env
 REDSECAI_ENABLED=true
 REDSECAI_BASE_URL=http://127.0.0.1:11434
-REDSECAI_MODEL=qwen2.5:3b-instruct
+REDSECAI_MODEL=qwen3.5:4b
 REDSECAI_TIMEOUT_MS=120000
 REDSECAI_AUTOSTART=true
 REDSECAI_AUTO_PULL=true
@@ -264,7 +264,7 @@ REDSECAI_AUTO_PULL=true
 Install Ollama locally. Pull the model when bandwidth allows:
 
 ```bash
-ollama pull qwen2.5:3b-instruct
+ollama pull qwen3.5:4b
 ```
 
 For existing Docker production installs, deploy the updated `docker-compose.yml`, then run:

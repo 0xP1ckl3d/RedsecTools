@@ -18,7 +18,7 @@ services:
       - TOR_PROXY=socks5h://tor-proxy:9050
       - REDSECAI_ENABLED=${REDSECAI_ENABLED:-true}
       - REDSECAI_BASE_URL=http://redsecai:11434
-      - REDSECAI_MODEL=${REDSECAI_MODEL:-qwen2.5:3b-instruct}
+      - REDSECAI_MODEL=${REDSECAI_MODEL:-qwen3.5:4b}
       - REDSECAI_TIMEOUT_MS=${REDSECAI_TIMEOUT_MS:-120000}
       - REDSECAI_AUTOSTART=false
     volumes:
@@ -29,7 +29,7 @@ services:
       context: ./docker/redsecai
     container_name: redsectools-ai
     environment:
-      - OLLAMA_MODEL=${REDSECAI_MODEL:-qwen2.5:3b-instruct}
+      - OLLAMA_MODEL=${REDSECAI_MODEL:-qwen3.5:4b}
     volumes:
       - redsectools-ai:/root/.ollama
     restart: unless-stopped
