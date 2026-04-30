@@ -3,31 +3,39 @@
 const { spawn } = require("child_process");
 
 const DEFAULT_MODEL = "qwen3.5:4b";
+const LEGACY_DEFAULT_MODELS = new Set(["qwen2.5:3b-instruct"]);
 const DEFAULT_TIMEOUT_MS = 120000;
 const MODEL_PULL_STATES = new Map();
 let localServeProcess = null;
 let localServeStarted = false;
 
 function getConfig() {
-  const setting = (key, fallback = "") => {
+  const setting = (key) => {
     try {
       const { getSetting } = require("../../database");
       const value = getSetting(key);
-      return value == null || value === "" ? fallback : value;
+      return value == null ? "" : String(value);
     } catch (_) {
-      return fallback;
+      return "";
     }
   };
-  const enabledRaw = setting("redsecai_enabled", process.env.REDSECAI_ENABLED || "true");
-  const baseUrl = setting("redsecai_base_url", process.env.REDSECAI_BASE_URL || "http://127.0.0.1:11434").replace(/\/+$/, "");
-  const autostartRaw = setting("redsecai_autostart", process.env.REDSECAI_AUTOSTART || "");
-  const autoPullRaw = setting("redsecai_auto_pull", process.env.REDSECAI_AUTO_PULL || "true");
+  const envBaseUrl = process.env.REDSECAI_BASE_URL || "http://127.0.0.1:11434";
+  const envModel = process.env.REDSECAI_MODEL || DEFAULT_MODEL;
+  const dbBaseUrl = setting("redsecai_base_url");
+  const dbModel = setting("redsecai_model");
+  const envUsesDockerService = /^https?:\/\/redsecai(?::\d+)?$/i.test(envBaseUrl.replace(/\/+$/, ""));
+  const dbUsesLocalhost = /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(dbBaseUrl.replace(/\/+$/, ""));
+  const baseUrl = (envUsesDockerService && dbUsesLocalhost ? envBaseUrl : (dbBaseUrl || envBaseUrl)).replace(/\/+$/, "");
+  const model = (LEGACY_DEFAULT_MODELS.has(dbModel) ? envModel : (dbModel || envModel));
+  const enabledRaw = setting("redsecai_enabled") || process.env.REDSECAI_ENABLED || "true";
+  const autostartRaw = setting("redsecai_autostart") || process.env.REDSECAI_AUTOSTART || "";
+  const autoPullRaw = setting("redsecai_auto_pull") || process.env.REDSECAI_AUTO_PULL || "true";
   const isLocalhost = /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(baseUrl);
   return {
     enabled: enabledRaw !== "false",
     baseUrl,
-    model: setting("redsecai_model", process.env.REDSECAI_MODEL || DEFAULT_MODEL),
-    timeoutMs: Math.max(1000, parseInt(setting("redsecai_timeout_ms", process.env.REDSECAI_TIMEOUT_MS || String(DEFAULT_TIMEOUT_MS)), 10) || DEFAULT_TIMEOUT_MS),
+    model,
+    timeoutMs: Math.max(1000, parseInt(setting("redsecai_timeout_ms") || process.env.REDSECAI_TIMEOUT_MS || String(DEFAULT_TIMEOUT_MS), 10) || DEFAULT_TIMEOUT_MS),
     autostart: autostartRaw
       ? autostartRaw !== "false"
       : isLocalhost,

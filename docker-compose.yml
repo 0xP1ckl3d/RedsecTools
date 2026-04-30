@@ -6,7 +6,7 @@ services:
       tor-proxy:
         condition: service_started
       redsecai:
-        condition: service_healthy
+        condition: service_started
     ports:
       - "${HOST:-0.0.0.0}:${PORT:-3000}:3000"
     env_file: .env
@@ -21,6 +21,7 @@ services:
       - REDSECAI_MODEL=${REDSECAI_MODEL:-qwen3.5:4b}
       - REDSECAI_TIMEOUT_MS=${REDSECAI_TIMEOUT_MS:-120000}
       - REDSECAI_AUTOSTART=false
+      - REDSECAI_AUTO_PULL=${REDSECAI_AUTO_PULL:-true}
     volumes:
       - redsectools-data:/app/data
     restart: unless-stopped
@@ -30,6 +31,7 @@ services:
     container_name: redsectools-ai
     environment:
       - OLLAMA_MODEL=${REDSECAI_MODEL:-qwen3.5:4b}
+      - OLLAMA_AUTO_PULL=${REDSECAI_AUTO_PULL:-true}
     volumes:
       - redsectools-ai:/root/.ollama
     restart: unless-stopped

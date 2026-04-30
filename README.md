@@ -182,7 +182,14 @@ docker compose up -d
 
 That's it. The setup script creates a `.env` file with a randomly generated admin password and cookie secret.
 
-Docker starts RedSecAI automatically as a separate `redsecai` Ollama container. On the first run, that container pulls the configured model into the `redsectools-ai` named volume. If the server has limited bandwidth, set `REDSECAI_ENABLED=false` in `.env` before `docker compose up -d`, then enable it later in Admin after the model is available.
+Docker starts RedSecAI as a separate `redsecai` Ollama container. On the first run, that container pulls the configured model into the `redsectools-ai` named volume unless `REDSECAI_AUTO_PULL=false`. The main RedSecTools app does not wait for that model download to finish; if the model is missing, the chat bubble reports RedSecAI as unavailable until the model is installed.
+
+If the server has limited bandwidth, set `REDSECAI_AUTO_PULL=false` in `.env` before `docker compose up -d`. Later, pull the model into the persistent AI volume:
+
+```bash
+docker compose exec redsecai ollama pull qwen3.5:4b
+docker compose restart redsectools
+```
 
 ---
 
@@ -242,7 +249,7 @@ Configuration is managed through a `.env` file in the project root. The setup sc
 | `REDSECAI_MODEL` | No | `qwen3.5:4b` | Local model name used by RedSecAI |
 | `REDSECAI_TIMEOUT_MS` | No | `120000` | Timeout for local model responses |
 | `REDSECAI_AUTOSTART` | No | `true` for local Ollama URLs | Starts local Ollama automatically when RedSecTools starts. Docker disables this because the AI runs in its own container |
-| `REDSECAI_AUTO_PULL` | No | `true` | Pulls the configured model in the background if Ollama is running but the model is missing |
+| `REDSECAI_AUTO_PULL` | No | `true` | Pulls the configured model if it is missing. In Docker this controls the `redsecai` container entrypoint; in local npm mode it controls local Ollama auto-pull |
 | `REDSECAI_INTERNAL_ORIGIN` | No | `http://127.0.0.1:$PORT` | Internal same-app origin used for scoped API context fetches when the bind address is unusual |
 | `TRUSTED_PUBLIC_ORIGINS` | Yes for production email/share links | Localhost defaults plus any extra origins entered during setup | Comma-separated allowlist of public origins used for invite links, password-reset links, and guest links |
 
@@ -274,7 +281,32 @@ docker compose build redsectools redsecai
 docker compose up -d
 ```
 
-The app container talks to `http://redsecai:11434` internally. If you want to postpone model download, set `REDSECAI_ENABLED=false` in the remote `.env`, deploy, and later enable RedSecAI from the Admin panel after the model has been pulled into the `redsectools-ai` volume.
+The app container talks to `http://redsecai:11434` internally. If an older Admin setting still says `http://127.0.0.1:11434`, Docker startup will prefer the compose-provided internal service URL so the container does not accidentally call itself.
+
+To postpone model download, set this in the remote `.env` before deployment:
+
+```env
+REDSECAI_AUTO_PULL=false
+```
+
+Then install the model later:
+
+```bash
+docker compose exec redsecai ollama pull qwen3.5:4b
+docker compose restart redsectools
+```
+
+The model is stored in the `redsectools-ai` named volume. Normal app updates do not reinstall it unless you delete volumes with `docker compose down -v` or prune Docker volumes.
+
+For normal updates after the model is already installed, avoid rebuilding every service:
+
+```bash
+git pull
+docker compose build redsectools
+docker compose up -d --no-deps redsectools
+```
+
+Rebuild `redsecai` only when `docker/redsecai/*`, the Ollama base image, or the configured model/bootstrap behavior changes.
 
 Reverse proxies must pass WebSocket upgrade headers for RedSecAI streaming:
 

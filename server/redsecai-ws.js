@@ -4,7 +4,7 @@ const { WebSocketServer } = require("ws");
 const cookieParser = require("cookie-parser");
 const crypto = require("crypto");
 const { getSession, getRolePermissionsByUserId, getUserById } = require("./database");
-const { buildScopedContext } = require("./modules/redsecai/context");
+const { normalizeMessages, prepareRedSecAiTurn } = require("./modules/redsecai/orchestrator");
 const provider = require("./modules/redsecai/provider");
 const { logEvent, logWarn } = require("./core/logger");
 
@@ -97,43 +97,6 @@ function broadcastToUser(userId, message) {
   for (const ws of sockets) send(ws, message);
 }
 
-function normalizeMessages(input) {
-  if (!Array.isArray(input)) return [];
-  return input
-    .slice(-12)
-    .map((message) => ({
-      role: message?.role === "assistant" ? "assistant" : "user",
-      content: String(message?.content || "").slice(0, 4000),
-    }))
-    .filter((message) => message.content.trim());
-}
-
-function buildSystemMessages(scopedContext) {
-  return [
-    {
-      role: "system",
-      content: `You are RedSecAI, the built-in local assistant for RedSecTools.
-
-Security boundaries:
-- You operate only for the logged-in user and only with the scoped context provided by RedSecTools APIs.
-- You have access to server-executed internal tool results in TOOL_RESULTS. These results have already been fetched through the user's own RBAC-scoped APIs.
-- Do not say you have no access to internal tools when TOOL_RESULTS contains successful tool outputs. Instead, say which scoped data is available.
-- Never invent platform data. If TOOL_RESULTS is empty, failed, or lacks a requested field, say the data is not available in the current scoped tool results.
-- You do not have admin scope and must not claim to perform admin actions.
-- You must not access, request, infer, store, or summarize decrypted content from RedSecPaste, RedSecShare, RedSecTeam chat, or RedSecVault.
-- You may help draft report text, summarize permitted threat intel, and reason about permitted calendar context.
-- Stage 1 is read-only for platform actions. If the user asks you to update data, draft the exact change and tell them it needs explicit confirmation in the relevant tool.
-- Do not ask users to paste passwords, recovery codes, API keys, private keys, TOTP secrets, session tokens, bearer tokens, URL fragment encryption keys, or decrypted vault content.
-
-Be concise, practical, and transparent about limitations.`,
-    },
-    {
-      role: "system",
-      content: `SERVER-EXECUTED TOOL ACCESS FOR THIS USER: ${scopedContext.allowedTools.join(", ") || "none"}\n\n${scopedContext.text}`,
-    },
-  ];
-}
-
 function trimBuffer(job) {
   if (job.buffer.length <= MAX_BUFFER_CHARS) return;
   job.buffer = job.buffer.slice(job.buffer.length - MAX_BUFFER_CHARS);
@@ -172,18 +135,17 @@ async function startJob(ws, auth, msg) {
   broadcastToUser(auth.user.id, { type: "redsecai_start", jobId });
 
   try {
-    const scopedContext = await buildScopedContext(buildScopedReq(auth, msg.page || {}), msg.page || {});
+    const turn = await prepareRedSecAiTurn(buildScopedReq(auth, msg.page || {}), messages, msg.page || {});
     logEvent("redsecai:stream_start", null, {
       actorUserId: auth.user.id,
       actorUsername: auth.user.username,
-      allowedTools: scopedContext.allowedTools,
+      allowedTools: turn.scopedContext.allowedTools,
+      targetedTools: turn.targetedContext.calls.map((call) => call.tool),
+      modelRequestedTools: turn.modelToolContext.calls.map((call) => call.tool),
       model: provider.getConfig().model,
     });
 
-    for await (const chunk of provider.chatStream([
-      ...buildSystemMessages(scopedContext),
-      ...messages,
-    ])) {
+    for await (const chunk of provider.chatStream(turn.finalMessages)) {
       job.buffer += chunk;
       job.updatedAt = Date.now();
       trimBuffer(job);
