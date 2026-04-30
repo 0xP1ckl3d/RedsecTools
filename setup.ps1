@@ -76,6 +76,21 @@ switch ($CookieSecureInput.Trim().ToLowerInvariant()) {
     default { $CookieSecure = $CookieSecureDefault }
 }
 
+Write-Host ""
+Write-Host "RedSecAI is a local assistant backed by Ollama/Qwen."
+$RedSecAiEnabledInput = Read-Host "Enable RedSecAI? [true]"
+switch ($RedSecAiEnabledInput.Trim().ToLowerInvariant()) {
+    "n" { $RedSecAiEnabled = "false" }
+    "no" { $RedSecAiEnabled = "false" }
+    "false" { $RedSecAiEnabled = "false" }
+    "0" { $RedSecAiEnabled = "false" }
+    default { $RedSecAiEnabled = "true" }
+}
+$RedSecAiBaseUrl = "http://127.0.0.1:11434"
+$RedSecAiModel = "qwen2.5:3b-instruct"
+$RedSecAiAutostart = "true"
+$RedSecAiAutoPull = "true"
+
 # Generate random admin password (24 chars)
 $passwordBytes = [Security.Cryptography.RandomNumberGenerator]::GetBytes(18)
 $AdminPassword = [Convert]::ToBase64String($passwordBytes) -replace '[/+=]', ''
@@ -109,6 +124,15 @@ COOKIE_SECURE=$CookieSecure
 REPORTER_PDF_TIMEOUT_MS=120000
 # PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
+# RedSecAI local assistant. Docker Compose overrides REDSECAI_BASE_URL to the
+# internal redsecai container. Admin > Tools > RedSecAI can change these after install.
+REDSECAI_ENABLED=$RedSecAiEnabled
+REDSECAI_BASE_URL=$RedSecAiBaseUrl
+REDSECAI_MODEL=$RedSecAiModel
+REDSECAI_TIMEOUT_MS=120000
+REDSECAI_AUTOSTART=$RedSecAiAutostart
+REDSECAI_AUTO_PULL=$RedSecAiAutoPull
+
 # Trusted public origins used for invite, reset-password, and guest links.
 # Includes local defaults plus any extra origins entered during setup.
 TRUSTED_PUBLIC_ORIGINS=$TrustedPublicOrigins
@@ -129,6 +153,7 @@ Write-Host $AdminPassword -ForegroundColor Yellow
 Write-Host ""
 Write-Host "  Listening:      $Host`:$Port"
 Write-Host "  Secure cookies: $CookieSecure"
+Write-Host "  RedSecAI:       $RedSecAiEnabled"
 Write-Host ""
 Write-Host "  Write this down -- you'll need it to log in"
 Write-Host "  at http://localhost`:$Port/admin"

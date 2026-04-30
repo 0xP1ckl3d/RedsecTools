@@ -3,7 +3,10 @@ services:
     build: .
     container_name: redsectools
     depends_on:
-      - tor-proxy
+      tor-proxy:
+        condition: service_started
+      redsecai:
+        condition: service_healthy
     ports:
       - "${HOST:-0.0.0.0}:${PORT:-3000}:3000"
     env_file: .env
@@ -13,9 +16,28 @@ services:
       - HOST=0.0.0.0
       - COOKIE_SECURE=${COOKIE_SECURE:-true}
       - TOR_PROXY=socks5h://tor-proxy:9050
+      - REDSECAI_ENABLED=${REDSECAI_ENABLED:-true}
+      - REDSECAI_BASE_URL=http://redsecai:11434
+      - REDSECAI_MODEL=${REDSECAI_MODEL:-qwen2.5:3b-instruct}
+      - REDSECAI_TIMEOUT_MS=${REDSECAI_TIMEOUT_MS:-120000}
+      - REDSECAI_AUTOSTART=false
     volumes:
       - redsectools-data:/app/data
     restart: unless-stopped
+  redsecai:
+    build:
+      context: ./docker/redsecai
+    container_name: redsectools-ai
+    environment:
+      - OLLAMA_MODEL=${REDSECAI_MODEL:-qwen2.5:3b-instruct}
+    volumes:
+      - redsectools-ai:/root/.ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
   tor-proxy:
     image: dperson/torproxy:latest
     container_name: redsectools-tor
@@ -23,3 +45,4 @@ services:
 
 volumes:
   redsectools-data:
+  redsectools-ai:

@@ -26,3 +26,5 @@ document.querySelectorAll("#theme-toggle").forEach((btn) => {
     applyTheme(next);
   });
 });
+
+import("./redsecai.js").catch(() => {});

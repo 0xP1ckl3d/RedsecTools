@@ -152,12 +152,12 @@ logoutBtn.addEventListener("click", async () => {
 // --- Tabs ---
 
 const tabBtns = document.querySelectorAll(".admin-tab[data-tab]");
-const childTabs = ["settings", "security", "deployment", "roles", "bulletins", "weather", "team-shortcuts", "invites", "users", "chat", "pastes", "files", "survey-tool-settings", "vaults", "calendar-tool-settings", "wiki-tool-settings", "threat-tool-settings", "reporter-tool-settings"];
+const childTabs = ["settings", "security", "deployment", "roles", "bulletins", "weather", "team-shortcuts", "invites", "users", "chat", "pastes", "files", "survey-tool-settings", "vaults", "calendar-tool-settings", "wiki-tool-settings", "redsecai-tool-settings", "threat-tool-settings", "reporter-tool-settings"];
 const adminTabGroups = {
   server: ["settings", "security", "deployment", "roles"],
   homepage: ["weather", "bulletins", "team-shortcuts"],
   "users-admin": ["users", "invites"],
-  tools: ["calendar-tool-settings", "wiki-tool-settings", "chat", "pastes", "files", "survey-tool-settings", "vaults", "threat-tool-settings", "reporter-tool-settings"],
+  tools: ["calendar-tool-settings", "wiki-tool-settings", "redsecai-tool-settings", "chat", "pastes", "files", "survey-tool-settings", "vaults", "threat-tool-settings", "reporter-tool-settings"],
 };
 const adminSubtabLabels = {
   settings: "SMTP",
@@ -171,6 +171,7 @@ const adminSubtabLabels = {
   invites: "Invites",
   "calendar-tool-settings": "RedSecCal",
   "wiki-tool-settings": "RedSecWiki",
+  "redsecai-tool-settings": "RedSecAI",
   chat: "RedSecTeam",
   pastes: "RedSecPaste",
   files: "RedSecShare",
@@ -241,6 +242,9 @@ function updateAdminVisibleTabs() {
   }
   if (visibleTabs.has("wiki-tool-settings")) {
     loadWikiToolSettings();
+  }
+  if (visibleTabs.has("redsecai-tool-settings")) {
+    loadRedSecAiSettings();
   }
   if (visibleTabs.has("survey-tool-settings")) {
     loadSurveyAdminStats();
@@ -1133,6 +1137,90 @@ wikiSettingsSaveBtn?.addEventListener("click", async () => {
     wikiSettingsSaveBtn.disabled = false;
   }
 });
+
+const redsecAiEnabled = document.getElementById("redsecai-enabled");
+const redsecAiAutoPull = document.getElementById("redsecai-auto-pull");
+const redsecAiAutostart = document.getElementById("redsecai-autostart");
+const redsecAiBaseUrl = document.getElementById("redsecai-base-url");
+const redsecAiModel = document.getElementById("redsecai-model");
+const redsecAiTimeoutMs = document.getElementById("redsecai-timeout-ms");
+const redsecAiStatusBox = document.getElementById("redsecai-status-box");
+const redsecAiSaveBtn = document.getElementById("redsecai-save-btn");
+const redsecAiResult = document.getElementById("redsecai-settings-result");
+
+function setRedSecAiText(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = value;
+}
+
+async function loadRedSecAiSettings() {
+  try {
+    const res = await api("/api/settings/redsecai");
+    const data = await res.json();
+    if (redsecAiEnabled) redsecAiEnabled.checked = !!data.enabled;
+    if (redsecAiAutoPull) redsecAiAutoPull.checked = !!data.autoPull;
+    if (redsecAiAutostart) redsecAiAutostart.checked = !!data.autostart;
+    if (redsecAiBaseUrl) redsecAiBaseUrl.value = data.baseUrl || "http://127.0.0.1:11434";
+    if (redsecAiModel) redsecAiModel.value = data.model || "qwen2.5:3b-instruct";
+    if (redsecAiTimeoutMs) redsecAiTimeoutMs.value = data.timeoutMs || 120000;
+
+    setRedSecAiText("redsecai-stat-enabled", data.enabled ? "On" : "Off");
+    setRedSecAiText("redsecai-stat-ready", data.ready ? "Yes" : (data.installing ? "Pulling" : "No"));
+    setRedSecAiText("redsecai-stat-model", data.model || "-");
+    setRedSecAiText("redsecai-stat-models", String((data.availableModels || []).length));
+
+    if (redsecAiStatusBox) {
+      const models = (data.availableModels || []).length
+        ? `Installed models: ${(data.availableModels || []).map(escapeHtml).join(", ")}`
+        : "No installed models reported by Ollama.";
+      redsecAiStatusBox.className = `info-box text-sm mt-4 ${data.ready ? "text-accent" : "text-warning"}`;
+      redsecAiStatusBox.innerHTML = data.enabled
+        ? `${data.ready ? "RedSecAI is ready." : escapeHtml(data.error || "RedSecAI is not ready.")}<br>${models}`
+        : "RedSecAI is globally disabled.";
+    }
+  } catch {
+    if (redsecAiStatusBox) {
+      redsecAiStatusBox.className = "info-box text-sm mt-4 text-error";
+      redsecAiStatusBox.textContent = "Failed to load RedSecAI settings.";
+    }
+  }
+}
+
+redsecAiSaveBtn?.addEventListener("click", async () => {
+  redsecAiSaveBtn.disabled = true;
+  redsecAiResult?.classList.add("hidden");
+  try {
+    const res = await api("/api/settings/redsecai", {
+      method: "POST",
+      body: JSON.stringify({
+        enabled: !!redsecAiEnabled?.checked,
+        baseUrl: redsecAiBaseUrl?.value || "",
+        model: redsecAiModel?.value || "",
+        timeoutMs: parseInt(redsecAiTimeoutMs?.value, 10) || 120000,
+        autostart: !!redsecAiAutostart?.checked,
+        autoPull: !!redsecAiAutoPull?.checked,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Failed to save RedSecAI settings");
+    if (redsecAiResult) {
+      redsecAiResult.textContent = "RedSecAI settings saved.";
+      redsecAiResult.className = "text-sm text-accent";
+      redsecAiResult.classList.remove("hidden");
+    }
+    await loadRedSecAiSettings();
+  } catch (error) {
+    if (redsecAiResult) {
+      redsecAiResult.textContent = error.message || "Network error";
+      redsecAiResult.className = "text-sm text-error";
+      redsecAiResult.classList.remove("hidden");
+    }
+  } finally {
+    redsecAiSaveBtn.disabled = false;
+  }
+});
+
+document.getElementById("redsecai-refresh-btn")?.addEventListener("click", loadRedSecAiSettings);
 
 // ============================================================
 // CHAT

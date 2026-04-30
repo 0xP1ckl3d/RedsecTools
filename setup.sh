@@ -73,6 +73,18 @@ case "$(printf '%s' "$COOKIE_SECURE_INPUT" | tr '[:upper:]' '[:lower:]')" in
     * ) COOKIE_SECURE="$COOKIE_SECURE_DEFAULT" ;;
 esac
 
+echo ""
+echo "RedSecAI is a local assistant backed by Ollama/Qwen."
+read -rp "Enable RedSecAI? [true]: " REDSECAI_ENABLED_INPUT
+case "$(printf '%s' "$REDSECAI_ENABLED_INPUT" | tr '[:upper:]' '[:lower:]')" in
+    n|no|false|0 ) REDSECAI_ENABLED="false" ;;
+    * ) REDSECAI_ENABLED="true" ;;
+esac
+REDSECAI_MODEL="qwen2.5:3b-instruct"
+REDSECAI_BASE_URL="http://127.0.0.1:11434"
+REDSECAI_AUTOSTART="true"
+REDSECAI_AUTO_PULL="true"
+
 # Generate random admin password (24 chars, base64)
 ADMIN_PASSWORD=$(openssl rand -base64 18 | tr -d '=/+' | head -c 24)
 
@@ -103,6 +115,15 @@ COOKIE_SECURE=${COOKIE_SECURE}
 REPORTER_PDF_TIMEOUT_MS=120000
 # PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
+# RedSecAI local assistant. Docker Compose overrides REDSECAI_BASE_URL to the
+# internal redsecai container. Admin > Tools > RedSecAI can change these after install.
+REDSECAI_ENABLED=${REDSECAI_ENABLED}
+REDSECAI_BASE_URL=${REDSECAI_BASE_URL}
+REDSECAI_MODEL=${REDSECAI_MODEL}
+REDSECAI_TIMEOUT_MS=120000
+REDSECAI_AUTOSTART=${REDSECAI_AUTOSTART}
+REDSECAI_AUTO_PULL=${REDSECAI_AUTO_PULL}
+
 # Trusted public origins used for invite, reset-password, and guest links.
 # Includes local defaults plus any extra origins entered during setup.
 TRUSTED_PUBLIC_ORIGINS=${TRUSTED_PUBLIC_ORIGINS}
@@ -120,6 +141,7 @@ echo "  Admin password: ${ADMIN_PASSWORD}"
 echo ""
 echo "  Listening:      ${HOST}:${PORT}"
 echo "  Secure cookies: ${COOKIE_SECURE}"
+echo "  RedSecAI:       ${REDSECAI_ENABLED}"
 echo ""
 echo "  Write this down — you'll need it to log in"
 echo "  at http://localhost:${PORT}/admin"

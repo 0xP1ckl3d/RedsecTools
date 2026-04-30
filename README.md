@@ -18,6 +18,7 @@ A multi-tool security platform by [RedSec Offensive Security](https://github.com
 | **RedSecThreat** | Threat intelligence monitor with RSS/website/API/onion feed ingestion, keyword and regex matching, automatic IOC extraction, alert triage with criticality levels, and webhook/email/Discord notifications |
 | **RedSecWiki** | Team and personal Markdown wiki with page trees, subpages, live preview, published rendering, revision history, and search |
 | **RedSecReporter** | SysReptor-style pentest report builder with assigned-member projects, custom report designs, finding templates, CVSS scoring, comments, evidence, and versioned PDF generation |
+| **RedSecAI** | Local Qwen-powered assistant for scoped report drafting, calendar reasoning, and threat-intel summaries without access to encrypted paste/share/chat/vault plaintext |
 | **RedSecTools Chrome Extension** | Chrome Manifest V3 extension for Vault access, autofill, Paste creation, and Share creation using the same server and encryption model |
 
 **Key security properties:**
@@ -114,6 +115,16 @@ RedSecReporter is the report-building workspace for pentest projects. It provide
 
 Admin > Tools > RedSecReporter shows global report stats, recent projects, project creators, status/archive state, and an expandable list of assigned users who can access each project.
 
+### RedSecAI
+
+RedSecAI is the built-in local assistant. In Docker Compose it runs against a separate Ollama/Qwen container; local npm installs use a local Ollama service on `127.0.0.1:11434`.
+
+Stage 1 provides an expandable chat bubble on authenticated pages. It can use a small server-side allowlist of scoped application APIs for the logged-in user to help summarize permitted calendar and threat-intel context, and it can draft report prose from user-provided context. It does not have admin scope, does not read the database directly, and does not access decrypted RedSecPaste, RedSecShare, RedSecTeam, or RedSecVault content.
+
+Stage 1 is read-only for platform mutations. If a user asks RedSecAI to update a calendar item or another record, it drafts the intended change for confirmation in the relevant tool rather than applying it silently.
+
+Admins control RedSecAI globally from **Admin > Tool Settings > RedSecAI** after installation. The `.env` values are bootstrap defaults and emergency overrides; database-backed Admin settings determine the live global enable flag, Ollama base URL, model name, timeout, autostart, and auto-pull behavior.
+
 ### BulletinBoard
 
 BulletinBoard is part of the homepage rather than a standalone tool page. It supports:
@@ -169,11 +180,13 @@ docker compose up -d
 
 That's it. The setup script creates a `.env` file with a randomly generated admin password and cookie secret.
 
+Docker starts RedSecAI automatically as a separate `redsecai` Ollama container. On the first run, that container pulls the configured model into the `redsectools-ai` named volume. If the server has limited bandwidth, set `REDSECAI_ENABLED=false` in `.env` before `docker compose up -d`, then enable it later in Admin after the model is available.
+
 ---
 
 ## Local Install (npm)
 
-**Prerequisites:** [Node.js](https://nodejs.org/) 20 or later, npm
+**Prerequisites:** [Node.js](https://nodejs.org/) 20 or later, npm. RedSecAI also needs [Ollama](https://ollama.com/) installed if enabled outside Docker.
 
 ```bash
 # 1. Clone the repository
@@ -192,7 +205,11 @@ cd RedSecTools
 npm install
 npm run build
 
-# 5. Start the server
+# 5. Optional first-run warmup for RedSecAI local mode
+ollama pull qwen2.5:3b-instruct
+
+# 6. Start the server. If REDSECAI_AUTOSTART=true, RedSecTools will
+#    start the local Ollama service and pull the configured model if missing.
 npm start
 
 # For development with live reload:
@@ -218,9 +235,44 @@ Configuration is managed through a `.env` file in the project root. The setup sc
 | `DB_PATH` | No | `./data/pastes.db` | Path to the SQLite database file |
 | `REPORTER_PDF_TIMEOUT_MS` | No | `120000` | RedSecReporter PDF rendering timeout in milliseconds |
 | `PUPPETEER_EXECUTABLE_PATH` | No | Auto-detected, `/usr/bin/chromium` in Docker | Chrome/Chromium executable used for RedSecReporter PDF rendering |
+| `REDSECAI_ENABLED` | No | `true` | Enables the authenticated RedSecAI chat API and widget |
+| `REDSECAI_BASE_URL` | No | `http://127.0.0.1:11434` | Ollama-compatible model endpoint. Docker Compose sets this to the `redsecai` service |
+| `REDSECAI_MODEL` | No | `qwen2.5:3b-instruct` | Local model name used by RedSecAI |
+| `REDSECAI_TIMEOUT_MS` | No | `120000` | Timeout for local model responses |
+| `REDSECAI_AUTOSTART` | No | `true` for local Ollama URLs | Starts local Ollama automatically when RedSecTools starts. Docker disables this because the AI runs in its own container |
+| `REDSECAI_AUTO_PULL` | No | `true` | Pulls the configured model in the background if Ollama is running but the model is missing |
+| `REDSECAI_INTERNAL_ORIGIN` | No | `http://127.0.0.1:$PORT` | Internal same-app origin used for scoped API context fetches when the bind address is unusual |
 | `TRUSTED_PUBLIC_ORIGINS` | Yes for production email/share links | Localhost defaults plus any extra origins entered during setup | Comma-separated allowlist of public origins used for invite links, password-reset links, and guest links |
 
 SMTP email settings are configured in the Admin > Settings UI (stored encrypted in the database) — not via environment variables.
+
+### Updating Existing Deployments For RedSecAI
+
+For existing local npm installs, add these lines to `.env`, restart RedSecTools, then open **Admin > Tool Settings > RedSecAI**:
+
+```env
+REDSECAI_ENABLED=true
+REDSECAI_BASE_URL=http://127.0.0.1:11434
+REDSECAI_MODEL=qwen2.5:3b-instruct
+REDSECAI_TIMEOUT_MS=120000
+REDSECAI_AUTOSTART=true
+REDSECAI_AUTO_PULL=true
+```
+
+Install Ollama locally. Pull the model when bandwidth allows:
+
+```bash
+ollama pull qwen2.5:3b-instruct
+```
+
+For existing Docker production installs, deploy the updated `docker-compose.yml`, then run:
+
+```bash
+docker compose build redsectools redsecai
+docker compose up -d
+```
+
+The app container talks to `http://redsecai:11434` internally. If you want to postpone model download, set `REDSECAI_ENABLED=false` in the remote `.env`, deploy, and later enable RedSecAI from the Admin panel after the model has been pulled into the `redsectools-ai` volume.
 
 ### Trusted Public Origins
 

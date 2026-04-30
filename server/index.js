@@ -21,6 +21,7 @@ const wikiRouter = require("./routes/wiki");
 const threatRouter = require("./routes/threat");
 const reporterRouter = require("./routes/reporter");
 const adminCollabRouter = require("./routes/admin-collab");
+const redsecAiRouter = require("./routes/redsecai");
 const { runBulletinAutoPurge } = require("./bulletin-service");
 const { startFeedFetchInterval, seedDefaults: seedThreatDefaults } = require("./threat-feed-service");
 const { initWebSocket } = require("./chat-ws");
@@ -36,6 +37,7 @@ const { pageRequireUser, pageRequireGuestOrUser } = require("./middleware/auth")
 const { pageRequirePermission, pageRequireAnyPermission } = require("./middleware/permissions");
 const { buildDeploymentWarnings } = require("./core/security/posture");
 const { logWarn } = require("./core/logger");
+const redsecAiProvider = require("./modules/redsecai/provider");
 
 const app = express();
 const PORT = parseInt(process.env.PORT, 10) || 3000;
@@ -122,6 +124,7 @@ app.use("/api", surveyRouter);
 app.use("/api", wikiRouter);
 app.use("/api", threatRouter);
 app.use("/api", reporterRouter);
+app.use("/api", redsecAiRouter);
 app.use("/api/ext", extensionRouter);
 app.use("/api/homepage", homepageRouter);
 app.use("/api/homepage", homepageDashboardRouter);
@@ -239,6 +242,9 @@ server.listen(PORT, HOST, () => {
   for (const warning of buildDeploymentWarnings({ host: HOST })) {
     logWarn("deployment:posture_warning", warning);
   }
+  redsecAiProvider.ensureLocalModelService().catch((error) => {
+    logWarn("redsecai:autostart_failed", { message: error.message });
+  });
   seedThreatDefaults();
   startFeedFetchInterval();
 });

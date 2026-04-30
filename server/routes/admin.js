@@ -38,6 +38,7 @@ const { getCookieSecure } = require("../core/security/cookies");
 const { buildBasePosture } = require("../core/security/posture");
 const { logEvent, redactObject } = require("../core/logger");
 const { parseInteger } = require("../core/validation");
+const redsecAiProvider = require("../modules/redsecai/provider");
 
 const router = Router();
 
@@ -509,6 +510,60 @@ router.post("/api/settings/share", requireAdmin, (req, res) => {
     allowedFileSizesMb: SHARE_MAX_FILE_SIZE_OPTIONS_MB,
     allowedFileCounts: SHARE_MAX_FILE_COUNT_OPTIONS,
   });
+});
+
+// GET /admin/api/settings/redsecai
+router.get("/api/settings/redsecai", requireAdmin, async (req, res) => {
+  const config = redsecAiProvider.getConfig();
+  const health = await redsecAiProvider.checkModelHealth();
+  res.json({
+    enabled: config.enabled,
+    baseUrl: config.baseUrl,
+    model: config.model,
+    timeoutMs: config.timeoutMs,
+    autostart: config.autostart,
+    autoPull: config.autoPull,
+    ready: health.ok,
+    installing: !!health.installing,
+    error: health.error || null,
+    availableModels: health.availableModels || [],
+  });
+});
+
+// POST /admin/api/settings/redsecai
+router.post("/api/settings/redsecai", requireAdmin, (req, res) => {
+  const enabled = req.body?.enabled !== false;
+  const baseUrl = String(req.body?.baseUrl || "").trim().replace(/\/+$/, "");
+  const model = String(req.body?.model || "").trim();
+  const timeoutMs = parseInt(req.body?.timeoutMs, 10);
+  const autostart = req.body?.autostart === true;
+  const autoPull = req.body?.autoPull !== false;
+
+  if (!/^https?:\/\/[A-Za-z0-9._:-]+$/i.test(baseUrl)) {
+    return res.status(400).json({ error: "RedSecAI base URL must be an http(s) origin without a path" });
+  }
+  if (!model || model.length > 120 || !/^[A-Za-z0-9._:/-]+$/.test(model)) {
+    return res.status(400).json({ error: "RedSecAI model name is invalid" });
+  }
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 5000 || timeoutMs > 600000) {
+    return res.status(400).json({ error: "RedSecAI timeout must be between 5000 and 600000 ms" });
+  }
+
+  setSetting("redsecai_enabled", enabled ? "true" : "false");
+  setSetting("redsecai_base_url", baseUrl);
+  setSetting("redsecai_model", model);
+  setSetting("redsecai_timeout_ms", String(timeoutMs));
+  setSetting("redsecai_autostart", autostart ? "true" : "false");
+  setSetting("redsecai_auto_pull", autoPull ? "true" : "false");
+
+  auditAdmin(req, {
+    category: "settings",
+    action: "redsecai_update",
+    targetType: "redsecai_settings",
+    metadata: { enabled, baseUrl, model, timeoutMs, autostart, autoPull },
+  });
+
+  res.json({ success: true });
 });
 
 // GET /admin/api/survey-stats

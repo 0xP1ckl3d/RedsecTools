@@ -911,6 +911,77 @@
         </div>
       </div>
 
+      <!-- RedSecAI Tool Settings Tab -->
+      <div id="redsecai-tool-settings-tab" class="hidden admin-page-stack">
+        <div class="admin-stat-grid admin-stat-grid-4">
+          <div class="stat-card"><div class="stat-value" id="redsecai-stat-enabled">-</div><div class="stat-label">Enabled</div></div>
+          <div class="stat-card"><div class="stat-value" id="redsecai-stat-ready">-</div><div class="stat-label">Model Ready</div></div>
+          <div class="stat-card"><div class="stat-value" id="redsecai-stat-model">-</div><div class="stat-label">Model</div></div>
+          <div class="stat-card"><div class="stat-value" id="redsecai-stat-models">-</div><div class="stat-label">Installed Models</div></div>
+        </div>
+
+        <div class="card admin-section-card">
+          <div class="admin-card-header">
+            <div>
+              <p class="admin-card-kicker">Tool Settings</p>
+              <h2 class="admin-card-title">RedSecAI Controls</h2>
+              <p class="admin-card-copy">Control the global assistant, local Ollama endpoint, and model selection. User access remains scoped through RBAC-protected internal APIs.</p>
+            </div>
+            <div class="admin-card-actions">
+              <button type="button" id="redsecai-refresh-btn" class="btn-secondary text-sm">Refresh Status</button>
+            </div>
+          </div>
+
+          <div class="grid gap-4 md:grid-cols-2">
+            <label class="bulletin-checkbox-row">
+              <input id="redsecai-enabled" type="checkbox" class="checkbox-field">
+              <span>
+                <span class="text-xs font-semibold uppercase tracking-wide text-muted block">Enable RedSecAI</span>
+                <span class="text-sm text-muted">Shows the chat bubble and enables authenticated AI API routes.</span>
+              </span>
+            </label>
+            <label class="bulletin-checkbox-row">
+              <input id="redsecai-auto-pull" type="checkbox" class="checkbox-field">
+              <span>
+                <span class="text-xs font-semibold uppercase tracking-wide text-muted block">Auto Pull Missing Model</span>
+                <span class="text-sm text-muted">Local installs can download the configured model when network is available.</span>
+              </span>
+            </label>
+          </div>
+
+          <div class="grid gap-4 md:grid-cols-2 mt-4">
+            <label class="space-y-1">
+              <span class="text-xs font-semibold uppercase tracking-wide text-muted">Ollama Base URL</span>
+              <input id="redsecai-base-url" class="input-field" placeholder="http://127.0.0.1:11434">
+            </label>
+            <label class="space-y-1">
+              <span class="text-xs font-semibold uppercase tracking-wide text-muted">Model</span>
+              <input id="redsecai-model" class="input-field" placeholder="qwen2.5:3b-instruct">
+            </label>
+          </div>
+
+          <div class="grid gap-4 md:grid-cols-2 mt-4">
+            <label class="space-y-1">
+              <span class="text-xs font-semibold uppercase tracking-wide text-muted">Timeout (ms)</span>
+              <input id="redsecai-timeout-ms" type="number" min="5000" max="600000" step="1000" class="input-field">
+            </label>
+            <label class="bulletin-checkbox-row">
+              <input id="redsecai-autostart" type="checkbox" class="checkbox-field">
+              <span>
+                <span class="text-xs font-semibold uppercase tracking-wide text-muted block">Autostart Local Ollama</span>
+                <span class="text-sm text-muted">Only applies to local npm installs using localhost/127.0.0.1.</span>
+              </span>
+            </label>
+          </div>
+
+          <div id="redsecai-status-box" class="info-box text-sm mt-4">Loading RedSecAI status...</div>
+          <div class="flex items-center gap-3 mt-4">
+            <button type="button" id="redsecai-save-btn" class="btn-primary">Save RedSecAI Settings</button>
+            <p id="redsecai-settings-result" class="text-sm hidden"></p>
+          </div>
+        </div>
+      </div>
+
       <!-- Reporter Tool Settings Tab -->
       <div id="reporter-tool-settings-tab" class="hidden admin-page-stack">
         <div class="admin-stat-grid admin-stat-grid-4">

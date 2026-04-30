@@ -2517,6 +2517,12 @@ const DEFAULTS = {
   threat_notify_discord_enabled: "true",
   threat_notify_discord_username: "RedSecThreat",
   threat_notify_discord_avatar_url: "",
+  redsecai_enabled: process.env.REDSECAI_ENABLED || "true",
+  redsecai_base_url: process.env.REDSECAI_BASE_URL || "http://127.0.0.1:11434",
+  redsecai_model: process.env.REDSECAI_MODEL || "qwen2.5:3b-instruct",
+  redsecai_timeout_ms: process.env.REDSECAI_TIMEOUT_MS || "120000",
+  redsecai_autostart: process.env.REDSECAI_AUTOSTART || "true",
+  redsecai_auto_pull: process.env.REDSECAI_AUTO_PULL || "true",
 };
 for (const [key, value] of Object.entries(DEFAULTS)) {
   if (!getSetting(key)) setSetting(key, value);
