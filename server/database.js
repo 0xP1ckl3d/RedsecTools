@@ -2214,6 +2214,281 @@ const stmts = {
       AND (@toTs IS NULL OR created_at <= @toTs)
   `),
   listSchemaMigrations: db.prepare("SELECT * FROM schema_migrations ORDER BY id ASC"),
+
+  // --- Reporter: Designs ---
+  createReporterDesign: db.prepare(`
+    INSERT INTO reporter_designs (id, name, description, report_type, html_template, css_template, field_definitions, section_definitions, finding_field_definitions, finding_ordering_rule, finding_grouping_rule, sort_order, created_by)
+    VALUES (@id, @name, @description, @reportType, @htmlTemplate, @cssTemplate, @fieldDefinitions, @sectionDefinitions, @findingFieldDefinitions, @findingOrderingRule, @findingGroupingRule, @sortOrder, @createdBy)
+  `),
+  getReporterDesignById: db.prepare("SELECT * FROM reporter_designs WHERE id = ?"),
+  listReporterDesigns: db.prepare("SELECT * FROM reporter_designs ORDER BY sort_order ASC, created_at DESC"),
+  updateReporterDesign: db.prepare(`
+    UPDATE reporter_designs SET
+      name = @name, description = @description, report_type = @reportType,
+      html_template = @htmlTemplate, css_template = @cssTemplate,
+      field_definitions = @fieldDefinitions, section_definitions = @sectionDefinitions,
+      finding_field_definitions = @findingFieldDefinitions, finding_ordering_rule = @findingOrderingRule,
+      finding_grouping_rule = @findingGroupingRule, sort_order = @sortOrder,
+      updated_at = unixepoch()
+    WHERE id = @id
+  `),
+  deleteReporterDesignById: db.prepare("DELETE FROM reporter_designs WHERE id = ? AND is_builtin = 0"),
+
+  // --- Reporter: Projects ---
+  createReporterProject: db.prepare(`
+    INSERT INTO reporter_projects (id, design_id, title, report_type, status, client_name, project_metadata, due_date, source_project_id, created_by)
+    VALUES (@id, @designId, @title, @reportType, @status, @clientName, @projectMetadata, @dueDate, @sourceProjectId, @createdBy)
+  `),
+  getReporterProjectById: db.prepare(`
+    SELECT rp.*, d.name AS design_name, creator.username AS creator_username
+    FROM reporter_projects rp
+    LEFT JOIN reporter_designs d ON d.id = rp.design_id
+    LEFT JOIN users creator ON creator.id = rp.created_by
+    WHERE rp.id = ?
+  `),
+  listReporterProjects: db.prepare(`
+    SELECT rp.*, d.name AS design_name, creator.username AS creator_username
+    FROM reporter_projects rp
+    LEFT JOIN reporter_designs d ON d.id = rp.design_id
+    LEFT JOIN users creator ON creator.id = rp.created_by
+    ORDER BY rp.updated_at DESC
+  `),
+  listReporterProjectsForUser: db.prepare(`
+    SELECT rp.*, d.name AS design_name, creator.username AS creator_username
+    FROM reporter_projects rp
+    LEFT JOIN reporter_designs d ON d.id = rp.design_id
+    LEFT JOIN users creator ON creator.id = rp.created_by
+    INNER JOIN reporter_project_members rpm ON rpm.project_id = rp.id
+    WHERE rpm.user_id = ?
+    GROUP BY rp.id
+    ORDER BY rp.updated_at DESC
+  `),
+  updateReporterProject: db.prepare(`
+    UPDATE reporter_projects SET
+      title = @title, client_name = @clientName, project_metadata = @projectMetadata,
+      due_date = @dueDate, tags = @tags, override_finding_order = @overrideFindingOrder, updated_at = unixepoch()
+    WHERE id = @id
+  `),
+  updateReporterProjectStatus: db.prepare(`
+    UPDATE reporter_projects SET status = @status, version = version + 1, updated_at = unixepoch() WHERE id = @id
+  `),
+  archiveReporterProject: db.prepare(`
+    UPDATE reporter_projects SET is_archived = @isArchived, updated_at = unixepoch() WHERE id = @id
+  `),
+  setReporterProjectReadonly: db.prepare(`
+    UPDATE reporter_projects SET readonly = @readonly, readonly_since = @readonlySince, updated_at = unixepoch() WHERE id = @id
+  `),
+  deleteReporterProjectById: db.prepare("DELETE FROM reporter_projects WHERE id = ?"),
+
+  // --- Reporter: Project Members ---
+  addReporterProjectMember: db.prepare(`
+    INSERT OR IGNORE INTO reporter_project_members (project_id, user_id, role) VALUES (@projectId, @userId, @role)
+  `),
+  listReporterProjectMembers: db.prepare(`
+    SELECT rpm.*, u.username FROM reporter_project_members rpm
+    LEFT JOIN users u ON u.id = rpm.user_id
+    WHERE rpm.project_id = ?
+    ORDER BY rpm.joined_at ASC
+  `),
+  updateReporterProjectMemberRole: db.prepare(`
+    UPDATE reporter_project_members SET role = @role WHERE project_id = @projectId AND user_id = @userId
+  `),
+  removeReporterProjectMember: db.prepare("DELETE FROM reporter_project_members WHERE project_id = ? AND user_id = ?"),
+  isReporterProjectMember: db.prepare("SELECT 1 FROM reporter_project_members WHERE project_id = ? AND user_id = ?"),
+
+  // --- Reporter: Findings ---
+  createReporterFinding: db.prepare(`
+    INSERT INTO reporter_findings (id, project_id, template_id, title, category, severity, cvss_vector, cvss_score, status, order_index, created_by)
+    VALUES (@id, @projectId, @templateId, @title, @category, @severity, @cvssVector, @cvssScore, @status, @orderIndex, @createdBy)
+  `),
+  getReporterFindingById: db.prepare(`
+    SELECT rf.*, u.username AS creator_username, upd.username AS updater_username, a.username AS assignee_username
+    FROM reporter_findings rf
+    LEFT JOIN users u ON u.id = rf.created_by
+    LEFT JOIN users upd ON upd.id = rf.updated_by
+    LEFT JOIN users a ON a.id = rf.assignee_id
+    WHERE rf.id = ?
+  `),
+  listReporterFindingsByProject: db.prepare(`
+    SELECT rf.*, u.username AS creator_username, a.username AS assignee_username
+    FROM reporter_findings rf
+    LEFT JOIN users u ON u.id = rf.created_by
+    LEFT JOIN users a ON a.id = rf.assignee_id
+    WHERE rf.project_id = ?
+    ORDER BY rf.order_index ASC, rf.created_at ASC
+  `),
+  updateReporterFinding: db.prepare(`
+    UPDATE reporter_findings SET
+      title = @title, category = @category, severity = @severity,
+      cvss_vector = @cvssVector, cvss_score = @cvssScore, status = @status,
+      is_included = @isIncluded, assignee_id = @assigneeId, updated_by = @updatedBy, updated_at = unixepoch()
+    WHERE id = @id
+  `),
+  updateReporterFindingStatus: db.prepare(`
+    UPDATE reporter_findings SET status = @status, updated_by = @updatedBy, updated_at = unixepoch() WHERE id = @id
+  `),
+  deleteReporterFindingById: db.prepare("DELETE FROM reporter_findings WHERE id = ?"),
+  reorderReporterFindings: db.prepare(`
+    UPDATE reporter_findings SET order_index = @orderIndex WHERE id = @id
+  `),
+  countReporterFindingsByProject: db.prepare("SELECT COUNT(*) AS total FROM reporter_findings WHERE project_id = ?"),
+  countReporterFindingsBySeverity: db.prepare(`
+    SELECT severity, COUNT(*) AS total FROM reporter_findings WHERE project_id = ? GROUP BY severity
+  `),
+
+  // --- Reporter: Finding Fields ---
+  setReporterFindingField: db.prepare(`
+    INSERT INTO reporter_finding_fields (id, finding_id, field_name, field_value)
+    VALUES (@id, @findingId, @fieldName, @fieldValue)
+    ON CONFLICT(finding_id, field_name) DO UPDATE SET field_value = @fieldValue, updated_at = unixepoch()
+  `),
+  getReporterFindingFields: db.prepare("SELECT * FROM reporter_finding_fields WHERE finding_id = ?"),
+  deleteReporterFindingFields: db.prepare("DELETE FROM reporter_finding_fields WHERE finding_id = ?"),
+
+  // --- Reporter: Sections ---
+  createReporterSection: db.prepare(`
+    INSERT INTO reporter_sections (id, project_id, title, section_type, content, order_index, created_by)
+    VALUES (@id, @projectId, @title, @sectionType, @content, @orderIndex, @createdBy)
+  `),
+  getReporterSectionById: db.prepare(`
+    SELECT rs.*, u.username AS creator_username, upd.username AS updater_username
+    FROM reporter_sections rs
+    LEFT JOIN users u ON u.id = rs.created_by
+    LEFT JOIN users upd ON upd.id = rs.updated_by
+    WHERE rs.id = ?
+  `),
+  listReporterSectionsByProject: db.prepare(`
+    SELECT rs.*, u.username AS creator_username
+    FROM reporter_sections rs
+    LEFT JOIN users u ON u.id = rs.created_by
+    WHERE rs.project_id = ?
+    ORDER BY rs.order_index ASC, rs.created_at ASC
+  `),
+  updateReporterSection: db.prepare(`
+    UPDATE reporter_sections SET
+      title = @title, content = @content, is_included = @isIncluded,
+      updated_by = @updatedBy, updated_at = unixepoch()
+    WHERE id = @id
+  `),
+  deleteReporterSectionById: db.prepare("DELETE FROM reporter_sections WHERE id = ?"),
+  reorderReporterSections: db.prepare(`
+    UPDATE reporter_sections SET order_index = @orderIndex WHERE id = @id
+  `),
+  countReporterSectionsByProject: db.prepare("SELECT COUNT(*) AS total FROM reporter_sections WHERE project_id = ?"),
+
+  // --- Reporter: Finding Templates ---
+  createReporterFindingTemplate: db.prepare(`
+    INSERT INTO reporter_finding_templates (id, title, category, severity, cvss_vector, tags, created_by)
+    VALUES (@id, @title, @category, @severity, @cvssVector, @tags, @createdBy)
+  `),
+  getReporterFindingTemplateById: db.prepare("SELECT * FROM reporter_finding_templates WHERE id = ?"),
+  listReporterFindingTemplates: db.prepare(`
+    SELECT * FROM reporter_finding_templates ORDER BY usage_count DESC, title ASC
+  `),
+  updateReporterFindingTemplate: db.prepare(`
+    UPDATE reporter_finding_templates SET
+      title = @title, category = @category, severity = @severity,
+      cvss_vector = @cvssVector, tags = @tags, updated_at = unixepoch()
+    WHERE id = @id
+  `),
+  deleteReporterFindingTemplateById: db.prepare("DELETE FROM reporter_finding_templates WHERE id = ? AND is_builtin = 0"),
+  incrementReporterTemplateUsage: db.prepare(`
+    UPDATE reporter_finding_templates SET usage_count = usage_count + 1 WHERE id = ?
+  `),
+
+  // --- Reporter: Template Fields ---
+  setReporterTemplateField: db.prepare(`
+    INSERT INTO reporter_template_fields (id, template_id, field_name, field_value, language)
+    VALUES (@id, @templateId, @fieldName, @fieldValue, @language)
+    ON CONFLICT(template_id, field_name, language) DO UPDATE SET field_value = @fieldValue, updated_at = unixepoch()
+  `),
+  getReporterTemplateFields: db.prepare("SELECT * FROM reporter_template_fields WHERE template_id = ?"),
+  deleteReporterTemplateFields: db.prepare("DELETE FROM reporter_template_fields WHERE template_id = ?"),
+
+  // --- Reporter: Stats ---
+  countReporterProjects: db.prepare("SELECT COUNT(*) AS total FROM reporter_projects WHERE is_archived = 0"),
+  countReporterArchivedProjects: db.prepare("SELECT COUNT(*) AS total FROM reporter_projects WHERE is_archived = 1"),
+  countReporterAllFindings: db.prepare("SELECT COUNT(*) AS total FROM reporter_findings"),
+  countReporterCriticalFindings: db.prepare("SELECT COUNT(*) AS total FROM reporter_findings WHERE severity = 'critical'"),
+  countReporterHighFindings: db.prepare("SELECT COUNT(*) AS total FROM reporter_findings WHERE severity = 'high'"),
+  countReporterAllTemplates: db.prepare("SELECT COUNT(*) AS total FROM reporter_finding_templates"),
+  countReporterDesigns: db.prepare("SELECT COUNT(*) AS total FROM reporter_designs"),
+  createReporterPdfGeneration: db.prepare(`
+    INSERT INTO reporter_pdf_generations (id, project_id, file_path, file_size, status, error_message, render_options, generated_by)
+    VALUES (@id, @projectId, @filePath, @fileSize, @status, @errorMessage, @renderOptions, @generatedBy)
+  `),
+  updateReporterPdfGeneration: db.prepare(`
+    UPDATE reporter_pdf_generations SET
+      file_path = @filePath, file_size = @fileSize, status = @status,
+      error_message = @errorMessage, render_options = @renderOptions
+    WHERE id = @id
+  `),
+  getReporterPdfGenerationById: db.prepare(`
+    SELECT rpg.*, rp.created_by AS project_created_by, rp.title AS project_title
+    FROM reporter_pdf_generations rpg
+    LEFT JOIN reporter_projects rp ON rp.id = rpg.project_id
+    WHERE rpg.id = ?
+  `),
+  listReporterPdfGenerationsByProject: db.prepare(`
+    SELECT * FROM reporter_pdf_generations
+    WHERE project_id = ?
+    ORDER BY created_at DESC
+  `),
+  deleteReporterPdfGenerationById: db.prepare("DELETE FROM reporter_pdf_generations WHERE id = ?"),
+  createReporterNote: db.prepare(`
+    INSERT INTO reporter_notes (id, project_id, title, content, order_index, created_by)
+    VALUES (@id, @projectId, @title, @content, @orderIndex, @createdBy)
+  `),
+  getReporterNoteById: db.prepare("SELECT rn.*, u.username FROM reporter_notes rn LEFT JOIN users u ON u.id = rn.created_by WHERE rn.id = ?"),
+  listReporterNotesByProject: db.prepare("SELECT rn.*, u.username FROM reporter_notes rn LEFT JOIN users u ON u.id = rn.created_by WHERE rn.project_id = ? ORDER BY rn.order_index ASC, rn.created_at ASC"),
+  updateReporterNote: db.prepare(`
+    UPDATE reporter_notes SET title = @title, content = @content, order_index = @orderIndex, updated_at = unixepoch()
+    WHERE id = @id
+  `),
+  deleteReporterNoteById: db.prepare("DELETE FROM reporter_notes WHERE id = ?"),
+  createReporterComment: db.prepare(`
+    INSERT INTO reporter_comments (id, project_id, target_type, target_id, content, created_by)
+    VALUES (@id, @projectId, @targetType, @targetId, @content, @createdBy)
+  `),
+  getReporterCommentById: db.prepare("SELECT rc.*, u.username FROM reporter_comments rc LEFT JOIN users u ON u.id = rc.created_by WHERE rc.id = ?"),
+  listReporterCommentsByProject: db.prepare("SELECT rc.*, u.username FROM reporter_comments rc LEFT JOIN users u ON u.id = rc.created_by WHERE rc.project_id = ? ORDER BY rc.created_at ASC"),
+  listReporterCommentsByTarget: db.prepare("SELECT rc.*, u.username FROM reporter_comments rc LEFT JOIN users u ON u.id = rc.created_by WHERE rc.target_type = ? AND rc.target_id = ? ORDER BY rc.created_at ASC"),
+  resolveReporterComment: db.prepare("UPDATE reporter_comments SET is_resolved = @isResolved, updated_at = unixepoch() WHERE id = @id"),
+  deleteReporterCommentById: db.prepare("DELETE FROM reporter_comments WHERE id = ?"),
+  createReporterHistory: db.prepare(`
+    INSERT INTO reporter_history (id, project_id, target_type, target_id, snapshot, version_number, change_summary, created_by)
+    VALUES (@id, @projectId, @targetType, @targetId, @snapshot, @versionNumber, @changeSummary, @createdBy)
+  `),
+  listReporterHistoryByProject: db.prepare("SELECT rh.*, u.username FROM reporter_history rh LEFT JOIN users u ON u.id = rh.created_by WHERE rh.project_id = ? ORDER BY rh.created_at DESC"),
+  createReporterEvidence: db.prepare(`
+    INSERT INTO reporter_evidence (id, project_id, finding_id, section_id, filename, stored_filename, mime_type, size_bytes, caption, evidence_type, redaction_status, created_by)
+    VALUES (@id, @projectId, @findingId, @sectionId, @filename, @storedFilename, @mimeType, @sizeBytes, @caption, @evidenceType, @redactionStatus, @createdBy)
+  `),
+  getReporterEvidenceById: db.prepare("SELECT * FROM reporter_evidence WHERE id = ?"),
+  listReporterEvidenceByProject: db.prepare("SELECT * FROM reporter_evidence WHERE project_id = ? ORDER BY created_at DESC"),
+  updateReporterEvidence: db.prepare(`
+    UPDATE reporter_evidence SET finding_id = @findingId, section_id = @sectionId, caption = @caption,
+      evidence_type = @evidenceType, redaction_status = @redactionStatus, updated_at = unixepoch()
+    WHERE id = @id
+  `),
+  deleteReporterEvidenceById: db.prepare("DELETE FROM reporter_evidence WHERE id = ?"),
+  createReporterImportJob: db.prepare(`
+    INSERT INTO reporter_import_jobs (id, project_id, import_type, status, source_file, result_summary, error_message, created_by)
+    VALUES (@id, @projectId, @importType, @status, @sourceFile, @resultSummary, @errorMessage, @createdBy)
+  `),
+  updateReporterImportJob: db.prepare(`
+    UPDATE reporter_import_jobs SET status = @status, result_summary = @resultSummary, error_message = @errorMessage
+    WHERE id = @id
+  `),
+  listReporterImportJobsByProject: db.prepare("SELECT * FROM reporter_import_jobs WHERE project_id = ? ORDER BY created_at DESC"),
+  deleteReporterNotesByProject: db.prepare("DELETE FROM reporter_notes WHERE project_id = ?"),
+  deleteReporterCommentsByProject: db.prepare("DELETE FROM reporter_comments WHERE project_id = ?"),
+  deleteReporterHistoryByProject: db.prepare("DELETE FROM reporter_history WHERE project_id = ?"),
+  deleteReporterEvidenceByProject: db.prepare("DELETE FROM reporter_evidence WHERE project_id = ?"),
+  deleteReporterPdfGenerationsByProject: db.prepare("DELETE FROM reporter_pdf_generations WHERE project_id = ?"),
+  deleteReporterImportJobsByProject: db.prepare("DELETE FROM reporter_import_jobs WHERE project_id = ?"),
+  deleteReporterFindingsByProject: db.prepare("DELETE FROM reporter_findings WHERE project_id = ?"),
+  deleteReporterSectionsByProject: db.prepare("DELETE FROM reporter_sections WHERE project_id = ?"),
 };
 
 // Default security settings (must be after stmts initialization)
@@ -2246,6 +2521,15 @@ const DEFAULTS = {
 for (const [key, value] of Object.entries(DEFAULTS)) {
   if (!getSetting(key)) setSetting(key, value);
 }
+
+// Reporter project visibility is member-based. Backfill existing projects so
+// deployments created before this rule keep their creators as project leads.
+db.prepare(`
+  INSERT OR IGNORE INTO reporter_project_members (project_id, user_id, role)
+  SELECT id, created_by, 'lead'
+  FROM reporter_projects
+  WHERE created_by IS NOT NULL AND created_by != ''
+`).run();
 
 const legacyThreatAutoFetch = getSetting("threat_auto_fetch");
 if (legacyThreatAutoFetch && legacyThreatAutoFetch !== getSetting("threat_auto_fetch_enabled")) {
@@ -5234,9 +5518,46 @@ function seedDefaultThreatData() {
     { keyword: "breach", criticality: "high" },
     { keyword: "vulnerability", criticality: "medium" },
     { keyword: "phishing", criticality: "high" },
+    { keyword: "spear[ -]?phish", criticality: "high", isRegex: true },
     { keyword: "exploit", criticality: "high" },
+    { keyword: "remote code execution", criticality: "critical" },
+    { keyword: "\\bRCE\\b", criticality: "critical", isRegex: true },
     { keyword: "infostealer", criticality: "high" },
+    { keyword: "credential[ -]?(dump|theft|harvest|stuffing)", criticality: "high", isRegex: true },
+    { keyword: "valid accounts?", criticality: "high", isRegex: true },
+    { keyword: "account takeover", criticality: "high" },
+    { keyword: "password spray", criticality: "high" },
+    { keyword: "brute force", criticality: "medium" },
+    { keyword: "\\bMimikatz\\b", criticality: "high", isRegex: true },
+    { keyword: "\\bLSASS\\b", criticality: "high", isRegex: true },
+    { keyword: "Kerberoast", criticality: "high" },
+    { keyword: "Pass[ -]?the[ -]?Hash", criticality: "high", isRegex: true },
+    { keyword: "web shell", criticality: "high" },
+    { keyword: "malicious attachment", criticality: "medium" },
+    { keyword: "PowerShell", criticality: "medium" },
+    { keyword: "scheduled task", criticality: "medium" },
+    { keyword: "\\bWMI\\b", criticality: "medium", isRegex: true },
+    { keyword: "privilege escalation", criticality: "high" },
+    { keyword: "living off the land", criticality: "medium" },
+    { keyword: "\\bLOLBAS\\b", criticality: "medium", isRegex: true },
+    { keyword: "disable(d)? (EDR|antivirus|defender)", criticality: "high", isRegex: true },
+    { keyword: "process injection", criticality: "medium" },
+    { keyword: "obfuscat(ed|ion)", criticality: "medium", isRegex: true },
+    { keyword: "clear(ed)? logs", criticality: "medium", isRegex: true },
+    { keyword: "lateral movement", criticality: "high" },
+    { keyword: "\\b(RDP|SMB|WinRM|PsExec)\\b", criticality: "medium", isRegex: true },
+    { keyword: "network discovery", criticality: "medium" },
+    { keyword: "port scan", criticality: "medium" },
+    { keyword: "command and control", criticality: "high" },
+    { keyword: "\\bC2\\b", criticality: "high", isRegex: true },
+    { keyword: "beacon", criticality: "medium" },
+    { keyword: "payload download", criticality: "medium" },
     { keyword: "data leak", criticality: "high" },
+    { keyword: "data exfiltration", criticality: "high" },
+    { keyword: "stolen data", criticality: "high" },
+    { keyword: "\\bDDoS\\b", criticality: "medium", isRegex: true },
+    { keyword: "wiper", criticality: "critical" },
+    { keyword: "shadow copies", criticality: "critical" },
     { keyword: "zero[ -]?day", criticality: "critical", isRegex: true },
     { keyword: "CVE-\\d{4}-\\d{4,7}", criticality: "high", isRegex: true },
   ];
@@ -5538,6 +5859,899 @@ function getDeploymentCounts() {
       }
     })(),
   };
+}
+
+// ============================================================
+// Reporter functions
+// ============================================================
+
+function generateId() {
+  return crypto.randomBytes(16).toString("base64url");
+}
+
+function createReporterDesignRow(payload) {
+  const id = payload.id || generateId();
+  stmts.createReporterDesign.run({
+    id,
+    name: payload.name,
+    description: payload.description || "",
+    reportType: payload.reportType || "custom",
+    htmlTemplate: payload.htmlTemplate || "",
+    cssTemplate: payload.cssTemplate || "",
+    fieldDefinitions: JSON.stringify(payload.fieldDefinitions || []),
+    sectionDefinitions: JSON.stringify(payload.sectionDefinitions || []),
+    findingFieldDefinitions: JSON.stringify(payload.findingFieldDefinitions || []),
+    findingOrderingRule: payload.findingOrderingRule || "severity_desc",
+    findingGroupingRule: payload.findingGroupingRule || null,
+    sortOrder: payload.sortOrder || 0,
+    createdBy: payload.createdBy || null,
+  });
+  return getReporterDesignById(id);
+}
+
+function getReporterDesignById(id) {
+  const row = stmts.getReporterDesignById.get(id);
+  if (!row) return null;
+  return mapReporterDesignRow(row);
+}
+
+function listReporterDesigns() {
+  return stmts.listReporterDesigns.all().map(mapReporterDesignRow);
+}
+
+function updateReporterDesignRow(id, payload) {
+  stmts.updateReporterDesign.run({
+    id,
+    name: payload.name,
+    description: payload.description || "",
+    reportType: payload.reportType || "custom",
+    htmlTemplate: payload.htmlTemplate || "",
+    cssTemplate: payload.cssTemplate || "",
+    fieldDefinitions: JSON.stringify(payload.fieldDefinitions || []),
+    sectionDefinitions: JSON.stringify(payload.sectionDefinitions || []),
+    findingFieldDefinitions: JSON.stringify(payload.findingFieldDefinitions || []),
+    findingOrderingRule: payload.findingOrderingRule || "severity_desc",
+    findingGroupingRule: payload.findingGroupingRule || null,
+    sortOrder: payload.sortOrder || 0,
+  });
+  return getReporterDesignById(id);
+}
+
+function deleteReporterDesignById(id) {
+  const result = stmts.deleteReporterDesignById.run(id);
+  return result.changes > 0;
+}
+
+function createReporterProjectRow(payload) {
+  const id = payload.id || generateId();
+  stmts.createReporterProject.run({
+    id,
+    designId: payload.designId,
+    title: payload.title,
+    reportType: payload.reportType || "custom",
+    status: payload.status || "draft",
+    clientName: payload.clientName || "",
+    projectMetadata: JSON.stringify(payload.projectMetadata || {}),
+    dueDate: payload.dueDate || null,
+    sourceProjectId: payload.sourceProjectId || null,
+    createdBy: payload.createdBy,
+  });
+  if (Array.isArray(payload.members)) {
+    for (const m of payload.members) {
+      stmts.addReporterProjectMember.run({ projectId: id, userId: m.userId, role: m.role || "pentester" });
+    }
+  }
+  return getReporterProjectById(id);
+}
+
+function getReporterProjectById(id) {
+  const row = stmts.getReporterProjectById.get(id);
+  if (!row) return null;
+  return mapReporterProjectRow(row);
+}
+
+function listReporterProjects(userId, canManageAll) {
+  const rows = canManageAll
+    ? stmts.listReporterProjects.all()
+    : stmts.listReporterProjectsForUser.all(userId);
+  return rows.map(mapReporterProjectRow);
+}
+
+function updateReporterProjectRow(id, payload) {
+  const existing = getReporterProjectById(id);
+  stmts.updateReporterProject.run({
+    id,
+    title: payload.title,
+    clientName: payload.clientName || "",
+    projectMetadata: JSON.stringify(payload.projectMetadata || {}),
+    dueDate: payload.dueDate || null,
+    tags: Array.isArray(payload.tags) ? payload.tags.join(",") : (existing?.tags?.join(",") || ""),
+    overrideFindingOrder: payload.overrideFindingOrder !== undefined ? (payload.overrideFindingOrder ? 1 : 0) : (existing?.overrideFindingOrder ? 1 : 0),
+  });
+  return getReporterProjectById(id);
+}
+
+function updateReporterProjectStatus(id, status) {
+  stmts.updateReporterProjectStatus.run({ id, status });
+}
+
+function archiveReporterProjectRow(id, isArchived) {
+  stmts.archiveReporterProject.run({ id, isArchived: isArchived ? 1 : 0 });
+}
+
+function setReporterProjectReadonly(id, readonly) {
+  stmts.setReporterProjectReadonly.run({ id, readonly: readonly ? 1 : 0, readonlySince: readonly ? Math.floor(Date.now() / 1000) : null });
+}
+
+function copyReporterFinding(findingId, userId) {
+  const original = getReporterFindingByIdRow(findingId);
+  if (!original) return null;
+  const newId = generateId();
+  const maxOrder = stmts.listReporterFindingsByProject.all(original.projectId);
+  const nextOrder = maxOrder.length > 0 ? Math.max(...maxOrder.map((f) => f.order_index || 0)) + 1 : 0;
+  stmts.createReporterFinding.run({
+    id: newId,
+    projectId: original.projectId,
+    templateId: original.templateId || null,
+    title: original.title + " (copy)",
+    category: original.category,
+    severity: original.severity,
+    cvssVector: original.cvssVector,
+    cvssScore: original.cvssScore,
+    status: "draft",
+    orderIndex: nextOrder,
+    createdBy: userId,
+  });
+  if (original.fields) {
+    for (const [name, value] of Object.entries(original.fields)) {
+      stmts.setReporterFindingField.run({
+        id: generateId(),
+        findingId: newId,
+        fieldName: name,
+        fieldValue: value || "",
+      });
+    }
+  }
+  return getReporterFindingByIdRow(newId);
+}
+
+function deleteReporterProjectById(id) {
+  const findingRows = stmts.listReporterFindingsByProject.all(id);
+  for (const finding of findingRows) {
+    stmts.deleteReporterFindingFields.run(finding.id);
+  }
+  stmts.deleteReporterFindingsByProject.run(id);
+  stmts.deleteReporterSectionsByProject.run(id);
+  const memberRows = stmts.listReporterProjectMembers.all(id);
+  for (const m of memberRows) {
+    stmts.removeReporterProjectMember.run(id, m.user_id);
+  }
+  stmts.deleteReporterNotesByProject.run(id);
+  stmts.deleteReporterCommentsByProject.run(id);
+  stmts.deleteReporterHistoryByProject.run(id);
+  stmts.deleteReporterEvidenceByProject.run(id);
+  stmts.deleteReporterPdfGenerationsByProject.run(id);
+  stmts.deleteReporterImportJobsByProject.run(id);
+  stmts.deleteReporterProjectById.run(id);
+}
+
+function duplicateReporterProject(sourceId, newTitle, userId) {
+  const source = stmts.getReporterProjectById.get(sourceId);
+  if (!source) return null;
+  const newId = generateId();
+  stmts.createReporterProject.run({
+    id: newId,
+    designId: source.design_id,
+    title: newTitle || `${source.title} (Copy)`,
+    reportType: source.report_type,
+    status: "draft",
+    clientName: source.client_name,
+    projectMetadata: source.project_metadata,
+    dueDate: null,
+    sourceProjectId: sourceId,
+    createdBy: userId,
+  });
+  stmts.addReporterProjectMember.run({ projectId: newId, userId, role: "lead" });
+  const sourceMembers = stmts.listReporterProjectMembers.all(sourceId);
+  for (const m of sourceMembers) {
+    if (m.user_id !== userId) {
+      stmts.addReporterProjectMember.run({ projectId: newId, userId: m.user_id, role: m.role });
+    }
+  }
+  const sourceFindings = stmts.listReporterFindingsByProject.all(sourceId);
+  for (const f of sourceFindings) {
+    const fId = generateId();
+    stmts.createReporterFinding.run({
+      id: fId,
+      projectId: newId,
+      templateId: f.template_id,
+      title: f.title,
+      category: f.category,
+      severity: f.severity,
+      cvssVector: f.cvss_vector,
+      cvssScore: f.cvss_score,
+      status: "draft",
+      orderIndex: f.order_index,
+      createdBy: userId,
+    });
+    const fields = stmts.getReporterFindingFields.all(f.id);
+    for (const field of fields) {
+      stmts.setReporterFindingField.run({
+        id: generateId(),
+        findingId: fId,
+        fieldName: field.field_name,
+        fieldValue: field.field_value,
+      });
+    }
+  }
+  const sourceSections = stmts.listReporterSectionsByProject.all(sourceId);
+  for (const s of sourceSections) {
+    const sId = generateId();
+    stmts.createReporterSection.run({
+      id: sId,
+      projectId: newId,
+      title: s.title,
+      sectionType: s.section_type,
+      content: s.content,
+      orderIndex: s.order_index,
+      createdBy: userId,
+    });
+  }
+  return getReporterProjectById(newId);
+}
+
+function addReporterProjectMember(projectId, userId, role) {
+  stmts.addReporterProjectMember.run({ projectId, userId, role: role || "pentester" });
+}
+
+function listReporterProjectMembers(projectId) {
+  return stmts.listReporterProjectMembers.all(projectId).map((r) => ({
+    userId: r.user_id,
+    username: r.username,
+    role: r.role,
+    joinedAt: r.joined_at,
+  }));
+}
+
+function updateReporterProjectMemberRoleRow(projectId, userId, role) {
+  stmts.updateReporterProjectMemberRole.run({ projectId, userId, role });
+}
+
+function removeReporterProjectMemberRow(projectId, userId) {
+  stmts.removeReporterProjectMember.run(projectId, userId);
+}
+
+function isReporterProjectMemberRow(projectId, userId) {
+  return !!stmts.isReporterProjectMember.get(projectId, userId);
+}
+
+function createReporterFindingRow(payload) {
+  const id = payload.id || generateId();
+  stmts.createReporterFinding.run({
+    id,
+    projectId: payload.projectId,
+    templateId: payload.templateId || null,
+    title: payload.title,
+    category: payload.category || "",
+    severity: payload.severity || "info",
+    cvssVector: payload.cvssVector || "",
+    cvssScore: payload.cvssScore || null,
+    status: payload.status || "draft",
+    orderIndex: payload.orderIndex || 0,
+    createdBy: payload.createdBy,
+  });
+  if (payload.fields && typeof payload.fields === "object") {
+    for (const [name, value] of Object.entries(payload.fields)) {
+      stmts.setReporterFindingField.run({
+        id: generateId(),
+        findingId: id,
+        fieldName: name,
+        fieldValue: value || "",
+      });
+    }
+  }
+  return getReporterFindingByIdRow(id);
+}
+
+function getReporterFindingByIdRow(id) {
+  const row = stmts.getReporterFindingById.get(id);
+  if (!row) return null;
+  const fields = stmts.getReporterFindingFields.all(id);
+  const fieldMap = {};
+  for (const f of fields) {
+    fieldMap[f.field_name] = f.field_value;
+  }
+  return mapReporterFindingRow(row, fieldMap);
+}
+
+function listReporterFindingsByProject(projectId) {
+  const rows = stmts.listReporterFindingsByProject.all(projectId);
+  return rows.map((r) => mapReporterFindingRow(r, null));
+}
+
+function updateReporterFindingRow(id, payload) {
+  const existing = stmts.getReporterFindingById.get(id);
+  stmts.updateReporterFinding.run({
+    id,
+    title: payload.title,
+    category: payload.category || "",
+    severity: payload.severity || "info",
+    cvssVector: payload.cvssVector || "",
+    cvssScore: payload.cvssScore || null,
+    status: payload.status || "draft",
+    isIncluded: payload.isIncluded !== undefined ? (payload.isIncluded ? 1 : 0) : 1,
+    assigneeId: payload.assigneeId !== undefined ? payload.assigneeId : (existing?.assignee_id || null),
+    updatedBy: payload.updatedBy || null,
+  });
+}
+
+function updateReporterFindingStatusRow(id, status, updatedBy) {
+  stmts.updateReporterFindingStatus.run({ id, status, updatedBy });
+}
+
+function deleteReporterFindingById(id) {
+  stmts.deleteReporterFindingFields.run(id);
+  stmts.deleteReporterFindingById.run(id);
+}
+
+function reorderReporterFindingsRow(projectId, orderedIds) {
+  const txn = db.transaction(() => {
+    for (let i = 0; i < orderedIds.length; i++) {
+      stmts.reorderReporterFindings.run({ id: orderedIds[i], orderIndex: i });
+    }
+  });
+  txn();
+}
+
+function setReporterFindingFieldRow(findingId, fieldName, fieldValue) {
+  stmts.setReporterFindingField.run({
+    id: generateId(),
+    findingId,
+    fieldName,
+    fieldValue: fieldValue || "",
+  });
+}
+
+function createReporterSectionRow(payload) {
+  const id = payload.id || generateId();
+  stmts.createReporterSection.run({
+    id,
+    projectId: payload.projectId,
+    title: payload.title,
+    sectionType: payload.sectionType || "custom",
+    content: payload.content || "",
+    orderIndex: payload.orderIndex || 0,
+    createdBy: payload.createdBy,
+  });
+  return getReporterSectionByIdRow(id);
+}
+
+function getReporterSectionByIdRow(id) {
+  const row = stmts.getReporterSectionById.get(id);
+  return row ? mapReporterSectionRow(row) : null;
+}
+
+function listReporterSectionsByProject(projectId) {
+  return stmts.listReporterSectionsByProject.all(projectId).map(mapReporterSectionRow);
+}
+
+function updateReporterSectionRow(id, payload) {
+  stmts.updateReporterSection.run({
+    id,
+    title: payload.title,
+    content: payload.content || "",
+    isIncluded: payload.isIncluded !== undefined ? (payload.isIncluded ? 1 : 0) : 1,
+    updatedBy: payload.updatedBy || null,
+  });
+}
+
+function deleteReporterSectionById(id) {
+  stmts.deleteReporterSectionById.run(id);
+}
+
+function reorderReporterSectionsRow(projectId, orderedIds) {
+  const txn = db.transaction(() => {
+    for (let i = 0; i < orderedIds.length; i++) {
+      stmts.reorderReporterSections.run({ id: orderedIds[i], orderIndex: i });
+    }
+  });
+  txn();
+}
+
+function createReporterFindingTemplateRow(payload) {
+  const id = payload.id || generateId();
+  stmts.createReporterFindingTemplate.run({
+    id,
+    title: payload.title,
+    category: payload.category || "",
+    severity: payload.severity || "medium",
+    cvssVector: payload.cvssVector || "",
+    tags: JSON.stringify(payload.tags || []),
+    createdBy: payload.createdBy || null,
+  });
+  if (Array.isArray(payload.fields)) {
+    for (const f of payload.fields) {
+      stmts.setReporterTemplateField.run({
+        id: generateId(),
+        templateId: id,
+        fieldName: f.fieldName,
+        fieldValue: f.fieldValue || "",
+        language: f.language || "en",
+      });
+    }
+  }
+  return stmts.getReporterFindingTemplateById.get(id);
+}
+
+function getReporterFindingTemplateByIdRow(id) {
+  const row = stmts.getReporterFindingTemplateById.get(id);
+  if (!row) return null;
+  const fields = stmts.getReporterTemplateFields.all(id);
+  return mapReporterTemplateRow(row, fields);
+}
+
+function listReporterFindingTemplates() {
+  return stmts.listReporterFindingTemplates.all().map((r) => mapReporterTemplateRow(r, null));
+}
+
+function updateReporterFindingTemplateRow(id, payload) {
+  stmts.updateReporterFindingTemplate.run({
+    id,
+    title: payload.title,
+    category: payload.category || "",
+    severity: payload.severity || "medium",
+    cvssVector: payload.cvssVector || "",
+    tags: JSON.stringify(payload.tags || []),
+  });
+  if (Array.isArray(payload.fields)) {
+    for (const f of payload.fields) {
+      stmts.setReporterTemplateField.run({
+        id: generateId(),
+        templateId: id,
+        fieldName: f.fieldName,
+        fieldValue: f.fieldValue || "",
+        language: f.language || "en",
+      });
+    }
+  }
+  return stmts.getReporterFindingTemplateById.get(id);
+}
+
+function deleteReporterFindingTemplateById(id) {
+  stmts.deleteReporterTemplateFields.run(id);
+  const result = stmts.deleteReporterFindingTemplateById.run(id);
+  return result.changes > 0;
+}
+
+function getReporterGlobalStats() {
+  return {
+    totalProjects: stmts.countReporterProjects.get().total,
+    archivedProjects: stmts.countReporterArchivedProjects.get().total,
+    totalFindings: stmts.countReporterAllFindings.get().total,
+    criticalFindings: stmts.countReporterCriticalFindings.get().total,
+    highFindings: stmts.countReporterHighFindings.get().total,
+    totalTemplates: stmts.countReporterAllTemplates.get().total,
+    totalDesigns: stmts.countReporterDesigns.get().total,
+  };
+}
+
+function createReporterPdfGenerationRow(payload) {
+  const id = payload.id || generateId();
+  stmts.createReporterPdfGeneration.run({
+    id,
+    projectId: payload.projectId,
+    filePath: payload.filePath || "",
+    fileSize: payload.fileSize || null,
+    status: payload.status || "pending",
+    errorMessage: payload.errorMessage || null,
+    renderOptions: JSON.stringify(payload.renderOptions || {}),
+    generatedBy: payload.generatedBy,
+  });
+  return getReporterPdfGenerationById(id);
+}
+
+function updateReporterPdfGenerationRow(id, payload) {
+  stmts.updateReporterPdfGeneration.run({
+    id,
+    filePath: payload.filePath || "",
+    fileSize: payload.fileSize || null,
+    status: payload.status || "pending",
+    errorMessage: payload.errorMessage || null,
+    renderOptions: JSON.stringify(payload.renderOptions || {}),
+  });
+  return getReporterPdfGenerationById(id);
+}
+
+function getReporterPdfGenerationById(id) {
+  const row = stmts.getReporterPdfGenerationById.get(id);
+  return row ? mapReporterPdfGenerationRow(row) : null;
+}
+
+function listReporterPdfGenerationsByProject(projectId) {
+  return stmts.listReporterPdfGenerationsByProject.all(projectId).map(mapReporterPdfGenerationRow);
+}
+
+function deleteReporterPdfGenerationById(id) {
+  const result = stmts.deleteReporterPdfGenerationById.run(id);
+  return result.changes > 0;
+}
+
+function createReporterNoteRow(payload) {
+  const id = payload.id || generateId();
+  stmts.createReporterNote.run({
+    id,
+    projectId: payload.projectId,
+    title: payload.title || "Untitled Note",
+    content: payload.content || "",
+    orderIndex: payload.orderIndex || 0,
+    createdBy: payload.createdBy,
+  });
+  return getReporterNoteById(id);
+}
+
+function getReporterNoteById(id) {
+  const row = stmts.getReporterNoteById.get(id);
+  return row ? mapReporterNoteRow(row) : null;
+}
+
+function listReporterNotesByProject(projectId) {
+  return stmts.listReporterNotesByProject.all(projectId).map(mapReporterNoteRow);
+}
+
+function updateReporterNoteRow(id, payload) {
+  stmts.updateReporterNote.run({
+    id,
+    title: payload.title || "Untitled Note",
+    content: payload.content || "",
+    orderIndex: payload.orderIndex || 0,
+  });
+  return getReporterNoteById(id);
+}
+
+function deleteReporterNoteById(id) {
+  const result = stmts.deleteReporterNoteById.run(id);
+  return result.changes > 0;
+}
+
+function createReporterCommentRow(payload) {
+  const id = payload.id || generateId();
+  stmts.createReporterComment.run({
+    id,
+    projectId: payload.projectId,
+    targetType: payload.targetType,
+    targetId: payload.targetId,
+    content: payload.content || "",
+    createdBy: payload.createdBy,
+  });
+  return id;
+}
+
+function getReporterCommentById(id) {
+  const row = stmts.getReporterCommentById.get(id);
+  return row ? mapReporterCommentRow(row) : null;
+}
+
+function listReporterCommentsByProject(projectId) {
+  return stmts.listReporterCommentsByProject.all(projectId).map(mapReporterCommentRow);
+}
+
+function listReporterCommentsByTarget(targetType, targetId) {
+  return stmts.listReporterCommentsByTarget.all(targetType, targetId).map(mapReporterCommentRow);
+}
+
+function resolveReporterCommentRow(id, isResolved) {
+  stmts.resolveReporterComment.run({ id, isResolved: isResolved ? 1 : 0 });
+}
+
+function deleteReporterCommentById(id) {
+  const result = stmts.deleteReporterCommentById.run(id);
+  return result.changes > 0;
+}
+
+function createReporterHistoryRow(payload) {
+  const id = payload.id || generateId();
+  stmts.createReporterHistory.run({
+    id,
+    projectId: payload.projectId,
+    targetType: payload.targetType,
+    targetId: payload.targetId,
+    snapshot: JSON.stringify(payload.snapshot || {}),
+    versionNumber: payload.versionNumber || 1,
+    changeSummary: payload.changeSummary || "",
+    createdBy: payload.createdBy,
+  });
+  return id;
+}
+
+function listReporterHistoryByProject(projectId) {
+  return stmts.listReporterHistoryByProject.all(projectId).map(mapReporterHistoryRow);
+}
+
+function createReporterEvidenceRow(payload) {
+  const id = payload.id || generateId();
+  stmts.createReporterEvidence.run({
+    id,
+    projectId: payload.projectId,
+    findingId: payload.findingId || null,
+    sectionId: payload.sectionId || null,
+    filename: payload.filename,
+    storedFilename: payload.storedFilename,
+    mimeType: payload.mimeType || "application/octet-stream",
+    sizeBytes: payload.sizeBytes || 0,
+    caption: payload.caption || "",
+    evidenceType: payload.evidenceType || "file",
+    redactionStatus: payload.redactionStatus || "not_required",
+    createdBy: payload.createdBy,
+  });
+  return getReporterEvidenceById(id);
+}
+
+function getReporterEvidenceById(id) {
+  const row = stmts.getReporterEvidenceById.get(id);
+  return row ? mapReporterEvidenceRow(row) : null;
+}
+
+function listReporterEvidenceByProject(projectId) {
+  return stmts.listReporterEvidenceByProject.all(projectId).map(mapReporterEvidenceRow);
+}
+
+function updateReporterEvidenceRow(id, payload) {
+  stmts.updateReporterEvidence.run({
+    id,
+    findingId: payload.findingId || null,
+    sectionId: payload.sectionId || null,
+    caption: payload.caption || "",
+    evidenceType: payload.evidenceType || "file",
+    redactionStatus: payload.redactionStatus || "not_required",
+  });
+  return getReporterEvidenceById(id);
+}
+
+function deleteReporterEvidenceById(id) {
+  const result = stmts.deleteReporterEvidenceById.run(id);
+  return result.changes > 0;
+}
+
+function createReporterImportJobRow(payload) {
+  const id = payload.id || generateId();
+  stmts.createReporterImportJob.run({
+    id,
+    projectId: payload.projectId,
+    importType: payload.importType || "json",
+    status: payload.status || "pending",
+    sourceFile: payload.sourceFile || "",
+    resultSummary: JSON.stringify(payload.resultSummary || {}),
+    errorMessage: payload.errorMessage || null,
+    createdBy: payload.createdBy,
+  });
+  return id;
+}
+
+function updateReporterImportJobRow(id, payload) {
+  stmts.updateReporterImportJob.run({
+    id,
+    status: payload.status || "pending",
+    resultSummary: JSON.stringify(payload.resultSummary || {}),
+    errorMessage: payload.errorMessage || null,
+  });
+}
+
+function listReporterImportJobsByProject(projectId) {
+  return stmts.listReporterImportJobsByProject.all(projectId).map(mapReporterImportJobRow);
+}
+
+function getReporterProjectStats(projectId) {
+  const findings = stmts.countReporterFindingsByProject.get(projectId).total;
+  const sections = stmts.countReporterSectionsByProject.get(projectId).total;
+  const severityRows = stmts.countReporterFindingsBySeverity.all(projectId);
+  const bySeverity = {};
+  for (const r of severityRows) {
+    bySeverity[r.severity] = r.total;
+  }
+  return { findings, sections, bySeverity };
+}
+
+// Reporter row mappers
+
+function mapReporterDesignRow(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    reportType: row.report_type,
+    htmlTemplate: row.html_template,
+    cssTemplate: row.css_template,
+    fieldDefinitions: safeParseJSON(row.field_definitions),
+    sectionDefinitions: safeParseJSON(row.section_definitions),
+    findingFieldDefinitions: safeParseJSON(row.finding_field_definitions),
+    findingOrderingRule: row.finding_ordering_rule,
+    findingGroupingRule: row.finding_grouping_rule,
+    findingOrdering: safeParseJSON(row.finding_ordering),
+    findingGrouping: safeParseJSON(row.finding_grouping),
+    isBuiltin: !!row.is_builtin,
+    sortOrder: row.sort_order,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapReporterProjectRow(row) {
+  return {
+    id: row.id,
+    designId: row.design_id,
+    designName: row.design_name || null,
+    title: row.title,
+    reportType: row.report_type,
+    status: row.status,
+    version: row.version,
+    clientName: row.client_name,
+    projectMetadata: safeParseJSON(row.project_metadata),
+    isArchived: !!row.is_archived,
+    readonly: !!row.readonly,
+    readonlySince: row.readonly_since,
+    tags: (row.tags || "").split(",").map((t) => t.trim()).filter(Boolean),
+    overrideFindingOrder: !!row.override_finding_order,
+    dueDate: row.due_date,
+    sourceProjectId: row.source_project_id,
+    createdBy: row.created_by,
+    creatorUsername: row.creator_username || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapReporterFindingRow(row, fields) {
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    templateId: row.template_id,
+    title: row.title,
+    category: row.category,
+    severity: row.severity,
+    cvssVector: row.cvss_vector,
+    cvssScore: row.cvss_score,
+    status: row.status,
+    orderIndex: row.order_index,
+    assigneeId: row.assignee_id || null,
+    assigneeUsername: row.assignee_username || null,
+    isIncluded: !!row.is_included,
+    createdBy: row.created_by,
+    creatorUsername: row.creator_username || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    fields: fields || null,
+  };
+}
+
+function mapReporterSectionRow(row) {
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    title: row.title,
+    sectionType: row.section_type,
+    content: row.content,
+    orderIndex: row.order_index,
+    isIncluded: !!row.is_included,
+    createdBy: row.created_by,
+    creatorUsername: row.creator_username || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapReporterTemplateRow(row, fields) {
+  return {
+    id: row.id,
+    title: row.title,
+    category: row.category,
+    severity: row.severity,
+    cvssVector: row.cvss_vector,
+    tags: safeParseJSON(row.tags),
+    isBuiltin: !!row.is_builtin,
+    usageCount: row.usage_count,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    fields: fields ? fields.map((f) => ({ fieldName: f.field_name, fieldValue: f.field_value, language: f.language })) : null,
+  };
+}
+
+function mapReporterPdfGenerationRow(row) {
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    projectTitle: row.project_title || null,
+    filePath: row.file_path,
+    fileSize: row.file_size,
+    status: row.status,
+    errorMessage: row.error_message,
+    renderOptions: safeParseJSON(row.render_options),
+    generatedBy: row.generated_by,
+    createdAt: row.created_at,
+    projectCreatedBy: row.project_created_by || null,
+  };
+}
+
+function mapReporterNoteRow(row) {
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    title: row.title,
+    content: row.content,
+    orderIndex: row.order_index,
+    createdBy: row.created_by,
+    username: row.username || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapReporterCommentRow(row) {
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    targetType: row.target_type,
+    targetId: row.target_id,
+    content: row.content,
+    isResolved: !!row.is_resolved,
+    createdBy: row.created_by,
+    username: row.username || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapReporterHistoryRow(row) {
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    targetType: row.target_type,
+    targetId: row.target_id,
+    snapshot: safeParseJSON(row.snapshot, {}),
+    versionNumber: row.version_number,
+    changeSummary: row.change_summary,
+    createdBy: row.created_by,
+    username: row.username || null,
+    createdAt: row.created_at,
+  };
+}
+
+function mapReporterEvidenceRow(row) {
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    findingId: row.finding_id,
+    sectionId: row.section_id,
+    filename: row.filename,
+    storedFilename: row.stored_filename,
+    mimeType: row.mime_type,
+    sizeBytes: row.size_bytes,
+    caption: row.caption,
+    evidenceType: row.evidence_type,
+    redactionStatus: row.redaction_status,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapReporterImportJobRow(row) {
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    importType: row.import_type,
+    status: row.status,
+    sourceFile: row.source_file,
+    resultSummary: safeParseJSON(row.result_summary, {}),
+    errorMessage: row.error_message,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+  };
+}
+
+function safeParseJSON(str, fallback = []) {
+  try { return JSON.parse(str || JSON.stringify(fallback)); } catch { return fallback; }
 }
 
 module.exports = {
@@ -5890,4 +7104,73 @@ module.exports = {
   listAuditEvents,
   listSchemaMigrations,
   getDeploymentCounts,
+  // Reporter
+  createReporterDesignRow,
+  getReporterDesignById,
+  listReporterDesigns,
+  updateReporterDesignRow,
+  deleteReporterDesignById,
+  createReporterProjectRow,
+  getReporterProjectById,
+  listReporterProjects,
+  updateReporterProjectRow,
+  updateReporterProjectStatus,
+  archiveReporterProjectRow,
+  setReporterProjectReadonly,
+  deleteReporterProjectById,
+  duplicateReporterProject,
+  addReporterProjectMember,
+  listReporterProjectMembers,
+  updateReporterProjectMemberRoleRow,
+  removeReporterProjectMemberRow,
+  isReporterProjectMemberRow,
+  createReporterFindingRow,
+  getReporterFindingByIdRow,
+  listReporterFindingsByProject,
+  updateReporterFindingRow,
+  updateReporterFindingStatusRow,
+  deleteReporterFindingById,
+  copyReporterFinding,
+  reorderReporterFindingsRow,
+  setReporterFindingFieldRow,
+  createReporterSectionRow,
+  getReporterSectionByIdRow,
+  listReporterSectionsByProject,
+  updateReporterSectionRow,
+  deleteReporterSectionById,
+  reorderReporterSectionsRow,
+  createReporterFindingTemplateRow,
+  getReporterFindingTemplateByIdRow,
+  listReporterFindingTemplates,
+  updateReporterFindingTemplateRow,
+  deleteReporterFindingTemplateById,
+  getReporterGlobalStats,
+  getReporterProjectStats,
+  createReporterPdfGenerationRow,
+  updateReporterPdfGenerationRow,
+  getReporterPdfGenerationById,
+  listReporterPdfGenerationsByProject,
+  deleteReporterPdfGenerationById,
+  createReporterNoteRow,
+  getReporterNoteById,
+  listReporterNotesByProject,
+  updateReporterNoteRow,
+  deleteReporterNoteById,
+  createReporterCommentRow,
+  getReporterCommentById,
+  listReporterCommentsByProject,
+  listReporterCommentsByTarget,
+  resolveReporterCommentRow,
+  deleteReporterCommentById,
+  createReporterHistoryRow,
+  listReporterHistoryByProject,
+  createReporterEvidenceRow,
+  getReporterEvidenceById,
+  listReporterEvidenceByProject,
+  updateReporterEvidenceRow,
+  deleteReporterEvidenceById,
+  createReporterImportJobRow,
+  updateReporterImportJobRow,
+  listReporterImportJobsByProject,
+  incrementReporterTemplateUsage: (id) => stmts.incrementReporterTemplateUsage.run(id),
 };

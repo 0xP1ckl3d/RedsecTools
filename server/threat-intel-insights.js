@@ -140,6 +140,216 @@ const MITRE_RULES = [
     technique: "Inhibit System Recovery",
     patterns: [/shadow copies/i, /system recovery/i, /backup deletion/i, /restore points/i],
   },
+  {
+    tacticId: "TA0043",
+    tactic: "Reconnaissance",
+    techniqueId: "T1595",
+    technique: "Active Scanning",
+    patterns: [/active scan/i, /internet[-\s]?wide scan/i, /mass scanning/i, /internet scanning/i, /\bshodan\b/i, /\bcensys\b/i],
+  },
+  {
+    tacticId: "TA0043",
+    tactic: "Reconnaissance",
+    techniqueId: "T1598",
+    technique: "Phishing for Information",
+    patterns: [/phishing for information/i, /credential harvesting campaign/i, /fake login portal/i, /harvest credentials/i],
+  },
+  {
+    tacticId: "TA0042",
+    tactic: "Resource Development",
+    techniqueId: "T1583",
+    technique: "Acquire Infrastructure",
+    patterns: [/acquire infrastructure/i, /registered domains?/i, /new infrastructure/i, /bulletproof hosting/i],
+  },
+  {
+    tacticId: "TA0042",
+    tactic: "Resource Development",
+    techniqueId: "T1588",
+    technique: "Obtain Capabilities",
+    patterns: [/malware builder/i, /exploit kit/i, /loader-as-a-service/i, /phishing kit/i, /obtain(ed)? capabilities/i],
+  },
+  {
+    tacticId: "TA0001",
+    tactic: "Initial Access",
+    techniqueId: "T1133",
+    technique: "External Remote Services",
+    patterns: [/vpn/i, /remote access service/i, /external remote service/i, /citrix/i, /pulse secure/i, /fortinet vpn/i],
+  },
+  {
+    tacticId: "TA0001",
+    tactic: "Initial Access",
+    techniqueId: "T1189",
+    technique: "Drive-by Compromise",
+    patterns: [/drive[-\s]?by/i, /watering hole/i, /compromised website/i, /browser exploit/i],
+  },
+  {
+    tacticId: "TA0002",
+    tactic: "Execution",
+    techniqueId: "T1047",
+    technique: "Windows Management Instrumentation",
+    patterns: [/\bWMI\b/i, /wmic/i, /windows management instrumentation/i],
+  },
+  {
+    tacticId: "TA0002",
+    tactic: "Execution",
+    techniqueId: "T1053",
+    technique: "Scheduled Task/Job",
+    patterns: [/scheduled task/i, /schtasks/i, /cron job/i, /scheduled job/i],
+  },
+  {
+    tacticId: "TA0003",
+    tactic: "Persistence",
+    techniqueId: "T1136",
+    technique: "Create Account",
+    patterns: [/create(d)? account/i, /new admin account/i, /added user/i, /unauthorized account/i],
+  },
+  {
+    tacticId: "TA0003",
+    tactic: "Persistence",
+    techniqueId: "T1505",
+    technique: "Server Software Component",
+    patterns: [/web shell/i, /iis module/i, /nginx module/i, /server software component/i],
+  },
+  {
+    tacticId: "TA0004",
+    tactic: "Privilege Escalation",
+    techniqueId: "T1068",
+    technique: "Exploitation for Privilege Escalation",
+    patterns: [/privilege escalation/i, /\bLPE\b/i, /kernel exploit/i, /elevation of privilege/i],
+  },
+  {
+    tacticId: "TA0004",
+    tactic: "Privilege Escalation",
+    techniqueId: "T1548",
+    technique: "Abuse Elevation Control Mechanism",
+    patterns: [/\bUAC\b/i, /bypass(ed)? elevation/i, /sudo abuse/i, /abuse elevation/i],
+  },
+  {
+    tacticId: "TA0005",
+    tactic: "Defense Evasion",
+    techniqueId: "T1027",
+    technique: "Obfuscated Files or Information",
+    patterns: [/obfuscat(ed|ion)/i, /packed payload/i, /encoded payload/i, /base64[-\s]?encoded/i],
+  },
+  {
+    tacticId: "TA0005",
+    tactic: "Defense Evasion",
+    techniqueId: "T1070",
+    technique: "Indicator Removal",
+    patterns: [/clear(ed)? logs/i, /log deletion/i, /indicator removal/i, /anti[-\s]?forensic/i],
+  },
+  {
+    tacticId: "TA0005",
+    tactic: "Defense Evasion",
+    techniqueId: "T1218",
+    technique: "System Binary Proxy Execution",
+    patterns: [/living off the land/i, /\bLOLBAS\b/i, /\brundll32\b/i, /\bregsvr32\b/i, /\bmshta\b/i],
+  },
+  {
+    tacticId: "TA0006",
+    tactic: "Credential Access",
+    techniqueId: "T1555",
+    technique: "Credentials from Password Stores",
+    patterns: [/browser passwords?/i, /password store/i, /keychain/i, /credential vault/i, /password manager/i],
+  },
+  {
+    tacticId: "TA0006",
+    tactic: "Credential Access",
+    techniqueId: "T1558",
+    technique: "Steal or Forge Kerberos Tickets",
+    patterns: [/kerberoast/i, /golden ticket/i, /silver ticket/i, /kerberos ticket/i],
+  },
+  {
+    tacticId: "TA0007",
+    tactic: "Discovery",
+    techniqueId: "T1018",
+    technique: "Remote System Discovery",
+    patterns: [/remote system discovery/i, /domain computers/i, /network discovery/i, /enumerat(e|ed|ion).*hosts/i],
+  },
+  {
+    tacticId: "TA0007",
+    tactic: "Discovery",
+    techniqueId: "T1087",
+    technique: "Account Discovery",
+    patterns: [/account discovery/i, /user enumeration/i, /domain users/i, /enumerat(e|ed|ion).*accounts/i],
+  },
+  {
+    tacticId: "TA0008",
+    tactic: "Lateral Movement",
+    techniqueId: "T1550",
+    technique: "Use Alternate Authentication Material",
+    patterns: [/pass[-\s]?the[-\s]?hash/i, /pass[-\s]?the[-\s]?ticket/i, /alternate authentication material/i],
+  },
+  {
+    tacticId: "TA0008",
+    tactic: "Lateral Movement",
+    techniqueId: "T1570",
+    technique: "Lateral Tool Transfer",
+    patterns: [/lateral tool transfer/i, /copy.*tool.*remote/i, /admin share/i, /remote payload/i],
+  },
+  {
+    tacticId: "TA0009",
+    tactic: "Collection",
+    techniqueId: "T1005",
+    technique: "Data from Local System",
+    patterns: [/collect(ed|ion)? files/i, /data collection/i, /local system data/i, /sensitive documents/i],
+  },
+  {
+    tacticId: "TA0009",
+    tactic: "Collection",
+    techniqueId: "T1114",
+    technique: "Email Collection",
+    patterns: [/email collection/i, /mailbox export/i, /stolen emails/i, /exchange mailbox/i],
+  },
+  {
+    tacticId: "TA0011",
+    tactic: "Command and Control",
+    techniqueId: "T1090",
+    technique: "Proxy",
+    patterns: [/proxy/i, /reverse proxy/i, /traffic relay/i, /\bTOR\b/i, /socks proxy/i],
+  },
+  {
+    tacticId: "TA0011",
+    tactic: "Command and Control",
+    techniqueId: "T1573",
+    technique: "Encrypted Channel",
+    patterns: [/encrypted channel/i, /encrypted c2/i, /\bTLS\b.*beacon/i, /\bSSL\b.*beacon/i],
+  },
+  {
+    tacticId: "TA0010",
+    tactic: "Exfiltration",
+    techniqueId: "T1041",
+    technique: "Exfiltration Over C2 Channel",
+    patterns: [/exfiltrat(e|ed|ion).*c2/i, /exfiltration over c2/i, /staged data.*command and control/i],
+  },
+  {
+    tacticId: "TA0010",
+    tactic: "Exfiltration",
+    techniqueId: "T1020",
+    technique: "Automated Exfiltration",
+    patterns: [/automated exfiltration/i, /bulk exfiltration/i, /scheduled exfiltration/i],
+  },
+  {
+    tacticId: "TA0040",
+    tactic: "Impact",
+    techniqueId: "T1485",
+    technique: "Data Destruction",
+    patterns: [/data destruction/i, /wiper/i, /wipe(d|r)? data/i, /destructive malware/i],
+  },
+  {
+    tacticId: "TA0040",
+    tactic: "Impact",
+    techniqueId: "T1498",
+    technique: "Network Denial of Service",
+    patterns: [/\bDDoS\b/i, /denial of service/i, /traffic flood/i, /botnet flood/i],
+  },
+  {
+    tacticId: "TA0040",
+    tactic: "Impact",
+    techniqueId: "T1565",
+    technique: "Data Manipulation",
+    patterns: [/data manipulation/i, /tamper(ed|ing)? with data/i, /modified records/i],
+  },
 ];
 
 function safeString(value) {
@@ -229,10 +439,15 @@ function buildMitreCorpus(alert) {
 function deriveMitreMatches(alert) {
   const corpus = buildMitreCorpus(alert);
   if (!corpus.trim()) return [];
+  const normalizedCorpus = corpus.toLowerCase();
   const matches = [];
   const seen = new Set();
   for (const rule of MITRE_RULES) {
-    if (!rule.patterns.some((pattern) => pattern.test(corpus))) continue;
+    const explicitTechnique = normalizedCorpus.includes(rule.techniqueId.toLowerCase())
+      || normalizedCorpus.includes(rule.technique.toLowerCase());
+    const explicitTactic = normalizedCorpus.includes(rule.tacticId.toLowerCase())
+      || normalizedCorpus.includes(rule.tactic.toLowerCase());
+    if (!explicitTechnique && !explicitTactic && !rule.patterns.some((pattern) => pattern.test(corpus))) continue;
     const key = `${rule.tacticId}:${rule.techniqueId}`;
     if (seen.has(key)) continue;
     seen.add(key);

@@ -152,12 +152,12 @@ logoutBtn.addEventListener("click", async () => {
 // --- Tabs ---
 
 const tabBtns = document.querySelectorAll(".admin-tab[data-tab]");
-const childTabs = ["settings", "security", "deployment", "roles", "bulletins", "weather", "team-shortcuts", "invites", "users", "chat", "pastes", "files", "survey-tool-settings", "vaults", "calendar-tool-settings", "wiki-tool-settings", "threat-tool-settings"];
+const childTabs = ["settings", "security", "deployment", "roles", "bulletins", "weather", "team-shortcuts", "invites", "users", "chat", "pastes", "files", "survey-tool-settings", "vaults", "calendar-tool-settings", "wiki-tool-settings", "threat-tool-settings", "reporter-tool-settings"];
 const adminTabGroups = {
   server: ["settings", "security", "deployment", "roles"],
   homepage: ["weather", "bulletins", "team-shortcuts"],
   "users-admin": ["users", "invites"],
-  tools: ["calendar-tool-settings", "wiki-tool-settings", "chat", "pastes", "files", "survey-tool-settings", "vaults", "threat-tool-settings"],
+  tools: ["calendar-tool-settings", "wiki-tool-settings", "chat", "pastes", "files", "survey-tool-settings", "vaults", "threat-tool-settings", "reporter-tool-settings"],
 };
 const adminSubtabLabels = {
   settings: "SMTP",
@@ -177,6 +177,7 @@ const adminSubtabLabels = {
   "survey-tool-settings": "RedSecSurvey",
   vaults: "RedSecVault",
   "threat-tool-settings": "RedSecThreat",
+  "reporter-tool-settings": "RedSecReporter",
 };
 let activeAdminParentTab = "server";
 let activeAdminChildTab = "settings";
@@ -262,6 +263,9 @@ function updateAdminVisibleTabs() {
     loadThreatAdminFeeds();
     loadThreatAdminTemplates();
     loadThreatAdminSettings();
+  }
+  if (visibleTabs.has("reporter-tool-settings")) {
+    loadReporterAdminStats();
   }
 }
 
@@ -2371,6 +2375,80 @@ async function threatAdminJson(path, options) {
     throw new Error(data.error || "Request failed");
   }
   return data;
+}
+
+async function loadReporterAdminStats() {
+  try {
+    const response = await api("/api/reporter-stats");
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Request failed");
+
+    const stats = data.stats || {};
+    document.getElementById("reporter-stat-projects").textContent = stats.totalProjects || 0;
+    document.getElementById("reporter-stat-findings").textContent = stats.totalFindings || 0;
+    document.getElementById("reporter-stat-templates").textContent = stats.totalTemplates || 0;
+    document.getElementById("reporter-stat-archived").textContent = stats.archivedProjects || 0;
+
+    const tbody = document.getElementById("reporter-admin-projects-body");
+    if (!tbody) return;
+    const projects = data.recentProjects || [];
+    if (!projects.length) {
+      tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-8">No reporter projects yet.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = projects.map((project) => `
+      <tr>
+        <td class="font-medium">${escapeHtml(project.title || "Untitled project")}</td>
+        <td>${escapeHtml(project.clientName || "-")}</td>
+        <td>${escapeHtml(project.reportType || "-")}</td>
+        <td>${escapeHtml(project.createdByUsername || project.createdBy || "-")}</td>
+        <td>${reporterAccessDetails(project.members || [])}</td>
+        <td>${reporterStatusBadge(project.status || "draft")}</td>
+        <td>${project.isArchived ? '<span class="badge badge-gray">Archived</span>' : '<span class="badge badge-green">Active</span>'}</td>
+        <td class="text-xs text-muted">${formatRelativeTimeWithTitle(project.updatedAt)}</td>
+      </tr>
+    `).join("");
+  } catch {
+    const tbody = document.getElementById("reporter-admin-projects-body");
+    if (tbody) {
+      tbody.innerHTML = '<tr><td colspan="8" class="text-center text-error py-8">Failed to load reporter stats.</td></tr>';
+    }
+  }
+}
+
+function reporterAccessDetails(members) {
+  if (!members.length) {
+    return '<span class="text-xs text-error">No assigned users</span>';
+  }
+  const leadCount = members.filter((member) => member.role === "lead").length;
+  const summary = `${members.length} user${members.length === 1 ? "" : "s"}${leadCount ? `, ${leadCount} lead${leadCount === 1 ? "" : "s"}` : ""}`;
+  return `
+    <details class="admin-inline-details">
+      <summary>${escapeHtml(summary)}</summary>
+      <div class="admin-inline-details-panel">
+        ${members.map((member) => `
+          <div class="admin-inline-details-row">
+            <span>${escapeHtml(member.username || member.userId || "Unknown user")}</span>
+            <span class="badge badge-gray">${escapeHtml(String(member.role || "member").replace(/_/g, " "))}</span>
+          </div>
+        `).join("")}
+      </div>
+    </details>
+  `;
+}
+
+function reporterStatusBadge(status) {
+  const value = String(status || "draft");
+  const colors = {
+    draft: "badge-gray",
+    in_progress: "badge-blue",
+    in_review: "badge-purple",
+    approved: "badge-green",
+    delivered: "badge-green",
+    archived: "badge-gray",
+  };
+  return `<span class="badge ${colors[value] || "badge-gray"}">${escapeHtml(value.replace(/_/g, " "))}</span>`;
 }
 
 async function loadThreatAdminStats() {

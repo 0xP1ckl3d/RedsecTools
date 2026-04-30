@@ -103,6 +103,12 @@ COOKIE_SECURE=$CookieSecure
 # Database path (default: ./data/pastes.db)
 # DB_PATH=./data/pastes.db
 
+# RedSecReporter PDF rendering.
+# Docker sets PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium automatically.
+# For non-Docker installs, set this if Chrome/Chromium is not in a standard path.
+REPORTER_PDF_TIMEOUT_MS=120000
+# PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+
 # Trusted public origins used for invite, reset-password, and guest links.
 # Includes local defaults plus any extra origins entered during setup.
 TRUSTED_PUBLIC_ORIGINS=$TrustedPublicOrigins

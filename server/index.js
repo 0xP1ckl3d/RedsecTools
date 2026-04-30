@@ -19,6 +19,7 @@ const calendarRouter = require("./routes/calendar");
 const surveyRouter = require("./routes/survey");
 const wikiRouter = require("./routes/wiki");
 const threatRouter = require("./routes/threat");
+const reporterRouter = require("./routes/reporter");
 const adminCollabRouter = require("./routes/admin-collab");
 const { runBulletinAutoPurge } = require("./bulletin-service");
 const { startFeedFetchInterval, seedDefaults: seedThreatDefaults } = require("./threat-feed-service");
@@ -120,6 +121,7 @@ app.use("/api", calendarRouter);
 app.use("/api", surveyRouter);
 app.use("/api", wikiRouter);
 app.use("/api", threatRouter);
+app.use("/api", reporterRouter);
 app.use("/api/ext", extensionRouter);
 app.use("/api/homepage", homepageRouter);
 app.use("/api/homepage", homepageDashboardRouter);
@@ -160,6 +162,8 @@ app.get("/wiki", pageRequireUser, pageRequireAnyPermission(["wiki.view", "wiki.c
 app.get("/wiki/about", (req, res) => res.sendFile(page("wiki/about.html")));
 app.get("/threat", pageRequireUser, pageRequireAnyPermission(["threat.view", "threat.manage"]), (req, res) => res.sendFile(page("threat/index.html")));
 app.get("/threat/about", (req, res) => res.sendFile(page("threat/about.html")));
+app.get("/reporter", pageRequireUser, pageRequireAnyPermission(["reporter.view", "reporter.create", "reporter.edit_own", "reporter.edit_assigned", "reporter.review", "reporter.approve", "reporter.manage_templates", "reporter.manage_all"]), (req, res) => res.sendFile(page("reporter/index.html")));
+app.get("/reporter/about", (req, res) => res.sendFile(page("reporter/about.html")));
 app.get("/admin", (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   res.sendFile(page("admin.html"));

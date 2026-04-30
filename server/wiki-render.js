@@ -190,13 +190,13 @@ function renderMarkdownToHtml(markdown) {
       continue;
     }
 
-    if (/^- /.test(trimmed)) {
+    if (/^[-*+]\s+/.test(trimmed)) {
       if (listType !== "ul") {
         closeList();
         listType = "ul";
         html.push("<ul>");
       }
-      html.push(`<li>${applyInlineFormatting(trimmed.replace(/^- /, ""))}</li>`);
+      html.push(`<li>${applyInlineFormatting(trimmed.replace(/^[-*+]\s+/, ""))}</li>`);
       index += 1;
       continue;
     }

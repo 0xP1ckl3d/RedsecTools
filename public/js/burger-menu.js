@@ -3,7 +3,6 @@
 // HTML pages only need: <nav id="burger-nav" class="burger-nav hidden"></nav>
 
 const TOOL_LINKS = [
-  { href: "/", label: "Home", dividerAfter: true },
   { href: "/paste", label: "RedSecPaste" },
   { href: "/share", label: "RedSecShare" },
   { href: "/chat", label: "RedSecTeam" },
@@ -12,6 +11,7 @@ const TOOL_LINKS = [
   { href: "/survey", label: "RedSecSurvey", key: "survey" },
   { href: "/wiki", label: "RedSecWiki", key: "wiki" },
   { href: "/threat", label: "RedSecThreat", key: "threat" },
+  { href: "/reporter", label: "RedSecReporter", key: "reporter" },
 ];
 
 // Contextual about links based on current page path
@@ -25,6 +25,7 @@ const ABOUT_LINKS = [
   { pathPrefix: "/survey", href: "/survey/about", label: "About this tool" },
   { pathPrefix: "/wiki", href: "/wiki/about", label: "About this tool" },
   { pathPrefix: "/threat", href: "/threat/about", label: "About this tool" },
+  { pathPrefix: "/reporter", href: "/reporter/about", label: "About this tool" },
 ];
 
 export function initBurgerMenu() {
@@ -61,16 +62,19 @@ export function initBurgerMenu() {
 }
 
 function injectLinks(nav, allowedToolKeys) {
-  let html = "";
+  let html = '<a href="/">Home</a>';
   const allowed = new Set(allowedToolKeys || []);
+  const visibleTools = TOOL_LINKS.filter((link) => !link.key || !allowed.size || allowed.has(link.key));
 
-  // Standard tool links
-  for (const link of TOOL_LINKS) {
-    if (link.key && allowed.size && !allowed.has(link.key)) continue;
-    html += `<a href="${link.href}">${link.label}</a>`;
-    if (link.dividerAfter) {
-      html += `<div class="burger-divider"></div>`;
+  if (visibleTools.length) {
+    html += '<div class="burger-divider"></div>';
+    html += '<details class="burger-tools-group">';
+    html += '<summary>Tools</summary>';
+    html += '<div class="burger-tools-list">';
+    for (const link of visibleTools) {
+      html += `<a href="${link.href}">${link.label}</a>`;
     }
+    html += "</div></details>";
   }
 
   // Contextual "About" link for tool pages

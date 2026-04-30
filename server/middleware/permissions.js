@@ -4,6 +4,8 @@ const { getUserById, getRolePermissionsByUserId } = require("../database");
 async function attachUserAccess(req, res, next) {
   if (!req.user?.id) {
     req.access = {
+      userId: null,
+      username: null,
       role: null,
       permissions: [],
       permissionSet: new Set(),
@@ -21,6 +23,8 @@ async function attachUserAccess(req, res, next) {
     roleName: freshUser?.role_name || null,
   };
   req.access = {
+    userId: req.user.id,
+    username: req.user.username || null,
     role: freshUser ? {
       id: freshUser.role_id || null,
       key: freshUser.role_key || null,

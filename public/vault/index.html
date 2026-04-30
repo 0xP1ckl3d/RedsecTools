@@ -10,34 +10,58 @@
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-  <div class="page-wide py-8" id="vault-app">
-    <header class="grid grid-cols-[1fr_3fr_1fr] items-center mb-8">
-      <div></div>
-      <div class="text-center">
-        <h1 class="text-3xl font-bold">
-          <span class="text-accent">RedSec</span><span class="text-secondary">Vault</span>
-        </h1>
-        <p class="text-muted text-sm mt-1">Encrypted credential manager. Server never sees your secrets.</p>
-      </div>
-      <div class="flex items-center gap-2 justify-end">
-        <div class="relative">
-          <button id="burger-btn" class="burger-btn" aria-label="Menu" aria-expanded="false">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
-          </button>
-          <nav id="burger-nav" class="burger-nav hidden"></nav>
-        </div>
-        <button type="button" class="theme-toggle" id="theme-toggle" title="Toggle theme">
-          <svg class="w-5 h-5 dark-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
-          <svg class="w-5 h-5 light-icon hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+  <div class="dashboard-layout tool-dashboard-shell vault-dashboard-shell" id="vault-app">
+    <aside id="vault-sidebar" class="dashboard-sidebar">
+      <button type="button" class="sidebar-collapse-btn" title="Collapse sidebar" data-tool-sidebar-toggle="vault-sidebar">
+        <svg class="sidebar-collapse-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+      </button>
+      <nav class="sidebar-nav">
+        <a href="/vault" class="sidebar-nav-item active">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+          <span class="sidebar-nav-text">Vaults</span>
+        </a>
+        <button type="button" class="sidebar-nav-item" id="vault-sidebar-create-btn" data-click-proxy="create-vault-btn">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+          <span class="sidebar-nav-text">Create Vault</span>
         </button>
+      </nav>
+    </aside>
+
+    <div class="dashboard-content">
+      <header class="dashboard-header">
+        <div>
+          <h1 class="text-xl font-bold">
+            <a href="/" class="hover:underline transition-colors">
+              <span class="text-accent">RedSec</span><span class="text-secondary">Vault</span>
+            </a>
+          </h1>
+          <p class="text-sm text-muted mt-1">Encrypted credential manager. Server never sees your secrets.</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <div class="relative">
+            <button id="burger-btn" class="burger-btn" aria-label="Menu" aria-expanded="false">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+            <nav id="burger-nav" class="burger-nav hidden"></nav>
+          </div>
+          <button type="button" class="theme-toggle" id="theme-toggle" title="Toggle theme">
+            <svg class="w-5 h-5 dark-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+            <svg class="w-5 h-5 light-icon hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="mobile-tabs">
+        <a href="/vault" class="mobile-tab active">Vaults</a>
       </div>
-    </header>
+
+      <main class="dashboard-main tool-dashboard-main">
 
     <!-- Vault content hidden until auth confirmed -->
     <div id="vault-content" class="hidden">
 
       <!-- Toolbar -->
-      <div class="flex items-center gap-3 mb-4">
+      <div class="tool-toolbar">
         <button id="create-vault-btn" class="btn-primary text-sm">Create Vault</button>
         <button id="create-entry-btn" class="btn-secondary text-sm hidden">Add Entry</button>
         <div class="flex-1"></div>
@@ -45,7 +69,7 @@
       </div>
 
       <!-- Main layout: vaults sidebar + entry list + entry detail -->
-      <div class="grid grid-cols-[240px_1fr] gap-4 min-h-[60vh]">
+      <div class="vault-workspace-grid">
 
         <!-- Sidebar: Vault list -->
         <div class="card p-3">
@@ -101,6 +125,8 @@
       <svg class="w-12 h-12 text-muted mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
       <p class="text-muted">You must be logged in to access RedSecVault.</p>
       <a href="/login" class="btn-primary inline-block mt-4 text-sm">Sign In</a>
+    </div>
+      </main>
     </div>
 
     <!-- ============ MODALS ============ -->
@@ -371,7 +397,6 @@
       </div>
     </div>
 
-    <footer class="footer">&copy; <span class="current-year"></span> RedSec Offensive Security</footer>
   </div>
 
   <script src="/js/chat-crypto.js"></script>
@@ -379,5 +404,6 @@
   <script type="module" src="/js/vault.js"></script>
   <script type="module" src="/js/burger-menu.js"></script>
   <script type="module" src="/js/theme.js"></script>
+  <script type="module" src="/js/tool-shell.js"></script>
 </body>
 </html>

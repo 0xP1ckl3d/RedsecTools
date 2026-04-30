@@ -17,6 +17,7 @@ A multi-tool security platform by [RedSec Offensive Security](https://github.com
 | **RedSecSurvey** | Role-aware survey builder with public or internal response modes, live results, CSV export, expiry windows, and admin oversight |
 | **RedSecThreat** | Threat intelligence monitor with RSS/website/API/onion feed ingestion, keyword and regex matching, automatic IOC extraction, alert triage with criticality levels, and webhook/email/Discord notifications |
 | **RedSecWiki** | Team and personal Markdown wiki with page trees, subpages, live preview, published rendering, revision history, and search |
+| **RedSecReporter** | SysReptor-style pentest report builder with assigned-member projects, custom report designs, finding templates, CVSS scoring, comments, evidence, and versioned PDF generation |
 | **RedSecTools Chrome Extension** | Chrome Manifest V3 extension for Vault access, autofill, Paste creation, and Share creation using the same server and encryption model |
 
 **Key security properties:**
@@ -97,8 +98,21 @@ Users are now assigned one primary role. Roles are managed in Admin and map to a
 - `survey.create`, `survey.manage_any`, `survey.view_results_any`
 - `threat.view`, `threat.manage`
 - `wiki.view`, `wiki.create_personal`, `wiki.create_team`, `wiki.edit_team`, `wiki.manage`
+- `reporter.view`, `reporter.create`, `reporter.edit_own`, `reporter.edit_assigned`, `reporter.review`, `reporter.approve`, `reporter.manage_templates`, `reporter.manage_all`
 
 UI visibility follows the user's granted permissions, but enforcement is server-side on the protected APIs and the new tool pages.
+
+### RedSecReporter
+
+RedSecReporter is the report-building workspace for pentest projects. It provides:
+
+- Assigned-member project access: `reporter.view` allows entry to the Reporter tool, but project contents are visible only to assigned project members. Users with `reporter.manage_all` can see every project.
+- Project leads and managers can control project membership, roles, status, archive state, readonly state, evidence, comments, notes, generated PDF versions, and imports/exports.
+- Custom report designs with editable HTML/CSS, section definitions, design duplication, and live PDF previews.
+- Finding templates with searchable insertion, markdown split preview, evidence insertion, scope component selection, and CVSS 3.1/4.0 builder support.
+- Versioned PDF generation and temporary PDF previews rendered through Chromium/Puppeteer. The setup scripts include the PDF timeout and Chromium executable variables used by Docker and npm deployments.
+
+Admin > Tools > RedSecReporter shows global report stats, recent projects, project creators, status/archive state, and an expandable list of assigned users who can access each project.
 
 ### BulletinBoard
 
@@ -202,6 +216,8 @@ Configuration is managed through a `.env` file in the project root. The setup sc
 | `NODE_ENV` | No | `production` | Node environment (`production` or `development`) |
 | `COOKIE_SECURE` | No | `true` in production | Set `true` when users access the app over HTTPS. Set `false` only for direct HTTP/local deployments. |
 | `DB_PATH` | No | `./data/pastes.db` | Path to the SQLite database file |
+| `REPORTER_PDF_TIMEOUT_MS` | No | `120000` | RedSecReporter PDF rendering timeout in milliseconds |
+| `PUPPETEER_EXECUTABLE_PATH` | No | Auto-detected, `/usr/bin/chromium` in Docker | Chrome/Chromium executable used for RedSecReporter PDF rendering |
 | `TRUSTED_PUBLIC_ORIGINS` | Yes for production email/share links | Localhost defaults plus any extra origins entered during setup | Comma-separated allowlist of public origins used for invite links, password-reset links, and guest links |
 
 SMTP email settings are configured in the Admin > Settings UI (stored encrypted in the database) — not via environment variables.

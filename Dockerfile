@@ -34,10 +34,12 @@ FROM node:20-slim AS runtime
 
 WORKDIR /app
 
-# Install runtime dependency for sharp (no -dev headers needed)
+# Install runtime dependency for sharp (no -dev headers needed) and Chromium for RedSecReporter PDFs
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         libvips42 \
+        chromium \
+        fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for container security
@@ -56,6 +58,8 @@ COPY --from=builder /build/tailwind.config.js ./
 RUN mkdir -p /app/data && chown appuser:appuser /app/data
 
 ENV NODE_ENV=production
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+ENV REPORTER_PDF_TIMEOUT_MS=120000
 
 EXPOSE 3000
 

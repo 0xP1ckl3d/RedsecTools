@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <title>RedSecReporter</title>
+  <link rel="icon" href="/assets/favicon.ico" type="image/x-icon">
+  <script src="/js/theme-init.js"></script>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="dashboard-layout reporter-dashboard-shell">
+    <aside id="reporter-sidebar" class="dashboard-sidebar">
+      <button type="button" id="reporter-sidebar-collapse-btn" class="sidebar-collapse-btn" title="Collapse sidebar">
+        <svg class="sidebar-collapse-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+      </button>
+
+      <nav class="sidebar-nav">
+        <button type="button" class="sidebar-nav-item active" data-reporter-view="dashboard">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
+          <span class="sidebar-nav-text">Dashboard</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-reporter-view="projects">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+          <span class="sidebar-nav-text">Projects</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-reporter-view="designs">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm0 8a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zm10 0a1 1 0 011-1h4a1 1 0 011 1v6a1 1 0 01-1 1h-4a1 1 0 01-1-1v-6z"/></svg>
+          <span class="sidebar-nav-text">Designs</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-reporter-view="templates">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          <span class="sidebar-nav-text">Templates</span>
+        </button>
+      </nav>
+    </aside>
+
+    <div class="dashboard-content">
+      <header class="dashboard-header">
+        <div>
+          <h1 class="text-xl font-bold">
+            <a href="/" class="hover:underline transition-colors">
+              <span class="text-accent">RedSec</span><span class="text-secondary">Reporter</span>
+            </a>
+          </h1>
+          <p class="text-sm text-muted mt-1">Pentest report builder with findings management and CVSS scoring.</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <div class="relative">
+            <button id="burger-btn" class="burger-btn" aria-label="Menu" aria-expanded="false">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+            <nav id="burger-nav" class="burger-nav hidden"></nav>
+          </div>
+          <button type="button" class="theme-toggle" id="theme-toggle" title="Toggle theme">
+            <svg class="w-5 h-5 dark-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+            <svg class="w-5 h-5 light-icon hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="mobile-tabs">
+        <button type="button" class="mobile-tab active" data-reporter-view="dashboard">Dashboard</button>
+        <button type="button" class="mobile-tab" data-reporter-view="projects">Projects</button>
+        <button type="button" class="mobile-tab" data-reporter-view="designs">Designs</button>
+        <button type="button" class="mobile-tab" data-reporter-view="templates">Templates</button>
+      </div>
+
+      <div class="dashboard-main">
+
+        <!-- ===== DASHBOARD VIEW ===== -->
+        <section id="reporter-view-dashboard" class="reporter-view">
+          <div class="reporter-stat-grid reporter-stat-grid-4">
+            <div class="stat-card">
+              <div class="stat-value" id="reporter-dash-projects">0</div>
+              <div class="stat-label">Active Projects</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="reporter-dash-findings">0</div>
+              <div class="stat-label">Total Findings</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="reporter-dash-critical">0</div>
+              <div class="stat-label">Critical Findings</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="reporter-dash-templates">0</div>
+              <div class="stat-label">Finding Templates</div>
+            </div>
+          </div>
+          <div class="card mt-4">
+            <div class="card-header flex justify-between items-center">
+              <h2 class="text-lg font-semibold">Recent Projects</h2>
+              <button type="button" id="reporter-dash-new-project-btn" class="btn-primary text-sm hidden">New Project</button>
+            </div>
+            <div id="reporter-dash-recent-projects">
+              <p class="text-sm text-muted">Loading...</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- ===== PROJECTS VIEW ===== -->
+        <section id="reporter-view-projects" class="reporter-view hidden">
+          <div class="card">
+            <div class="card-header flex justify-between items-center flex-wrap gap-3">
+              <h2 class="text-lg font-semibold">Projects</h2>
+              <div class="flex gap-2 flex-wrap">
+                <input type="text" id="reporter-projects-search" class="input-field reporter-search-input" placeholder="Search projects...">
+                <select id="reporter-projects-filter" class="input-field">
+                  <option value="active">Active</option>
+                  <option value="archived">Archived</option>
+                  <option value="all">All</option>
+                </select>
+                <button type="button" id="reporter-import-project-btn" class="btn-secondary text-sm hidden">Import</button>
+                <button type="button" id="reporter-new-project-btn" class="btn-primary text-sm hidden">New Project</button>
+              </div>
+            </div>
+            <div id="reporter-projects-list">
+              <p class="text-sm text-muted">Loading...</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- ===== PROJECT DETAIL VIEW ===== -->
+        <section id="reporter-view-project-detail" class="reporter-view hidden">
+          <!-- Project Header -->
+          <div id="reporter-project-detail-header" class="card mb-3">
+            <div class="flex justify-between items-center flex-wrap gap-3">
+              <div>
+                <div class="flex items-center gap-3 mb-1">
+                  <button type="button" id="reporter-project-back-btn" class="btn-secondary text-sm">Back</button>
+                  <h2 class="text-lg font-semibold" id="reporter-project-title">Project</h2>
+                  <span id="reporter-project-status-badge" class="badge badge-gray">draft</span>
+                </div>
+                <p class="text-sm text-muted" id="reporter-project-meta"></p>
+              </div>
+              <div class="flex gap-2 flex-wrap" id="reporter-project-actions"></div>
+            </div>
+          </div>
+
+          <!-- Split-pane builder layout -->
+          <div class="reporter-builder">
+            <!-- Left sidebar: navigation tree -->
+            <div id="reporter-builder-sidebar" class="reporter-builder-sidebar">
+              <div class="reporter-builder-sidebar-header">
+                <input type="text" id="reporter-tree-search" class="input-field reporter-tree-search" placeholder="Filter...">
+                <button type="button" id="reporter-tree-add-btn" class="btn-primary text-sm reporter-tree-add-btn" title="Add finding or section">+</button>
+              </div>
+              <nav id="reporter-tree-nav" class="reporter-tree-nav">
+                <div class="reporter-tree-section">
+                  <div class="reporter-tree-heading">Sections</div>
+                  <div id="reporter-tree-sections"></div>
+                </div>
+                <div class="reporter-tree-section">
+                  <div class="reporter-tree-heading">Findings</div>
+                  <div id="reporter-tree-findings"></div>
+                </div>
+              </nav>
+              <div class="reporter-tree-meta">
+                <button type="button" class="reporter-tree-meta-btn" data-reporter-meta="members">Members</button>
+                <button type="button" class="reporter-tree-meta-btn" data-reporter-meta="evidence">Evidence</button>
+                <button type="button" class="reporter-tree-meta-btn" data-reporter-meta="notes">Notes</button>
+                <button type="button" class="reporter-tree-meta-btn" data-reporter-meta="comments">Comments</button>
+                <button type="button" class="reporter-tree-meta-btn" data-reporter-meta="history">History</button>
+                <button type="button" class="reporter-tree-meta-btn" data-reporter-meta="pdfs">PDFs</button>
+              </div>
+            </div>
+
+            <!-- Main editor area -->
+            <div id="reporter-builder-editor" class="reporter-builder-editor">
+              <!-- Empty state / project overview -->
+              <div id="reporter-editor-overview" class="reporter-editor-panel">
+                <div class="card">
+                  <div class="card-header"><h3 class="font-semibold">Project Overview</h3></div>
+                  <div id="reporter-editor-overview-stats" class="reporter-stat-grid reporter-stat-grid-4"></div>
+                </div>
+              </div>
+
+              <!-- Finding inline editor -->
+              <div id="reporter-editor-finding" class="reporter-editor-panel hidden">
+                <div class="reporter-inline-toolbar">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <select id="reporter-inline-severity" class="input-field text-sm"></select>
+                    <select id="reporter-inline-status" class="input-field text-sm"></select>
+                    <select id="reporter-inline-assignee" class="input-field text-sm"><option value="">Unassigned</option></select>
+                    <div class="reporter-cvss-inline">
+                      <label class="text-sm text-muted">CVSS</label>
+                      <input type="text" id="reporter-inline-cvss" class="input-field text-sm" placeholder="CVSS:3.1/...">
+                      <span id="reporter-inline-cvss-score" class="text-sm"></span>
+                      <button type="button" id="reporter-inline-cvss-builder" class="btn-secondary text-sm">CVSS Editor</button>
+                    </div>
+                    <button type="button" id="reporter-inline-save-finding" class="btn-primary text-sm">Save</button>
+                    <button type="button" id="reporter-inline-copy-finding" class="btn-secondary text-sm" title="Copy finding">Copy</button>
+                    <button type="button" id="reporter-inline-save-template" class="btn-secondary text-sm" title="Save as template">Save as Template</button>
+                    <button type="button" id="reporter-inline-add-finding-comment" class="btn-secondary text-sm">Add Comment</button>
+                    <button type="button" id="reporter-inline-delete-finding" class="btn-danger text-sm">Delete</button>
+                  </div>
+                </div>
+                <div class="reporter-inline-body">
+                  <input type="text" id="reporter-inline-finding-title" class="input-field reporter-inline-title" placeholder="Finding title">
+                  <div id="reporter-inline-finding-fields"></div>
+                  <div id="reporter-inline-finding-comments" class="reporter-target-comments"></div>
+                </div>
+              </div>
+
+              <!-- Section inline editor -->
+              <div id="reporter-editor-section" class="reporter-editor-panel hidden">
+                <div class="reporter-inline-toolbar">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span id="reporter-inline-section-type" class="badge badge-gray"></span>
+                    <label class="flex items-center gap-1 text-sm">
+                      <input type="checkbox" id="reporter-inline-section-included" checked>
+                      Included
+                    </label>
+                    <button type="button" id="reporter-inline-save-section" class="btn-primary text-sm">Save</button>
+                    <button type="button" id="reporter-inline-add-section-comment" class="btn-secondary text-sm">Add Comment</button>
+                    <button type="button" id="reporter-inline-delete-section" class="btn-danger text-sm">Delete</button>
+                  </div>
+                </div>
+                <div class="reporter-inline-body">
+                  <input type="text" id="reporter-inline-section-title" class="input-field reporter-inline-title" placeholder="Section title">
+                  <div class="reporter-finding-field-split">
+                    <div class="reporter-finding-field-edit">
+                      <div class="reporter-finding-field-label">Content (markdown)</div>
+                      <div class="reporter-md-toolbar" data-md-toolbar="reporter-inline-section-content">
+                        <button type="button" class="reporter-md-tool" data-md-tool="bold" data-md-target="reporter-inline-section-content" title="Bold">B</button>
+                        <button type="button" class="reporter-md-tool" data-md-tool="italic" data-md-target="reporter-inline-section-content" title="Italic">I</button>
+                        <button type="button" class="reporter-md-tool" data-md-tool="heading" data-md-target="reporter-inline-section-content" title="Heading">H</button>
+                        <button type="button" class="reporter-md-tool" data-md-tool="ul" data-md-target="reporter-inline-section-content" title="Bullet list">UL</button>
+                        <button type="button" class="reporter-md-tool" data-md-tool="ol" data-md-target="reporter-inline-section-content" title="Numbered list">OL</button>
+                        <button type="button" class="reporter-md-tool" data-md-tool="quote" data-md-target="reporter-inline-section-content" title="Quote">Quote</button>
+                        <button type="button" class="reporter-md-tool" data-md-tool="inline-code" data-md-target="reporter-inline-section-content" title="Inline code">Code</button>
+                        <button type="button" class="reporter-md-tool" data-md-tool="code-block" data-md-target="reporter-inline-section-content" title="Preformatted block">Pre</button>
+                        <button type="button" class="reporter-md-tool" data-md-tool="table" data-md-target="reporter-inline-section-content" title="Table">Table</button>
+                        <button type="button" class="reporter-md-tool" data-md-tool="link" data-md-target="reporter-inline-section-content" title="Link">Link</button>
+                      </div>
+                      <textarea id="reporter-inline-section-content" class="input-field reporter-inline-content" rows="20" placeholder="Section content (markdown)..."></textarea>
+                    </div>
+                    <div class="reporter-finding-field-preview" id="reporter-section-content-preview"></div>
+                  </div>
+                  <div id="reporter-inline-section-comments" class="reporter-target-comments"></div>
+                </div>
+              </div>
+
+              <!-- Meta panels (members, evidence, notes, comments, history, pdfs) -->
+              <div id="reporter-editor-meta" class="reporter-editor-panel hidden">
+                <div id="reporter-meta-members" class="hidden">
+                  <div class="card">
+                    <div class="card-header flex justify-between items-center">
+                      <h3 class="font-semibold">Team Members</h3>
+                      <button type="button" id="reporter-add-member-btn" class="btn-primary text-sm">Add Member</button>
+                    </div>
+                    <div id="reporter-members-list"></div>
+                  </div>
+                </div>
+                <div id="reporter-meta-evidence" class="hidden">
+                  <div class="card">
+                    <div class="card-header flex justify-between items-center">
+                      <h3 class="font-semibold">Evidence</h3>
+                      <button type="button" id="reporter-upload-evidence-btn" class="btn-primary text-sm">Upload</button>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+                      <input type="file" id="reporter-evidence-file" class="input-field">
+                      <input type="text" id="reporter-evidence-caption" class="input-field" placeholder="Caption">
+                      <select id="reporter-evidence-finding" class="input-field"><option value="">Project-level</option></select>
+                    </div>
+                    <div id="reporter-evidence-list"></div>
+                  </div>
+                </div>
+                <div id="reporter-meta-notes" class="hidden">
+                  <div class="card">
+                    <div class="card-header flex justify-between items-center">
+                      <h3 class="font-semibold">Notes</h3>
+                      <button type="button" id="reporter-add-note-btn" class="btn-primary text-sm">Add Note</button>
+                    </div>
+                    <div id="reporter-notes-list"></div>
+                  </div>
+                </div>
+                <div id="reporter-meta-comments" class="hidden">
+                  <div class="card">
+                    <div class="card-header flex justify-between items-center">
+                      <h3 class="font-semibold">Comments</h3>
+                      <button type="button" id="reporter-add-comment-btn" class="btn-primary text-sm">Add Comment</button>
+                    </div>
+                    <div id="reporter-comments-list"></div>
+                  </div>
+                </div>
+                <div id="reporter-meta-history" class="hidden">
+                  <div class="card">
+                    <div class="card-header"><h3 class="font-semibold">History</h3></div>
+                    <div id="reporter-history-list"></div>
+                  </div>
+                </div>
+                <div id="reporter-meta-pdfs" class="hidden">
+                  <div class="card">
+                    <div class="card-header flex justify-between items-center">
+                      <h3 class="font-semibold">Generated PDFs</h3>
+                      <button type="button" id="reporter-refresh-pdfs-btn" class="btn-secondary text-sm">Refresh</button>
+                    </div>
+                    <div id="reporter-pdf-list"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Preview panel (toggleable) -->
+            <div id="reporter-builder-preview" class="reporter-builder-preview hidden">
+              <div class="reporter-preview-header">
+                <span class="text-sm font-semibold">Preview</span>
+                <button type="button" id="reporter-close-preview-btn" class="btn-secondary text-sm">Close</button>
+              </div>
+              <iframe id="reporter-preview-iframe" class="reporter-preview-iframe"></iframe>
+            </div>
+          </div>
+
+          <!-- Preview toggle button (shown when preview is hidden) -->
+          <button type="button" id="reporter-toggle-preview-btn" class="reporter-toggle-preview-btn hidden" title="Toggle preview">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+          </button>
+        </section>
+
+        <!-- ===== DESIGNS VIEW ===== -->
+        <section id="reporter-view-designs" class="reporter-view hidden">
+          <div class="card">
+            <div class="card-header flex justify-between items-center">
+              <h2 class="text-lg font-semibold">Report Designs</h2>
+              <button type="button" id="reporter-new-design-btn" class="btn-primary text-sm hidden">New Design</button>
+            </div>
+            <p class="text-sm text-muted mb-4">Designs define the report structure, finding fields, and output layout for projects.</p>
+            <div id="reporter-designs-list">
+              <p class="text-sm text-muted">Loading...</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- ===== DESIGN EDITOR VIEW ===== -->
+        <section id="reporter-view-design-editor" class="reporter-view hidden">
+          <div class="card mb-4">
+            <div class="card-header flex justify-between items-center flex-wrap gap-3">
+              <div>
+                <div class="flex items-center gap-3 mb-1">
+                  <button type="button" id="reporter-design-back-btn" class="btn-secondary text-sm">Back</button>
+                  <h2 class="text-lg font-semibold" id="reporter-design-editor-title">Design Editor</h2>
+                  <span id="reporter-design-editor-type" class="badge badge-gray">custom</span>
+                </div>
+                <p class="text-sm text-muted" id="reporter-design-editor-meta"></p>
+              </div>
+              <div class="flex gap-2 flex-wrap">
+                <button type="button" id="reporter-design-duplicate-btn" class="btn-secondary text-sm hidden">Duplicate</button>
+                <button type="button" id="reporter-design-preview-btn" class="btn-secondary text-sm">Preview</button>
+                <button type="button" id="reporter-design-save-btn" class="btn-primary text-sm">Save Design</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="reporter-editor-grid reporter-design-editor-grid">
+            <div class="card">
+              <div class="card-header">
+                <h3 class="font-semibold">Design Settings</h3>
+              </div>
+              <label class="block text-sm text-muted mb-1">Name</label>
+              <input type="text" id="reporter-design-editor-name" class="input-field w-full">
+              <label class="block text-sm text-muted mb-1 mt-3">Report Type</label>
+              <select id="reporter-design-editor-report-type" class="input-field w-full"></select>
+              <label class="block text-sm text-muted mb-1 mt-3">Description</label>
+              <textarea id="reporter-design-editor-description" class="input-field w-full" rows="5"></textarea>
+              <label class="block text-sm text-muted mb-1 mt-3">Finding Field Definitions</label>
+              <textarea id="reporter-design-editor-fields" class="input-field w-full reporter-template-editor" rows="12" spellcheck="false"></textarea>
+              <label class="block text-sm text-muted mb-1 mt-3">Section Definitions</label>
+              <textarea id="reporter-design-editor-sections" class="input-field w-full reporter-template-editor" rows="8" spellcheck="false"></textarea>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <h3 class="font-semibold">Report Template</h3>
+              </div>
+              <label class="block text-sm text-muted mb-1">HTML Template</label>
+              <textarea id="reporter-design-editor-html" class="input-field w-full reporter-template-editor reporter-template-editor-large" rows="22" spellcheck="false"></textarea>
+              <label class="block text-sm text-muted mb-1 mt-3">CSS Template</label>
+              <textarea id="reporter-design-editor-css" class="input-field w-full reporter-template-editor reporter-template-editor-large" rows="18" spellcheck="false"></textarea>
+            </div>
+
+            <div class="card reporter-design-preview-card">
+              <div class="card-header">
+                <h3 class="font-semibold">PDF Preview</h3>
+              </div>
+              <iframe id="reporter-design-preview-iframe" class="reporter-preview-iframe reporter-design-preview-iframe"></iframe>
+            </div>
+          </div>
+        </section>
+
+        <!-- ===== TEMPLATES VIEW ===== -->
+        <section id="reporter-view-templates" class="reporter-view hidden">
+          <div class="card">
+            <div class="card-header flex justify-between items-center flex-wrap gap-3">
+              <h2 class="text-lg font-semibold">Finding Templates</h2>
+              <div class="flex gap-2">
+                <input type="text" id="reporter-templates-search" class="input-field reporter-search-input" placeholder="Search templates...">
+                <button type="button" id="reporter-new-template-btn" class="btn-primary text-sm hidden">New Template</button>
+              </div>
+            </div>
+            <div id="reporter-templates-list">
+              <p class="text-sm text-muted">Loading...</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- ===== TEMPLATE EDITOR VIEW ===== -->
+        <section id="reporter-view-template-editor" class="reporter-view hidden">
+          <div class="card mb-4">
+            <div class="card-header flex justify-between items-center flex-wrap gap-3">
+              <div>
+                <div class="flex items-center gap-3 mb-1">
+                  <button type="button" id="reporter-template-back-btn" class="btn-secondary text-sm">Back</button>
+                  <h2 class="text-lg font-semibold" id="reporter-template-editor-title">Template Editor</h2>
+                  <span id="reporter-template-editor-severity-badge" class="badge badge-gray">info</span>
+                </div>
+                <p class="text-sm text-muted" id="reporter-template-editor-meta"></p>
+              </div>
+              <button type="button" id="reporter-template-save-btn" class="btn-primary text-sm">Save Template</button>
+            </div>
+          </div>
+
+          <div class="reporter-editor-grid">
+            <div class="card">
+              <div class="card-header">
+                <h3 class="font-semibold">Template Metadata</h3>
+              </div>
+              <label class="block text-sm text-muted mb-1">Title</label>
+              <input type="text" id="reporter-template-editor-name" class="input-field w-full">
+              <label class="block text-sm text-muted mb-1 mt-3">Category</label>
+              <input type="text" id="reporter-template-editor-category" class="input-field w-full">
+              <label class="block text-sm text-muted mb-1 mt-3">Severity</label>
+              <select id="reporter-template-editor-severity" class="input-field w-full"></select>
+              <label class="block text-sm text-muted mb-1 mt-3">CVSS Vector</label>
+              <div class="reporter-cvss-row">
+                <input type="text" id="reporter-template-editor-cvss" class="input-field w-full">
+                <button type="button" id="reporter-template-cvss-builder" class="btn-secondary text-sm">CVSS Editor</button>
+              </div>
+              <div id="reporter-template-cvss-score" class="text-sm text-muted mt-1"></div>
+              <label class="block text-sm text-muted mb-1 mt-3">Tags</label>
+              <input type="text" id="reporter-template-editor-tags" class="input-field w-full">
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <h3 class="font-semibold">Reusable Writeup</h3>
+              </div>
+              <div id="reporter-template-editor-fields"></div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL ===== -->
+  <div id="reporter-modal" class="modal-overlay hidden">
+    <div class="modal-card" id="reporter-modal-card">
+      <h3 class="confirm-modal-title" id="reporter-modal-title">Modal</h3>
+      <div id="reporter-modal-body" class="confirm-modal-message"></div>
+      <div class="confirm-modal-actions" id="reporter-modal-actions">
+        <button type="button" class="btn-secondary" id="reporter-modal-cancel">Cancel</button>
+        <button type="button" class="btn-primary" id="reporter-modal-confirm">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/js/reporter.js"></script>
+</body>
+</html>

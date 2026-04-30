@@ -128,6 +128,54 @@ const PERMISSION_DEFINITIONS = [
     label: "Manage",
     description: "Legacy elevated RedSecThreat access. Global feed, template, and notification policy changes still require the admin panel.",
   },
+  {
+    key: "reporter.view",
+    category: "Reporter",
+    label: "View",
+    description: "Open RedSecReporter and view assigned projects only, plus shared designs and finding templates. Does not grant visibility into every project.",
+  },
+  {
+    key: "reporter.create",
+    category: "Reporter",
+    label: "Create",
+    description: "Create new report projects.",
+  },
+  {
+    key: "reporter.edit_own",
+    category: "Reporter",
+    label: "Edit Own",
+    description: "Edit assigned reports and findings the user created. Project membership is still required.",
+  },
+  {
+    key: "reporter.edit_assigned",
+    category: "Reporter",
+    label: "Edit Assigned",
+    description: "Edit reports where the user is assigned as a project member.",
+  },
+  {
+    key: "reporter.review",
+    category: "Reporter",
+    label: "Review",
+    description: "Review and change finding statuses.",
+  },
+  {
+    key: "reporter.approve",
+    category: "Reporter",
+    label: "Approve",
+    description: "Approve final report status.",
+  },
+  {
+    key: "reporter.manage_templates",
+    category: "Reporter",
+    label: "Manage Templates",
+    description: "Create, edit, and delete report designs and finding templates.",
+  },
+  {
+    key: "reporter.manage_all",
+    category: "Reporter",
+    label: "Manage All",
+    description: "View and manage every report project regardless of project membership, including global Reporter stats.",
+  },
 ];
 
 const ALL_PERMISSIONS = PERMISSION_DEFINITIONS.map((permission) => permission.key);
@@ -136,17 +184,18 @@ const SYSTEM_ROLE_DEFINITIONS = [
   {
     key: "viewer",
     name: "Viewer",
-    description: "Read-only access to shared collaboration content and personal calendar views. No threat intel access.",
+    description: "Read-only access to shared collaboration content, personal calendar views, and assigned Reporter projects. No threat intel access.",
     permissions: [
       "bulletin.view",
       "calendar.view",
       "wiki.view",
+      "reporter.view",
     ],
   },
   {
     key: "member",
     name: "Member",
-    description: "Standard team member with self-service calendar, content creation, and threat intel read access.",
+    description: "Standard team member with self-service calendar, content creation, threat intel read access, and assigned Reporter project access.",
     permissions: [
       "bulletin.view",
       "bulletin.create",
@@ -158,12 +207,15 @@ const SYSTEM_ROLE_DEFINITIONS = [
       "wiki.view",
       "wiki.create_personal",
       "wiki.create_team",
+      "reporter.view",
+      "reporter.create",
+      "reporter.edit_own",
     ],
   },
   {
     key: "manager",
     name: "Manager",
-    description: "Team-level visibility and operational management across all tools including threat intel feed management.",
+    description: "Team-level visibility and operational management across all tools, including threat intel feed management and all Reporter projects.",
     permissions: [
       "bulletin.view",
       "bulletin.create",
@@ -185,6 +237,14 @@ const SYSTEM_ROLE_DEFINITIONS = [
       "wiki.create_team",
       "wiki.edit_team",
       "wiki.manage",
+      "reporter.view",
+      "reporter.create",
+      "reporter.edit_own",
+      "reporter.edit_assigned",
+      "reporter.review",
+      "reporter.approve",
+      "reporter.manage_templates",
+      "reporter.manage_all",
     ],
   },
 ];
@@ -198,6 +258,7 @@ const TOOL_DEFINITIONS = [
   { key: "survey", name: "RedSecSurvey", href: "/survey", permissionsAny: ["survey.create", "survey.manage_any", "survey.view_results_any"] },
   { key: "wiki", name: "RedSecWiki", href: "/wiki", permissionsAny: ["wiki.view", "wiki.create_personal", "wiki.create_team", "wiki.edit_team", "wiki.manage"] },
   { key: "threat", name: "RedSecThreat", href: "/threat", permissionsAny: ["threat.view", "threat.manage"] },
+  { key: "reporter", name: "RedSecReporter", href: "/reporter", permissionsAny: ["reporter.view", "reporter.create", "reporter.edit_own", "reporter.edit_assigned", "reporter.review", "reporter.approve", "reporter.manage_templates", "reporter.manage_all"] },
 ];
 
 function canonicalizePermission(permission) {

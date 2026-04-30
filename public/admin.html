@@ -911,6 +911,47 @@
         </div>
       </div>
 
+      <!-- Reporter Tool Settings Tab -->
+      <div id="reporter-tool-settings-tab" class="hidden admin-page-stack">
+        <div class="admin-stat-grid admin-stat-grid-4">
+          <div class="stat-card"><div class="stat-value" id="reporter-stat-projects">-</div><div class="stat-label">Active Projects</div></div>
+          <div class="stat-card"><div class="stat-value" id="reporter-stat-findings">-</div><div class="stat-label">Findings</div></div>
+          <div class="stat-card"><div class="stat-value" id="reporter-stat-templates">-</div><div class="stat-label">Templates</div></div>
+          <div class="stat-card"><div class="stat-value" id="reporter-stat-archived">-</div><div class="stat-label">Archived</div></div>
+        </div>
+        <div class="card admin-section-card">
+          <div class="admin-card-header">
+            <div>
+              <p class="admin-card-kicker">Tool Settings</p>
+              <h2 class="admin-card-title">RedSecReporter Projects</h2>
+              <p class="admin-card-copy">Review reporter adoption, project status, and recent report activity from the admin panel.</p>
+            </div>
+            <div class="admin-card-actions">
+              <a href="/reporter" class="btn-secondary text-sm">Open Reporter</a>
+            </div>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>Project</th>
+                  <th>Client</th>
+                  <th>Type</th>
+                  <th>Creator</th>
+                  <th>Access</th>
+                  <th>Status</th>
+                  <th>Archive</th>
+                  <th>Updated</th>
+                </tr>
+              </thead>
+              <tbody id="reporter-admin-projects-body">
+                <tr><td colspan="8" class="text-center text-muted py-8">Loading reporter projects...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
       <!-- Threat Tool Settings Tab -->
       <div id="threat-tool-settings-tab" class="hidden admin-page-stack">
         <div class="admin-stat-grid admin-stat-grid-4">

@@ -28,6 +28,7 @@ const {
   getVault, getVaultMembersList, updateVaultMemberPermission, removeVaultMember,
   listAllSurveys, getSurveyStats, deleteSurveyById,
   createAuditEvent, listAuditEvents, listSchemaMigrations, getDeploymentCounts,
+  getReporterGlobalStats, listReporterProjects, listReporterProjectMembers,
   db, DB_PATH,
 } = require("../database");
 const { sendInviteEmail, sendPasswordResetEmail, sendTestEmail } = require("../email");
@@ -431,6 +432,20 @@ router.get("/api/paste-stats", requireAdmin, (req, res) => {
 // GET /admin/api/file-stats
 router.get("/api/file-stats", requireAdmin, (req, res) => {
   res.json(getFileStats());
+});
+
+// GET /admin/api/reporter-stats
+router.get("/api/reporter-stats", requireAdmin, (req, res) => {
+  try {
+    const stats = getReporterGlobalStats();
+    const recentProjects = listReporterProjects(null, true).slice(0, 20).map((project) => ({
+      ...project,
+      members: listReporterProjectMembers(project.id),
+    }));
+    res.json({ stats, recentProjects });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to load reporter stats" });
+  }
 });
 
 // GET /admin/api/pastes?page=1&limit=50

@@ -15,6 +15,7 @@ The current spec now includes the collaboration feature set introduced in the ap
 - RedSecWiki bootstrap, page management, search, preview, revision, and admin settings routes
 - RedSecSurvey create/manage/respond/results/export route groups
 - RedSecThreat bootstrap, read-only feed catalogue, user-scoped keyword/tag/alert management, personal notifications, admin-managed template/feed policy endpoints, and feed health route groups
+- RedSecReporter bootstrap, project/design/template/comment/PDF routes, target-scoped comments, versioned PDF deletion, and member-scoped project access rules
 - RedSecShare upload/download routes plus live upload-config endpoints used by the app and extension
 
 Important:
@@ -60,3 +61,4 @@ The spec documents the auth required for each route using these schemes:
 - Bulletin content is intentionally documented as sanitized HTML plus preset-driven presentation metadata. Raw CSS, JavaScript, and arbitrary asset URLs are not accepted by the live app.
 - RedSecSurvey and RedSecWiki are now first-class documented tool surfaces rather than placeholder route groups.
 - RedSecThreat user routes are permission-gated with `threat.view` for the personal threat workspace (dashboard, feeds, personal keywords/tags/alerts, health, user notifications). Global feed sources, API templates, and notification policy are managed from the admin panel and documented separately under `/admin/api/threat/*`.
+- RedSecReporter uses two layers of access control: `reporter.view` grants access to the tool shell, while project APIs require the user to be an assigned project member unless they hold `reporter.manage_all`.

@@ -3,7 +3,7 @@
   "info": {
     "title": "RedSecTools API",
     "version": "2.0.0",
-    "description": "Repository-only OpenAPI documentation for RedSecTools. This file is not served by the live application. It documents the current HTTP API, including auth requirements for main app, guest-link, extension, and admin routes. RedSecThreat now includes user-scoped keyword, tag, and alert ownership on top of shared feed ingestion, plus admin-managed feed, template, and notification policy routes. Survey and Wiki include their active create/manage/respond/results/documentation route groups alongside the existing Paste, Share, Vault, Chat, Calendar, Homepage, Extension, and Admin surfaces."
+    "description": "Repository-only OpenAPI documentation for RedSecTools. This file is not served by the live application. It documents the current HTTP API, including auth requirements for main app, guest-link, extension, and admin routes. RedSecThreat now includes user-scoped keyword, tag, and alert ownership on top of shared feed ingestion, plus admin-managed feed, template, and notification policy routes. Survey, Wiki, and Reporter include their active create/manage/respond/results/documentation route groups alongside the existing Paste, Share, Vault, Chat, Calendar, Homepage, Extension, and Admin surfaces."
   },
   "servers": [
     {
@@ -21,6 +21,7 @@
     { "name": "Survey", "description": "RedSecSurvey placeholder routes and public response flows under active development" },
     { "name": "Wiki", "description": "RedSecWiki team/personal spaces, page trees, markdown preview, revision history, and admin settings" },
     { "name": "Threat", "description": "RedSecThreat user workspace plus supporting admin-managed feed, template, and notification policy endpoints" },
+    { "name": "Reporter", "description": "RedSecReporter project, design, finding, comment, template, and PDF generation endpoints" },
     { "name": "Vault", "description": "Vaults, vault entries, sharing, and audit" },
     { "name": "Chat", "description": "Encrypted chat keys, conversations, and messages" },
     { "name": "Extension", "description": "Chrome extension bearer-token API" },
@@ -5104,6 +5105,22 @@
         }
       }
     },
+    "/admin/api/reporter-stats": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "Get RedSecReporter statistics and recent projects",
+        "description": "Returns global Reporter counts plus recent projects with creator usernames and assigned member access lists for the admin tool settings tab.",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "Reporter stats and recent project access summary",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
     "/admin/api/settings/share": {
       "get": {
         "tags": ["Admin"],
@@ -6668,6 +6685,130 @@
         "responses": {
           "200": { "description": "Feed error log", "content": { "application/json": { "schema": { "type": "object", "properties": { "errors": { "type": "array", "items": { "type": "object" } } } } } } },
           "403": { "description": "Access denied" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/reporter/bootstrap": {
+      "get": {
+        "tags": ["Reporter"],
+        "summary": "Load RedSecReporter bootstrap data",
+        "description": "Returns reporter capabilities, dashboard stats, member-visible projects, designs, and finding templates for the current user. Only users with reporter.manage_all receive every project.",
+        "security": [{ "UserSessionCookie": [] }],
+        "responses": {
+          "200": { "description": "Reporter bootstrap data", "content": { "application/json": { "schema": { "type": "object" } } } },
+          "403": { "description": "Missing reporter.view permission" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/reporter/designs/{id}/preview.pdf": {
+      "get": {
+        "tags": ["Reporter"],
+        "summary": "Render a temporary design PDF preview",
+        "description": "Builds a real temporary PDF using sample project data and serves it inline with same-origin frame policy.",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "PDF preview", "content": { "application/pdf": { "schema": { "type": "string", "format": "binary" } } } },
+          "404": { "description": "Design not found" },
+          "500": { "description": "PDF rendering failed" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/reporter/designs/{id}/duplicate": {
+      "post": {
+        "tags": ["Reporter"],
+        "summary": "Duplicate a report design",
+        "description": "Creates an editable custom design from an existing built-in or custom design.",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": false, "content": { "application/json": { "schema": { "type": "object", "properties": { "name": { "type": "string" } } } } } },
+        "responses": {
+          "200": { "description": "Design duplicated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "403": { "description": "Missing template management permission" },
+          "404": { "description": "Design not found" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/reporter/projects/{id}/render-preview.pdf": {
+      "get": {
+        "tags": ["Reporter"],
+        "summary": "Render a temporary project PDF preview",
+        "description": "Builds a real temporary PDF for the current project and serves it inline. Optional query parameter version overrides the rendered report version.",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "version", "in": "query", "required": false, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "PDF preview", "content": { "application/pdf": { "schema": { "type": "string", "format": "binary" } } } },
+          "403": { "description": "Not a project member" },
+          "404": { "description": "Project not found" },
+          "500": { "description": "PDF rendering failed" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/reporter/projects/{id}/comments": {
+      "get": {
+        "tags": ["Reporter"],
+        "summary": "List project comments",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Project comments", "content": { "application/json": { "schema": { "type": "array", "items": { "type": "object" } } } } },
+          "403": { "description": "Not a project member" },
+          "404": { "description": "Project not found" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "post": {
+        "tags": ["Reporter"],
+        "summary": "Create a project, finding, section, or note comment",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["content"], "properties": { "targetType": { "type": "string", "enum": ["project", "finding", "section", "note"] }, "targetId": { "type": "string" }, "content": { "type": "string", "description": "Markdown comment body" } } } } } },
+        "responses": {
+          "200": { "description": "Comment created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "403": { "description": "No edit access" },
+          "404": { "description": "Project not found" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/reporter/comments/{targetType}/{targetId}": {
+      "get": {
+        "tags": ["Reporter"],
+        "summary": "List comments for one target",
+        "description": "Used by finding and section editors to show comments attached directly to the foreground item.",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "targetType", "in": "path", "required": true, "schema": { "type": "string", "enum": ["project", "finding", "section", "note"] } },
+          { "name": "targetId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Target comments", "content": { "application/json": { "schema": { "type": "array", "items": { "type": "object" } } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "403": { "description": "Not a project member" },
+          "404": { "description": "Comment target not found" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/reporter/pdfs/{id}": {
+      "delete": {
+        "tags": ["Reporter"],
+        "summary": "Delete a generated PDF version",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "PDF version deleted", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "403": { "description": "No edit access" },
+          "404": { "description": "PDF not found" },
           "401": { "$ref": "#/components/responses/Unauthorized" }
         }
       }
