@@ -12,6 +12,22 @@ const TOOL_ALLOWLIST = Object.freeze({
     capability: "calendar.read",
     description: "Read the logged-in user's permitted calendar schedule, team/project scope, and calendar stats.",
   },
+  "calendar.entry.create": {
+    method: "POST",
+    path: "/api/calendar/entries",
+    permissionsAny: ["calendar.create", "calendar.manage"],
+    capability: "calendar.write",
+    confirmRequired: true,
+    description: "Create a calendar entry after explicit user confirmation. Body supports title, description, type, startsAt, endsAt, allDay, status, projectId, and assigneeUserId.",
+  },
+  "calendar.entry.update": {
+    method: "PUT",
+    path: "/api/calendar/entries/:id",
+    permissionsAny: ["calendar.view", "calendar.view_team", "calendar.manage"],
+    capability: "calendar.write",
+    confirmRequired: true,
+    description: "Update a calendar entry visible/editable to the logged-in user after explicit user confirmation. Requires path id and changed entry fields.",
+  },
   "threat.bootstrap": {
     method: "GET",
     path: "/api/threat/bootstrap",
@@ -40,6 +56,14 @@ const TOOL_ALLOWLIST = Object.freeze({
     capability: "reporter.read",
     description: "Read report projects visible to the logged-in user through Reporter project membership and RBAC.",
   },
+  "reporter.note.create": {
+    method: "POST",
+    path: "/api/reporter/projects/:projectId/notes",
+    permissionsAny: ["reporter.edit_own", "reporter.edit_assigned", "reporter.manage_all"],
+    capability: "reporter.write",
+    confirmRequired: true,
+    description: "Create a Reporter project note after explicit user confirmation. Requires projectId, title, and content.",
+  },
   "wiki.bootstrap": {
     method: "GET",
     path: "/api/wiki/bootstrap",
@@ -53,6 +77,22 @@ const TOOL_ALLOWLIST = Object.freeze({
     permissionsAny: ["wiki.view", "wiki.create_personal", "wiki.create_team", "wiki.edit_team", "wiki.manage"],
     capability: "wiki.search",
     description: "Search wiki pages visible to the logged-in user by query.",
+  },
+  "wiki.page.create": {
+    method: "POST",
+    path: "/api/wiki/pages",
+    permissionsAny: ["wiki.create_personal", "wiki.create_team", "wiki.manage"],
+    capability: "wiki.write",
+    confirmRequired: true,
+    description: "Create a personal or team wiki page after explicit user confirmation. Body supports scope, title, slug, bodyMarkdown, and parentPageId.",
+  },
+  "wiki.page.update": {
+    method: "PUT",
+    path: "/api/wiki/pages/:id",
+    permissionsAny: ["wiki.create_personal", "wiki.edit_team", "wiki.manage"],
+    capability: "wiki.write",
+    confirmRequired: true,
+    description: "Update a wiki page editable by the logged-in user after explicit user confirmation. Requires path id and page fields.",
   },
 });
 
@@ -73,27 +113,49 @@ function getInternalOrigin(req) {
   return `http://127.0.0.1:${port}`;
 }
 
-async function scopedApiGet(req, toolName, query = {}) {
+function buildToolPath(tool, args = {}) {
+  let path = tool.path;
+  const pathParams = args.pathParams && typeof args.pathParams === "object" ? args.pathParams : args;
+  path = path.replace(/:([A-Za-z0-9_]+)/g, (_, key) => encodeURIComponent(String(pathParams[key] || "")));
+  if (path.includes("/:") || /\/$/.test(path.replace(/\/api\/$/, ""))) {
+    return null;
+  }
+  return path;
+}
+
+async function scopedApiRequest(req, toolName, args = {}) {
   const tool = TOOL_ALLOWLIST[toolName];
   if (!tool) return { ok: false, status: 403, error: "Tool is not allowlisted for RedSecAI" };
   if (tool.method === "VIRTUAL") return { ok: false, status: 400, error: "Virtual RedSecAI tools must be executed through executeRedSecAiTool" };
   if (!hasAny(req.access, tool.permissionsAny)) return { ok: false, status: 403, error: "User RBAC denied RedSecAI tool access" };
 
+  const path = buildToolPath(tool, args);
+  if (!path) return { ok: false, status: 400, error: "Required RedSecAI tool path parameter is missing" };
   const params = new URLSearchParams();
+  const query = args.query && typeof args.query === "object" ? args.query : (tool.method === "GET" ? args : {});
   for (const [key, value] of Object.entries(query)) {
     if (value !== undefined && value !== null && value !== "") params.set(key, String(value));
   }
-  const url = `${getInternalOrigin(req)}${tool.path}${params.toString() ? `?${params.toString()}` : ""}`;
+  const url = `${getInternalOrigin(req)}${path}${params.toString() ? `?${params.toString()}` : ""}`;
+  const headers = {
+    cookie: req.headers.cookie || "",
+    accept: "application/json",
+    "user-agent": "RedSecAI scoped internal tool",
+  };
+  const init = { method: tool.method, headers };
+  if (tool.method !== "GET") {
+    headers["content-type"] = "application/json";
+    init.body = JSON.stringify(args.body && typeof args.body === "object" ? args.body : args);
+  }
   const res = await fetch(url, {
-    method: tool.method,
-    headers: {
-      cookie: req.headers.cookie || "",
-      accept: "application/json",
-      "user-agent": "RedSecAI scoped internal tool",
-    },
+    ...init,
   });
-  if (!res.ok) return { ok: false, status: res.status };
+  if (!res.ok) return { ok: false, status: res.status, body: await res.json().catch(() => null) };
   return { ok: true, status: res.status, body: await res.json().catch(() => null) };
+}
+
+async function scopedApiGet(req, toolName, query = {}) {
+  return scopedApiRequest(req, toolName, { query });
 }
 
 function normalizeSearchText(value) {
@@ -221,13 +283,28 @@ async function searchWiki(req, args = {}) {
   };
 }
 
-async function executeRedSecAiTool(req, toolName, args = {}) {
+function isRedSecAiToolMutating(toolName) {
+  const tool = TOOL_ALLOWLIST[toolName];
+  return !!tool && tool.confirmRequired === true;
+}
+
+async function executeRedSecAiTool(req, toolName, args = {}, options = {}) {
   if (!TOOL_ALLOWLIST[toolName]) {
     return { tool: toolName, ok: false, status: 403, error: "Tool is not allowlisted for RedSecAI" };
   }
+  if (isRedSecAiToolMutating(toolName) && !options.confirmed) {
+    return {
+      tool: toolName,
+      ok: false,
+      status: 409,
+      requiresConfirmation: true,
+      args,
+      error: "This RedSecAI tool requires explicit user confirmation",
+    };
+  }
   if (toolName === "threat.searchAlerts") return searchThreatAlerts(req, args);
   if (toolName === "wiki.search") return searchWiki(req, args);
-  const result = await scopedApiGet(req, toolName, args);
+  const result = await scopedApiRequest(req, toolName, args);
   return summarizeResult(toolName, result);
 }
 
@@ -294,6 +371,7 @@ async function buildScopedContext(req, page = {}) {
     `Current page: ${String(page.path || req.get("referer") || "/").slice(0, 200)}`,
     ...redactEncryptedToolNames(),
     "RedSecAI tool execution is server-side allowlisted. It cannot call arbitrary routes and has no direct database handle.",
+    "Write-capable tools require explicit in-browser confirmation before execution. RedSecAI can draft the action, but the user must confirm it.",
     "The TOOL_RESULTS block below is the only platform data RedSecAI may treat as factual. If a value is absent, say it is not available in the scoped tool results.",
   ];
 
@@ -306,6 +384,7 @@ async function buildScopedContext(req, page = {}) {
       capability: tool.capability,
       method: tool.method,
       path: tool.path,
+      confirmRequired: !!tool.confirmRequired,
       description: tool.description,
     }));
 
@@ -390,6 +469,8 @@ module.exports = {
   deriveRedSecAiToolCalls,
   executeRedSecAiTool,
   hasAny,
+  isRedSecAiToolMutating,
+  scopedApiRequest,
   scopedApiGet,
   TOOL_ALLOWLIST,
 };

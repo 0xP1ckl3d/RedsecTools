@@ -3,6 +3,7 @@ set -eu
 
 MODEL="${OLLAMA_MODEL:-qwen3.5:4b}"
 AUTO_PULL="${OLLAMA_AUTO_PULL:-true}"
+export OLLAMA_HOST="${OLLAMA_HOST:-0.0.0.0:11434}"
 
 ollama serve &
 SERVER_PID="$!"

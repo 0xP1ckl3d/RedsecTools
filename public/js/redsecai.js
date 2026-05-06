@@ -19,6 +19,12 @@ function renderMarkdownLite(value) {
     .replace(/\n/g, "<br>");
 }
 
+function formatDuration(ms) {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+}
+
 function loadMessages() {
   try {
     const parsed = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || "[]");
@@ -53,6 +59,9 @@ async function checkStatus() {
 }
 
 function createWidget(status) {
+  const readyText = status.ready
+    ? `Model: ${escapeHtml(status.model)}${status.cloudModel ? " (cloud)" : ""}`
+    : escapeHtml(status.installing ? "Installing local model..." : (status.error || "Model is not ready"));
   const root = document.createElement("section");
   root.className = "redsecai-widget";
   root.innerHTML = `
@@ -83,7 +92,7 @@ function createWidget(status) {
         <textarea class="redsecai-input" rows="2" placeholder="Ask about reports, calendar, or threat intel..."></textarea>
         <button type="submit" class="redsecai-send" title="Send" aria-label="Send">-&gt;</button>
       </form>
-      <p class="redsecai-footnote">${status.ready ? `Model: ${escapeHtml(status.model)}` : escapeHtml(status.installing ? "Installing local model..." : (status.error || "Local model is not ready"))}</p>
+      <p class="redsecai-footnote">${readyText}</p>
     </div>
   `;
   document.body.appendChild(root);
@@ -116,7 +125,7 @@ function createJobId() {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-function createRedSecAiSocket({ onStart, onDelta, onDone, onError, onSnapshot }) {
+function createRedSecAiSocket({ onStart, onDelta, onDone, onError, onSnapshot, onActions }) {
   let ws = null;
   let connected = false;
   let reconnectTimer = null;
@@ -152,6 +161,7 @@ function createRedSecAiSocket({ onStart, onDelta, onDone, onError, onSnapshot })
       else if (message.type === "redsecai_done") onDone(message);
       else if (message.type === "redsecai_error") onError(message);
       else if (message.type === "redsecai_snapshot") onSnapshot(message);
+      else if (message.type === "redsecai_actions") onActions(message);
     };
 
     ws.onclose = () => {
@@ -202,9 +212,17 @@ async function initRedSecAI() {
   const input = widget.querySelector(".redsecai-input");
   const send = widget.querySelector(".redsecai-send");
   const messagesEl = widget.querySelector(".redsecai-messages");
+  const footnote = widget.querySelector(".redsecai-footnote");
   let messages = loadMessages();
   let activeAssistant = null;
   let activeAssistantText = "";
+  let progressTimer = null;
+  let progressTimeoutTimer = null;
+  let progressStartedAt = 0;
+  let activeJobId = null;
+  let activeJobTimeoutMs = Number(status.timeoutMs) || 0;
+  const timedOutJobIds = new Set();
+  const pendingActionIds = new Set();
 
   renderMessages(messagesEl, messages);
 
@@ -226,16 +244,105 @@ async function initRedSecAI() {
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
+  function setFootnote(text) {
+    if (footnote) footnote.textContent = text;
+  }
+
+  function stopProgress() {
+    if (progressTimer) clearInterval(progressTimer);
+    if (progressTimeoutTimer) clearTimeout(progressTimeoutTimer);
+    progressTimer = null;
+    progressTimeoutTimer = null;
+    progressStartedAt = 0;
+    setFootnote(status.ready ? `Model: ${status.model}${status.cloudModel ? " (cloud)" : ""}` : (status.installing ? "Installing local model..." : (status.error || "Model is not ready")));
+  }
+
+  function startProgress(job = {}) {
+    stopProgress();
+    activeJobId = job.jobId || activeJobId || null;
+    activeJobTimeoutMs = Number(job.timeoutMs || status.timeoutMs || activeJobTimeoutMs) || 0;
+    progressStartedAt = Number(job.startedAt) || Date.now();
+    const timeoutLabel = activeJobTimeoutMs ? ` / timeout ${formatDuration(activeJobTimeoutMs)}` : "";
+    const tick = () => setFootnote(`Generating for ${formatDuration(Date.now() - progressStartedAt)}${timeoutLabel}`);
+    tick();
+    progressTimer = setInterval(tick, 1000);
+    if (activeJobTimeoutMs) {
+      const remainingMs = Math.max(0, activeJobTimeoutMs - (Date.now() - progressStartedAt));
+      progressTimeoutTimer = setTimeout(() => {
+        if (activeJobId) timedOutJobIds.add(activeJobId);
+        failActiveAssistant(`RedSecAI request timed out after ${formatDuration(activeJobTimeoutMs)}. The server did not send a completion event.`);
+      }, remainingMs + 1000);
+    }
+  }
+
   function finishActiveAssistant(text) {
     const content = text || activeAssistantText || "No response.";
     messages.push({ role: "assistant", content });
     saveMessages(messages);
     setActiveJob(null);
+    activeJobId = null;
     activeAssistant = null;
     activeAssistantText = "";
     renderMessages(messagesEl, messages);
     send.disabled = false;
+    stopProgress();
     input.focus();
+  }
+
+  function failActiveAssistant(text) {
+    finishActiveAssistant(text || "RedSecAI request failed.");
+  }
+
+  function renderActionCard(action) {
+    if (!action?.id || pendingActionIds.has(action.id)) return;
+    pendingActionIds.add(action.id);
+    const card = document.createElement("article");
+    card.className = "redsecai-action-card";
+    card.innerHTML = `
+      <div class="redsecai-action-title">${escapeHtml(action.summary || action.tool)}</div>
+      <div class="redsecai-action-meta">${escapeHtml(action.tool)} · expires ${escapeHtml(new Date((action.expiresAt || 0) * 1000).toLocaleTimeString())}</div>
+      <pre class="redsecai-action-args">${escapeHtml(JSON.stringify(action.args || {}, null, 2))}</pre>
+      <div class="redsecai-action-row">
+        <button type="button" class="redsecai-action-confirm">Confirm</button>
+        <button type="button" class="redsecai-action-dismiss">Dismiss</button>
+      </div>
+      <div class="redsecai-action-result hidden"></div>
+    `;
+    const confirmBtn = card.querySelector(".redsecai-action-confirm");
+    const dismissBtn = card.querySelector(".redsecai-action-dismiss");
+    const resultEl = card.querySelector(".redsecai-action-result");
+    confirmBtn?.addEventListener("click", async () => {
+      confirmBtn.disabled = true;
+      if (resultEl) {
+        resultEl.className = "redsecai-action-result";
+        resultEl.textContent = "Confirming...";
+      }
+      try {
+        const res = await fetch(`/api/ai/actions/${encodeURIComponent(action.id)}/confirm`, {
+          method: "POST",
+          headers: { accept: "application/json" },
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.error || "Action failed");
+        if (resultEl) {
+          resultEl.className = "redsecai-action-result success";
+          resultEl.textContent = "Action completed.";
+        }
+      } catch (error) {
+        confirmBtn.disabled = false;
+        if (resultEl) {
+          resultEl.className = "redsecai-action-result error";
+          resultEl.textContent = error.message || "Action failed.";
+        }
+      }
+    });
+    dismissBtn?.addEventListener("click", () => card.remove());
+    messagesEl.appendChild(card);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function renderActionCards(actions = []) {
+    actions.forEach(renderActionCard);
   }
 
   async function fallbackPost() {
@@ -251,32 +358,56 @@ async function initRedSecAI() {
       }),
     });
     const body = await res.json().catch(() => ({}));
-    return res.ok ? (body.message || "No response.") : (body.error || "RedSecAI is unavailable.");
+    if (res.ok) renderActionCards(body.pendingActions || []);
+    if (res.ok) return body.message || "No response.";
+    const detail = body.details?.elapsedMs ? `\n\nElapsed: ${formatDuration(body.details.elapsedMs)}.` : "";
+    return (body.error || "RedSecAI is unavailable.") + detail;
   }
 
   const aiSocket = createRedSecAiSocket({
     onStart(message) {
-      setActiveJob({ jobId: message.jobId, startedAt: Date.now() });
+      const startedAt = Number(message.startedAt) || Date.now();
+      const timeoutMs = Number(message.timeoutMs || status.timeoutMs) || 0;
+      setActiveJob({ jobId: message.jobId, startedAt, timeoutMs });
       send.disabled = true;
+      startProgress({ jobId: message.jobId, startedAt, timeoutMs });
       ensureActiveAssistant();
     },
     onDelta(message) {
+      if (message.jobId && timedOutJobIds.has(message.jobId)) return;
       updateActiveAssistant(activeAssistantText + (message.delta || ""));
     },
     onDone(message) {
+      if (message.jobId && timedOutJobIds.has(message.jobId)) return;
+      renderActionCards(message.actions || []);
       finishActiveAssistant(message.message || activeAssistantText);
     },
     onError(message) {
-      finishActiveAssistant(message.error || "RedSecAI is unavailable.");
+      if (message.jobId && timedOutJobIds.has(message.jobId)) return;
+      const detail = message.details?.elapsedMs ? `\n\nElapsed: ${formatDuration(message.details.elapsedMs)}.` : "";
+      failActiveAssistant((message.error || "RedSecAI is unavailable.") + detail);
     },
     onSnapshot(message) {
       if (!message.jobId) return;
+      if (timedOutJobIds.has(message.jobId)) return;
       if (message.error) {
-        finishActiveAssistant(message.error);
+        failActiveAssistant(message.error);
         return;
       }
       updateActiveAssistant(message.message || "");
-      if (message.done) finishActiveAssistant(message.message || activeAssistantText);
+      if (message.done) {
+        finishActiveAssistant(message.message || activeAssistantText);
+      } else {
+        const activeJob = getActiveJob();
+        startProgress({
+          jobId: message.jobId,
+          startedAt: activeJob?.startedAt || message.startedAt || Date.now(),
+          timeoutMs: activeJob?.timeoutMs || message.timeoutMs || status.timeoutMs,
+        });
+      }
+    },
+    onActions(message) {
+      renderActionCards(message.actions || []);
     },
   });
 
@@ -317,9 +448,13 @@ async function initRedSecAI() {
     activeAssistantText = "";
     ensureActiveAssistant();
 
+    const jobId = createJobId();
+    const startedAt = Date.now();
+    activeJobId = jobId;
+    setActiveJob({ jobId, startedAt, timeoutMs: status.timeoutMs || 0 });
+    startProgress({ jobId, startedAt, timeoutMs: status.timeoutMs || 0 });
+
     try {
-      const jobId = createJobId();
-      setActiveJob({ jobId, startedAt: Date.now() });
       aiSocket.send({
         type: "redsecai_chat",
         jobId,
@@ -331,9 +466,10 @@ async function initRedSecAI() {
       });
     } catch (_) {
       try {
-        finishActiveAssistant(await fallbackPost());
+        const fallbackMessage = await fallbackPost();
+        if (activeJobId === jobId && !timedOutJobIds.has(jobId)) finishActiveAssistant(fallbackMessage);
       } catch {
-        finishActiveAssistant("RedSecAI is unavailable right now.");
+        if (activeJobId === jobId && !timedOutJobIds.has(jobId)) failActiveAssistant("RedSecAI is unavailable right now.");
       }
     }
   });

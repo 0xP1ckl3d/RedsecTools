@@ -1,13 +1,23 @@
 "use strict";
 
 const { spawn } = require("child_process");
+const { logEvent, logWarn } = require("../../core/logger");
 
 const DEFAULT_MODEL = "qwen3.5:4b";
 const LEGACY_DEFAULT_MODELS = new Set(["qwen2.5:3b-instruct"]);
-const DEFAULT_TIMEOUT_MS = 120000;
+const DEFAULT_TIMEOUT_MS = 300000;
+const DEFAULT_NUM_CTX = 4096;
 const MODEL_PULL_STATES = new Map();
 let localServeProcess = null;
 let localServeStarted = false;
+
+function isCloudModel(model) {
+  return typeof model === "string" && /(^|:)cloud$/i.test(model.trim());
+}
+
+function hasLocalModel(models, model) {
+  return models.some((name) => name === model || name.startsWith(`${model}:`));
+}
 
 function getConfig() {
   const setting = (key) => {
@@ -27,6 +37,7 @@ function getConfig() {
   const dbUsesLocalhost = /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(dbBaseUrl.replace(/\/+$/, ""));
   const baseUrl = (envUsesDockerService && dbUsesLocalhost ? envBaseUrl : (dbBaseUrl || envBaseUrl)).replace(/\/+$/, "");
   const model = (LEGACY_DEFAULT_MODELS.has(dbModel) ? envModel : (dbModel || envModel));
+  const cloudModel = isCloudModel(model);
   const enabledRaw = setting("redsecai_enabled") || process.env.REDSECAI_ENABLED || "true";
   const autostartRaw = setting("redsecai_autostart") || process.env.REDSECAI_AUTOSTART || "";
   const autoPullRaw = setting("redsecai_auto_pull") || process.env.REDSECAI_AUTO_PULL || "true";
@@ -35,7 +46,9 @@ function getConfig() {
     enabled: enabledRaw !== "false",
     baseUrl,
     model,
+    cloudModel,
     timeoutMs: Math.max(1000, parseInt(setting("redsecai_timeout_ms") || process.env.REDSECAI_TIMEOUT_MS || String(DEFAULT_TIMEOUT_MS), 10) || DEFAULT_TIMEOUT_MS),
+    numCtx: Math.max(1024, parseInt(setting("redsecai_num_ctx") || process.env.REDSECAI_NUM_CTX || String(DEFAULT_NUM_CTX), 10) || DEFAULT_NUM_CTX),
     autostart: autostartRaw
       ? autostartRaw !== "false"
       : isLocalhost,
@@ -64,27 +77,65 @@ async function checkModelHealth() {
     if (!res.ok) return { ok: false, enabled: true, model: config.model, error: `Model service returned HTTP ${res.status}` };
     const body = await res.json().catch(() => ({}));
     const models = Array.isArray(body.models) ? body.models.map((item) => item.name) : [];
-    const modelReady = models.some((name) => name === config.model || name.startsWith(`${config.model}:`));
+    const modelReady = hasLocalModel(models, config.model);
     const pullState = MODEL_PULL_STATES.get(config.model) || null;
     if (!modelReady && config.autoPull && config.isLocalhost && pullState !== "pulling") {
       ensureModelInstalled(config.model).catch(() => {});
     }
+    const installing = pullState === "pulling" || (!modelReady && config.autoPull && config.isLocalhost);
+    const missingModelError = config.cloudModel
+      ? `Cloud model is not available through this Ollama service yet. Sign in to Ollama and pull ${config.model}, then rerun diagnostics.`
+      : "Local model is not installed yet";
     return {
       ok: modelReady,
       enabled: true,
       model: config.model,
+      baseUrl: config.baseUrl,
+      timeoutMs: config.timeoutMs,
+      numCtx: config.numCtx,
+      cloudModel: config.cloudModel,
       availableModels: models,
-      installing: pullState === "pulling" || (!modelReady && config.autoPull && config.isLocalhost),
-      error: modelReady ? null : (pullState === "failed" ? "Model pull failed" : "Local model is not installed yet"),
+      installing,
+      error: modelReady ? null : (pullState === "failed" ? "Model pull failed" : missingModelError),
     };
   } catch (error) {
-    return { ok: false, enabled: true, model: config.model, error: error.name === "AbortError" ? "Model service timed out" : "Model service unavailable" };
+    return {
+      ok: false,
+      enabled: true,
+      model: config.model,
+      baseUrl: config.baseUrl,
+      timeoutMs: config.timeoutMs,
+      numCtx: config.numCtx,
+      cloudModel: config.cloudModel,
+      error: error.name === "AbortError" ? "Model service timed out" : "Model service unavailable",
+    };
   } finally {
     clearTimeout(timeout);
   }
 }
 
-async function chat(messages) {
+function redsecAiRequestError(message, status, details = {}) {
+  const error = new Error(message);
+  error.status = status;
+  error.details = details;
+  return error;
+}
+
+function summarizeRequest(config, messages, phase, startedAt, extra = {}) {
+  return {
+    phase: phase || "chat",
+    baseUrl: config.baseUrl,
+    model: config.model,
+    timeoutMs: config.timeoutMs,
+    numCtx: config.numCtx,
+    messageCount: Array.isArray(messages) ? messages.length : 0,
+    requestBytes: Buffer.byteLength(JSON.stringify(messages || []), "utf8"),
+    elapsedMs: Date.now() - startedAt,
+    ...extra,
+  };
+}
+
+async function chat(messages, options = {}) {
   const config = getConfig();
   if (!config.enabled) {
     const error = new Error("RedSecAI is disabled");
@@ -97,6 +148,9 @@ async function chat(messages) {
   }
 
   const { controller, timeout } = controllerWithTimeout(config.timeoutMs);
+  const startedAt = Date.now();
+  const phase = options.phase || "chat";
+  logEvent("redsecai:model_request_start", null, summarizeRequest(config, messages, phase, startedAt));
   try {
     const res = await fetch(`${config.baseUrl}/api/chat`, {
       method: "POST",
@@ -108,30 +162,51 @@ async function chat(messages) {
         messages,
         options: {
           temperature: 0.2,
-          num_ctx: 8192,
+          num_ctx: config.numCtx,
         },
       }),
     });
     if (!res.ok) {
-      const error = new Error(`RedSecAI model service returned HTTP ${res.status}`);
-      error.status = 502;
-      throw error;
+      const bodyPreview = (await res.text().catch(() => "")).slice(0, 1200);
+      throw redsecAiRequestError(`RedSecAI model service returned HTTP ${res.status}`, 502, {
+        httpStatus: res.status,
+        bodyPreview,
+        elapsedMs: Date.now() - startedAt,
+        timeoutMs: config.timeoutMs,
+        model: config.model,
+        baseUrl: config.baseUrl,
+        phase,
+      });
     }
     const body = await res.json();
-    return String(body?.message?.content || "").trim();
+    const content = String(body?.message?.content || "").trim();
+    logEvent("redsecai:model_request_done", null, summarizeRequest(config, messages, phase, startedAt, {
+      responseChars: content.length,
+      doneReason: body?.done_reason || null,
+    }));
+    return content;
   } catch (error) {
     if (error.name === "AbortError") {
-      const timeoutError = new Error("RedSecAI model request timed out");
-      timeoutError.status = 504;
-      throw timeoutError;
+      throw redsecAiRequestError(`RedSecAI model request timed out after ${Math.round(config.timeoutMs / 1000)}s`, 504, {
+        elapsedMs: Date.now() - startedAt,
+        timeoutMs: config.timeoutMs,
+        model: config.model,
+        baseUrl: config.baseUrl,
+        numCtx: config.numCtx,
+        phase,
+      });
     }
+    logWarn("redsecai:model_request_failed", summarizeRequest(config, messages, phase, startedAt, {
+      message: error.message,
+      status: error.status || null,
+    }));
     throw error;
   } finally {
     clearTimeout(timeout);
   }
 }
 
-async function* chatStream(messages) {
+async function* chatStream(messages, options = {}) {
   const config = getConfig();
   if (!config.enabled) {
     const error = new Error("RedSecAI is disabled");
@@ -144,6 +219,10 @@ async function* chatStream(messages) {
   }
 
   const { controller, timeout } = controllerWithTimeout(config.timeoutMs);
+  const startedAt = Date.now();
+  const phase = options.phase || "chat_stream";
+  let responseChars = 0;
+  logEvent("redsecai:model_request_start", null, summarizeRequest(config, messages, phase, startedAt, { stream: true }));
   try {
     const res = await fetch(`${config.baseUrl}/api/chat`, {
       method: "POST",
@@ -155,14 +234,21 @@ async function* chatStream(messages) {
         messages,
         options: {
           temperature: 0.2,
-          num_ctx: 8192,
+          num_ctx: config.numCtx,
         },
       }),
     });
     if (!res.ok) {
-      const error = new Error(`RedSecAI model service returned HTTP ${res.status}`);
-      error.status = 502;
-      throw error;
+      const bodyPreview = (await res.text().catch(() => "")).slice(0, 1200);
+      throw redsecAiRequestError(`RedSecAI model service returned HTTP ${res.status}`, 502, {
+        httpStatus: res.status,
+        bodyPreview,
+        elapsedMs: Date.now() - startedAt,
+        timeoutMs: config.timeoutMs,
+        model: config.model,
+        baseUrl: config.baseUrl,
+        phase,
+      });
     }
 
     const decoder = new TextDecoder();
@@ -175,25 +261,120 @@ async function* chatStream(messages) {
         if (!line.trim()) continue;
         const payload = JSON.parse(line);
         const content = payload?.message?.content;
-        if (content) yield content;
-        if (payload?.done) return;
+        if (content) {
+          responseChars += content.length;
+          yield content;
+        }
+        if (payload?.done) {
+          logEvent("redsecai:model_request_done", null, summarizeRequest(config, messages, phase, startedAt, {
+            stream: true,
+            responseChars,
+            doneReason: payload?.done_reason || null,
+          }));
+          return;
+        }
       }
     }
     if (buffer.trim()) {
       const payload = JSON.parse(buffer);
       const content = payload?.message?.content;
-      if (content) yield content;
+      if (content) {
+        responseChars += content.length;
+        yield content;
+      }
     }
+    logEvent("redsecai:model_request_done", null, summarizeRequest(config, messages, phase, startedAt, {
+      stream: true,
+      responseChars,
+    }));
   } catch (error) {
     if (error.name === "AbortError") {
-      const timeoutError = new Error("RedSecAI model request timed out");
-      timeoutError.status = 504;
-      throw timeoutError;
+      throw redsecAiRequestError(`RedSecAI model request timed out after ${Math.round(config.timeoutMs / 1000)}s`, 504, {
+        elapsedMs: Date.now() - startedAt,
+        timeoutMs: config.timeoutMs,
+        model: config.model,
+        baseUrl: config.baseUrl,
+        numCtx: config.numCtx,
+        phase,
+      });
     }
+    logWarn("redsecai:model_request_failed", summarizeRequest(config, messages, phase, startedAt, {
+      stream: true,
+      responseChars,
+      message: error.message,
+      status: error.status || null,
+    }));
     throw error;
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function postOllamaJson(path, body, timeoutMs) {
+  const config = getConfig();
+  const { controller, timeout } = controllerWithTimeout(timeoutMs);
+  const startedAt = Date.now();
+  try {
+    const res = await fetch(`${config.baseUrl}${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify(body),
+    });
+    const text = await res.text();
+    return {
+      ok: res.ok,
+      status: res.status,
+      elapsedMs: Date.now() - startedAt,
+      bodyPreview: text.slice(0, 1200),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: error.name === "AbortError" ? 504 : 0,
+      elapsedMs: Date.now() - startedAt,
+      error: error.name === "AbortError" ? `Timed out after ${Math.round(timeoutMs / 1000)}s` : error.message,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function runDiagnostics(timeoutMs = 60000) {
+  const config = getConfig();
+  const health = await checkModelHealth();
+  const generate = await postOllamaJson("/api/generate", {
+    model: config.model,
+    prompt: "Reply with only: pong",
+    stream: false,
+  }, timeoutMs);
+  const chatProbe = await postOllamaJson("/api/chat", {
+    model: config.model,
+    stream: false,
+    messages: [{ role: "user", content: "Reply with only: pong" }],
+    options: {
+      temperature: 0.2,
+      num_ctx: config.numCtx,
+    },
+  }, timeoutMs);
+
+  return {
+    config: {
+      enabled: config.enabled,
+      baseUrl: config.baseUrl,
+      model: config.model,
+      cloudModel: config.cloudModel,
+      timeoutMs: config.timeoutMs,
+      numCtx: config.numCtx,
+      autostart: config.autostart,
+      autoPull: config.autoPull,
+    },
+    health,
+    probes: {
+      generate,
+      chat: chatProbe,
+    },
+  };
 }
 
 function spawnOllama(args, options = {}) {
@@ -249,7 +430,7 @@ async function ensureModelInstalled(model) {
 
   const health = await fetch(`${config.baseUrl}/api/tags`).then((res) => res.json()).catch(() => ({}));
   const models = Array.isArray(health.models) ? health.models.map((item) => item.name) : [];
-  if (models.some((name) => name === model || name.startsWith(`${model}:`))) {
+  if (hasLocalModel(models, model)) {
     MODEL_PULL_STATES.set(model, "ready");
     return true;
   }
@@ -272,10 +453,12 @@ async function ensureModelInstalled(model) {
 
 module.exports = {
   DEFAULT_MODEL,
+  isCloudModel,
   getConfig,
   checkModelHealth,
   chat,
   chatStream,
+  runDiagnostics,
   ensureLocalModelService,
   ensureModelInstalled,
 };

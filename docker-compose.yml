@@ -19,7 +19,8 @@ services:
       - REDSECAI_ENABLED=${REDSECAI_ENABLED:-true}
       - REDSECAI_BASE_URL=http://redsecai:11434
       - REDSECAI_MODEL=${REDSECAI_MODEL:-qwen3.5:4b}
-      - REDSECAI_TIMEOUT_MS=${REDSECAI_TIMEOUT_MS:-120000}
+      - REDSECAI_TIMEOUT_MS=${REDSECAI_TIMEOUT_MS:-300000}
+      - REDSECAI_NUM_CTX=${REDSECAI_NUM_CTX:-4096}
       - REDSECAI_AUTOSTART=false
       - REDSECAI_AUTO_PULL=${REDSECAI_AUTO_PULL:-true}
     volumes:
@@ -30,8 +31,11 @@ services:
       context: ./docker/redsecai
     container_name: redsectools-ai
     environment:
+      - OLLAMA_HOST=0.0.0.0:11434
       - OLLAMA_MODEL=${REDSECAI_MODEL:-qwen3.5:4b}
       - OLLAMA_AUTO_PULL=${REDSECAI_AUTO_PULL:-true}
+    ports:
+      - "${REDSECAI_HOST:-127.0.0.1}:${REDSECAI_HOST_PORT:-11434}:11434"
     volumes:
       - redsectools-ai:/root/.ollama
     restart: unless-stopped

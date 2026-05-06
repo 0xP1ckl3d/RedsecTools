@@ -2,7 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const { compactJson, hasAny } = require("../server/modules/redsecai/context");
-const { getConfig } = require("../server/modules/redsecai/provider");
+const { checkModelHealth, getConfig, isCloudModel, runDiagnostics } = require("../server/modules/redsecai/provider");
 const { extractJsonObject, sanitizeModelToolCalls } = require("../server/modules/redsecai/orchestrator");
 
 test("RedSecAI permission helper accepts only explicit scoped permissions", () => {
@@ -21,9 +21,13 @@ test("RedSecAI exposes a clear scoped tool manifest", () => {
   const { TOOL_ALLOWLIST } = require("../server/modules/redsecai/context");
   assert.ok(TOOL_ALLOWLIST["calendar.bootstrap"].description.includes("calendar"));
   assert.equal(TOOL_ALLOWLIST["calendar.bootstrap"].capability, "calendar.read");
+  assert.equal(TOOL_ALLOWLIST["calendar.entry.create"].capability, "calendar.write");
+  assert.equal(TOOL_ALLOWLIST["calendar.entry.create"].confirmRequired, true);
   assert.equal(TOOL_ALLOWLIST["threat.alerts"].capability, "threat.read");
   assert.equal(TOOL_ALLOWLIST["reporter.projects"].capability, "reporter.read");
+  assert.equal(TOOL_ALLOWLIST["reporter.note.create"].confirmRequired, true);
   assert.equal(TOOL_ALLOWLIST["wiki.bootstrap"].capability, "wiki.read");
+  assert.equal(TOOL_ALLOWLIST["wiki.page.create"].confirmRequired, true);
   assert.equal(TOOL_ALLOWLIST["vault.entries"], undefined);
 });
 
@@ -53,6 +57,7 @@ test("RedSecAI provider config uses safe local defaults", () => {
     redsecai_base_url: getSetting("redsecai_base_url"),
     redsecai_model: getSetting("redsecai_model"),
     redsecai_timeout_ms: getSetting("redsecai_timeout_ms"),
+    redsecai_num_ctx: getSetting("redsecai_num_ctx"),
     redsecai_autostart: getSetting("redsecai_autostart"),
     redsecai_auto_pull: getSetting("redsecai_auto_pull"),
   };
@@ -68,12 +73,15 @@ test("RedSecAI provider config uses safe local defaults", () => {
     setSetting("redsecai_base_url", "http://127.0.0.1:11434");
     setSetting("redsecai_model", "qwen3.5:4b");
     setSetting("redsecai_timeout_ms", "120000");
+    setSetting("redsecai_num_ctx", "2048");
     setSetting("redsecai_autostart", "true");
     setSetting("redsecai_auto_pull", "true");
     const config = getConfig();
     assert.equal(config.enabled, true);
     assert.equal(config.baseUrl, "http://127.0.0.1:11434");
     assert.equal(config.model, "qwen3.5:4b");
+    assert.equal(config.timeoutMs, 120000);
+    assert.equal(config.numCtx, 2048);
   } finally {
     if (originalBaseUrl === undefined) delete process.env.REDSECAI_BASE_URL;
     else process.env.REDSECAI_BASE_URL = originalBaseUrl;
@@ -116,6 +124,123 @@ test("RedSecAI provider prefers Docker service URL over stale localhost DB URL",
   }
 });
 
+test("RedSecAI reports cloud models as unavailable until Ollama exposes them", async () => {
+  const { getSetting, setSetting } = require("../server/database");
+  const originalFetch = global.fetch;
+  const originalSettings = {
+    redsecai_enabled: getSetting("redsecai_enabled"),
+    redsecai_base_url: getSetting("redsecai_base_url"),
+    redsecai_model: getSetting("redsecai_model"),
+    redsecai_auto_pull: getSetting("redsecai_auto_pull"),
+  };
+  const originalBaseUrl = process.env.REDSECAI_BASE_URL;
+  const originalModel = process.env.REDSECAI_MODEL;
+
+  try {
+    process.env.REDSECAI_BASE_URL = "http://redsecai:11434";
+    process.env.REDSECAI_MODEL = "qwen3.5:4b";
+    setSetting("redsecai_enabled", "true");
+    setSetting("redsecai_base_url", "http://redsecai:11434");
+    setSetting("redsecai_model", "kimi-k2.5:cloud");
+    setSetting("redsecai_auto_pull", "true");
+    global.fetch = async (url) => {
+      assert.ok(String(url).endsWith("/api/tags"));
+      return new Response(JSON.stringify({ models: [{ name: "qwen3.5:4b" }] }), { status: 200 });
+    };
+
+    const config = getConfig();
+    const health = await checkModelHealth();
+    assert.equal(isCloudModel("kimi-k2.5:cloud"), true);
+    assert.equal(config.model, "kimi-k2.5:cloud");
+    assert.equal(config.cloudModel, true);
+    assert.equal(health.ok, false);
+    assert.equal(health.cloudModel, true);
+    assert.equal(health.installing, false);
+    assert.match(health.error, /Cloud model is not available/);
+  } finally {
+    global.fetch = originalFetch;
+    if (originalBaseUrl === undefined) delete process.env.REDSECAI_BASE_URL;
+    else process.env.REDSECAI_BASE_URL = originalBaseUrl;
+    if (originalModel === undefined) delete process.env.REDSECAI_MODEL;
+    else process.env.REDSECAI_MODEL = originalModel;
+    for (const [key, value] of Object.entries(originalSettings)) {
+      setSetting(key, value || "");
+    }
+  }
+});
+
+test("RedSecAI reports cloud models ready when Ollama lists them", async () => {
+  const { getSetting, setSetting } = require("../server/database");
+  const originalFetch = global.fetch;
+  const originalSettings = {
+    redsecai_enabled: getSetting("redsecai_enabled"),
+    redsecai_base_url: getSetting("redsecai_base_url"),
+    redsecai_model: getSetting("redsecai_model"),
+  };
+  const originalBaseUrl = process.env.REDSECAI_BASE_URL;
+  const originalModel = process.env.REDSECAI_MODEL;
+
+  try {
+    process.env.REDSECAI_BASE_URL = "http://redsecai:11434";
+    process.env.REDSECAI_MODEL = "qwen3.5:4b";
+    setSetting("redsecai_enabled", "true");
+    setSetting("redsecai_base_url", "http://redsecai:11434");
+    setSetting("redsecai_model", "kimi-k2.5:cloud");
+    global.fetch = async (url) => {
+      assert.ok(String(url).endsWith("/api/tags"));
+      return new Response(JSON.stringify({ models: [{ name: "kimi-k2.5:cloud" }] }), { status: 200 });
+    };
+
+    const health = await checkModelHealth();
+    assert.equal(health.ok, true);
+    assert.equal(health.cloudModel, true);
+    assert.equal(health.error, null);
+  } finally {
+    global.fetch = originalFetch;
+    if (originalBaseUrl === undefined) delete process.env.REDSECAI_BASE_URL;
+    else process.env.REDSECAI_BASE_URL = originalBaseUrl;
+    if (originalModel === undefined) delete process.env.REDSECAI_MODEL;
+    else process.env.REDSECAI_MODEL = originalModel;
+    for (const [key, value] of Object.entries(originalSettings)) {
+      setSetting(key, value || "");
+    }
+  }
+});
+
+test("RedSecAI diagnostics returns configured endpoint and isolated probe results", async () => {
+  const originalFetch = global.fetch;
+  const originalBaseUrl = process.env.REDSECAI_BASE_URL;
+  const originalModel = process.env.REDSECAI_MODEL;
+  process.env.REDSECAI_BASE_URL = "http://redsecai:11434";
+  process.env.REDSECAI_MODEL = "qwen3.5:4b";
+  global.fetch = async (url) => {
+    if (String(url).endsWith("/api/tags")) {
+      return new Response(JSON.stringify({ models: [{ name: "qwen3.5:4b" }] }), { status: 200 });
+    }
+    if (String(url).endsWith("/api/generate")) {
+      return new Response(JSON.stringify({ response: "pong", done: true }), { status: 200 });
+    }
+    if (String(url).endsWith("/api/chat")) {
+      return new Response(JSON.stringify({ message: { content: "pong" }, done: true }), { status: 200 });
+    }
+    return new Response("not found", { status: 404 });
+  };
+
+  try {
+    const diagnostics = await runDiagnostics(5000);
+    assert.equal(diagnostics.config.baseUrl, "http://redsecai:11434");
+    assert.equal(diagnostics.health.ok, true);
+    assert.equal(diagnostics.probes.generate.ok, true);
+    assert.equal(diagnostics.probes.chat.ok, true);
+  } finally {
+    global.fetch = originalFetch;
+    if (originalBaseUrl === undefined) delete process.env.REDSECAI_BASE_URL;
+    else process.env.REDSECAI_BASE_URL = originalBaseUrl;
+    if (originalModel === undefined) delete process.env.REDSECAI_MODEL;
+    else process.env.REDSECAI_MODEL = originalModel;
+  }
+});
+
 test("RedSecAI extracts strict JSON tool plans from small local models", () => {
   assert.deepEqual(extractJsonObject('```json\n{"toolCalls":[{"tool":"wiki.search","args":{"query":"vpn"}}]}\n```'), {
     toolCalls: [{ tool: "wiki.search", args: { query: "vpn" } }],
@@ -128,20 +253,36 @@ test("RedSecAI sanitizes model-planned tools against manifest and encrypted scop
     toolManifest: [
       { name: "threat.searchAlerts" },
       { name: "wiki.search" },
+      { name: "calendar.entry.create" },
     ],
   };
   const calls = sanitizeModelToolCalls({
     toolCalls: [
       { tool: "threat.searchAlerts", args: { query: "CVE-2026-12345", limit: 99, badKey: { nested: true } } },
+      { tool: "calendar.entry.create", args: { body: { title: "Standup", startsAt: 1770000000, assigneeUserIds: ["u1", "u2"] } } },
       { tool: "vault.entries", args: {} },
       { tool: "admin.users", args: {} },
       { tool: "wiki.search", args: { query: "a".repeat(1500) } },
     ],
   }, scopedContext);
 
-  assert.deepEqual(calls.map((call) => call.tool), ["threat.searchAlerts", "wiki.search"]);
+  assert.deepEqual(calls.map((call) => call.tool), ["threat.searchAlerts", "calendar.entry.create", "wiki.search"]);
   assert.equal(calls[0].args.query, "CVE-2026-12345");
   assert.equal(calls[0].args.limit, 99);
   assert.equal(calls[0].args.badKey, undefined);
-  assert.equal(calls[1].args.query.length, 1000);
+  assert.equal(calls[1].args.body.title, "Standup");
+  assert.deepEqual(calls[1].args.body.assigneeUserIds, ["u1", "u2"]);
+  assert.equal(calls[2].args.query.length, 1000);
+});
+
+test("RedSecAI mutating tools create confirmation-gated pending actions", async () => {
+  const { createPendingAction, listPendingActionsForUser } = require("../server/modules/redsecai/actions");
+  const action = createPendingAction({ id: "user-a", username: "alice" }, {
+    tool: "wiki.page.create",
+    args: { body: { scope: "personal", title: "AI Draft", bodyMarkdown: "draft" } },
+  }, "test");
+  assert.equal(action.tool, "wiki.page.create");
+  assert.equal(action.summary, 'Create personal wiki page "AI Draft"');
+  assert.ok(listPendingActionsForUser("user-a").some((item) => item.id === action.id));
+  assert.equal(listPendingActionsForUser("user-b").some((item) => item.id === action.id), false);
 });

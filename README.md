@@ -119,11 +119,11 @@ Admin > Tools > RedSecReporter shows global report stats, recent projects, proje
 
 RedSecAI is the built-in local assistant. In Docker Compose it runs against a separate Ollama/Qwen container; local npm installs use a local Ollama service on `127.0.0.1:11434`.
 
-Stage 1 provides an expandable chat bubble on authenticated pages. It can use a small server-side allowlist of scoped application APIs for the logged-in user to help summarize permitted calendar and threat-intel context, and it can draft report prose from user-provided context. It does not have admin scope, does not read the database directly, and does not access decrypted RedSecPaste, RedSecShare, RedSecTeam, or RedSecVault content.
+RedSecAI provides an expandable chat bubble on authenticated pages. It can use a server-side allowlist of scoped application APIs for the logged-in user to help summarize permitted calendar, wiki, reporter, and threat-intel context. It does not have admin scope, does not read the database directly, and does not access decrypted RedSecPaste, RedSecShare, RedSecTeam, or RedSecVault content.
 
-Stage 1 is read-only for platform mutations. If a user asks RedSecAI to update a calendar item or another record, it drafts the intended change for confirmation in the relevant tool rather than applying it silently.
+Phase 2 adds confirmation-gated actions. RedSecAI can draft scoped calendar entries/updates, wiki page changes, and Reporter notes, but the browser shows an action card and the logged-in user must explicitly confirm before the server calls the existing RBAC-protected API. The model never receives direct database access and cannot silently mutate records.
 
-Admins control RedSecAI globally from **Admin > Tool Settings > RedSecAI** after installation. The `.env` values are bootstrap defaults and emergency overrides; database-backed Admin settings determine the live global enable flag, Ollama base URL, model name, timeout, autostart, and auto-pull behavior.
+Admins control RedSecAI globally from **Admin > Tool Settings > RedSecAI** after installation. The `.env` values are bootstrap defaults and emergency overrides; database-backed Admin settings determine the live global enable flag, Ollama base URL, model name, timeout, autostart, and auto-pull behavior. The same Admin panel shows pending confirmed-action counts and recent RedSecAI action activity.
 
 RedSecAI uses a same-origin WebSocket at `/ws/redsecai` for streaming responses. The legacy `/api/ai/chat` POST route remains available for health checks and fallback use. If RedSecTools is behind a reverse proxy, make sure WebSocket upgrades are allowed for both `/ws` and `/ws/redsecai`.
 
@@ -182,7 +182,7 @@ docker compose up -d
 
 That's it. The setup script creates a `.env` file with a randomly generated admin password and cookie secret.
 
-Docker starts RedSecAI as a separate `redsecai` Ollama container. On the first run, that container pulls the configured model into the `redsectools-ai` named volume unless `REDSECAI_AUTO_PULL=false`. The main RedSecTools app does not wait for that model download to finish; if the model is missing, the chat bubble reports RedSecAI as unavailable until the model is installed.
+Docker starts RedSecAI as a separate `redsecai` Ollama container. Ollama binds to `0.0.0.0:11434` inside that sidecar so the app container can reach `http://redsecai:11434`; Compose also publishes it on `127.0.0.1:${REDSECAI_HOST_PORT:-11434}` for local diagnostics. On the first run, that container pulls the configured model into the `redsectools-ai` named volume unless `REDSECAI_AUTO_PULL=false`. The main RedSecTools app does not wait for that model download to finish; if the model is missing, the chat bubble reports RedSecAI as unavailable until the model is installed.
 
 If the server has limited bandwidth, set `REDSECAI_AUTO_PULL=false` in `.env` before `docker compose up -d`. Later, pull the model into the persistent AI volume:
 
@@ -247,9 +247,12 @@ Configuration is managed through a `.env` file in the project root. The setup sc
 | `REDSECAI_ENABLED` | No | `true` | Enables the authenticated RedSecAI chat API and widget |
 | `REDSECAI_BASE_URL` | No | `http://127.0.0.1:11434` | Ollama-compatible model endpoint. Docker Compose sets this to the `redsecai` service |
 | `REDSECAI_MODEL` | No | `qwen3.5:4b` | Local model name used by RedSecAI |
-| `REDSECAI_TIMEOUT_MS` | No | `120000` | Timeout for local model responses |
+| `REDSECAI_TIMEOUT_MS` | No | `300000` | Timeout for local model responses |
+| `REDSECAI_NUM_CTX` | No | `4096` | Ollama context window requested by RedSecAI |
 | `REDSECAI_AUTOSTART` | No | `true` for local Ollama URLs | Starts local Ollama automatically when RedSecTools starts. Docker disables this because the AI runs in its own container |
 | `REDSECAI_AUTO_PULL` | No | `true` | Pulls the configured model if it is missing. In Docker this controls the `redsecai` container entrypoint; in local npm mode it controls local Ollama auto-pull |
+| `REDSECAI_HOST` | No | `127.0.0.1` | Docker-only host bind address for the diagnostic Ollama port |
+| `REDSECAI_HOST_PORT` | No | `11434` | Docker-only host port for diagnostic access to Ollama |
 | `REDSECAI_INTERNAL_ORIGIN` | No | `http://127.0.0.1:$PORT` | Internal same-app origin used for scoped API context fetches when the bind address is unusual |
 | `TRUSTED_PUBLIC_ORIGINS` | Yes for production email/share links | Localhost defaults plus any extra origins entered during setup | Comma-separated allowlist of public origins used for invite links, password-reset links, and guest links |
 
@@ -263,7 +266,8 @@ For existing local npm installs, add these lines to `.env`, restart RedSecTools,
 REDSECAI_ENABLED=true
 REDSECAI_BASE_URL=http://127.0.0.1:11434
 REDSECAI_MODEL=qwen3.5:4b
-REDSECAI_TIMEOUT_MS=120000
+REDSECAI_TIMEOUT_MS=300000
+REDSECAI_NUM_CTX=4096
 REDSECAI_AUTOSTART=true
 REDSECAI_AUTO_PULL=true
 ```
@@ -281,7 +285,12 @@ docker compose build redsectools redsecai
 docker compose up -d
 ```
 
-The app container talks to `http://redsecai:11434` internally. If an older Admin setting still says `http://127.0.0.1:11434`, Docker startup will prefer the compose-provided internal service URL so the container does not accidentally call itself.
+The app container talks to `http://redsecai:11434` internally. If an older Admin setting still says `http://127.0.0.1:11434`, Docker startup will prefer the compose-provided internal service URL so the container does not accidentally call itself. You can also verify the sidecar from the Docker host:
+
+```bash
+curl http://127.0.0.1:${REDSECAI_HOST_PORT:-11434}/api/tags
+docker compose exec redsectools node -e "fetch('http://redsecai:11434/api/tags').then(r=>r.text()).then(console.log)"
+```
 
 To postpone model download, set this in the remote `.env` before deployment:
 

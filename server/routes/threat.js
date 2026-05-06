@@ -507,22 +507,60 @@ router.get("/threat/alerts", requireUser, attachUserAccess, requireThreatView, (
   const isRead = req.query.isRead === "true" ? true : req.query.isRead === "false" ? false : undefined;
   const feedId = typeof req.query.feedId === "string" && req.query.feedId ? req.query.feedId : undefined;
   const keywordId = typeof req.query.keywordId === "string" && req.query.keywordId ? req.query.keywordId : undefined;
+  const search = typeof req.query.search === "string" ? req.query.search.trim().slice(0, 300) : "";
+  const tacticId = typeof req.query.tacticId === "string" && /^TA\d{4}$/.test(req.query.tacticId) ? req.query.tacticId : undefined;
+  const techniqueId = typeof req.query.techniqueId === "string" && /^T\d{4}(?:\.\d{3})?$/.test(req.query.techniqueId) ? req.query.techniqueId : undefined;
   const hours = parseInt(req.query.hours, 10);
   const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
   const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
+  const requiresPostFilter = !!(search || tacticId || techniqueId);
 
-  const alerts = db.listThreatAlerts({
+  const rawAlerts = db.listThreatAlerts({
     criticality,
     isRead,
     feedId,
     keywordId,
     hours: Number.isFinite(hours) && hours > 0 ? hours : undefined,
     userId: req.user.id,
-    limit,
-    offset,
+    limit: requiresPostFilter ? 100000 : limit,
+    offset: requiresPostFilter ? 0 : offset,
   });
 
-  res.json({ alerts: enrichAlerts(alerts) });
+  let alerts = enrichAlerts(rawAlerts);
+  if (search) {
+    const needle = search.toLowerCase();
+    alerts = alerts.filter((alert) => {
+      const keywords = Array.isArray(alert.keywords) ? alert.keywords.map((item) => item?.keyword || item?.text || item).join(" ") : "";
+      const tags = Array.isArray(alert.tags) ? alert.tags.map((item) => item?.name || item).join(" ") : "";
+      const mitre = Array.isArray(alert.mitre) ? alert.mitre.map((item) => `${item.tacticId} ${item.tactic} ${item.techniqueId} ${item.technique}`).join(" ") : "";
+      return [
+        alert.feedName,
+        alert.feedType,
+        alert.matchedContent,
+        alert.context,
+        alert.articleUrl,
+        keywords,
+        tags,
+        mitre,
+        JSON.stringify(alert.apiMetadata || {}),
+      ].join(" ").toLowerCase().includes(needle);
+    });
+  }
+  if (tacticId) {
+    alerts = alerts.filter((alert) => Array.isArray(alert.mitre) && alert.mitre.some((match) => match.tacticId === tacticId));
+  }
+  if (techniqueId) {
+    alerts = alerts.filter((alert) => Array.isArray(alert.mitre) && alert.mitre.some((match) => match.techniqueId === techniqueId));
+  }
+
+  const total = requiresPostFilter ? alerts.length : undefined;
+  if (requiresPostFilter) alerts = alerts.slice(offset, offset + limit);
+
+  res.json({
+    alerts,
+    total: total ?? null,
+    hasMore: requiresPostFilter ? offset + alerts.length < total : rawAlerts.length === limit,
+  });
 });
 
 router.get("/threat/alerts/:id", requireUser, attachUserAccess, requireThreatView, (req, res) => {

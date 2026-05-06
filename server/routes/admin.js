@@ -516,10 +516,13 @@ router.post("/api/settings/share", requireAdmin, (req, res) => {
 router.get("/api/settings/redsecai", requireAdmin, async (req, res) => {
   const config = redsecAiProvider.getConfig();
   const health = await redsecAiProvider.checkModelHealth();
+  const { getRedSecAiActionStats } = require("../modules/redsecai/actions");
+  const actionStats = getRedSecAiActionStats();
   res.json({
     enabled: config.enabled,
     baseUrl: config.baseUrl,
     model: config.model,
+    cloudModel: config.cloudModel,
     timeoutMs: config.timeoutMs,
     autostart: config.autostart,
     autoPull: config.autoPull,
@@ -527,7 +530,15 @@ router.get("/api/settings/redsecai", requireAdmin, async (req, res) => {
     installing: !!health.installing,
     error: health.error || null,
     availableModels: health.availableModels || [],
+    actionStats,
   });
+});
+
+// POST /admin/api/settings/redsecai/diagnostics
+router.post("/api/settings/redsecai/diagnostics", requireAdmin, async (req, res) => {
+  const timeoutMs = Math.min(120000, Math.max(5000, parseInt(req.body?.timeoutMs, 10) || 60000));
+  const diagnostics = await redsecAiProvider.runDiagnostics(timeoutMs);
+  res.json(diagnostics);
 });
 
 // POST /admin/api/settings/redsecai

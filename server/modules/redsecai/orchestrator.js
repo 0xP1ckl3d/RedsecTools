@@ -5,8 +5,11 @@ const {
   buildTargetedToolContext,
   compactJson,
   executeRedSecAiTool,
+  isRedSecAiToolMutating,
 } = require("./context");
+const { createPendingAction } = require("./actions");
 const provider = require("./provider");
+const { logEvent } = require("../../core/logger");
 
 const MAX_MODEL_TOOL_CALLS = 4;
 const MAX_TOOL_ARG_CHARS = 1000;
@@ -22,7 +25,7 @@ Security boundaries:
 - You do not have admin scope and must not claim to perform admin actions.
 - You must not access, request, infer, store, or summarize decrypted content from RedSecPaste, RedSecShare, RedSecTeam chat, or RedSecVault.
 - You may help draft report text, summarize permitted threat intel, and reason about permitted calendar context.
-- Stage 1 is read-only for platform actions. If the user asks you to update data, draft the exact change and tell them it needs explicit confirmation in the relevant tool.
+- Mutating platform actions are confirmation-gated. If MODEL_REQUESTED_TOOL_RESULTS contains a pending action, explain exactly what will happen and tell the user to confirm it in the action card.
 - Do not ask users to paste passwords, recovery codes, API keys, private keys, TOTP secrets, session tokens, bearer tokens, URL fragment encryption keys, or decrypted vault content.
 
 Be concise, practical, and transparent about limitations.`;
@@ -59,13 +62,15 @@ Return ONLY strict JSON in this format:
 Rules:
 - Use only tools listed in TOOL_MANIFEST.
 - Use at most ${MAX_MODEL_TOOL_CALLS} tool calls.
-- Use read/search tools only.
+- Read/search tools can be used immediately. Write tools can only create a pending action card for explicit user confirmation.
 - Do not request admin, vault, paste, share, or chat tools.
 - If the existing TOOL_RESULTS and TARGETED_TOOL_RESULTS are enough, return {"toolCalls":[]}.
 - If the user asks for threat alerts about a topic, prefer threat.searchAlerts with a focused query.
 - If the user asks for wiki/runbook/procedure content, prefer wiki.search with a focused query.
-- If the user asks about schedule, calendar, utilisation, or project time, prefer calendar.bootstrap.
+- If the user asks to create/update a calendar event, use calendar.entry.create or calendar.entry.update with Unix timestamps in seconds. Otherwise prefer calendar.bootstrap.
 - If the user asks about reports, findings, projects, clients, or evidence, prefer reporter.projects.
+- If the user asks to create a Reporter note, use reporter.note.create.
+- If the user asks to create/update wiki content, use wiki.page.create or wiki.page.update.
 
 Allowed tool manifest:
 ${compactJson(scopedContext.toolManifest, 8000)}`,
@@ -99,12 +104,19 @@ function extractJsonObject(text) {
   return null;
 }
 
-function sanitizeToolArgs(args = {}) {
+function sanitizeToolArgs(args = {}, depth = 0) {
   const clean = {};
   for (const [key, value] of Object.entries(args || {})) {
     if (!/^[a-zA-Z0-9_]+$/.test(key)) continue;
     if (typeof value === "string") clean[key] = value.slice(0, MAX_TOOL_ARG_CHARS);
     else if (typeof value === "number" || typeof value === "boolean") clean[key] = value;
+    else if (value && typeof value === "object" && !Array.isArray(value) && depth < 2 && ["body", "query", "pathParams"].includes(key)) clean[key] = sanitizeToolArgs(value, depth + 1);
+    else if (Array.isArray(value) && depth < 2) {
+      clean[key] = value
+        .slice(0, 20)
+        .filter((item) => ["string", "number", "boolean"].includes(typeof item))
+        .map((item) => typeof item === "string" ? item.slice(0, MAX_TOOL_ARG_CHARS) : item);
+    }
   }
   return clean;
 }
@@ -136,7 +148,7 @@ async function planModelToolCalls(scopedContext, targetedContext, messages) {
     { role: "system", content: targetedContext.text },
     buildToolPlannerPrompt(scopedContext),
     ...messages,
-  ]);
+  ], { phase: "tool_planner" });
   const parsed = extractJsonObject(raw);
   return {
     calls: sanitizeModelToolCalls(parsed, scopedContext),
@@ -147,7 +159,19 @@ async function planModelToolCalls(scopedContext, targetedContext, messages) {
 async function executeToolCalls(req, calls) {
   const results = [];
   for (const call of calls) {
-    results.push(await executeRedSecAiTool(req, call.tool, call.args));
+    if (isRedSecAiToolMutating(call.tool)) {
+      const action = createPendingAction(req.user, call, "model");
+      results.push({
+        tool: call.tool,
+        ok: false,
+        status: 202,
+        requiresConfirmation: true,
+        action,
+        error: "Pending user confirmation",
+      });
+    } else {
+      results.push(await executeRedSecAiTool(req, call.tool, call.args));
+    }
   }
   return results;
 }
@@ -175,13 +199,27 @@ async function prepareRedSecAiTurn(req, rawMessages, page = {}) {
   }
 
   const scopedReq = req;
+  const startedAt = Date.now();
   const scopedContext = await buildScopedContext(scopedReq, page || {});
   const targetedContext = await buildTargetedToolContext(scopedReq, messages);
+  logEvent("redsecai:turn_context_ready", req, {
+    elapsedMs: Date.now() - startedAt,
+    scopedContextChars: scopedContext.text.length,
+    targetedContextChars: targetedContext.text.length,
+    allowedTools: scopedContext.allowedTools,
+    targetedTools: targetedContext.calls.map((call) => call.tool),
+  });
   const modelPlan = await planModelToolCalls(scopedContext, targetedContext, messages);
+  logEvent("redsecai:turn_planner_ready", req, {
+    elapsedMs: Date.now() - startedAt,
+    plannedTools: modelPlan.calls.map((call) => call.tool),
+    plannerRawChars: modelPlan.raw.length,
+  });
   const modelResults = await executeToolCalls(scopedReq, modelPlan.calls);
   const modelToolContext = {
     calls: modelPlan.calls,
     results: modelResults,
+    pendingActions: modelResults.map((result) => result.action).filter(Boolean),
     raw: modelPlan.raw,
   };
 
@@ -196,7 +234,7 @@ async function prepareRedSecAiTurn(req, rawMessages, page = {}) {
 
 async function runRedSecAiChat(req, rawMessages, page = {}) {
   const turn = await prepareRedSecAiTurn(req, rawMessages, page);
-  const response = await provider.chat(turn.finalMessages);
+  const response = await provider.chat(turn.finalMessages, { phase: "final_answer" });
   return {
     ...turn,
     response: response || "I could not produce a response from the local model.",

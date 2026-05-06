@@ -132,7 +132,15 @@ async function startJob(ws, auth, msg) {
     updatedAt: Date.now(),
   };
   jobs.set(jobId, job);
-  broadcastToUser(auth.user.id, { type: "redsecai_start", jobId });
+  const config = provider.getConfig();
+  broadcastToUser(auth.user.id, {
+    type: "redsecai_start",
+    jobId,
+    startedAt: job.createdAt,
+    timeoutMs: config.timeoutMs,
+    model: config.model,
+    cloudModel: config.cloudModel,
+  });
 
   try {
     const turn = await prepareRedSecAiTurn(buildScopedReq(auth, msg.page || {}), messages, msg.page || {});
@@ -142,10 +150,17 @@ async function startJob(ws, auth, msg) {
       allowedTools: turn.scopedContext.allowedTools,
       targetedTools: turn.targetedContext.calls.map((call) => call.tool),
       modelRequestedTools: turn.modelToolContext.calls.map((call) => call.tool),
-      model: provider.getConfig().model,
+      model: config.model,
     });
+    if (turn.modelToolContext.pendingActions?.length) {
+      broadcastToUser(auth.user.id, {
+        type: "redsecai_actions",
+        jobId,
+        actions: turn.modelToolContext.pendingActions,
+      });
+    }
 
-    for await (const chunk of provider.chatStream(turn.finalMessages)) {
+    for await (const chunk of provider.chatStream(turn.finalMessages, { phase: "final_stream" })) {
       job.buffer += chunk;
       job.updatedAt = Date.now();
       trimBuffer(job);
@@ -153,25 +168,33 @@ async function startJob(ws, auth, msg) {
     }
     job.done = true;
     job.updatedAt = Date.now();
-    broadcastToUser(auth.user.id, { type: "redsecai_done", jobId, message: job.buffer });
+    broadcastToUser(auth.user.id, {
+      type: "redsecai_done",
+      jobId,
+      message: job.buffer,
+      actions: turn.modelToolContext.pendingActions || [],
+    });
   } catch (error) {
     job.done = true;
-    job.error = error.status === 503 ? error.message : "RedSecAI is unavailable";
+    job.error = error.status === 503 || error.status === 504 ? error.message : "RedSecAI is unavailable";
     job.updatedAt = Date.now();
-    logWarn("redsecai:stream_failed", { message: error.message, status: error.status || 500 });
-    broadcastToUser(auth.user.id, { type: "redsecai_error", jobId, error: job.error });
+    logWarn("redsecai:stream_failed", { message: error.message, status: error.status || 500, details: error.details || null });
+    broadcastToUser(auth.user.id, { type: "redsecai_error", jobId, error: job.error, details: error.details || null });
   }
 }
 
 function resumeJob(ws, auth, jobId) {
   const job = jobs.get(jobId);
   if (!job || job.userId !== auth.user.id) return;
+  const config = provider.getConfig();
   send(ws, {
     type: "redsecai_snapshot",
     jobId,
     message: job.buffer,
     done: job.done,
     error: job.error,
+    startedAt: job.createdAt,
+    timeoutMs: config.timeoutMs,
   });
 }
 

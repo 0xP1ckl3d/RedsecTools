@@ -1145,6 +1145,9 @@ const redsecAiBaseUrl = document.getElementById("redsecai-base-url");
 const redsecAiModel = document.getElementById("redsecai-model");
 const redsecAiTimeoutMs = document.getElementById("redsecai-timeout-ms");
 const redsecAiStatusBox = document.getElementById("redsecai-status-box");
+const redsecAiDiagnosticsBox = document.getElementById("redsecai-diagnostics-box");
+const redsecAiDiagnosticsBtn = document.getElementById("redsecai-diagnostics-btn");
+const redsecAiActionsBox = document.getElementById("redsecai-actions-box");
 const redsecAiSaveBtn = document.getElementById("redsecai-save-btn");
 const redsecAiResult = document.getElementById("redsecai-settings-result");
 
@@ -1165,24 +1168,35 @@ async function loadRedSecAiSettings() {
     if (redsecAiTimeoutMs) redsecAiTimeoutMs.value = data.timeoutMs || 120000;
 
     setRedSecAiText("redsecai-stat-enabled", data.enabled ? "On" : "Off");
-    setRedSecAiText("redsecai-stat-ready", data.ready ? "Yes" : (data.installing ? "Pulling" : "No"));
+    setRedSecAiText("redsecai-stat-ready", data.ready ? (data.cloudModel ? "Cloud" : "Yes") : (data.installing ? "Pulling" : "No"));
     setRedSecAiText("redsecai-stat-model", data.model || "-");
     setRedSecAiText("redsecai-stat-models", String((data.availableModels || []).length));
+    setRedSecAiText("redsecai-stat-actions", String(data.actionStats?.pendingCount || 0));
 
     if (redsecAiStatusBox) {
       const models = (data.availableModels || []).length
         ? `Installed models: ${(data.availableModels || []).map(escapeHtml).join(", ")}`
         : "No installed models reported by Ollama.";
+      const readyText = data.cloudModel && data.ready
+        ? "RedSecAI cloud model is available through this Ollama service."
+        : (data.ready ? "RedSecAI is ready." : escapeHtml(data.error || "RedSecAI is not ready."));
       redsecAiStatusBox.className = `info-box text-sm mt-4 ${data.ready ? "text-accent" : "text-warning"}`;
       redsecAiStatusBox.innerHTML = data.enabled
-        ? `${data.ready ? "RedSecAI is ready." : escapeHtml(data.error || "RedSecAI is not ready.")}<br>${models}`
+        ? `${readyText}<br>${models}`
         : "RedSecAI is globally disabled.";
+    }
+    if (redsecAiActionsBox) {
+      const events = data.actionStats?.recentEvents || [];
+      redsecAiActionsBox.innerHTML = events.length
+        ? `<strong>Recent AI activity</strong><br>${events.slice(0, 8).map((event) => `${escapeHtml(event.type || "event")} - ${escapeHtml(event.tool || "system")} - ${escapeHtml(event.summary || "")}`).join("<br>")}`
+        : "No recent RedSecAI confirmed-action activity.";
     }
   } catch {
     if (redsecAiStatusBox) {
       redsecAiStatusBox.className = "info-box text-sm mt-4 text-error";
       redsecAiStatusBox.textContent = "Failed to load RedSecAI settings.";
     }
+    if (redsecAiActionsBox) redsecAiActionsBox.textContent = "Failed to load RedSecAI activity.";
   }
 }
 
@@ -1217,6 +1231,50 @@ redsecAiSaveBtn?.addEventListener("click", async () => {
     }
   } finally {
     redsecAiSaveBtn.disabled = false;
+  }
+});
+
+redsecAiDiagnosticsBtn?.addEventListener("click", async () => {
+  redsecAiDiagnosticsBtn.disabled = true;
+  if (redsecAiDiagnosticsBox) {
+    redsecAiDiagnosticsBox.className = "info-box text-sm mt-4";
+    redsecAiDiagnosticsBox.textContent = "Running RedSecAI diagnostics from the app server...";
+  }
+  try {
+    const res = await api("/api/settings/redsecai/diagnostics", {
+      method: "POST",
+      body: JSON.stringify({ timeoutMs: 60000 }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Diagnostics failed");
+    const generate = data.probes?.generate || {};
+    const chat = data.probes?.chat || {};
+    const formatProbe = (label, probe) => {
+      const parts = [
+        `<strong>${label}:</strong> ${probe.ok ? "ok" : "failed"} in ${escapeHtml(String(probe.elapsedMs || 0))}ms`,
+      ];
+      if (probe.status !== undefined) parts.push(`HTTP ${escapeHtml(String(probe.status))}`);
+      if (probe.error) parts.push(escapeHtml(probe.error));
+      if (probe.bodyPreview) parts.push(`<code>${escapeHtml(String(probe.bodyPreview).slice(0, 500))}</code>`);
+      return parts.join(" - ");
+    };
+    if (redsecAiDiagnosticsBox) {
+      redsecAiDiagnosticsBox.className = `info-box text-sm mt-4 ${generate.ok && chat.ok ? "text-accent" : "text-warning"}`;
+      redsecAiDiagnosticsBox.innerHTML = [
+        `<strong>Endpoint:</strong> ${escapeHtml(data.config?.baseUrl || "-")}`,
+        `<strong>Model:</strong> ${escapeHtml(data.config?.model || "-")}${data.config?.cloudModel ? " (cloud)" : ""}`,
+        `<strong>Health:</strong> ${data.health?.ok ? "ready" : escapeHtml(data.health?.error || "not ready")}`,
+        formatProbe("/api/generate", generate),
+        formatProbe("/api/chat", chat),
+      ].join("<br>");
+    }
+  } catch (error) {
+    if (redsecAiDiagnosticsBox) {
+      redsecAiDiagnosticsBox.className = "info-box text-sm mt-4 text-error";
+      redsecAiDiagnosticsBox.textContent = error.message || "Diagnostics failed";
+    }
+  } finally {
+    redsecAiDiagnosticsBtn.disabled = false;
   }
 });
 

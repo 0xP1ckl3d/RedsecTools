@@ -918,6 +918,7 @@
           <div class="stat-card"><div class="stat-value" id="redsecai-stat-ready">-</div><div class="stat-label">Model Ready</div></div>
           <div class="stat-card"><div class="stat-value" id="redsecai-stat-model">-</div><div class="stat-label">Model</div></div>
           <div class="stat-card"><div class="stat-value" id="redsecai-stat-models">-</div><div class="stat-label">Installed Models</div></div>
+          <div class="stat-card"><div class="stat-value" id="redsecai-stat-actions">-</div><div class="stat-label">Pending Actions</div></div>
         </div>
 
         <div class="card admin-section-card">
@@ -928,6 +929,7 @@
               <p class="admin-card-copy">Control the global assistant, local Ollama endpoint, and model selection. User access remains scoped through RBAC-protected internal APIs.</p>
             </div>
             <div class="admin-card-actions">
+              <button type="button" id="redsecai-diagnostics-btn" class="btn-secondary text-sm">Run Diagnostics</button>
               <button type="button" id="redsecai-refresh-btn" class="btn-secondary text-sm">Refresh Status</button>
             </div>
           </div>
@@ -975,6 +977,8 @@
           </div>
 
           <div id="redsecai-status-box" class="info-box text-sm mt-4">Loading RedSecAI status...</div>
+          <div id="redsecai-diagnostics-box" class="info-box text-sm mt-4 hidden"></div>
+          <div id="redsecai-actions-box" class="info-box text-sm mt-4">Loading RedSecAI action activity...</div>
           <div class="flex items-center gap-3 mt-4">
             <button type="button" id="redsecai-save-btn" class="btn-primary">Save RedSecAI Settings</button>
             <p id="redsecai-settings-result" class="text-sm hidden"></p>

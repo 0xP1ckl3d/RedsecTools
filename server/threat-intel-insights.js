@@ -1,5 +1,7 @@
 "use strict";
 
+const { MITRE_ENTERPRISE_CATALOGUE } = require("./mitre-enterprise-catalogue");
+
 const REPUTABLE_NEWS_SOURCES = new Set([
   "bleeping computer security",
   "cisa advisories",
@@ -11,6 +13,10 @@ const REPUTABLE_NEWS_SOURCES = new Set([
   "security affairs",
   "the hacker news",
   "threat post",
+]);
+
+const MITRE_TACTIC_ALIASES = new Map([
+  ["TA0005", ["defense evasion", "defence evasion"]],
 ]);
 
 const MITRE_RULES = [
@@ -442,21 +448,50 @@ function deriveMitreMatches(alert) {
   const normalizedCorpus = corpus.toLowerCase();
   const matches = [];
   const seen = new Set();
+  const addMatch = (match) => {
+    const key = `${match.tacticId || ""}:${match.techniqueId || ""}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    matches.push(match);
+  };
   for (const rule of MITRE_RULES) {
     const explicitTechnique = normalizedCorpus.includes(rule.techniqueId.toLowerCase())
       || normalizedCorpus.includes(rule.technique.toLowerCase());
     const explicitTactic = normalizedCorpus.includes(rule.tacticId.toLowerCase())
       || normalizedCorpus.includes(rule.tactic.toLowerCase());
     if (!explicitTechnique && !explicitTactic && !rule.patterns.some((pattern) => pattern.test(corpus))) continue;
-    const key = `${rule.tacticId}:${rule.techniqueId}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    matches.push({
+    addMatch({
       tacticId: rule.tacticId,
       tactic: rule.tactic,
       techniqueId: rule.techniqueId,
       technique: rule.technique,
     });
+  }
+  for (const technique of MITRE_ENTERPRISE_CATALOGUE.techniques) {
+    const explicitTechnique = normalizedCorpus.includes(technique.techniqueId.toLowerCase())
+      || normalizedCorpus.includes(technique.technique.toLowerCase());
+    if (!explicitTechnique) continue;
+    technique.tacticIds.forEach((tacticId, index) => {
+      addMatch({
+        tacticId,
+        tactic: technique.tactics[index] || tacticId,
+        techniqueId: technique.techniqueId,
+        technique: technique.technique,
+      });
+    });
+  }
+  for (const tactic of MITRE_ENTERPRISE_CATALOGUE.tactics) {
+    const explicitTactic = normalizedCorpus.includes(tactic.tacticId.toLowerCase())
+      || normalizedCorpus.includes(tactic.tactic.toLowerCase())
+      || (MITRE_TACTIC_ALIASES.get(tactic.tacticId) || []).some((alias) => normalizedCorpus.includes(alias));
+    if (explicitTactic) {
+      addMatch({
+        tacticId: tactic.tacticId,
+        tactic: tactic.tactic,
+        techniqueId: "",
+        technique: "",
+      });
+    }
   }
   return matches;
 }
@@ -576,15 +611,17 @@ function buildMitreOverview(alerts) {
       tacticEntry.count += 1;
       tacticCounts.set(tacticKey, tacticEntry);
 
-      const techniqueEntry = techniqueCounts.get(techniqueKey) || {
-        tacticId: match.tacticId,
-        tactic: match.tactic,
-        techniqueId: match.techniqueId,
-        technique: match.technique,
-        count: 0,
-      };
-      techniqueEntry.count += 1;
-      techniqueCounts.set(techniqueKey, techniqueEntry);
+      if (match.techniqueId) {
+        const techniqueEntry = techniqueCounts.get(techniqueKey) || {
+          tacticId: match.tacticId,
+          tactic: match.tactic,
+          techniqueId: match.techniqueId,
+          technique: match.technique,
+          count: 0,
+        };
+        techniqueEntry.count += 1;
+        techniqueCounts.set(techniqueKey, techniqueEntry);
+      }
     }
   }
 
@@ -604,6 +641,14 @@ function buildMitreOverview(alerts) {
     recentAlerts: mappedAlerts
       .sort((a, b) => (b.createdAt || b.triggeredAt || 0) - (a.createdAt || a.triggeredAt || 0))
       .slice(0, 20),
+    catalogue: buildMitreCatalogue(),
+  };
+}
+
+function buildMitreCatalogue() {
+  return {
+    tactics: MITRE_ENTERPRISE_CATALOGUE.tactics,
+    techniques: MITRE_ENTERPRISE_CATALOGUE.techniques,
   };
 }
 
@@ -613,5 +658,6 @@ module.exports = {
   enrichIntelArticle,
   enrichIntelArticles,
   buildNewsBrief,
+  buildMitreCatalogue,
   buildMitreOverview,
 };

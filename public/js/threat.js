@@ -20,6 +20,7 @@ const state = {
   newsItems: [],
   intelBriefCovers: [],
   mitreOverview: null,
+  mitreCatalogue: null,
   settings: {},
   notificationPolicy: {},
   allowedChannels: [],
@@ -31,8 +32,10 @@ const state = {
   alertOffset: 0,
   alertLimit: 50,
   alertTotal: 0,
+  alertHasMore: false,
   autoRefreshTimer: null,
   logsRefreshTimer: null,
+  alertFilterTimer: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -684,9 +687,22 @@ async function loadMitre() {
   try {
     const data = await api("/mitre");
     state.mitreOverview = data || null;
+    state.mitreCatalogue = data?.catalogue || state.mitreCatalogue;
+    syncAlertFilterOptions(state.alerts);
     renderMitre(data || {});
   } catch (err) {
     console.error("Failed to load MITRE overview:", err);
+  }
+}
+
+async function ensureMitreCatalogue() {
+  if (state.mitreCatalogue) return;
+  try {
+    const data = await api("/mitre");
+    state.mitreOverview = data || state.mitreOverview;
+    state.mitreCatalogue = data?.catalogue || null;
+  } catch (err) {
+    console.error("Failed to load MITRE catalogue:", err);
   }
 }
 
@@ -951,18 +967,34 @@ async function loadAlerts() {
       const keywordData = await api("/keywords");
       state.keywords = keywordData.keywords || [];
     }
+    if (!state.feeds.length) {
+      const feedData = await api("/feeds");
+      state.feeds = feedData.feeds || [];
+    }
 
     const params = new URLSearchParams({ limit: String(state.alertLimit), offset: String(state.alertOffset) });
     const statusFilter = document.getElementById("threat-alerts-status-filter")?.value;
     const critFilter = document.getElementById("threat-alerts-criticality-filter")?.value;
+    const searchFilter = (document.getElementById("threat-alerts-filter")?.value || "").trim();
+    const tacticFilter = document.getElementById("threat-alerts-tactic-filter")?.value || "all";
+    const techniqueFilter = document.getElementById("threat-alerts-technique-filter")?.value || "all";
+    const keywordFilter = document.getElementById("threat-alerts-keyword-filter")?.value || "all";
+    const feedFilter = document.getElementById("threat-alerts-feed-filter")?.value || "all";
 
     if (statusFilter === "unread") params.set("isRead", "false");
     else if (statusFilter === "read") params.set("isRead", "true");
     if (critFilter && critFilter !== "all") params.set("criticality", critFilter);
+    if (searchFilter) params.set("search", searchFilter);
+    if (tacticFilter !== "all") params.set("tacticId", tacticFilter);
+    if (techniqueFilter !== "all") params.set("techniqueId", techniqueFilter);
+    if (keywordFilter !== "all") params.set("keywordId", keywordFilter);
+    if (feedFilter !== "all") params.set("feedId", feedFilter);
 
     const data = await api("/alerts?" + params.toString());
     state.alerts = data.alerts || [];
-    state.alertTotal = state.alerts.length;
+    state.alertTotal = Number.isFinite(data.total) ? data.total : (state.alertOffset + state.alerts.length);
+    state.alertHasMore = !!data.hasMore;
+    await ensureMitreCatalogue();
     syncAlertFilterOptions(state.alerts);
     renderAlerts(state.alerts);
 
@@ -976,47 +1008,12 @@ async function loadAlerts() {
 
 function renderAlerts(alerts) {
   updateAlertFilterSummary();
-  const filterText = (document.getElementById("threat-alerts-filter")?.value || "").toLowerCase();
-  const critFilter = document.getElementById("threat-alerts-criticality-filter")?.value;
-  const statusFilter = document.getElementById("threat-alerts-status-filter")?.value;
-  const tacticFilter = document.getElementById("threat-alerts-tactic-filter")?.value || "all";
-  const techniqueFilter = document.getElementById("threat-alerts-technique-filter")?.value || "all";
-  const keywordFilter = document.getElementById("threat-alerts-keyword-filter")?.value || "all";
-  const feedFilter = document.getElementById("threat-alerts-feed-filter")?.value || "all";
-
-  const filtered = alerts.filter((alert) => {
-    if (critFilter && critFilter !== "all" && alert.criticality !== critFilter) return false;
-    if (statusFilter === "unread" && alert.isRead) return false;
-    if (statusFilter === "read" && !alert.isRead) return false;
-    if (feedFilter !== "all" && alert.feedId !== feedFilter) return false;
-    const mitreMatches = Array.isArray(alert.mitre) ? alert.mitre : [];
-    if (tacticFilter !== "all" && !mitreMatches.some((match) => match.tacticId === tacticFilter)) return false;
-    if (techniqueFilter !== "all" && !mitreMatches.some((match) => match.techniqueId === techniqueFilter)) return false;
-    const kwList = dedupeKeywordList(alert.keywords || []);
-    if (keywordFilter !== "all" && !kwList.some((keyword) => {
-      const keywordId = typeof keyword === "string" ? "" : (keyword.keywordId || "");
-      const keywordText = typeof keyword === "string" ? keyword : (keyword.keyword || keyword.text || "");
-      return keywordId === keywordFilter || keywordText.toLowerCase() === keywordFilter.toLowerCase();
-    })) return false;
-    if (filterText) {
-      const haystack = (
-        (alert.feedName || "") + " " +
-        (alert.matchedContent || "") + " " +
-        (alert.context || "") + " " +
-        kwList.map((k) => typeof k === "string" ? k : (k.keyword || "")).join(" ") + " " +
-        mitreMatches.map((match) => `${match.tactic} ${match.tacticId} ${match.technique} ${match.techniqueId}`).join(" ")
-      ).toLowerCase();
-      if (!haystack.includes(filterText)) return false;
-    }
-    return true;
-  });
-
   const tbody = document.getElementById("threat-alerts-tbody");
   const emptyEl = document.getElementById("threat-alerts-empty");
 
   if (!tbody) return;
 
-  if (!filtered.length) {
+  if (!alerts.length) {
     tbody.innerHTML = "";
     if (emptyEl) emptyEl.classList.remove("hidden");
     renderAlertsPagination();
@@ -1025,7 +1022,7 @@ function renderAlerts(alerts) {
 
   if (emptyEl) emptyEl.classList.add("hidden");
 
-  tbody.innerHTML = filtered.map((alert) => {
+  tbody.innerHTML = alerts.map((alert) => {
     const checked = state.selectedAlertIds.has(alert.id) ? " checked" : "";
     const unreadClass = !alert.isRead ? " threat-unread-row" : "";
     const tags = Array.isArray(alert.tags) ? alert.tags : [];
@@ -1034,15 +1031,15 @@ function renderAlerts(alerts) {
     const localTime = formatLocalDateTime(alert.createdAt);
     return (
       '<tr class="threat-alert-row' + unreadClass + '" data-open-alert-id="' + escapeHtml(alert.id) + '">' +
-        '<td><input type="checkbox" class="threat-row-check" data-alert-id="' + escapeHtml(alert.id) + '"' + checked + "></td>" +
-        "<td>" + criticalityBadge(alert.criticality) + "</td>" +
-        '<td class="text-sm">' + escapeHtml(alert.feedName || "-") + "</td>" +
-        "<td>" + keywordChips(kwList) + "</td>" +
-        '<td class="text-sm">' + escapeHtml(truncate(contentPreview, 80)) + "</td>" +
-        '<td class="text-sm" title="' + escapeHtml(localTime) + '">' + escapeHtml(relativeTime(alert.createdAt)) + "</td>" +
-        "<td>" + readBadge(alert.isRead) + "</td>" +
-        "<td>" + tagChips(tags) + "</td>" +
-        '<td class="threat-actions-cell">' +
+        '<td class="threat-alert-check-cell" data-label=""><input type="checkbox" class="threat-row-check" data-alert-id="' + escapeHtml(alert.id) + '"' + checked + "></td>" +
+        '<td data-label="Level">' + criticalityBadge(alert.criticality) + "</td>" +
+        '<td class="text-sm threat-alert-feed-cell" data-label="Feed">' + escapeHtml(alert.feedName || "-") + "</td>" +
+        '<td data-label="Keyword">' + keywordChips(kwList) + "</td>" +
+        '<td class="text-sm threat-alert-content-cell" data-label="Content">' + escapeHtml(truncate(contentPreview, 80)) + "</td>" +
+        '<td class="text-sm" data-label="Time" title="' + escapeHtml(localTime) + '">' + escapeHtml(relativeTime(alert.createdAt)) + "</td>" +
+        '<td data-label="Status">' + readBadge(alert.isRead) + "</td>" +
+        '<td data-label="Tags">' + tagChips(tags) + "</td>" +
+        '<td class="threat-actions-cell" data-label="Actions">' +
           '<button type="button" class="btn-secondary btn-xs" data-action="toggle-alert-read" data-id="' + escapeHtml(alert.id) + '">' + (alert.isRead ? "Mark Unread" : "Mark Read") + "</button> " +
           '<button type="button" class="btn-danger btn-xs" data-action="delete-alert" data-id="' + escapeHtml(alert.id) + '">Delete</button>' +
         "</td>" +
@@ -1073,29 +1070,53 @@ function setSelectOptions(selectEl, options, placeholder) {
   }
 }
 
-function syncAlertFilterOptions(alerts = state.alerts) {
-  const tacticSelect = document.getElementById("threat-alerts-tactic-filter");
-  const techniqueSelect = document.getElementById("threat-alerts-technique-filter");
-  const keywordSelect = document.getElementById("threat-alerts-keyword-filter");
-  const feedSelect = document.getElementById("threat-alerts-feed-filter");
-
-  const tacticOptions = [];
-  const techniqueOptions = [];
-  const keywordOptions = [];
-  const feedOptions = [];
+function getMitreCatalogueOptions(alerts = state.alerts) {
+  const catalogue = state.mitreCatalogue || state.mitreOverview?.catalogue || {};
+  const tacticOptions = Array.isArray(catalogue.tactics)
+    ? catalogue.tactics.map((item) => ({ value: item.tacticId, label: `${item.tacticId} - ${item.tactic}` }))
+    : [];
+  const techniqueOptions = Array.isArray(catalogue.techniques)
+    ? catalogue.techniques.flatMap((item) => (item.tacticIds || [item.tacticId]).map((tacticId, index) => ({
+      value: item.techniqueId,
+      label: `${item.techniqueId} - ${item.technique}`,
+      tacticId,
+      tactic: (item.tactics || [item.tactic])[index] || "",
+    })))
+    : [];
 
   for (const alert of alerts || []) {
-    if (alert.feedId && alert.feedName) {
-      feedOptions.push({ value: alert.feedId, label: alert.feedName });
-    }
     const mitreMatches = Array.isArray(alert.mitre) ? alert.mitre : [];
     for (const match of mitreMatches) {
       if (match?.tacticId && match?.tactic) {
         tacticOptions.push({ value: match.tacticId, label: `${match.tacticId} - ${match.tactic}` });
       }
       if (match?.techniqueId && match?.technique) {
-        techniqueOptions.push({ value: match.techniqueId, label: `${match.techniqueId} - ${match.technique}` });
+        techniqueOptions.push({
+          value: match.techniqueId,
+          label: `${match.techniqueId} - ${match.technique}`,
+          tacticId: match.tacticId || "",
+        });
       }
+    }
+  }
+
+  return { tacticOptions, techniqueOptions };
+}
+
+function syncAlertFilterOptions(alerts = state.alerts) {
+  const tacticSelect = document.getElementById("threat-alerts-tactic-filter");
+  const techniqueSelect = document.getElementById("threat-alerts-technique-filter");
+  const keywordSelect = document.getElementById("threat-alerts-keyword-filter");
+  const feedSelect = document.getElementById("threat-alerts-feed-filter");
+  const selectedTactic = tacticSelect?.value || "all";
+
+  const { tacticOptions, techniqueOptions } = getMitreCatalogueOptions(alerts);
+  const keywordOptions = [];
+  const feedOptions = [];
+
+  for (const alert of alerts || []) {
+    if (alert.feedId && alert.feedName) {
+      feedOptions.push({ value: alert.feedId, label: alert.feedName });
     }
     for (const keyword of dedupeKeywordList(alert.keywords || [])) {
       const keywordId = typeof keyword === "string" ? "" : (keyword.keywordId || "");
@@ -1109,9 +1130,17 @@ function syncAlertFilterOptions(alerts = state.alerts) {
     if (!keyword?.keyword) continue;
     keywordOptions.push({ value: keyword.id || keyword.keyword, label: keyword.keyword });
   }
+  for (const feed of state.feeds || []) {
+    if (!feed?.id || !feed?.name) continue;
+    feedOptions.push({ value: feed.id, label: feed.name });
+  }
+
+  const filteredTechniqueOptions = selectedTactic === "all"
+    ? techniqueOptions
+    : techniqueOptions.filter((option) => option.tacticId === selectedTactic);
 
   setSelectOptions(tacticSelect, tacticOptions.sort((left, right) => left.label.localeCompare(right.label)), "All tactics");
-  setSelectOptions(techniqueSelect, techniqueOptions.sort((left, right) => left.label.localeCompare(right.label)), "All techniques");
+  setSelectOptions(techniqueSelect, filteredTechniqueOptions.sort((left, right) => left.label.localeCompare(right.label)), selectedTactic === "all" ? "All techniques" : "All techniques for tactic");
   setSelectOptions(keywordSelect, keywordOptions.sort((left, right) => left.label.localeCompare(right.label)), "All keywords");
   setSelectOptions(feedSelect, feedOptions.sort((left, right) => left.label.localeCompare(right.label)), "All feeds");
   updateAlertFilterSummary();
@@ -1145,7 +1174,10 @@ function renderAlertsPagination() {
   const paginationEl = document.getElementById("threat-alerts-pagination");
   if (!paginationEl) return;
   const hasPrev = state.alertOffset > 0;
-  const hasNext = state.alerts.length >= state.alertLimit;
+  const knownTotal = Number.isFinite(state.alertTotal) ? state.alertTotal : 0;
+  const hasNext = knownTotal
+    ? state.alertOffset + state.alerts.length < knownTotal || state.alertHasMore
+    : state.alertHasMore;
   if (!hasPrev && !hasNext) {
     paginationEl.classList.add("hidden");
     return;
@@ -1153,7 +1185,7 @@ function renderAlertsPagination() {
   paginationEl.classList.remove("hidden");
   paginationEl.innerHTML =
     (hasPrev ? '<button type="button" class="btn-secondary btn-xs" data-alert-page="prev">Previous</button>' : "") +
-    '<span class="text-sm text-muted">Showing ' + (state.alertOffset + 1) + " - " + (state.alertOffset + state.alerts.length) + "</span>" +
+    '<span class="text-sm text-muted">Showing ' + (state.alerts.length ? state.alertOffset + 1 : 0) + " - " + (state.alertOffset + state.alerts.length) + (knownTotal ? " of " + knownTotal : "") + "</span>" +
     (hasNext ? '<button type="button" class="btn-secondary btn-xs" data-alert-page="next">Next</button>' : "");
 }
 
@@ -1164,6 +1196,19 @@ function updateAlertsBulkBar() {
   const count = state.selectedAlertIds.size;
   countEl.textContent = count + " selected";
   bar.classList.toggle("hidden", count === 0);
+}
+
+function reloadAlertsFromFirstPage() {
+  state.alertOffset = 0;
+  return loadAlerts();
+}
+
+function scheduleAlertFilterReload() {
+  if (state.alertFilterTimer) clearTimeout(state.alertFilterTimer);
+  state.alertFilterTimer = setTimeout(() => {
+    state.alertFilterTimer = null;
+    reloadAlertsFromFirstPage();
+  }, 250);
 }
 
 // ---------------------------------------------------------------------------
@@ -2411,13 +2456,16 @@ function initEvents() {
   const alertsKeywordFilter = document.getElementById("threat-alerts-keyword-filter");
   const alertsFeedFilter = document.getElementById("threat-alerts-feed-filter");
   const alertsResetBtn = document.getElementById("threat-alerts-reset-btn");
-  if (alertsFilter) alertsFilter.addEventListener("input", () => renderAlerts(state.alerts));
-  if (alertsStatusFilter) alertsStatusFilter.addEventListener("change", () => loadAlerts());
-  if (alertsCritFilter) alertsCritFilter.addEventListener("change", () => loadAlerts());
-  if (alertsTacticFilter) alertsTacticFilter.addEventListener("change", () => renderAlerts(state.alerts));
-  if (alertsTechniqueFilter) alertsTechniqueFilter.addEventListener("change", () => renderAlerts(state.alerts));
-  if (alertsKeywordFilter) alertsKeywordFilter.addEventListener("change", () => renderAlerts(state.alerts));
-  if (alertsFeedFilter) alertsFeedFilter.addEventListener("change", () => renderAlerts(state.alerts));
+  if (alertsFilter) alertsFilter.addEventListener("input", () => scheduleAlertFilterReload());
+  if (alertsStatusFilter) alertsStatusFilter.addEventListener("change", () => reloadAlertsFromFirstPage());
+  if (alertsCritFilter) alertsCritFilter.addEventListener("change", () => reloadAlertsFromFirstPage());
+  if (alertsTacticFilter) alertsTacticFilter.addEventListener("change", () => {
+    syncAlertFilterOptions(state.alerts);
+    reloadAlertsFromFirstPage();
+  });
+  if (alertsTechniqueFilter) alertsTechniqueFilter.addEventListener("change", () => reloadAlertsFromFirstPage());
+  if (alertsKeywordFilter) alertsKeywordFilter.addEventListener("change", () => reloadAlertsFromFirstPage());
+  if (alertsFeedFilter) alertsFeedFilter.addEventListener("change", () => reloadAlertsFromFirstPage());
   if (alertsResetBtn) {
     alertsResetBtn.addEventListener("click", () => {
       if (alertsFilter) alertsFilter.value = "";

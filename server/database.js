@@ -2520,7 +2520,8 @@ const DEFAULTS = {
   redsecai_enabled: process.env.REDSECAI_ENABLED || "true",
   redsecai_base_url: process.env.REDSECAI_BASE_URL || "http://127.0.0.1:11434",
   redsecai_model: process.env.REDSECAI_MODEL || "qwen3.5:4b",
-  redsecai_timeout_ms: process.env.REDSECAI_TIMEOUT_MS || "120000",
+  redsecai_timeout_ms: process.env.REDSECAI_TIMEOUT_MS || "300000",
+  redsecai_num_ctx: process.env.REDSECAI_NUM_CTX || "4096",
   redsecai_autostart: process.env.REDSECAI_AUTOSTART || "true",
   redsecai_auto_pull: process.env.REDSECAI_AUTO_PULL || "true",
 };
