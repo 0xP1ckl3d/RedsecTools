@@ -100,6 +100,19 @@ function hasAny(access, permissions) {
   return permissions.some((permission) => access?.permissionSet?.has(permission));
 }
 
+function getRedSecAiToolManifest(access) {
+  return Object.entries(TOOL_ALLOWLIST)
+    .filter(([, tool]) => hasAny(access, tool.permissionsAny))
+    .map(([name, tool]) => ({
+      name,
+      capability: tool.capability,
+      method: tool.method,
+      path: tool.path,
+      confirmRequired: !!tool.confirmRequired,
+      description: tool.description,
+    }));
+}
+
 function compactJson(value, maxChars = MAX_CONTEXT_CHARS) {
   const text = JSON.stringify(value, null, 2);
   return text.length > maxChars ? `${text.slice(0, maxChars)}\n...[truncated]` : text;
@@ -377,16 +390,7 @@ async function buildScopedContext(req, page = {}) {
 
   const allowedTools = [];
   const toolResults = [];
-  const toolManifest = Object.entries(TOOL_ALLOWLIST)
-    .filter(([, tool]) => hasAny(req.access, tool.permissionsAny))
-    .map(([name, tool]) => ({
-      name,
-      capability: tool.capability,
-      method: tool.method,
-      path: tool.path,
-      confirmRequired: !!tool.confirmRequired,
-      description: tool.description,
-    }));
+  const toolManifest = getRedSecAiToolManifest(req.access);
 
   if (hasAny(req.access, ["calendar.view", "calendar.view_team", "calendar.manage"])) {
     allowedTools.push("calendar.read");
@@ -468,6 +472,7 @@ module.exports = {
   compactJson,
   deriveRedSecAiToolCalls,
   executeRedSecAiTool,
+  getRedSecAiToolManifest,
   hasAny,
   isRedSecAiToolMutating,
   scopedApiRequest,

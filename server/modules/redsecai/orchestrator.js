@@ -1,10 +1,9 @@
 "use strict";
 
 const {
-  buildScopedContext,
-  buildTargetedToolContext,
   compactJson,
   executeRedSecAiTool,
+  getRedSecAiToolManifest,
   isRedSecAiToolMutating,
 } = require("./context");
 const { createPendingAction } = require("./actions");
@@ -30,6 +29,10 @@ Security boundaries:
 
 Be concise, practical, and transparent about limitations.`;
 
+const DIRECT_SYSTEM_PROMPT = `${SYSTEM_PROMPT}
+
+For this turn, no RedSecTools internal tool context was requested or fetched. Answer from general model knowledge only. If the user asks for current/live facts or RedSecTools data, say that live application context is not available for this turn and ask them to make the request specific to their RedSecTools data.`;
+
 function normalizeMessages(input) {
   if (!Array.isArray(input)) return [];
   return input
@@ -51,6 +54,32 @@ function buildSystemMessages(scopedContext) {
   ];
 }
 
+function buildScopedToolContext(req, toolManifest, targetedContext, page = {}) {
+  const selectedTools = new Set((targetedContext.calls || []).map((call) => call.tool));
+  const selectedManifest = (toolManifest || []).filter((tool) => selectedTools.has(tool.name));
+  const allowedTools = [...new Set(selectedManifest.map((tool) => tool.capability).filter(Boolean))];
+  const sections = [
+    `Current user: ${req.user?.username || "unknown"} (${req.user?.id || "unknown"})`,
+    `Current page: ${String(page.path || req.get("referer") || "/").slice(0, 200)}`,
+    "RedSecAI tool execution is server-side allowlisted. It cannot call arbitrary routes and has no direct database handle.",
+    "Only the selected tool results for this turn are included. If data is absent, say it is not available in the selected tool results.",
+    "Encrypted tools are intentionally excluded from scoped context: RedSecPaste, RedSecShare, RedSecTeam, and RedSecVault.",
+    `TOOL_MANIFEST:\n${compactJson(selectedManifest)}`,
+    targetedContext.text,
+  ];
+  return {
+    allowedTools,
+    toolManifest: selectedManifest,
+    toolResults: targetedContext.results,
+    text: sections.join("\n\n"),
+  };
+}
+
+function latestUserText(messages) {
+  const latest = [...(Array.isArray(messages) ? messages : [])].reverse().find((message) => message?.role !== "assistant");
+  return String(latest?.content || "").trim();
+}
+
 function buildToolPlannerPrompt(scopedContext) {
   return {
     role: "system",
@@ -64,7 +93,7 @@ Rules:
 - Use at most ${MAX_MODEL_TOOL_CALLS} tool calls.
 - Read/search tools can be used immediately. Write tools can only create a pending action card for explicit user confirmation.
 - Do not request admin, vault, paste, share, or chat tools.
-- If the existing TOOL_RESULTS and TARGETED_TOOL_RESULTS are enough, return {"toolCalls":[]}.
+- If the selected TARGETED_TOOL_RESULTS are enough, return {"toolCalls":[]}.
 - If the user asks for threat alerts about a topic, prefer threat.searchAlerts with a focused query.
 - If the user asks for wiki/runbook/procedure content, prefer wiki.search with a focused query.
 - If the user asks to create/update a calendar event, use calendar.entry.create or calendar.entry.update with Unix timestamps in seconds. Otherwise prefer calendar.bootstrap.
@@ -74,6 +103,32 @@ Rules:
 
 Allowed tool manifest:
 ${compactJson(scopedContext.toolManifest, 8000)}`,
+  };
+}
+
+function buildToolRouterPrompt(toolManifest) {
+  return {
+    role: "system",
+    content: `Decide whether this RedSecAI turn needs scoped RedSecTools internal tools before answering.
+
+Return ONLY strict JSON in this format:
+{"useTools":false,"toolCalls":[]}
+
+or:
+{"useTools":true,"toolCalls":[{"tool":"tool.name","args":{"query":"short search text","limit":8}}]}
+
+Rules:
+- You are only routing. Do not answer the user.
+- Set useTools=false for general knowledge, broad industry questions, quick connectivity checks, writing help that does not need RedSecTools records, or prompts like "reply only true if online".
+- Set useTools=true only when the user asks for their RedSecTools data, current dashboard state, alerts, feeds, IOCs, MITRE mappings, wiki pages, calendar entries, Reporter projects/findings, or asks to create/update application records.
+- Use only tools listed in TOOL_MANIFEST.
+- Use at most ${MAX_MODEL_TOOL_CALLS} tool calls.
+- Do not request admin, vault, paste, share, or chat tools.
+- Read/search tools may be used immediately. Write tools create confirmation cards only.
+- If tools are needed but no single focused call is obvious, set useTools=true with an empty toolCalls array.
+
+TOOL_MANIFEST:
+${compactJson(toolManifest, 8000)}`,
   };
 }
 
@@ -144,7 +199,7 @@ function sanitizeModelToolCalls(parsed, scopedContext) {
 async function planModelToolCalls(scopedContext, targetedContext, messages) {
   if (!scopedContext.toolManifest.length) return { calls: [], raw: "" };
   const raw = await provider.chat([
-    ...buildSystemMessages(scopedContext),
+    { role: "system", content: SYSTEM_PROMPT },
     { role: "system", content: targetedContext.text },
     buildToolPlannerPrompt(scopedContext),
     ...messages,
@@ -153,6 +208,63 @@ async function planModelToolCalls(scopedContext, targetedContext, messages) {
   return {
     calls: sanitizeModelToolCalls(parsed, scopedContext),
     raw,
+  };
+}
+
+async function routeModelToolUse(req, messages) {
+  const toolManifest = getRedSecAiToolManifest(req.access);
+  if (!toolManifest.length) {
+    return { useTools: false, calls: [], raw: "", toolManifest };
+  }
+  const raw = await provider.chat([
+    { role: "system", content: SYSTEM_PROMPT },
+    buildToolRouterPrompt(toolManifest),
+    { role: "user", content: latestUserText(messages) },
+  ], { phase: "tool_router" });
+  const parsed = extractJsonObject(raw);
+  if (!parsed || typeof parsed.useTools !== "boolean") {
+    return { useTools: true, calls: [], raw, toolManifest };
+  }
+  const calls = sanitizeModelToolCalls(parsed, { toolManifest });
+  return {
+    useTools: parsed.useTools === true || calls.length > 0,
+    calls,
+    raw,
+    toolManifest,
+  };
+}
+
+function prepareDirectRedSecAiTurn(rawMessages) {
+  const messages = normalizeMessages(rawMessages);
+  if (!messages.length) {
+    const error = new Error("Message is required");
+    error.status = 400;
+    throw error;
+  }
+  return {
+    messages,
+    scopedContext: {
+      allowedTools: [],
+      toolManifest: [],
+      toolResults: [],
+      text: "TOOL_RESULTS: []",
+    },
+    targetedContext: {
+      calls: [],
+      results: [],
+      text: "TARGETED_TOOL_RESULTS: []",
+    },
+    modelToolContext: {
+      calls: [],
+      results: [],
+      pendingActions: [],
+      raw: "",
+    },
+    finalMessages: [
+      { role: "system", content: DIRECT_SYSTEM_PROMPT },
+      ...messages,
+    ],
+    direct: true,
   };
 }
 
@@ -174,6 +286,18 @@ async function executeToolCalls(req, calls) {
     }
   }
   return results;
+}
+
+async function buildModelRoutedToolContext(req, calls) {
+  const results = await executeToolCalls(req, calls);
+  return {
+    calls,
+    results,
+    pendingActions: results.map((result) => result.action).filter(Boolean),
+    text: results.length
+      ? `TARGETED_TOOL_CALLS:\n${compactJson(calls)}\n\nTARGETED_TOOL_RESULTS:\n${compactJson(results)}`
+      : "TARGETED_TOOL_RESULTS: []",
+  };
 }
 
 function buildFinalMessages(scopedContext, targetedContext, modelToolContext, messages) {
@@ -198,10 +322,22 @@ async function prepareRedSecAiTurn(req, rawMessages, page = {}) {
     throw error;
   }
 
-  const scopedReq = req;
   const startedAt = Date.now();
-  const scopedContext = await buildScopedContext(scopedReq, page || {});
-  const targetedContext = await buildTargetedToolContext(scopedReq, messages);
+  const routerPlan = await routeModelToolUse(req, messages);
+  logEvent("redsecai:turn_router_ready", req, {
+    elapsedMs: Date.now() - startedAt,
+    useTools: routerPlan.useTools,
+    routedTools: routerPlan.calls.map((call) => call.tool),
+    routerRawChars: routerPlan.raw.length,
+  });
+
+  if (!routerPlan.useTools) {
+    return prepareDirectRedSecAiTurn(messages);
+  }
+
+  const scopedReq = req;
+  const targetedContext = await buildModelRoutedToolContext(scopedReq, routerPlan.calls);
+  const scopedContext = buildScopedToolContext(scopedReq, routerPlan.toolManifest, targetedContext, page || {});
   logEvent("redsecai:turn_context_ready", req, {
     elapsedMs: Date.now() - startedAt,
     scopedContextChars: scopedContext.text.length,
@@ -245,6 +381,7 @@ module.exports = {
   SYSTEM_PROMPT,
   buildFinalMessages,
   buildSystemMessages,
+  routeModelToolUse,
   extractJsonObject,
   normalizeMessages,
   prepareRedSecAiTurn,

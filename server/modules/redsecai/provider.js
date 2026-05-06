@@ -12,7 +12,7 @@ let localServeProcess = null;
 let localServeStarted = false;
 
 function isCloudModel(model) {
-  return typeof model === "string" && /(^|:)cloud$/i.test(model.trim());
+  return typeof model === "string" && /(?:^|[:-])cloud$/i.test(model.trim());
 }
 
 function hasLocalModel(models, model) {

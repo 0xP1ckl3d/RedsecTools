@@ -50,6 +50,80 @@ test("RedSecAI targeted tools require RBAC", () => {
   assert.equal(calls.some((call) => call.tool === "threat.searchAlerts"), false);
 });
 
+test("RedSecAI routes tool use with a lightweight model decision", async () => {
+  const provider = require("../server/modules/redsecai/provider");
+  const orchestrator = require("../server/modules/redsecai/orchestrator");
+  const originalChat = provider.chat;
+  const req = {
+    access: { permissionSet: new Set(["threat.view", "calendar.view"]) },
+  };
+
+  try {
+    provider.chat = async (messages, options = {}) => {
+      assert.equal(options.phase, "tool_router");
+      const joined = messages.map((message) => message.content).join("\n");
+      assert.ok(joined.includes("TOOL_MANIFEST"));
+      assert.ok(!joined.includes("Scoped threat intelligence snapshot"));
+      return JSON.stringify({ useTools: false, toolCalls: [] });
+    };
+    const direct = await orchestrator.routeModelToolUse(req, [{ role: "user", content: "Reply only true if online" }]);
+    assert.equal(direct.useTools, false);
+    assert.deepEqual(direct.calls, []);
+
+    provider.chat = async () => JSON.stringify({
+      useTools: true,
+      toolCalls: [{ tool: "threat.searchAlerts", args: { query: "ransomware", limit: 4 } }],
+    });
+    const routed = await orchestrator.routeModelToolUse(req, [{ role: "user", content: "Summarise my current threat alerts about ransomware" }]);
+    assert.equal(routed.useTools, true);
+    assert.deepEqual(routed.calls.map((call) => call.tool), ["threat.searchAlerts"]);
+  } finally {
+    provider.chat = originalChat;
+  }
+});
+
+test("RedSecAI scoped turns include only model-selected tool results", async () => {
+  const provider = require("../server/modules/redsecai/provider");
+  const orchestrator = require("../server/modules/redsecai/orchestrator");
+  const originalChat = provider.chat;
+  const originalFetch = global.fetch;
+  const fetchedUrls = [];
+
+  try {
+    provider.chat = async (messages, options = {}) => {
+      if (options.phase === "tool_router") {
+        return JSON.stringify({
+          useTools: true,
+          toolCalls: [{ tool: "threat.searchAlerts", args: { query: "ransomware", limit: 4 } }],
+        });
+      }
+      if (options.phase === "tool_planner") return JSON.stringify({ toolCalls: [] });
+      throw new Error(`Unexpected model phase ${options.phase}`);
+    };
+    global.fetch = async (url) => {
+      fetchedUrls.push(String(url));
+      return new Response(JSON.stringify({ alerts: [] }), { status: 200, headers: { "content-type": "application/json" } });
+    };
+
+    const turn = await orchestrator.prepareRedSecAiTurn({
+      user: { id: "u1", username: "alice" },
+      access: { permissionSet: new Set(["threat.view", "calendar.view", "wiki.view"]) },
+      headers: { cookie: "redsec_session=s%3Atest.sig" },
+      get: () => "/threat",
+    }, [{ role: "user", content: "Summarise my current threat alerts about ransomware" }], { path: "/threat" });
+
+    assert.equal(turn.direct, undefined);
+    assert.deepEqual(turn.targetedContext.calls.map((call) => call.tool), ["threat.searchAlerts"]);
+    assert.equal(fetchedUrls.length, 1);
+    assert.ok(fetchedUrls[0].includes("/api/threat/alerts"));
+    assert.equal(turn.scopedContext.text.includes("Scoped calendar snapshot"), false);
+    assert.equal(turn.scopedContext.text.includes("Scoped Wiki search snapshot"), false);
+  } finally {
+    provider.chat = originalChat;
+    global.fetch = originalFetch;
+  }
+});
+
 test("RedSecAI provider config uses safe local defaults", () => {
   const { getSetting, setSetting } = require("../server/database");
   const originalSettings = {
@@ -151,6 +225,8 @@ test("RedSecAI reports cloud models as unavailable until Ollama exposes them", a
     const config = getConfig();
     const health = await checkModelHealth();
     assert.equal(isCloudModel("kimi-k2.5:cloud"), true);
+    assert.equal(isCloudModel("gemma4:31b-cloud"), true);
+    assert.equal(isCloudModel("qwen3.5:4b"), false);
     assert.equal(config.model, "kimi-k2.5:cloud");
     assert.equal(config.cloudModel, true);
     assert.equal(health.ok, false);
@@ -208,11 +284,18 @@ test("RedSecAI reports cloud models ready when Ollama lists them", async () => {
 });
 
 test("RedSecAI diagnostics returns configured endpoint and isolated probe results", async () => {
+  const { getSetting, setSetting } = require("../server/database");
   const originalFetch = global.fetch;
   const originalBaseUrl = process.env.REDSECAI_BASE_URL;
   const originalModel = process.env.REDSECAI_MODEL;
+  const originalSettings = {
+    redsecai_base_url: getSetting("redsecai_base_url"),
+    redsecai_model: getSetting("redsecai_model"),
+  };
   process.env.REDSECAI_BASE_URL = "http://redsecai:11434";
   process.env.REDSECAI_MODEL = "qwen3.5:4b";
+  setSetting("redsecai_base_url", "http://redsecai:11434");
+  setSetting("redsecai_model", "qwen3.5:4b");
   global.fetch = async (url) => {
     if (String(url).endsWith("/api/tags")) {
       return new Response(JSON.stringify({ models: [{ name: "qwen3.5:4b" }] }), { status: 200 });
@@ -238,6 +321,9 @@ test("RedSecAI diagnostics returns configured endpoint and isolated probe result
     else process.env.REDSECAI_BASE_URL = originalBaseUrl;
     if (originalModel === undefined) delete process.env.REDSECAI_MODEL;
     else process.env.REDSECAI_MODEL = originalModel;
+    for (const [key, value] of Object.entries(originalSettings)) {
+      setSetting(key, value || "");
+    }
   }
 });
 

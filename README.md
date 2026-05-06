@@ -184,12 +184,25 @@ That's it. The setup script creates a `.env` file with a randomly generated admi
 
 Docker starts RedSecAI as a separate `redsecai` Ollama container. Ollama binds to `0.0.0.0:11434` inside that sidecar so the app container can reach `http://redsecai:11434`; Compose also publishes it on `127.0.0.1:${REDSECAI_HOST_PORT:-11434}` for local diagnostics. On the first run, that container pulls the configured model into the `redsectools-ai` named volume unless `REDSECAI_AUTO_PULL=false`. The main RedSecTools app does not wait for that model download to finish; if the model is missing, the chat bubble reports RedSecAI as unavailable until the model is installed.
 
+Admin model changes are live app settings, not container rebuilds. Saving **Admin > Tool Settings > RedSecAI** updates the model name RedSecTools sends to Ollama, then refreshes the status panel. It does not sign in to Ollama Cloud, restart the `redsecai` sidecar, or change the sidecar's already-running `OLLAMA_MODEL` environment variable. For Docker deployments, install or pull models in the `redsecai` service itself.
+
 If the server has limited bandwidth, set `REDSECAI_AUTO_PULL=false` in `.env` before `docker compose up -d`. Later, pull the model into the persistent AI volume:
 
 ```bash
 docker compose exec redsecai ollama pull qwen3.5:4b
 docker compose restart redsectools
 ```
+
+Ollama Cloud models, for example `gemma4:31b-cloud` or `kimi-k2.5:cloud`, require the Ollama sidecar to be signed in before pulls or API calls can succeed. If diagnostics show `HTTP 401 unauthorized` from `https://ollama.com`, sign in inside the sidecar and pull the cloud model:
+
+```bash
+docker compose exec redsecai ollama signin
+docker compose exec redsecai ollama pull gemma4:31b-cloud
+docker compose exec redsecai ollama list
+docker compose restart redsectools
+```
+
+The sign-in state and model metadata live in the `redsectools-ai:/root/.ollama` named volume. They persist across normal container restarts and app updates, but are removed if the Docker volume is deleted with commands such as `docker compose down -v` or volume pruning.
 
 ---
 
@@ -246,11 +259,11 @@ Configuration is managed through a `.env` file in the project root. The setup sc
 | `PUPPETEER_EXECUTABLE_PATH` | No | Auto-detected, `/usr/bin/chromium` in Docker | Chrome/Chromium executable used for RedSecReporter PDF rendering |
 | `REDSECAI_ENABLED` | No | `true` | Enables the authenticated RedSecAI chat API and widget |
 | `REDSECAI_BASE_URL` | No | `http://127.0.0.1:11434` | Ollama-compatible model endpoint. Docker Compose sets this to the `redsecai` service |
-| `REDSECAI_MODEL` | No | `qwen3.5:4b` | Local model name used by RedSecAI |
+| `REDSECAI_MODEL` | No | `qwen3.5:4b` | Ollama model name used by RedSecAI. Cloud models such as `gemma4:31b-cloud` require `ollama signin` and `ollama pull` in the Ollama environment first |
 | `REDSECAI_TIMEOUT_MS` | No | `300000` | Timeout for local model responses |
 | `REDSECAI_NUM_CTX` | No | `4096` | Ollama context window requested by RedSecAI |
 | `REDSECAI_AUTOSTART` | No | `true` for local Ollama URLs | Starts local Ollama automatically when RedSecTools starts. Docker disables this because the AI runs in its own container |
-| `REDSECAI_AUTO_PULL` | No | `true` | Pulls the configured model if it is missing. In Docker this controls the `redsecai` container entrypoint; in local npm mode it controls local Ollama auto-pull |
+| `REDSECAI_AUTO_PULL` | No | `true` | Pulls the configured model if it is missing. In Docker this runs in the `redsecai` container entrypoint at sidecar startup; in local npm mode it controls local Ollama auto-pull. Cloud pulls still require the Ollama environment to be signed in |
 | `REDSECAI_HOST` | No | `127.0.0.1` | Docker-only host bind address for the diagnostic Ollama port |
 | `REDSECAI_HOST_PORT` | No | `11434` | Docker-only host port for diagnostic access to Ollama |
 | `REDSECAI_INTERNAL_ORIGIN` | No | `http://127.0.0.1:$PORT` | Internal same-app origin used for scoped API context fetches when the bind address is unusual |
@@ -303,6 +316,24 @@ Then install the model later:
 ```bash
 docker compose exec redsecai ollama pull qwen3.5:4b
 docker compose restart redsectools
+```
+
+For Ollama Cloud models in Docker, sign in and pull from inside the sidecar:
+
+```bash
+docker compose exec redsecai ollama signin
+docker compose exec redsecai ollama pull gemma4:31b-cloud
+docker compose exec redsecai ollama list
+docker compose restart redsectools
+```
+
+If Admin diagnostics show `HTTP 401 unauthorized`, the sidecar is not signed in to Ollama Cloud. If diagnostics show `Local model is not installed yet`, the model is not listed by `docker compose exec redsecai ollama list`; pull it in that sidecar or set `REDSECAI_MODEL` in `.env` and recreate the sidecar so entrypoint auto-pull can run:
+
+```bash
+REDSECAI_MODEL=gemma4:31b-cloud
+REDSECAI_AUTO_PULL=true
+docker compose up -d --force-recreate redsecai
+docker compose logs -f redsecai
 ```
 
 The model is stored in the `redsectools-ai` named volume. Normal app updates do not reinstall it unless you delete volumes with `docker compose down -v` or prune Docker volumes.
