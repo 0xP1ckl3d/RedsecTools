@@ -7,7 +7,7 @@ const { attachUserAccess } = require("../middleware/permissions");
 const { logEvent, logWarn } = require("../core/logger");
 const provider = require("../modules/redsecai/provider");
 const { normalizeMessages, runRedSecAiChat } = require("../modules/redsecai/orchestrator");
-const { confirmPendingAction, listPendingActionsForUser } = require("../modules/redsecai/actions");
+const { cancelPendingAction, confirmPendingAction, listPendingActionsForUser } = require("../modules/redsecai/actions");
 
 const router = Router();
 
@@ -52,6 +52,19 @@ router.post("/ai/actions/:id/confirm", chatLimiter, requireUser, attachUserAcces
   } catch (error) {
     logWarn("redsecai:action_confirm_failed", { message: error.message, status: error.status || 500 });
     res.status(error.status || 500).json({ error: error.message || "RedSecAI action could not be confirmed" });
+  }
+});
+
+router.post("/ai/actions/:id/reject", chatLimiter, requireUser, attachUserAccess, async (req, res) => {
+  try {
+    const action = cancelPendingAction(req, req.params.id);
+    logEvent("redsecai:action_rejected", req, {
+      tool: action.tool,
+    });
+    res.json({ success: true, action });
+  } catch (error) {
+    logWarn("redsecai:action_reject_failed", { message: error.message, status: error.status || 500 });
+    res.status(error.status || 500).json({ error: error.message || "RedSecAI action could not be rejected" });
   }
 });
 

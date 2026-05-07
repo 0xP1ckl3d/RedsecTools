@@ -374,6 +374,10 @@ html.light {
     transform: translateY(-1px);
   }
 
+  .redsecai-launcher.has-alert {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent), 0 0.55rem 1.6rem rgba(0, 0, 0, 0.28);
+  }
+
   .redsecai-launcher-icon {
     width: 1.25rem;
     height: 1.25rem;
@@ -410,6 +414,26 @@ html.light {
 
   .redsecai-status-dot.offline {
     background: #71717a;
+  }
+
+  .redsecai-alert-badge {
+    position: absolute;
+    right: -0.32rem;
+    top: -0.32rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.25rem;
+    height: 1.25rem;
+    padding: 0 0.28rem;
+    border: 2px solid var(--bg-page);
+    border-radius: 9999px;
+    background: #facc15;
+    color: #111827;
+    font-size: 0.68rem;
+    font-weight: 900;
+    line-height: 1;
+    box-shadow: 0 0.25rem 0.7rem rgba(0, 0, 0, 0.3);
   }
 
   .redsecai-panel {

@@ -3,7 +3,7 @@
 const crypto = require("crypto");
 const { executeRedSecAiTool, TOOL_ALLOWLIST } = require("./context");
 
-const ACTION_TTL_MS = 10 * 60 * 1000;
+const ACTION_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_PENDING_PER_USER = 20;
 const pendingActions = new Map();
 const recentEvents = [];
@@ -122,6 +122,25 @@ async function confirmPendingAction(req, actionId) {
   return { action: serializeAction(action), result };
 }
 
+function cancelPendingAction(req, actionId) {
+  cleanExpiredActions();
+  const action = pendingActions.get(actionId);
+  if (!action || action.userId !== req.user?.id) {
+    const error = new Error("RedSecAI action not found or expired");
+    error.status = 404;
+    throw error;
+  }
+  pendingActions.delete(action.id);
+  rememberEvent({
+    type: "action_rejected",
+    userId: action.userId,
+    username: action.username,
+    tool: action.tool,
+    summary: action.summary,
+  });
+  return serializeAction(action);
+}
+
 function listPendingActionsForUser(userId) {
   cleanExpiredActions();
   return [...pendingActions.values()]
@@ -143,6 +162,7 @@ function getRedSecAiActionStats() {
 }
 
 module.exports = {
+  cancelPendingAction,
   confirmPendingAction,
   createPendingAction,
   getRedSecAiActionStats,

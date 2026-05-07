@@ -128,7 +128,7 @@ Rules:
 - If the selected TARGETED_TOOL_RESULTS are enough, return {"toolCalls":[]}.
 - If the user asks for threat alerts about a topic, prefer threat.searchAlerts with a focused query.
 - If the user asks for wiki/runbook/procedure content, prefer wiki.search with a focused query.
-- If the user asks to create/update a calendar event, use calendar.entry.create or calendar.entry.update with Unix timestamps in seconds. Otherwise prefer calendar.bootstrap.
+- If the user asks to create/update a calendar event, use calendar.entry.create or calendar.entry.update with the structured fields in that tool's inputSchema. For local-time requests, use dateIntent, startLocal, endLocal or durationMinutes, and timeZone. Do not convert local times to UTC yourself.
 - If the user asks about reports, findings, projects, clients, or evidence, prefer reporter.projects.
 - If the user asks to create a Reporter note, use reporter.note.create.
 - If the user asks to create/update wiki content, use wiki.page.create or wiki.page.update.
@@ -161,7 +161,9 @@ Rules:
 - Use at most ${MAX_MODEL_TOOL_CALLS} tool calls.
 - Do not request admin, vault, paste, share, or chat tools.
 - Read/search tools may be used immediately. Write tools create confirmation cards only.
-- For calendar questions, prefer calendar.bootstrap. Include viewMode="week" or "month" and a weekStart Unix-seconds anchor when the user asks for a specific week/month; use scheduleUserId="all" only for team-wide requests.
+- Follow each tool's inputSchema exactly.
+- For calendar read requests, prefer calendar.bootstrap with rangeIntent such as this_week, next_week, this_month, or next_month. Use scheduleUserId="all" only for team-wide requests.
+- For calendar create/update requests, use calendar.entry.create/update with body.dateIntent, body.startLocal, and body.endLocal or body.durationMinutes for local-time requests. Do not convert local times to UTC yourself.
 - If tools are needed but no single focused call is obvious, set useTools=true with an empty toolCalls array.
 
 Recent conversation:
@@ -265,7 +267,7 @@ function zonedLocalToUnix(year, month, day, hour, minute, second, timeZone = nul
   return Math.floor((utcGuess + (desiredAsUtc - actualAsUtc)) / 1000);
 }
 
-function parseTimeExpression(value) {
+function parseLocalTime(value) {
   const match = String(value || "").trim().match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i);
   if (!match) return null;
   let hour = parseInt(match[1], 10);
@@ -279,46 +281,50 @@ function parseTimeExpression(value) {
   return { hour, minute };
 }
 
-function parseDurationSeconds(text) {
-  const match = String(text || "").match(/\b(\d+(?:\.\d+)?)\s*(hour|hours|hr|hrs|minute|minutes|min|mins)\b/i);
-  if (!match) return null;
-  const amount = Number.parseFloat(match[1]);
-  if (!Number.isFinite(amount) || amount <= 0) return null;
-  return /min/i.test(match[2]) ? Math.round(amount * 60) : Math.round(amount * 3600);
-}
-
 function getZonedToday(timeZone = null) {
   const local = getZonedDateParts(new Date(), timeZone);
   return { year: local.year, month: local.month, day: local.day };
 }
 
-function normalizeCalendarWriteCall(call, messages, page = {}) {
+function resolveDateIntent(dateIntent, timeZone = null) {
+  const raw = String(dateIntent || "today").trim().toLowerCase();
+  const today = getZonedToday(timeZone);
+  let offset = 0;
+  if (raw === "tomorrow") offset = 1;
+  else if (raw === "yesterday") offset = -1;
+  else if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const [year, month, day] = raw.split("-").map((part) => parseInt(part, 10));
+    if (Number.isInteger(year) && Number.isInteger(month) && Number.isInteger(day)) return { year, month, day };
+  }
+  const local = new Date(Date.UTC(today.year, today.month - 1, today.day + offset, 0, 0, 0, 0));
+  return { year: local.getUTCFullYear(), month: local.getUTCMonth() + 1, day: local.getUTCDate() };
+}
+
+function normalizeCalendarWriteCall(call, page = {}) {
   if (!["calendar.entry.create", "calendar.entry.update"].includes(call.tool)) return call;
-  const latest = latestUserText(messages);
-  const timeZone = typeof page.timeZone === "string" ? page.timeZone.slice(0, 80) : "";
-  if (!/\btoday\b/i.test(latest)) return call;
-  const rangeMatch = latest.match(/\b(?:from\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\s*(?:-|to|until)\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\b/i);
-  const durationMatch = latest.match(/\bfrom\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\b/i);
-  const start = parseTimeExpression(rangeMatch?.[1] || durationMatch?.[1]);
-  let durationSeconds = parseDurationSeconds(latest);
-  let explicitEnd = rangeMatch ? parseTimeExpression(rangeMatch[2]) : null;
-  if (!start || (!explicitEnd && !durationSeconds)) return call;
-  const today = getZonedToday(timeZone || null);
-  const startsAt = zonedLocalToUnix(today.year, today.month, today.day, start.hour, start.minute, 0, timeZone || null);
-  let endsAt = explicitEnd
-    ? zonedLocalToUnix(today.year, today.month, today.day, explicitEnd.hour, explicitEnd.minute, 0, timeZone || null)
-    : startsAt + durationSeconds;
-  if (endsAt <= startsAt) endsAt += DAY_SECONDS;
   const args = { ...(call.args || {}) };
   const body = { ...(args.body || args) };
-  body.startsAt = startsAt;
-  body.endsAt = endsAt;
-  body.allDay = false;
-  body.timeZone = timeZone || body.timeZone || "server-local";
+  const timeZone = String(body.timeZone || page.timeZone || "").slice(0, 80);
+  const date = resolveDateIntent(body.dateIntent || body.dateLocal || body.date, timeZone || null);
+  const start = parseLocalTime(body.startLocal || body.startTimeLocal);
+  const end = parseLocalTime(body.endLocal || body.endTimeLocal);
+  const durationMinutes = Number.parseInt(body.durationMinutes, 10);
+
+  if (timeZone) body.timeZone = timeZone;
+  if (start) {
+    body.startsAt = zonedLocalToUnix(date.year, date.month, date.day, start.hour, start.minute, 0, timeZone || null);
+    if (end) {
+      body.endsAt = zonedLocalToUnix(date.year, date.month, date.day, end.hour, end.minute, 0, timeZone || null);
+      if (body.endsAt <= body.startsAt) body.endsAt += DAY_SECONDS;
+    } else if (Number.isInteger(durationMinutes) && durationMinutes > 0) {
+      body.endsAt = body.startsAt + (durationMinutes * 60);
+    }
+    body.allDay = false;
+  }
   return { ...call, args: { ...args, body } };
 }
 
-function getCalendarRangeForPrompt(latest, timeZone = null) {
+function getCalendarRangeForIntent(rangeIntent, timeZone = null) {
   const now = new Date();
   const local = getZonedDateParts(now, timeZone);
   const localMidnightUtc = Date.UTC(local.year, local.month - 1, local.day, 0, 0, 0, 0);
@@ -326,10 +332,11 @@ function getCalendarRangeForPrompt(latest, timeZone = null) {
   const mondayOffset = day === 0 ? -6 : 1 - day;
   let startLocal = new Date(localMidnightUtc + (mondayOffset * DAY_SECONDS * 1000));
   let viewMode = "week";
+  const intent = String(rangeIntent || "").toLowerCase();
 
-  if (/\bmonth\b/.test(latest)) {
+  if (intent.endsWith("_month")) {
     viewMode = "month";
-    const monthOffset = /\bnext\s+month\b/.test(latest) ? 1 : (/\blast\s+month\b/.test(latest) ? -1 : 0);
+    const monthOffset = intent === "next_month" ? 1 : (intent === "last_month" ? -1 : 0);
     startLocal = new Date(Date.UTC(local.year, local.month - 1 + monthOffset, 1, 0, 0, 0, 0));
     const endLocal = new Date(Date.UTC(startLocal.getUTCFullYear(), startLocal.getUTCMonth() + 1, 1, 0, 0, 0, 0));
     return {
@@ -339,8 +346,8 @@ function getCalendarRangeForPrompt(latest, timeZone = null) {
     };
   }
 
-  if (/\bnext\s+week\b/.test(latest)) startLocal = new Date(startLocal.getTime() + (WEEK_SECONDS * 1000));
-  if (/\blast\s+week\b/.test(latest)) startLocal = new Date(startLocal.getTime() - (WEEK_SECONDS * 1000));
+  if (intent === "next_week") startLocal = new Date(startLocal.getTime() + (WEEK_SECONDS * 1000));
+  if (intent === "last_week") startLocal = new Date(startLocal.getTime() - (WEEK_SECONDS * 1000));
   const endLocal = new Date(startLocal.getTime() + (WEEK_SECONDS * 1000));
   return {
     viewMode,
@@ -349,21 +356,15 @@ function getCalendarRangeForPrompt(latest, timeZone = null) {
   };
 }
 
-function normalizeCalendarToolCalls(calls, messages, page = {}) {
-  const latest = latestUserText(messages).toLowerCase();
+function normalizeCalendarToolCalls(calls, page = {}) {
   const timeZone = typeof page.timeZone === "string" ? page.timeZone.slice(0, 80) : "";
   return (calls || []).map((call) => {
+    if (["calendar.entry.create", "calendar.entry.update"].includes(call.tool)) return normalizeCalendarWriteCall(call, page);
     if (call.tool !== "calendar.bootstrap") return call;
     const args = { ...(call.args || {}) };
     if (timeZone) args.timeZone = timeZone;
-
-    const asksMonth = /\b(this|current|next|last)\s+month\b|\bmonth\b/.test(latest);
-    const asksNextWeek = /\bnext\s+week\b/.test(latest);
-    const asksLastWeek = /\blast\s+week\b/.test(latest);
-    const asksCurrentWeek = /\b(rest of\s+)?(this|current)\s+week\b|\bmeetings?\b|\bschedule\b|\bplanned\b/.test(latest);
-
-    if (asksMonth || asksNextWeek || asksLastWeek || asksCurrentWeek) {
-      const range = getCalendarRangeForPrompt(latest, timeZone || null);
+    if (args.rangeIntent) {
+      const range = getCalendarRangeForIntent(args.rangeIntent, timeZone || null);
       args.viewMode = range.viewMode;
       args.weekStart = range.rangeStart;
       args.rangeStart = range.rangeStart;
@@ -371,24 +372,7 @@ function normalizeCalendarToolCalls(calls, messages, page = {}) {
     }
 
     return { ...call, args };
-  }).map((call) => normalizeCalendarWriteCall(call, messages, page));
-}
-
-function inferMandatoryToolCalls(messages, toolManifest, page = {}) {
-  const latest = latestUserText(messages);
-  const lower = latest.toLowerCase();
-  const hasTool = new Set((toolManifest || []).map((tool) => tool.name));
-  const calls = [];
-  const recentCalendarWrite = (messages || []).slice(-6).some((message) => (
-    /calendar entry|blocked|confirmed pending action|action completed|successfully created|block out/i.test(String(message?.content || ""))
-  ));
-  if (hasTool.has("calendar.bootstrap") && (
-    /\b(calendar|schedule|scheduled|meeting|meetings|planned|availability|rest of this week|this week|next week)\b/i.test(lower)
-    || (recentCalendarWrite && /\b(check|verify|there|appearing|showing|see it|is it there|did it|created)\b/i.test(lower))
-  )) {
-    calls.push({ tool: "calendar.bootstrap", args: page?.timeZone ? { timeZone: page.timeZone } : {} });
-  }
-  return normalizeCalendarToolCalls(calls, messages, page);
+  });
 }
 
 async function planModelToolCalls(scopedContext, targetedContext, messages) {
@@ -418,12 +402,10 @@ async function routeModelToolUse(req, messages, options = {}) {
     { role: "user", content: `Route the latest user turn using the recent conversation above. Latest user turn: ${latestUserText(messages)}` },
   ], { phase: "tool_router" });
   const parsed = extractJsonObject(raw);
-  const mandatoryCalls = inferMandatoryToolCalls(messages, toolManifest, options.page || {});
   if (!parsed || typeof parsed.useTools !== "boolean") {
-    return { useTools: true, calls: mandatoryCalls, raw, toolManifest };
+    return { useTools: true, calls: [], raw, toolManifest };
   }
-  const modelCalls = normalizeCalendarToolCalls(sanitizeModelToolCalls(parsed, { toolManifest }), messages, options.page || {});
-  const calls = modelCalls.length ? modelCalls : mandatoryCalls;
+  const calls = normalizeCalendarToolCalls(sanitizeModelToolCalls(parsed, { toolManifest }), options.page || {});
   return {
     useTools: parsed.useTools === true || calls.length > 0,
     calls,
@@ -489,7 +471,7 @@ async function executeToolCalls(req, calls, options = {}) {
 }
 
 async function buildModelRoutedToolContext(req, calls, options = {}) {
-  const normalizedCalls = normalizeCalendarToolCalls(calls, options.messages || [], options.page || {});
+  const normalizedCalls = normalizeCalendarToolCalls(calls, options.page || {});
   const results = await executeToolCalls(req, normalizedCalls, options);
   return {
     calls: normalizedCalls,
@@ -554,7 +536,7 @@ async function prepareRedSecAiTurn(req, rawMessages, page = {}, options = {}) {
     plannedTools: modelPlan.calls.map((call) => call.tool),
     plannerRawChars: modelPlan.raw.length,
   });
-  const normalizedModelCalls = normalizeCalendarToolCalls(modelPlan.calls, messages, page);
+  const normalizedModelCalls = normalizeCalendarToolCalls(modelPlan.calls, page);
   const modelResults = await executeToolCalls(scopedReq, normalizedModelCalls, options);
   const modelToolContext = {
     calls: normalizedModelCalls,

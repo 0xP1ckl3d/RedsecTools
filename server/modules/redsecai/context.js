@@ -4,13 +4,61 @@ const { URLSearchParams } = require("url");
 
 const MAX_CONTEXT_CHARS = 12000;
 
+const TOOL_INPUT_SCHEMAS = Object.freeze({
+  "calendar.bootstrap": {
+    type: "object",
+    properties: {
+      rangeIntent: { enum: ["this_week", "next_week", "last_week", "this_month", "next_month", "last_month"] },
+      viewMode: { enum: ["week", "month"] },
+      rangeStart: { type: "integer", description: "Optional explicit Unix seconds range start." },
+      rangeEnd: { type: "integer", description: "Optional explicit Unix seconds range end." },
+      scheduleUserId: { type: "string", description: "Use all only for team-wide requests." },
+      timeZone: { type: "string", description: "IANA timezone supplied by the browser." },
+    },
+  },
+  "calendar.entry.create": {
+    type: "object",
+    properties: {
+      body: {
+        type: "object",
+        properties: {
+          title: { type: "string" },
+          description: { type: "string" },
+          type: { enum: ["task", "assignment", "meeting", "leave", "personal_leave", "annual_leave", "public_holiday", "reminder", "project"] },
+          dateIntent: { type: "string", description: "today, tomorrow, or YYYY-MM-DD in the user's local timezone." },
+          startLocal: { type: "string", description: "Local time such as 15:00 or 3:00 PM." },
+          endLocal: { type: "string", description: "Local time such as 16:00 or 4:00 PM." },
+          durationMinutes: { type: "integer" },
+          timeZone: { type: "string" },
+          startsAt: { type: "integer", description: "Unix seconds; optional when dateIntent/startLocal are supplied." },
+          endsAt: { type: "integer", description: "Unix seconds; optional when dateIntent/startLocal plus endLocal/durationMinutes are supplied." },
+          allDay: { type: "boolean" },
+          status: { enum: ["scheduled", "tentative"] },
+          projectId: { type: "string" },
+          assigneeUserId: { type: "string" },
+        },
+        required: ["title"],
+      },
+    },
+    required: ["body"],
+  },
+  "calendar.entry.update": {
+    type: "object",
+    properties: {
+      pathParams: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+      body: { type: "object", description: "Same calendar entry fields as calendar.entry.create." },
+    },
+    required: ["pathParams", "body"],
+  },
+});
+
 const TOOL_ALLOWLIST = Object.freeze({
   "calendar.bootstrap": {
     method: "GET",
     path: "/api/calendar/bootstrap",
     permissionsAny: ["calendar.view", "calendar.view_team", "calendar.manage"],
     capability: "calendar.read",
-    description: "Read permitted calendar schedule entries, team/project scope, and calendar stats. GET args may include viewMode=week|month, weekStart as Unix seconds, and scheduleUserId or all.",
+    description: "Read permitted calendar schedule entries, team/project scope, and calendar stats. Use rangeIntent for relative ranges instead of guessing dates.",
   },
   "calendar.entry.create": {
     method: "POST",
@@ -18,7 +66,7 @@ const TOOL_ALLOWLIST = Object.freeze({
     permissionsAny: ["calendar.create", "calendar.manage"],
     capability: "calendar.write",
     confirmRequired: true,
-    description: "Create a calendar entry after explicit user confirmation. Body supports title, description, type, startsAt, endsAt, allDay, status, projectId, and assigneeUserId.",
+    description: "Create a calendar entry after explicit user confirmation. Prefer body.dateIntent plus body.startLocal and body.endLocal or body.durationMinutes for local-time requests.",
   },
   "calendar.entry.update": {
     method: "PUT",
@@ -110,6 +158,7 @@ function getRedSecAiToolManifest(access) {
       path: tool.path,
       confirmRequired: !!tool.confirmRequired,
       description: tool.description,
+      inputSchema: TOOL_INPUT_SCHEMAS[name] || null,
     }));
 }
 

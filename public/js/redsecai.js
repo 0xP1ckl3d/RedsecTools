@@ -72,6 +72,7 @@ function createWidget(status) {
       </svg>
       <span class="redsecai-launcher-mark">RedSecAI</span>
       <span class="redsecai-status-dot ${status.ready ? "ready" : "offline"}"></span>
+      <span class="redsecai-alert-badge hidden" aria-hidden="true"></span>
     </button>
     <div class="redsecai-panel hidden" role="dialog" aria-label="RedSecAI assistant">
       <header class="redsecai-header">
@@ -231,6 +232,7 @@ async function initRedSecAI() {
   const send = widget.querySelector(".redsecai-send");
   const messagesEl = widget.querySelector(".redsecai-messages");
   const footnote = widget.querySelector(".redsecai-footnote");
+  const alertBadge = widget.querySelector(".redsecai-alert-badge");
   let messages = loadMessages();
   let activeAssistant = null;
   let activeAssistantText = "";
@@ -243,8 +245,34 @@ async function initRedSecAI() {
   const timedOutJobIds = new Set();
   const pendingActionIds = new Set();
   const pendingActions = new Map();
+  let unreadCount = 0;
 
   renderMessages(messagesEl, messages);
+
+  function isPanelOpen() {
+    return !panel.classList.contains("hidden");
+  }
+
+  function syncAlertBadge() {
+    const actionCount = pendingActions.size;
+    const total = unreadCount + actionCount;
+    if (!alertBadge) return;
+    alertBadge.classList.toggle("hidden", total <= 0);
+    alertBadge.textContent = total > 9 ? "9+" : String(total);
+    launcher.classList.toggle("has-alert", total > 0);
+    launcher.setAttribute("aria-label", total > 0 ? `Open RedSecAI, ${total} unread item${total === 1 ? "" : "s"}` : "Open RedSecAI");
+  }
+
+  function markUnread(count = 1) {
+    if (isPanelOpen()) return;
+    unreadCount += count;
+    syncAlertBadge();
+  }
+
+  function clearUnread() {
+    unreadCount = 0;
+    syncAlertBadge();
+  }
 
   function ensureActiveAssistant() {
     if (activeAssistant) return activeAssistant;
@@ -315,6 +343,7 @@ async function initRedSecAI() {
     activeStatusText = "";
     renderMessages(messagesEl, messages);
     renderActionCards([...pendingActions.values()]);
+    markUnread(1);
     send.disabled = false;
     stopProgress();
     input.focus();
@@ -329,6 +358,7 @@ async function initRedSecAI() {
     if (messagesEl.querySelector(`.redsecai-action-card[data-action-id="${CSS.escape(action.id)}"]`)) return;
     pendingActionIds.add(action.id);
     pendingActions.set(action.id, action);
+    syncAlertBadge();
     const card = document.createElement("article");
     card.className = "redsecai-action-card";
     card.innerHTML = `
@@ -357,6 +387,11 @@ async function initRedSecAI() {
           resultEl.className = "redsecai-action-result success";
           resultEl.textContent = "Action completed.";
         }
+        const confirmationMessage = { role: "assistant", content: `Confirmed pending action: ${action.summary || action.tool}` };
+        messages.push(confirmationMessage);
+        saveMessages(messages);
+        appendMessage(messagesEl, confirmationMessage);
+        card.remove();
       } catch (error) {
         confirmBtn.disabled = false;
         if (resultEl) {
@@ -365,25 +400,45 @@ async function initRedSecAI() {
         }
       }
     });
-    dismissBtn?.addEventListener("click", () => {
-      pendingActions.delete(action.id);
-      pendingActionIds.delete(action.id);
-      card.remove();
-      messages.push({ role: "assistant", content: `Rejected pending action: ${action.summary || action.tool}` });
-      saveMessages(messages);
+    dismissBtn?.addEventListener("click", async () => {
+      dismissBtn.disabled = true;
+      if (resultEl) {
+        resultEl.className = "redsecai-action-result";
+        resultEl.textContent = "Rejecting...";
+      }
+      try {
+        await rejectAction(action);
+        const rejectedMessage = { role: "assistant", content: `Rejected pending action: ${action.summary || action.tool}` };
+        messages.push(rejectedMessage);
+        saveMessages(messages);
+        appendMessage(messagesEl, rejectedMessage);
+        card.remove();
+      } catch (error) {
+        dismissBtn.disabled = false;
+        if (resultEl) {
+          resultEl.className = "redsecai-action-result error";
+          resultEl.textContent = error.message || "Reject failed.";
+        }
+      }
     });
     messagesEl.appendChild(card);
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
   function renderActionCards(actions = []) {
+    let newActionCount = 0;
     actions.forEach((action) => {
-      if (action?.id) pendingActions.set(action.id, action);
+      if (action?.id) {
+        if (!pendingActions.has(action.id)) newActionCount += 1;
+        pendingActions.set(action.id, action);
+      }
     });
+    syncAlertBadge();
     const seen = new Set([...messagesEl.querySelectorAll(".redsecai-action-card")].map((card) => card.dataset.actionId));
     actions
       .filter((action) => action?.id && !seen.has(action.id))
       .forEach(renderActionCard);
+    return newActionCount;
   }
 
   async function confirmAction(action) {
@@ -396,6 +451,21 @@ async function initRedSecAI() {
     if (!res.ok || !body.success) throw new Error(body.error || "Action failed.");
     pendingActions.delete(action.id);
     pendingActionIds.delete(action.id);
+    syncAlertBadge();
+    return body;
+  }
+
+  async function rejectAction(action) {
+    if (!action?.id) throw new Error("No pending action selected.");
+    const res = await fetch(`/api/ai/actions/${encodeURIComponent(action.id)}/reject`, {
+      method: "POST",
+      headers: { accept: "application/json" },
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || !body.success) throw new Error(body.error || "Reject failed.");
+    pendingActions.delete(action.id);
+    pendingActionIds.delete(action.id);
+    syncAlertBadge();
     return body;
   }
 
@@ -476,17 +546,26 @@ async function initRedSecAI() {
     },
   });
 
+  renderActionCards(status.pendingActions || []);
+
   launcher.addEventListener("click", () => {
     panel.classList.toggle("hidden");
-    if (!panel.classList.contains("hidden")) input.focus();
+    if (!panel.classList.contains("hidden")) {
+      clearUnread();
+      renderActionCards([...pendingActions.values()]);
+      input.focus();
+    } else {
+      syncAlertBadge();
+    }
   });
-  closeBtn.addEventListener("click", () => panel.classList.add("hidden"));
+  closeBtn.addEventListener("click", () => {
+    panel.classList.add("hidden");
+    syncAlertBadge();
+  });
   clearBtn.addEventListener("click", () => {
     messages = [];
     saveMessages(messages);
     setActiveJob(null);
-    pendingActions.clear();
-    pendingActionIds.clear();
     activeAssistant = null;
     activeAssistantText = "";
     renderMessages(messagesEl, messages);
@@ -503,37 +582,6 @@ async function initRedSecAI() {
     event.preventDefault();
     const content = input.value.trim();
     if (!content || send.disabled) return;
-
-    if (/^(confirm|yes|approve|do it|go ahead)$/i.test(content)) {
-      if (!pendingActions.size) {
-        const userMessage = { role: "user", content };
-        messages.push(userMessage, { role: "assistant", content: "There is no pending RedSecAI action to confirm." });
-        saveMessages(messages);
-        input.value = "";
-        renderMessages(messagesEl, messages);
-        return;
-      }
-      const action = [...pendingActions.values()][pendingActions.size - 1];
-      const userMessage = { role: "user", content };
-      messages.push(userMessage);
-      saveMessages(messages);
-      appendMessage(messagesEl, userMessage);
-      input.value = "";
-      send.disabled = true;
-      try {
-        await confirmAction(action);
-        messages.push({ role: "assistant", content: `Confirmed pending action: ${action.summary || action.tool}` });
-      } catch (error) {
-        messages.push({ role: "assistant", content: error.message || "Action failed." });
-      } finally {
-        saveMessages(messages);
-        renderMessages(messagesEl, messages);
-        renderActionCards([...pendingActions.values()]);
-        send.disabled = false;
-        input.focus();
-      }
-      return;
-    }
 
     const userMessage = { role: "user", content };
     messages.push(userMessage);
