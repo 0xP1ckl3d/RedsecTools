@@ -242,6 +242,7 @@ async function initRedSecAI() {
   let activeJobTimeoutMs = Number(status.timeoutMs) || 0;
   const timedOutJobIds = new Set();
   const pendingActionIds = new Set();
+  const pendingActions = new Map();
 
   renderMessages(messagesEl, messages);
 
@@ -325,6 +326,7 @@ async function initRedSecAI() {
   function renderActionCard(action) {
     if (!action?.id || pendingActionIds.has(action.id)) return;
     pendingActionIds.add(action.id);
+    pendingActions.set(action.id, action);
     const card = document.createElement("article");
     card.className = "redsecai-action-card";
     card.innerHTML = `
@@ -348,12 +350,7 @@ async function initRedSecAI() {
         resultEl.textContent = "Confirming...";
       }
       try {
-        const res = await fetch(`/api/ai/actions/${encodeURIComponent(action.id)}/confirm`, {
-          method: "POST",
-          headers: { accept: "application/json" },
-        });
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(body.error || "Action failed");
+        await confirmAction(action);
         if (resultEl) {
           resultEl.className = "redsecai-action-result success";
           resultEl.textContent = "Action completed.";
@@ -367,6 +364,8 @@ async function initRedSecAI() {
       }
     });
     dismissBtn?.addEventListener("click", () => {
+      pendingActions.delete(action.id);
+      pendingActionIds.delete(action.id);
       card.remove();
       messages.push({ role: "assistant", content: `Rejected pending action: ${action.summary || action.tool}` });
       saveMessages(messages);
@@ -380,6 +379,19 @@ async function initRedSecAI() {
     actions
       .filter((action) => action?.id && !seen.has(action.id))
       .forEach(renderActionCard);
+  }
+
+  async function confirmAction(action) {
+    if (!action?.id) throw new Error("No pending action selected.");
+    const res = await fetch(`/api/ai/actions/${encodeURIComponent(action.id)}/confirm`, {
+      method: "POST",
+      headers: { accept: "application/json" },
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || !body.success) throw new Error(body.error || "Action failed.");
+    pendingActions.delete(action.id);
+    pendingActionIds.delete(action.id);
+    return body;
   }
 
   async function fallbackPost() {
@@ -484,6 +496,29 @@ async function initRedSecAI() {
     event.preventDefault();
     const content = input.value.trim();
     if (!content || send.disabled) return;
+
+    if (/^(confirm|yes|approve|do it|go ahead)$/i.test(content) && pendingActions.size) {
+      const action = [...pendingActions.values()][pendingActions.size - 1];
+      const userMessage = { role: "user", content };
+      messages.push(userMessage);
+      saveMessages(messages);
+      appendMessage(messagesEl, userMessage);
+      input.value = "";
+      send.disabled = true;
+      try {
+        await confirmAction(action);
+        messages.push({ role: "assistant", content: `Confirmed pending action: ${action.summary || action.tool}` });
+      } catch (error) {
+        messages.push({ role: "assistant", content: error.message || "Action failed." });
+      } finally {
+        saveMessages(messages);
+        renderMessages(messagesEl, messages);
+        renderActionCards([...pendingActions.values()]);
+        send.disabled = false;
+        input.focus();
+      }
+      return;
+    }
 
     const userMessage = { role: "user", content };
     messages.push(userMessage);

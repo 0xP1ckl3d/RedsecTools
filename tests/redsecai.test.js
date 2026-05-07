@@ -471,3 +471,34 @@ test("RedSecAI normalizes simple calendar write times to the user timezone", asy
     provider.chat = originalChat;
   }
 });
+
+test("RedSecAI verifies calendar after calendar write follow-ups", async () => {
+  const provider = require("../server/modules/redsecai/provider");
+  const orchestrator = require("../server/modules/redsecai/orchestrator");
+  const originalChat = provider.chat;
+  try {
+    provider.chat = async (messages, options = {}) => {
+      assert.equal(options.phase, "tool_router");
+      const joined = messages.map((message) => message.content).join("\n");
+      assert.ok(joined.includes("Confirmed pending action"));
+      assert.ok(joined.includes("Latest user turn"));
+      return JSON.stringify({
+        useTools: true,
+        toolCalls: [{ tool: "calendar.bootstrap", args: { viewMode: "week" } }],
+      });
+    };
+    const routed = await orchestrator.routeModelToolUse({
+      access: { permissionSet: new Set(["calendar.view"]) },
+    }, [
+      { role: "user", content: "Please block out 1 hour from 3pm today" },
+      { role: "assistant", content: "Confirmed pending action: Create calendar entry \"Blocked Time\"" },
+      { role: "user", content: "I dont see it in there, please check its there" },
+    ], { page: { timeZone: "Australia/Sydney" } });
+
+    assert.equal(routed.useTools, true);
+    assert.deepEqual(routed.calls.map((call) => call.tool), ["calendar.bootstrap"]);
+    assert.equal(routed.calls[0].args.timeZone, "Australia/Sydney");
+  } finally {
+    provider.chat = originalChat;
+  }
+});

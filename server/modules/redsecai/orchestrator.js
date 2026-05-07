@@ -23,6 +23,7 @@ Security boundaries:
 - You may also receive TARGETED_TOOL_RESULTS and MODEL_REQUESTED_TOOL_RESULTS for the user's current request. Prefer request-specific tool results over broad snapshots when answering specific questions.
 - Do not say you have no access to internal tools when tool results contain successful outputs. Instead, say which scoped data is available.
 - Never invent platform data. If the scoped tool results are empty, failed, or lack a requested field, say the data is not available in the current scoped tool results.
+- Never tell the user to refresh the page, provide updated schedule data, or paste application data when a RedSecAI read/search tool exists for that domain. Tool routing must fetch the available context before the final answer.
 - You do not have admin scope and must not claim to perform admin actions.
 - You must not access, request, infer, store, or summarize decrypted content from RedSecPaste, RedSecShare, RedSecTeam chat, or RedSecVault.
 - You may help draft report text, summarize permitted threat intel, and reason about permitted calendar context.
@@ -137,7 +138,7 @@ ${compactJson(scopedContext.toolManifest, 8000)}`,
   };
 }
 
-function buildToolRouterPrompt(toolManifest) {
+function buildToolRouterPrompt(toolManifest, messages = []) {
   return {
     role: "system",
     content: `Decide whether this RedSecAI turn needs scoped RedSecTools internal tools before answering.
@@ -152,14 +153,19 @@ or:
 
 Rules:
 - You are only routing. Do not answer the user.
-- Set useTools=false for general knowledge, broad industry questions, quick connectivity checks, writing help that does not need RedSecTools records, or prompts like "reply only true if online".
-- Set useTools=true only when the user asks for their RedSecTools data, current dashboard state, alerts, feeds, IOCs, MITRE mappings, wiki pages, calendar entries, Reporter projects/findings, or asks to create/update application records.
+- Decide from the whole recent conversation, not only the last sentence. Follow-up phrases like "check it", "is it there", "what about that", "did it work", or "no meetings?" refer to the most relevant prior RedSecTools domain/action.
+- Set useTools=false only for general knowledge, broad industry questions, quick connectivity checks, writing help that does not need RedSecTools records, or prompts like "reply only true if online".
+- Set useTools=true whenever the user asks about, verifies, compares, updates, or follows up on RedSecTools data and a listed tool can provide that context.
+- If a relevant read/search tool exists, never route to a final answer that would say "I do not have the current context", "refresh the page", or "provide the data".
 - Use only tools listed in TOOL_MANIFEST.
 - Use at most ${MAX_MODEL_TOOL_CALLS} tool calls.
 - Do not request admin, vault, paste, share, or chat tools.
 - Read/search tools may be used immediately. Write tools create confirmation cards only.
 - For calendar questions, prefer calendar.bootstrap. Include viewMode="week" or "month" and a weekStart Unix-seconds anchor when the user asks for a specific week/month; use scheduleUserId="all" only for team-wide requests.
 - If tools are needed but no single focused call is obvious, set useTools=true with an empty toolCalls array.
+
+Recent conversation:
+${compactJson((messages || []).slice(-8), 6000)}
 
 TOOL_MANIFEST:
 ${compactJson(toolManifest, 8000)}`,
@@ -273,6 +279,14 @@ function parseTimeExpression(value) {
   return { hour, minute };
 }
 
+function parseDurationSeconds(text) {
+  const match = String(text || "").match(/\b(\d+(?:\.\d+)?)\s*(hour|hours|hr|hrs|minute|minutes|min|mins)\b/i);
+  if (!match) return null;
+  const amount = Number.parseFloat(match[1]);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  return /min/i.test(match[2]) ? Math.round(amount * 60) : Math.round(amount * 3600);
+}
+
 function getZonedToday(timeZone = null) {
   const local = getZonedDateParts(new Date(), timeZone);
   return { year: local.year, month: local.month, day: local.day };
@@ -282,14 +296,18 @@ function normalizeCalendarWriteCall(call, messages, page = {}) {
   if (!["calendar.entry.create", "calendar.entry.update"].includes(call.tool)) return call;
   const latest = latestUserText(messages);
   const timeZone = typeof page.timeZone === "string" ? page.timeZone.slice(0, 80) : "";
-  const match = latest.match(/\b(?:from\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\s*(?:-|to|until)\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\b/i);
-  if (!match || !/\btoday\b/i.test(latest)) return call;
-  const start = parseTimeExpression(match[1]);
-  const end = parseTimeExpression(match[2]);
-  if (!start || !end) return call;
+  if (!/\btoday\b/i.test(latest)) return call;
+  const rangeMatch = latest.match(/\b(?:from\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\s*(?:-|to|until)\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\b/i);
+  const durationMatch = latest.match(/\bfrom\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\b/i);
+  const start = parseTimeExpression(rangeMatch?.[1] || durationMatch?.[1]);
+  let durationSeconds = parseDurationSeconds(latest);
+  let explicitEnd = rangeMatch ? parseTimeExpression(rangeMatch[2]) : null;
+  if (!start || (!explicitEnd && !durationSeconds)) return call;
   const today = getZonedToday(timeZone || null);
   const startsAt = zonedLocalToUnix(today.year, today.month, today.day, start.hour, start.minute, 0, timeZone || null);
-  let endsAt = zonedLocalToUnix(today.year, today.month, today.day, end.hour, end.minute, 0, timeZone || null);
+  let endsAt = explicitEnd
+    ? zonedLocalToUnix(today.year, today.month, today.day, explicitEnd.hour, explicitEnd.minute, 0, timeZone || null)
+    : startsAt + durationSeconds;
   if (endsAt <= startsAt) endsAt += DAY_SECONDS;
   const args = { ...(call.args || {}) };
   const body = { ...(args.body || args) };
@@ -361,7 +379,13 @@ function inferMandatoryToolCalls(messages, toolManifest, page = {}) {
   const lower = latest.toLowerCase();
   const hasTool = new Set((toolManifest || []).map((tool) => tool.name));
   const calls = [];
-  if (hasTool.has("calendar.bootstrap") && /\b(calendar|schedule|scheduled|meeting|meetings|planned|availability|rest of this week|this week|next week)\b/i.test(lower)) {
+  const recentCalendarWrite = (messages || []).slice(-6).some((message) => (
+    /calendar entry|blocked|confirmed pending action|action completed|successfully created|block out/i.test(String(message?.content || ""))
+  ));
+  if (hasTool.has("calendar.bootstrap") && (
+    /\b(calendar|schedule|scheduled|meeting|meetings|planned|availability|rest of this week|this week|next week)\b/i.test(lower)
+    || (recentCalendarWrite && /\b(check|verify|there|appearing|showing|see it|is it there|did it|created)\b/i.test(lower))
+  )) {
     calls.push({ tool: "calendar.bootstrap", args: page?.timeZone ? { timeZone: page.timeZone } : {} });
   }
   return normalizeCalendarToolCalls(calls, messages, page);
@@ -390,8 +414,8 @@ async function routeModelToolUse(req, messages, options = {}) {
   emitStatus(options, { phase: "tool_router", label: "Deciding whether RedSecTools data is needed" });
   const raw = await provider.chat([
     { role: "system", content: SYSTEM_PROMPT },
-    buildToolRouterPrompt(toolManifest),
-    { role: "user", content: latestUserText(messages) },
+    buildToolRouterPrompt(toolManifest, messages),
+    { role: "user", content: `Route the latest user turn using the recent conversation above. Latest user turn: ${latestUserText(messages)}` },
   ], { phase: "tool_router" });
   const parsed = extractJsonObject(raw);
   const mandatoryCalls = inferMandatoryToolCalls(messages, toolManifest, options.page || {});
