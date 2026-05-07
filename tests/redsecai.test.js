@@ -467,6 +467,8 @@ test("RedSecAI normalizes simple calendar write times to the user timezone", asy
     assert.equal(call.args.body.timeZone, "Australia/Sydney");
     assert.equal(call.args.body.endsAt - call.args.body.startsAt, 3600);
     assert.notEqual(call.args.body.startsAt, 0);
+    assert.equal(turn.pendingActions.length, 1);
+    assert.equal(turn.pendingActions[0].tool, "calendar.entry.create");
   } finally {
     provider.chat = originalChat;
   }

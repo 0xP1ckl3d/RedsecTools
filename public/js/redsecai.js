@@ -314,6 +314,7 @@ async function initRedSecAI() {
     activeAssistantText = "";
     activeStatusText = "";
     renderMessages(messagesEl, messages);
+    renderActionCards([...pendingActions.values()]);
     send.disabled = false;
     stopProgress();
     input.focus();
@@ -324,7 +325,8 @@ async function initRedSecAI() {
   }
 
   function renderActionCard(action) {
-    if (!action?.id || pendingActionIds.has(action.id)) return;
+    if (!action?.id) return;
+    if (messagesEl.querySelector(`.redsecai-action-card[data-action-id="${CSS.escape(action.id)}"]`)) return;
     pendingActionIds.add(action.id);
     pendingActions.set(action.id, action);
     const card = document.createElement("article");
@@ -480,6 +482,8 @@ async function initRedSecAI() {
     messages = [];
     saveMessages(messages);
     setActiveJob(null);
+    pendingActions.clear();
+    pendingActionIds.clear();
     activeAssistant = null;
     activeAssistantText = "";
     renderMessages(messagesEl, messages);
@@ -497,7 +501,15 @@ async function initRedSecAI() {
     const content = input.value.trim();
     if (!content || send.disabled) return;
 
-    if (/^(confirm|yes|approve|do it|go ahead)$/i.test(content) && pendingActions.size) {
+    if (/^(confirm|yes|approve|do it|go ahead)$/i.test(content)) {
+      if (!pendingActions.size) {
+        const userMessage = { role: "user", content };
+        messages.push(userMessage, { role: "assistant", content: "There is no pending RedSecAI action to confirm." });
+        saveMessages(messages);
+        input.value = "";
+        renderMessages(messagesEl, messages);
+        return;
+      }
       const action = [...pendingActions.values()][pendingActions.size - 1];
       const userMessage = { role: "user", content };
       messages.push(userMessage);

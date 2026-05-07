@@ -80,7 +80,7 @@ router.post("/ai/chat", chatLimiter, requireUser, attachUserAccess, async (req, 
       allowedTools: turn.scopedContext.allowedTools,
       targetedTools: turn.targetedContext.calls.map((call) => call.tool),
       modelRequestedTools: turn.modelToolContext.calls.map((call) => call.tool),
-      pendingActions: turn.modelToolContext.pendingActions,
+      pendingActions: turn.pendingActions || [],
     });
   } catch (error) {
     logWarn("redsecai:chat_failed", { message: error.message, status: error.status || 500, details: error.details || null });

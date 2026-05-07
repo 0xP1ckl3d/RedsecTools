@@ -458,6 +458,7 @@ function prepareDirectRedSecAiTurn(rawMessages) {
       pendingActions: [],
       raw: "",
     },
+    pendingActions: [],
     finalMessages: [
       { role: "system", content: DIRECT_SYSTEM_PROMPT },
       ...messages,
@@ -561,12 +562,17 @@ async function prepareRedSecAiTurn(req, rawMessages, page = {}, options = {}) {
     pendingActions: modelResults.map((result) => result.action).filter(Boolean),
     raw: modelPlan.raw,
   };
+  const pendingActions = [
+    ...(targetedContext.pendingActions || []),
+    ...(modelToolContext.pendingActions || []),
+  ];
 
   return {
     messages,
     scopedContext,
     targetedContext,
     modelToolContext,
+    pendingActions,
     finalMessages: buildFinalMessages(scopedContext, targetedContext, modelToolContext, messages),
   };
 }

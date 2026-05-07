@@ -178,11 +178,11 @@ async function startJob(ws, auth, msg) {
       modelRequestedTools: turn.modelToolContext.calls.map((call) => call.tool),
       model: config.model,
     });
-    if (turn.modelToolContext.pendingActions?.length) {
+    if (turn.pendingActions?.length) {
       broadcastToUser(auth.user.id, {
         type: "redsecai_actions",
         jobId,
-        actions: turn.modelToolContext.pendingActions,
+        actions: turn.pendingActions,
       });
     }
 
@@ -195,18 +195,18 @@ async function startJob(ws, auth, msg) {
     }
     job.done = true;
     job.updatedAt = Date.now();
-    if (turn.modelToolContext.pendingActions?.length) {
+    if (turn.pendingActions?.length) {
       broadcastToUser(auth.user.id, {
         type: "redsecai_actions",
         jobId,
-        actions: turn.modelToolContext.pendingActions,
+        actions: turn.pendingActions,
       });
     }
     broadcastToUser(auth.user.id, {
       type: "redsecai_done",
       jobId,
       message: job.buffer,
-      actions: turn.modelToolContext.pendingActions || [],
+      actions: turn.pendingActions || [],
     });
   } catch (error) {
     job.done = true;
