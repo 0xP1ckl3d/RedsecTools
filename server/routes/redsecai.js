@@ -60,7 +60,11 @@ router.post("/ai/chat", chatLimiter, requireUser, attachUserAccess, async (req, 
   if (!messages.length) return res.status(400).json({ error: "Message is required" });
 
   try {
-    const turn = await runRedSecAiChat(req, messages, req.body?.page || {});
+    const page = {
+      ...(req.body?.page || {}),
+      timeZone: req.body?.page?.timeZone || req.cookies?.redsec_tz || "",
+    };
+    const turn = await runRedSecAiChat(req, messages, page);
 
     logEvent("redsecai:chat", req, {
       model: provider.getConfig().model,

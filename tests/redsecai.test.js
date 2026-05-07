@@ -433,3 +433,41 @@ test("RedSecAI mutating tools create confirmation-gated pending actions", async 
   assert.ok(listPendingActionsForUser("user-a").some((item) => item.id === action.id));
   assert.equal(listPendingActionsForUser("user-b").some((item) => item.id === action.id), false);
 });
+
+test("RedSecAI normalizes simple calendar write times to the user timezone", async () => {
+  const provider = require("../server/modules/redsecai/provider");
+  const orchestrator = require("../server/modules/redsecai/orchestrator");
+  const originalChat = provider.chat;
+  try {
+    provider.chat = async (messages, options = {}) => {
+      if (options.phase === "tool_router") {
+        return JSON.stringify({
+          useTools: true,
+          toolCalls: [{
+            tool: "calendar.entry.create",
+            args: { body: { title: "Blocked", startsAt: 0, endsAt: 0 } },
+          }],
+        });
+      }
+      if (options.phase === "tool_planner") return JSON.stringify({ toolCalls: [] });
+      return "";
+    };
+    const turn = await orchestrator.prepareRedSecAiTurn({
+      user: { id: "tz-user", username: "alice" },
+      access: { permissionSet: new Set(["calendar.create"]) },
+      headers: { cookie: "redsec_session=s%3Atest.sig" },
+      get: () => "/calendar",
+    }, [{ role: "user", content: "Block out my calendar from 3pm to 4pm today" }], {
+      path: "/calendar",
+      timeZone: "Australia/Sydney",
+    });
+
+    const call = turn.targetedContext.calls[0];
+    assert.equal(call.tool, "calendar.entry.create");
+    assert.equal(call.args.body.timeZone, "Australia/Sydney");
+    assert.equal(call.args.body.endsAt - call.args.body.startsAt, 3600);
+    assert.notEqual(call.args.body.startsAt, 0);
+  } finally {
+    provider.chat = originalChat;
+  }
+});

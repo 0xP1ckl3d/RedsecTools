@@ -125,6 +125,22 @@ function createJobId() {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+function getClientTimeZone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+  } catch (_) {
+    return "";
+  }
+}
+
+function rememberClientTimeZone() {
+  const timeZone = getClientTimeZone();
+  if (timeZone) {
+    document.cookie = `redsec_tz=${encodeURIComponent(timeZone)}; Path=/; SameSite=Lax`;
+  }
+  return timeZone;
+}
+
 function createRedSecAiSocket({ onStart, onStatus, onDelta, onDone, onError, onSnapshot, onActions }) {
   let ws = null;
   let connected = false;
@@ -135,7 +151,8 @@ function createRedSecAiSocket({ onStart, onStatus, onDelta, onDone, onError, onS
   function connect() {
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
     const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-    ws = new WebSocket(`${protocol}//${location.host}/ws/redsecai`);
+    const timeZone = encodeURIComponent(rememberClientTimeZone());
+    ws = new WebSocket(`${protocol}//${location.host}/ws/redsecai${timeZone ? `?tz=${timeZone}` : ""}`);
 
     ws.onopen = () => {
       connected = true;
@@ -316,13 +333,14 @@ async function initRedSecAI() {
       <pre class="redsecai-action-args">${escapeHtml(JSON.stringify(action.args || {}, null, 2))}</pre>
       <div class="redsecai-action-row">
         <button type="button" class="redsecai-action-confirm">Confirm</button>
-        <button type="button" class="redsecai-action-dismiss">Dismiss</button>
+        <button type="button" class="redsecai-action-dismiss">Reject</button>
       </div>
       <div class="redsecai-action-result hidden"></div>
     `;
     const confirmBtn = card.querySelector(".redsecai-action-confirm");
     const dismissBtn = card.querySelector(".redsecai-action-dismiss");
     const resultEl = card.querySelector(".redsecai-action-result");
+    card.dataset.actionId = action.id;
     confirmBtn?.addEventListener("click", async () => {
       confirmBtn.disabled = true;
       if (resultEl) {
@@ -348,17 +366,24 @@ async function initRedSecAI() {
         }
       }
     });
-    dismissBtn?.addEventListener("click", () => card.remove());
+    dismissBtn?.addEventListener("click", () => {
+      card.remove();
+      messages.push({ role: "assistant", content: `Rejected pending action: ${action.summary || action.tool}` });
+      saveMessages(messages);
+    });
     messagesEl.appendChild(card);
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
   function renderActionCards(actions = []) {
-    actions.forEach(renderActionCard);
+    const seen = new Set([...messagesEl.querySelectorAll(".redsecai-action-card")].map((card) => card.dataset.actionId));
+    actions
+      .filter((action) => action?.id && !seen.has(action.id))
+      .forEach(renderActionCard);
   }
 
   async function fallbackPost() {
-    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    const timeZone = rememberClientTimeZone();
     const res = await fetch("/api/ai/chat", {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
@@ -398,8 +423,8 @@ async function initRedSecAI() {
     },
     onDone(message) {
       if (message.jobId && timedOutJobIds.has(message.jobId)) return;
-      renderActionCards(message.actions || []);
       finishActiveAssistant(message.message || activeAssistantText);
+      renderActionCards(message.actions || []);
     },
     onError(message) {
       if (message.jobId && timedOutJobIds.has(message.jobId)) return;
@@ -478,7 +503,7 @@ async function initRedSecAI() {
     startProgress({ jobId, startedAt, timeoutMs: status.timeoutMs || 0 });
 
     try {
-      const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+      const timeZone = rememberClientTimeZone();
       aiSocket.send({
         type: "redsecai_chat",
         jobId,

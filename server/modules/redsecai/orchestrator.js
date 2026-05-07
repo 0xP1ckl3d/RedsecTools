@@ -259,6 +259,47 @@ function zonedLocalToUnix(year, month, day, hour, minute, second, timeZone = nul
   return Math.floor((utcGuess + (desiredAsUtc - actualAsUtc)) / 1000);
 }
 
+function parseTimeExpression(value) {
+  const match = String(value || "").trim().match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i);
+  if (!match) return null;
+  let hour = parseInt(match[1], 10);
+  const minute = match[2] ? parseInt(match[2], 10) : 0;
+  const meridiem = match[3]?.toLowerCase();
+  if (!Number.isInteger(hour) || !Number.isInteger(minute) || minute < 0 || minute > 59) return null;
+  if (meridiem === "pm" && hour < 12) hour += 12;
+  if (meridiem === "am" && hour === 12) hour = 0;
+  if (!meridiem && hour < 7) hour += 12;
+  if (hour < 0 || hour > 23) return null;
+  return { hour, minute };
+}
+
+function getZonedToday(timeZone = null) {
+  const local = getZonedDateParts(new Date(), timeZone);
+  return { year: local.year, month: local.month, day: local.day };
+}
+
+function normalizeCalendarWriteCall(call, messages, page = {}) {
+  if (!["calendar.entry.create", "calendar.entry.update"].includes(call.tool)) return call;
+  const latest = latestUserText(messages);
+  const timeZone = typeof page.timeZone === "string" ? page.timeZone.slice(0, 80) : "";
+  const match = latest.match(/\b(?:from\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\s*(?:-|to|until)\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\b/i);
+  if (!match || !/\btoday\b/i.test(latest)) return call;
+  const start = parseTimeExpression(match[1]);
+  const end = parseTimeExpression(match[2]);
+  if (!start || !end) return call;
+  const today = getZonedToday(timeZone || null);
+  const startsAt = zonedLocalToUnix(today.year, today.month, today.day, start.hour, start.minute, 0, timeZone || null);
+  let endsAt = zonedLocalToUnix(today.year, today.month, today.day, end.hour, end.minute, 0, timeZone || null);
+  if (endsAt <= startsAt) endsAt += DAY_SECONDS;
+  const args = { ...(call.args || {}) };
+  const body = { ...(args.body || args) };
+  body.startsAt = startsAt;
+  body.endsAt = endsAt;
+  body.allDay = false;
+  body.timeZone = timeZone || body.timeZone || "server-local";
+  return { ...call, args: { ...args, body } };
+}
+
 function getCalendarRangeForPrompt(latest, timeZone = null) {
   const now = new Date();
   const local = getZonedDateParts(now, timeZone);
@@ -312,7 +353,7 @@ function normalizeCalendarToolCalls(calls, messages, page = {}) {
     }
 
     return { ...call, args };
-  });
+  }).map((call) => normalizeCalendarWriteCall(call, messages, page));
 }
 
 function inferMandatoryToolCalls(messages, toolManifest, page = {}) {

@@ -315,6 +315,13 @@ function initSidebarCollapse() {
 }
 
 async function loadBootstrap() {
+  const browserTimeZone = (() => {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    } catch (_) {
+      return "";
+    }
+  })();
   const scheduleRange = getScheduleRangeUnix();
   const params = new URLSearchParams({
     weekStart: String(scheduleRange.startsAt),
@@ -322,6 +329,7 @@ async function loadBootstrap() {
     rangeEnd: String(scheduleRange.endsAt),
     scheduleUserId: state.selectedUserId || "",
     viewMode: state.scheduleView,
+    timeZone: browserTimeZone,
   });
   const data = await fetchJson(`/api/calendar/bootstrap?${params.toString()}`);
   state.capabilities = data.capabilities || state.capabilities;

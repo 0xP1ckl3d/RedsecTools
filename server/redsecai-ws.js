@@ -37,6 +37,8 @@ async function authenticateUpgrade(req) {
 
     const freshUser = getUserById(session.user_id);
     const permissions = getRolePermissionsByUserId(session.user_id);
+    const url = new URL(req.url || "/ws/redsecai", "http://redsectools.local");
+    const requestedTimeZone = String(url.searchParams.get("tz") || "").slice(0, 80);
     return {
       sessionId,
       cookie: req.headers.cookie || "",
@@ -54,6 +56,7 @@ async function authenticateUpgrade(req) {
         permissions,
         permissionSet: new Set(permissions),
       },
+      timeZone: requestedTimeZone || (cookies.redsec_tz ? String(cookies.redsec_tz).slice(0, 80) : ""),
     };
   } catch {
     return null;
@@ -68,6 +71,13 @@ function buildScopedReq(auth, page) {
     get(name) {
       return name && name.toLowerCase() === "referer" ? page?.path || "/" : "";
     },
+  };
+}
+
+function mergePageContext(auth, page = {}) {
+  return {
+    ...page,
+    timeZone: page.timeZone || auth.timeZone || "",
   };
 }
 
@@ -158,7 +168,8 @@ async function startJob(ws, auth, msg) {
       job.updatedAt = Date.now();
       broadcastToUser(auth.user.id, payload);
     };
-    const turn = await prepareRedSecAiTurn(buildScopedReq(auth, msg.page || {}), messages, msg.page || {}, { onStatus: emitStatus });
+    const page = mergePageContext(auth, msg.page || {});
+    const turn = await prepareRedSecAiTurn(buildScopedReq(auth, page), messages, page, { onStatus: emitStatus });
     logEvent("redsecai:stream_start", null, {
       actorUserId: auth.user.id,
       actorUsername: auth.user.username,
@@ -184,6 +195,13 @@ async function startJob(ws, auth, msg) {
     }
     job.done = true;
     job.updatedAt = Date.now();
+    if (turn.modelToolContext.pendingActions?.length) {
+      broadcastToUser(auth.user.id, {
+        type: "redsecai_actions",
+        jobId,
+        actions: turn.modelToolContext.pendingActions,
+      });
+    }
     broadcastToUser(auth.user.id, {
       type: "redsecai_done",
       jobId,
@@ -219,7 +237,7 @@ function initRedSecAiWebSocket(server) {
   const wss = new WebSocketServer({ noServer: true });
 
   server.on("upgrade", (req, socket, head) => {
-    if (req.url !== "/ws/redsecai") return;
+    if (!String(req.url || "").startsWith("/ws/redsecai")) return;
 
     authenticateUpgrade(req)
       .then((auth) => {
