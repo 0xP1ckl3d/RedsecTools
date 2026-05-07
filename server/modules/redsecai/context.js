@@ -10,7 +10,7 @@ const TOOL_ALLOWLIST = Object.freeze({
     path: "/api/calendar/bootstrap",
     permissionsAny: ["calendar.view", "calendar.view_team", "calendar.manage"],
     capability: "calendar.read",
-    description: "Read the logged-in user's permitted calendar schedule, team/project scope, and calendar stats.",
+    description: "Read permitted calendar schedule entries, team/project scope, and calendar stats. GET args may include viewMode=week|month, weekStart as Unix seconds, and scheduleUserId or all.",
   },
   "calendar.entry.create": {
     method: "POST",
@@ -301,6 +301,73 @@ function isRedSecAiToolMutating(toolName) {
   return !!tool && tool.confirmRequired === true;
 }
 
+function formatAiDateTime(unix, options = {}) {
+  const value = Number(unix);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  const formatOptions = options.dateOnly
+    ? { weekday: "short", day: "numeric", month: "short", year: "numeric" }
+    : { weekday: "short", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" };
+  return new Date(value * 1000).toLocaleString("en-AU", formatOptions);
+}
+
+function summarizeCalendarEntryForAi(entry, usersById, projectsById) {
+  const assigneeId = entry?.assigneeUserId || entry?.ownerId || entry?.calendarUserId || null;
+  const project = entry?.projectId ? projectsById.get(entry.projectId) : null;
+  const startLabel = formatAiDateTime(entry?.startsAt, { dateOnly: !!entry?.allDay });
+  const endLabel = formatAiDateTime(entry?.endsAt, { dateOnly: !!entry?.allDay });
+  return {
+    id: entry?.id,
+    title: entry?.title || "Untitled calendar entry",
+    type: entry?.type || null,
+    status: entry?.status || null,
+    plannedStatus: entry?.plannedStatus || null,
+    allDay: !!entry?.allDay,
+    startsAt: entry?.startsAt || null,
+    endsAt: entry?.endsAt || null,
+    startLabel,
+    endLabel,
+    timeLabel: entry?.allDay ? `All day: ${startLabel || "unknown date"}` : `${startLabel || "unknown start"} to ${endLabel || "unknown end"}`,
+    assigneeUserId: assigneeId,
+    assigneeUsername: usersById.get(assigneeId)?.username || null,
+    projectId: entry?.projectId || null,
+    projectName: project?.name || project?.title || null,
+    scheduledHours: entry?.scheduledHours ?? null,
+    description: entry?.description || null,
+  };
+}
+
+function summarizeCalendarBootstrap(toolName, result) {
+  if (!result.ok) {
+    return { tool: toolName, ok: false, status: result.status, error: result.error || `HTTP ${result.status}` };
+  }
+  const body = result.body || {};
+  const usersById = new Map((body.availableUsers || []).map((user) => [user.id, user]));
+  if (body.selectedUser?.id && body.selectedUser?.username) usersById.set(body.selectedUser.id, body.selectedUser);
+  const projectsById = new Map((body.projects || []).map((project) => [project.id, project]));
+  return {
+    tool: toolName,
+    ok: true,
+    status: result.status,
+    data: {
+      scheduleView: body.scheduleView || null,
+      scheduleLabel: body.scheduleLabel || null,
+      range: {
+        startsAt: body.weekStart || null,
+        endsAt: body.weekEnd || null,
+        startLabel: formatAiDateTime(body.weekStart, { dateOnly: true }),
+        endLabel: formatAiDateTime(body.weekEnd, { dateOnly: true }),
+      },
+      selectedUser: body.selectedUser || null,
+      entryCount: Array.isArray(body.scheduleEntries) ? body.scheduleEntries.length : 0,
+      scheduleEntries: (body.scheduleEntries || [])
+        .slice(0, 50)
+        .map((entry) => summarizeCalendarEntryForAi(entry, usersById, projectsById)),
+      overviewStats: body.overviewStats?.summary || body.overviewStats || null,
+      capabilities: body.capabilities || null,
+    },
+  };
+}
+
 async function executeRedSecAiTool(req, toolName, args = {}, options = {}) {
   if (!TOOL_ALLOWLIST[toolName]) {
     return { tool: toolName, ok: false, status: 403, error: "Tool is not allowlisted for RedSecAI" };
@@ -365,6 +432,9 @@ async function buildTargetedToolContext(req, messages = []) {
 }
 
 function summarizeResult(toolName, result) {
+  if (toolName === "calendar.bootstrap") {
+    return summarizeCalendarBootstrap(toolName, result);
+  }
   if (!result.ok) {
     return { tool: toolName, ok: false, status: result.status, error: result.error || `HTTP ${result.status}` };
   }

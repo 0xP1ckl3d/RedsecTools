@@ -33,6 +33,7 @@ const state = {
   editingEntryId: null,
   editingProjectId: null,
   entryModalReadOnly: false,
+  entryAutoEnd: true,
   entryLastProjectId: "",
   activeTimeFieldId: null,
   activeTimeView: "hour",
@@ -46,6 +47,23 @@ function getStartOfWeekUnix(seed = Date.now()) {
   date.setHours(0, 0, 0, 0);
   date.setDate(date.getDate() + diff);
   return Math.floor(date.getTime() / 1000);
+}
+
+function getStartOfMonthUnix(seed = Date.now()) {
+  const date = new Date(seed);
+  return Math.floor(new Date(date.getFullYear(), date.getMonth(), 1).getTime() / 1000);
+}
+
+function getCurrentScheduleAnchor() {
+  return state.scheduleView === "month" ? getStartOfMonthUnix() : getStartOfWeekUnix();
+}
+
+function shiftScheduleAnchor(delta) {
+  const anchor = new Date(state.weekStart * 1000);
+  if (state.scheduleView === "month") {
+    return Math.floor(new Date(anchor.getFullYear(), anchor.getMonth() + delta, 1).getTime() / 1000);
+  }
+  return getStartOfWeekUnix((state.weekStart + (delta * WEEK_SECONDS)) * 1000);
 }
 
 async function fetchJson(url, options) {
@@ -194,6 +212,19 @@ function setDateTimePair(dateId, timeId, value) {
   timeButton.dataset.hour24 = hour24;
   timeButton.dataset.minute = minute;
   timeButton.textContent = formatTimeLabel(hour24, minute);
+}
+
+function openNativeDatePicker(inputId) {
+  const input = document.getElementById(inputId);
+  if (!input || input.disabled) return;
+  input.focus();
+  if (typeof input.showPicker === "function") {
+    try {
+      input.showPicker();
+    } catch (_) {
+      // Some browsers only allow showPicker from direct user activation.
+    }
+  }
 }
 
 function unixFromDateTimePair(dateId, timeId, allDay = false, asEnd = false) {
@@ -1121,7 +1152,7 @@ function syncEntryEndFromStart(force = false) {
     return;
   }
 
-  if (force || !endDateInput.value || currentEnd == null || currentEnd <= currentStart) {
+  if (force || state.entryAutoEnd || !endDateInput.value || currentEnd == null || currentEnd <= currentStart) {
     const autoEnd = new Date((currentStart * 1000) + (30 * 60 * 1000));
     setDateTimePair("calendar-entry-end-date", "calendar-entry-end-time", {
       date: toDateInputValue(Math.floor(autoEnd.getTime() / 1000)),
@@ -1216,6 +1247,7 @@ function syncEntryProjectDefaults() {
 function openEntryModal(entry = null, options = {}) {
   state.editingEntryId = entry?.id || null;
   state.entryModalReadOnly = entry ? !canEditEntry(entry) : false;
+  state.entryAutoEnd = !entry;
   state.entryLastProjectId = entry?.projectId || options.project?.id || "";
   resetMessage("calendar-entry-msg");
 
@@ -1260,6 +1292,7 @@ function closeEntryModal() {
   document.getElementById("calendar-entry-modal")?.classList.add("hidden");
   state.editingEntryId = null;
   state.entryModalReadOnly = false;
+  state.entryAutoEnd = true;
   state.entryLastProjectId = "";
 }
 
@@ -1632,7 +1665,9 @@ function initTimeModal() {
     setDateTimePair("", state.activeTimeFieldId, state.pendingTimeValue);
     closeModal();
     if (activeFieldId === "calendar-entry-start-time") {
-      syncEntryEndFromStart();
+      syncEntryEndFromStart(true);
+    } else if (activeFieldId === "calendar-entry-end-time") {
+      state.entryAutoEnd = false;
     }
   });
 
@@ -1654,31 +1689,15 @@ async function refreshCalendarData() {
 
 function initEvents() {
   document.getElementById("calendar-prev-range")?.addEventListener("click", async () => {
-    const anchor = new Date(state.weekStart * 1000);
-    if (state.scheduleView === "month") {
-      anchor.setMonth(anchor.getMonth() - 1, 1);
-      anchor.setHours(0, 0, 0, 0);
-      state.weekStart = Math.floor(anchor.getTime() / 1000);
-    } else {
-      state.weekStart -= WEEK_SECONDS;
-    }
+    state.weekStart = shiftScheduleAnchor(-1);
     await refreshCalendarData();
   });
   document.getElementById("calendar-next-range")?.addEventListener("click", async () => {
-    const anchor = new Date(state.weekStart * 1000);
-    if (state.scheduleView === "month") {
-      anchor.setMonth(anchor.getMonth() + 1, 1);
-      anchor.setHours(0, 0, 0, 0);
-      state.weekStart = Math.floor(anchor.getTime() / 1000);
-    } else {
-      state.weekStart += WEEK_SECONDS;
-    }
+    state.weekStart = shiftScheduleAnchor(1);
     await refreshCalendarData();
   });
   document.getElementById("calendar-current-range")?.addEventListener("click", async () => {
-    state.weekStart = state.scheduleView === "month"
-      ? Math.floor(new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime() / 1000)
-      : getStartOfWeekUnix();
+    state.weekStart = getCurrentScheduleAnchor();
     await refreshCalendarData();
   });
   document.querySelectorAll("[data-schedule-view]").forEach((button) => {
@@ -1686,9 +1705,7 @@ function initEvents() {
       document.querySelectorAll("[data-schedule-view]").forEach((node) => node.classList.remove("active"));
       button.classList.add("active");
       state.scheduleView = button.dataset.scheduleView;
-      state.weekStart = state.scheduleView === "month"
-        ? Math.floor(new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime() / 1000)
-        : getStartOfWeekUnix();
+      state.weekStart = getCurrentScheduleAnchor();
       await refreshCalendarData();
     });
   });
@@ -1706,8 +1723,14 @@ function initEvents() {
   document.getElementById("calendar-add-allocation-btn")?.addEventListener("click", () => openAllocationModal());
 
   document.getElementById("calendar-entry-all-day")?.addEventListener("change", syncEntryFormAllDay);
-  document.getElementById("calendar-entry-start-date")?.addEventListener("change", () => syncEntryEndFromStart());
-  document.getElementById("calendar-entry-end-date")?.addEventListener("change", () => syncEntryEndFromStart());
+  document.getElementById("calendar-entry-start-date")?.addEventListener("change", () => syncEntryEndFromStart(true));
+  document.getElementById("calendar-entry-end-date")?.addEventListener("change", () => {
+    state.entryAutoEnd = false;
+    syncEntryEndFromStart();
+  });
+  document.querySelectorAll("[data-calendar-date-picker]").forEach((button) => {
+    button.addEventListener("click", () => openNativeDatePicker(button.dataset.calendarDatePicker));
+  });
   document.getElementById("calendar-entry-assignee-trigger")?.addEventListener("click", (event) => {
     event.stopPropagation();
     toggleEntryAssigneeDropdown();

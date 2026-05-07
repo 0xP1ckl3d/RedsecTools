@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { compactJson, hasAny } = require("../server/modules/redsecai/context");
+const { compactJson, executeRedSecAiTool, hasAny } = require("../server/modules/redsecai/context");
 const { checkModelHealth, getConfig, isCloudModel, runDiagnostics } = require("../server/modules/redsecai/provider");
 const { extractJsonObject, sanitizeModelToolCalls } = require("../server/modules/redsecai/orchestrator");
 
@@ -120,6 +120,53 @@ test("RedSecAI scoped turns include only model-selected tool results", async () 
     assert.equal(turn.scopedContext.text.includes("Scoped Wiki search snapshot"), false);
   } finally {
     provider.chat = originalChat;
+    global.fetch = originalFetch;
+  }
+});
+
+test("RedSecAI calendar tool summarizes meeting times for the model", async () => {
+  const originalFetch = global.fetch;
+  try {
+    global.fetch = async (url) => {
+      assert.ok(String(url).includes("/api/calendar/bootstrap"));
+      return new Response(JSON.stringify({
+        scheduleView: "week",
+        scheduleLabel: "4 May to 10 May",
+        weekStart: 1777899600,
+        weekEnd: 1778504399,
+        selectedUser: { id: "u1", username: "0xP1ckl3d" },
+        availableUsers: [{ id: "u1", username: "0xP1ckl3d" }],
+        projects: [{ id: "p1", name: "Internal Ops" }],
+        scheduleEntries: [{
+          id: "e1",
+          title: "Team Meeting",
+          type: "meeting",
+          status: "scheduled",
+          plannedStatus: "scheduled",
+          startsAt: 1778108400,
+          endsAt: 1778110200,
+          allDay: false,
+          assigneeUserId: "u1",
+          projectId: "p1",
+          scheduledHours: 0.5,
+        }],
+        overviewStats: { summary: { scheduledHours: 0.5 } },
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    };
+
+    const result = await executeRedSecAiTool({
+      access: { permissionSet: new Set(["calendar.view"]) },
+      headers: { cookie: "redsec_session=s%3Atest.sig" },
+    }, "calendar.bootstrap", { viewMode: "week" });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.data.entryCount, 1);
+    assert.equal(result.data.scheduleEntries[0].title, "Team Meeting");
+    assert.equal(result.data.scheduleEntries[0].assigneeUsername, "0xP1ckl3d");
+    assert.equal(result.data.scheduleEntries[0].projectName, "Internal Ops");
+    assert.match(result.data.scheduleEntries[0].timeLabel, /to/);
+    assert.match(result.data.scheduleEntries[0].timeLabel, /2026|May/i);
+  } finally {
     global.fetch = originalFetch;
   }
 });

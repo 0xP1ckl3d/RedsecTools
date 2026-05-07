@@ -126,6 +126,7 @@ async function startJob(ws, auth, msg) {
     id: jobId,
     userId: auth.user.id,
     buffer: "",
+    statuses: [],
     done: false,
     error: null,
     createdAt: Date.now(),
@@ -143,7 +144,21 @@ async function startJob(ws, auth, msg) {
   });
 
   try {
-    const turn = await prepareRedSecAiTurn(buildScopedReq(auth, msg.page || {}), messages, msg.page || {});
+    const emitStatus = (status) => {
+      const payload = {
+        type: "redsecai_status",
+        jobId,
+        phase: status.phase || "working",
+        label: status.label || "Working",
+        tool: status.tool || null,
+        at: Date.now(),
+      };
+      job.statuses.push(payload);
+      if (job.statuses.length > 20) job.statuses.shift();
+      job.updatedAt = Date.now();
+      broadcastToUser(auth.user.id, payload);
+    };
+    const turn = await prepareRedSecAiTurn(buildScopedReq(auth, msg.page || {}), messages, msg.page || {}, { onStatus: emitStatus });
     logEvent("redsecai:stream_start", null, {
       actorUserId: auth.user.id,
       actorUsername: auth.user.username,
@@ -160,6 +175,7 @@ async function startJob(ws, auth, msg) {
       });
     }
 
+    emitStatus({ phase: "final_stream", label: "Writing the response" });
     for await (const chunk of provider.chatStream(turn.finalMessages, { phase: "final_stream" })) {
       job.buffer += chunk;
       job.updatedAt = Date.now();
@@ -193,6 +209,7 @@ function resumeJob(ws, auth, jobId) {
     message: job.buffer,
     done: job.done,
     error: job.error,
+    statuses: job.statuses || [],
     startedAt: job.createdAt,
     timeoutMs: config.timeoutMs,
   });

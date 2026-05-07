@@ -125,7 +125,7 @@ function createJobId() {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-function createRedSecAiSocket({ onStart, onDelta, onDone, onError, onSnapshot, onActions }) {
+function createRedSecAiSocket({ onStart, onStatus, onDelta, onDone, onError, onSnapshot, onActions }) {
   let ws = null;
   let connected = false;
   let reconnectTimer = null;
@@ -157,6 +157,7 @@ function createRedSecAiSocket({ onStart, onDelta, onDone, onError, onSnapshot, o
         return;
       }
       if (message.type === "redsecai_start") onStart(message);
+      else if (message.type === "redsecai_status") onStatus(message);
       else if (message.type === "redsecai_delta") onDelta(message);
       else if (message.type === "redsecai_done") onDone(message);
       else if (message.type === "redsecai_error") onError(message);
@@ -216,6 +217,7 @@ async function initRedSecAI() {
   let messages = loadMessages();
   let activeAssistant = null;
   let activeAssistantText = "";
+  let activeStatusText = "";
   let progressTimer = null;
   let progressTimeoutTimer = null;
   let progressStartedAt = 0;
@@ -234,6 +236,15 @@ async function initRedSecAI() {
     messagesEl.appendChild(activeAssistant);
     messagesEl.scrollTop = messagesEl.scrollHeight;
     return activeAssistant;
+  }
+
+  function updateActiveStatus(text) {
+    activeStatusText = text || "Working";
+    if (activeAssistantText) return;
+    const item = ensureActiveAssistant();
+    const body = item.querySelector(".redsecai-message-body");
+    if (body) body.innerHTML = `<span class="redsecai-live-status">${escapeHtml(activeStatusText)}</span>`;
+    messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
   function updateActiveAssistant(text) {
@@ -283,6 +294,7 @@ async function initRedSecAI() {
     activeJobId = null;
     activeAssistant = null;
     activeAssistantText = "";
+    activeStatusText = "";
     renderMessages(messagesEl, messages);
     send.disabled = false;
     stopProgress();
@@ -372,6 +384,11 @@ async function initRedSecAI() {
       send.disabled = true;
       startProgress({ jobId: message.jobId, startedAt, timeoutMs });
       ensureActiveAssistant();
+      updateActiveStatus("Starting RedSecAI turn");
+    },
+    onStatus(message) {
+      if (message.jobId && timedOutJobIds.has(message.jobId)) return;
+      updateActiveStatus(message.label || "Working");
     },
     onDelta(message) {
       if (message.jobId && timedOutJobIds.has(message.jobId)) return;
@@ -395,6 +412,10 @@ async function initRedSecAI() {
         return;
       }
       updateActiveAssistant(message.message || "");
+      if (!message.message && Array.isArray(message.statuses) && message.statuses.length) {
+        const latest = message.statuses[message.statuses.length - 1];
+        updateActiveStatus(latest.label || "Working");
+      }
       if (message.done) {
         finishActiveAssistant(message.message || activeAssistantText);
       } else {

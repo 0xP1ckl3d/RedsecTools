@@ -80,6 +80,31 @@ function latestUserText(messages) {
   return String(latest?.content || "").trim();
 }
 
+function describeToolCall(call) {
+  const tool = typeof call === "string" ? call : call?.tool;
+  const labels = {
+    "calendar.bootstrap": "Reading current calendar state",
+    "calendar.entry.create": "Preparing a calendar action",
+    "calendar.entry.update": "Preparing a calendar update",
+    "threat.bootstrap": "Reading threat dashboard state",
+    "threat.alerts": "Checking threat alerts",
+    "threat.searchAlerts": "Searching threat alerts",
+    "reporter.projects": "Reading Reporter projects",
+    "reporter.note.create": "Preparing a Reporter note action",
+    "wiki.bootstrap": "Reading wiki state",
+    "wiki.search": "Searching wiki pages",
+    "wiki.page.create": "Preparing a wiki page action",
+    "wiki.page.update": "Preparing a wiki update action",
+  };
+  return labels[tool] || `Running ${tool || "selected tool"}`;
+}
+
+function emitStatus(options, status) {
+  if (typeof options?.onStatus === "function") {
+    options.onStatus(status);
+  }
+}
+
 function buildToolPlannerPrompt(scopedContext) {
   return {
     role: "system",
@@ -111,6 +136,8 @@ function buildToolRouterPrompt(toolManifest) {
     role: "system",
     content: `Decide whether this RedSecAI turn needs scoped RedSecTools internal tools before answering.
 
+Current server time: ${new Date().toISOString()}
+
 Return ONLY strict JSON in this format:
 {"useTools":false,"toolCalls":[]}
 
@@ -125,6 +152,7 @@ Rules:
 - Use at most ${MAX_MODEL_TOOL_CALLS} tool calls.
 - Do not request admin, vault, paste, share, or chat tools.
 - Read/search tools may be used immediately. Write tools create confirmation cards only.
+- For calendar questions, prefer calendar.bootstrap. Include viewMode="week" or "month" and a weekStart Unix-seconds anchor when the user asks for a specific week/month; use scheduleUserId="all" only for team-wide requests.
 - If tools are needed but no single focused call is obvious, set useTools=true with an empty toolCalls array.
 
 TOOL_MANIFEST:
@@ -211,11 +239,12 @@ async function planModelToolCalls(scopedContext, targetedContext, messages) {
   };
 }
 
-async function routeModelToolUse(req, messages) {
+async function routeModelToolUse(req, messages, options = {}) {
   const toolManifest = getRedSecAiToolManifest(req.access);
   if (!toolManifest.length) {
     return { useTools: false, calls: [], raw: "", toolManifest };
   }
+  emitStatus(options, { phase: "tool_router", label: "Deciding whether RedSecTools data is needed" });
   const raw = await provider.chat([
     { role: "system", content: SYSTEM_PROMPT },
     buildToolRouterPrompt(toolManifest),
@@ -268,9 +297,10 @@ function prepareDirectRedSecAiTurn(rawMessages) {
   };
 }
 
-async function executeToolCalls(req, calls) {
+async function executeToolCalls(req, calls, options = {}) {
   const results = [];
   for (const call of calls) {
+    emitStatus(options, { phase: "tool_execute", label: describeToolCall(call), tool: call.tool });
     if (isRedSecAiToolMutating(call.tool)) {
       const action = createPendingAction(req.user, call, "model");
       results.push({
@@ -288,8 +318,8 @@ async function executeToolCalls(req, calls) {
   return results;
 }
 
-async function buildModelRoutedToolContext(req, calls) {
-  const results = await executeToolCalls(req, calls);
+async function buildModelRoutedToolContext(req, calls, options = {}) {
+  const results = await executeToolCalls(req, calls, options);
   return {
     calls,
     results,
@@ -314,7 +344,7 @@ function buildFinalMessages(scopedContext, targetedContext, modelToolContext, me
   ];
 }
 
-async function prepareRedSecAiTurn(req, rawMessages, page = {}) {
+async function prepareRedSecAiTurn(req, rawMessages, page = {}, options = {}) {
   const messages = normalizeMessages(rawMessages);
   if (!messages.length) {
     const error = new Error("Message is required");
@@ -323,7 +353,7 @@ async function prepareRedSecAiTurn(req, rawMessages, page = {}) {
   }
 
   const startedAt = Date.now();
-  const routerPlan = await routeModelToolUse(req, messages);
+  const routerPlan = await routeModelToolUse(req, messages, options);
   logEvent("redsecai:turn_router_ready", req, {
     elapsedMs: Date.now() - startedAt,
     useTools: routerPlan.useTools,
@@ -332,11 +362,12 @@ async function prepareRedSecAiTurn(req, rawMessages, page = {}) {
   });
 
   if (!routerPlan.useTools) {
+    emitStatus(options, { phase: "direct_answer", label: "Answering directly" });
     return prepareDirectRedSecAiTurn(messages);
   }
 
   const scopedReq = req;
-  const targetedContext = await buildModelRoutedToolContext(scopedReq, routerPlan.calls);
+  const targetedContext = await buildModelRoutedToolContext(scopedReq, routerPlan.calls, options);
   const scopedContext = buildScopedToolContext(scopedReq, routerPlan.toolManifest, targetedContext, page || {});
   logEvent("redsecai:turn_context_ready", req, {
     elapsedMs: Date.now() - startedAt,
@@ -345,13 +376,14 @@ async function prepareRedSecAiTurn(req, rawMessages, page = {}) {
     allowedTools: scopedContext.allowedTools,
     targetedTools: targetedContext.calls.map((call) => call.tool),
   });
+  emitStatus(options, { phase: "tool_planner", label: "Checking whether another selected tool is needed" });
   const modelPlan = await planModelToolCalls(scopedContext, targetedContext, messages);
   logEvent("redsecai:turn_planner_ready", req, {
     elapsedMs: Date.now() - startedAt,
     plannedTools: modelPlan.calls.map((call) => call.tool),
     plannerRawChars: modelPlan.raw.length,
   });
-  const modelResults = await executeToolCalls(scopedReq, modelPlan.calls);
+  const modelResults = await executeToolCalls(scopedReq, modelPlan.calls, options);
   const modelToolContext = {
     calls: modelPlan.calls,
     results: modelResults,

@@ -551,6 +551,29 @@ html.light {
     font-size: 0.82em;
   }
 
+  .redsecai-live-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    font-weight: 700;
+  }
+
+  .redsecai-live-status::before {
+    content: "";
+    width: 0.45rem;
+    height: 0.45rem;
+    border-radius: 9999px;
+    background: var(--accent);
+    animation: redsecai-pulse 1s ease-in-out infinite;
+  }
+
+  @keyframes redsecai-pulse {
+    0%, 100% { opacity: 0.35; transform: scale(0.9); }
+    50% { opacity: 1; transform: scale(1.15); }
+  }
+
   .redsecai-action-card {
     align-self: stretch;
     padding: 0.75rem;
@@ -3645,6 +3668,34 @@ html.light {
 
 .calendar-modal-card .bulletin-time-trigger {
   justify-content: flex-start;
+}
+
+.calendar-date-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.calendar-date-picker-btn {
+  appearance: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0.35rem 0.65rem;
+  text-transform: uppercase;
+}
+
+.calendar-date-picker-btn:hover,
+.calendar-date-picker-btn:focus-visible {
+  border-color: var(--accent);
+  color: var(--text-primary);
+  outline: none;
 }
 
 .wiki-dashboard-shell .dashboard-sidebar {

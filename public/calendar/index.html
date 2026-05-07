@@ -306,10 +306,13 @@
         </div>
 
         <div class="grid gap-3 md:grid-cols-2">
-          <label class="space-y-1">
-            <span class="text-xs font-semibold uppercase tracking-wide text-muted">Start Date</span>
+          <div class="space-y-1">
+            <span class="calendar-date-label-row">
+              <label for="calendar-entry-start-date" class="text-xs font-semibold uppercase tracking-wide text-muted">Start Date</label>
+              <button type="button" class="calendar-date-picker-btn" data-calendar-date-picker="calendar-entry-start-date">Pick</button>
+            </span>
             <input id="calendar-entry-start-date" type="date" class="input-field">
-          </label>
+          </div>
           <label id="calendar-entry-start-time-wrap" class="space-y-1">
             <span class="text-xs font-semibold uppercase tracking-wide text-muted">Start Time</span>
             <button type="button" id="calendar-entry-start-time" class="input-field bulletin-time-trigger" data-time-label="Start Time"></button>
@@ -317,10 +320,13 @@
         </div>
 
         <div class="grid gap-3 md:grid-cols-2">
-          <label class="space-y-1">
-            <span class="text-xs font-semibold uppercase tracking-wide text-muted">End Date</span>
+          <div class="space-y-1">
+            <span class="calendar-date-label-row">
+              <label for="calendar-entry-end-date" class="text-xs font-semibold uppercase tracking-wide text-muted">End Date</label>
+              <button type="button" class="calendar-date-picker-btn" data-calendar-date-picker="calendar-entry-end-date">Pick</button>
+            </span>
             <input id="calendar-entry-end-date" type="date" class="input-field">
-          </label>
+          </div>
           <label id="calendar-entry-end-time-wrap" class="space-y-1">
             <span class="text-xs font-semibold uppercase tracking-wide text-muted">End Time</span>
             <button type="button" id="calendar-entry-end-time" class="input-field bulletin-time-trigger" data-time-label="End Time"></button>
