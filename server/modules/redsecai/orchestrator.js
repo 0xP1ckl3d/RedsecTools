@@ -300,7 +300,11 @@ function resolveDateIntent(dateIntent, timeZone = null) {
   return { year: local.getUTCFullYear(), month: local.getUTCMonth() + 1, day: local.getUTCDate() };
 }
 
-function normalizeCalendarWriteCall(call, page = {}) {
+function canAssignEveryone(access) {
+  return !!access?.permissionSet?.has("calendar.manage");
+}
+
+function normalizeCalendarWriteCall(call, page = {}, access = null) {
   if (!["calendar.entry.create", "calendar.entry.update"].includes(call.tool)) return call;
   const args = { ...(call.args || {}) };
   const body = { ...(args.body || args) };
@@ -311,7 +315,10 @@ function normalizeCalendarWriteCall(call, page = {}) {
   const durationMinutes = Number.parseInt(body.durationMinutes, 10);
 
   if (timeZone) body.timeZone = timeZone;
-  if (start) {
+  if (body.allDay === true && (!Number.isFinite(Number(body.startsAt)) || !Number.isFinite(Number(body.endsAt)))) {
+    body.startsAt = zonedLocalToUnix(date.year, date.month, date.day, 0, 0, 0, timeZone || null);
+    body.endsAt = zonedLocalToUnix(date.year, date.month, date.day, 23, 59, 0, timeZone || null);
+  } else if (start) {
     body.startsAt = zonedLocalToUnix(date.year, date.month, date.day, start.hour, start.minute, 0, timeZone || null);
     if (end) {
       body.endsAt = zonedLocalToUnix(date.year, date.month, date.day, end.hour, end.minute, 0, timeZone || null);
@@ -320,6 +327,12 @@ function normalizeCalendarWriteCall(call, page = {}) {
       body.endsAt = body.startsAt + (durationMinutes * 60);
     }
     body.allDay = false;
+  }
+  if (Array.isArray(body.assigneeUserIds) && body.assigneeUserIds.includes("__all__") && !canAssignEveryone(access)) {
+    delete body.assigneeUserIds;
+  }
+  if (body.type === "public_holiday" && !body.assigneeUserId && !Array.isArray(body.assigneeUserIds) && canAssignEveryone(access)) {
+    body.assigneeUserIds = ["__all__"];
   }
   return { ...call, args: { ...args, body } };
 }
@@ -356,10 +369,10 @@ function getCalendarRangeForIntent(rangeIntent, timeZone = null) {
   };
 }
 
-function normalizeCalendarToolCalls(calls, page = {}) {
+function normalizeCalendarToolCalls(calls, page = {}, access = null) {
   const timeZone = typeof page.timeZone === "string" ? page.timeZone.slice(0, 80) : "";
   return (calls || []).map((call) => {
-    if (["calendar.entry.create", "calendar.entry.update"].includes(call.tool)) return normalizeCalendarWriteCall(call, page);
+    if (["calendar.entry.create", "calendar.entry.update"].includes(call.tool)) return normalizeCalendarWriteCall(call, page, access);
     if (call.tool !== "calendar.bootstrap") return call;
     const args = { ...(call.args || {}) };
     if (timeZone) args.timeZone = timeZone;
@@ -405,7 +418,7 @@ async function routeModelToolUse(req, messages, options = {}) {
   if (!parsed || typeof parsed.useTools !== "boolean") {
     return { useTools: true, calls: [], raw, toolManifest };
   }
-  const calls = normalizeCalendarToolCalls(sanitizeModelToolCalls(parsed, { toolManifest }), options.page || {});
+  const calls = normalizeCalendarToolCalls(sanitizeModelToolCalls(parsed, { toolManifest }), options.page || {}, req.access);
   return {
     useTools: parsed.useTools === true || calls.length > 0,
     calls,
@@ -471,7 +484,7 @@ async function executeToolCalls(req, calls, options = {}) {
 }
 
 async function buildModelRoutedToolContext(req, calls, options = {}) {
-  const normalizedCalls = normalizeCalendarToolCalls(calls, options.page || {});
+  const normalizedCalls = normalizeCalendarToolCalls(calls, options.page || {}, req.access);
   const results = await executeToolCalls(req, normalizedCalls, options);
   return {
     calls: normalizedCalls,
@@ -536,7 +549,7 @@ async function prepareRedSecAiTurn(req, rawMessages, page = {}, options = {}) {
     plannedTools: modelPlan.calls.map((call) => call.tool),
     plannerRawChars: modelPlan.raw.length,
   });
-  const normalizedModelCalls = normalizeCalendarToolCalls(modelPlan.calls, page);
+  const normalizedModelCalls = normalizeCalendarToolCalls(modelPlan.calls, page, scopedReq.access);
   const modelResults = await executeToolCalls(scopedReq, normalizedModelCalls, options);
   const modelToolContext = {
     calls: normalizedModelCalls,

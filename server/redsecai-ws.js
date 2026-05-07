@@ -6,6 +6,7 @@ const crypto = require("crypto");
 const { getSession, getRolePermissionsByUserId, getUserById } = require("./database");
 const { normalizeMessages, prepareRedSecAiTurn } = require("./modules/redsecai/orchestrator");
 const provider = require("./modules/redsecai/provider");
+const { filterPendingActionsForUser } = require("./modules/redsecai/actions");
 const { logEvent, logWarn } = require("./core/logger");
 
 const COOKIE_SECRET = process.env.COOKIE_SECRET;
@@ -182,7 +183,7 @@ async function startJob(ws, auth, msg) {
       broadcastToUser(auth.user.id, {
         type: "redsecai_actions",
         jobId,
-        actions: turn.pendingActions,
+        actions: filterPendingActionsForUser(auth.user.id, turn.pendingActions),
       });
     }
 
@@ -196,11 +197,13 @@ async function startJob(ws, auth, msg) {
     job.done = true;
     job.updatedAt = Date.now();
     if (turn.pendingActions?.length) {
+      const liveActions = filterPendingActionsForUser(auth.user.id, turn.pendingActions);
       broadcastToUser(auth.user.id, {
         type: "redsecai_actions",
         jobId,
-        actions: turn.pendingActions,
+        actions: liveActions,
       });
+      turn.pendingActions = liveActions;
     }
     broadcastToUser(auth.user.id, {
       type: "redsecai_done",

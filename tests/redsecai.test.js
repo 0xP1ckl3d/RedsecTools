@@ -416,7 +416,7 @@ test("RedSecAI sanitizes model-planned tools against manifest and encrypted scop
 });
 
 test("RedSecAI mutating tools create confirmation-gated pending actions", async () => {
-  const { cancelPendingAction, createPendingAction, listPendingActionsForUser } = require("../server/modules/redsecai/actions");
+  const { cancelPendingAction, createPendingAction, filterPendingActionsForUser, listPendingActionsForUser } = require("../server/modules/redsecai/actions");
   const action = createPendingAction({ id: "user-a", username: "alice" }, {
     tool: "wiki.page.create",
     args: { body: { scope: "personal", title: "AI Draft", bodyMarkdown: "draft" } },
@@ -425,9 +425,11 @@ test("RedSecAI mutating tools create confirmation-gated pending actions", async 
   assert.equal(action.summary, 'Create personal wiki page "AI Draft"');
   assert.ok(listPendingActionsForUser("user-a").some((item) => item.id === action.id));
   assert.equal(listPendingActionsForUser("user-b").some((item) => item.id === action.id), false);
+  assert.deepEqual(filterPendingActionsForUser("user-a", [action]).map((item) => item.id), [action.id]);
   const rejected = cancelPendingAction({ user: { id: "user-a", username: "alice" } }, action.id);
   assert.equal(rejected.id, action.id);
   assert.equal(listPendingActionsForUser("user-a").some((item) => item.id === action.id), false);
+  assert.deepEqual(filterPendingActionsForUser("user-a", [action]), []);
 });
 
 test("RedSecAI normalizes simple calendar write times to the user timezone", async () => {
@@ -502,6 +504,92 @@ test("RedSecAI normalizes structured duration calendar writes without regex prom
     assert.equal(call.args.body.timeZone, "Australia/Sydney");
     assert.equal(call.args.body.endsAt - call.args.body.startsAt, 3600);
     assert.notEqual(call.args.body.startsAt, 0);
+  } finally {
+    provider.chat = originalChat;
+  }
+});
+
+test("RedSecAI normalizes all-day calendar writes before creating pending actions", async () => {
+  const provider = require("../server/modules/redsecai/provider");
+  const orchestrator = require("../server/modules/redsecai/orchestrator");
+  const originalChat = provider.chat;
+  try {
+    provider.chat = async (messages, options = {}) => {
+      if (options.phase === "tool_router") {
+        return JSON.stringify({
+          useTools: true,
+          toolCalls: [{
+            tool: "calendar.entry.create",
+            args: { body: { title: "Public Holiday", type: "public_holiday", dateIntent: "2026-06-08", allDay: true } },
+          }],
+        });
+      }
+      if (options.phase === "tool_planner") return JSON.stringify({ toolCalls: [] });
+      return "";
+    };
+    const turn = await orchestrator.prepareRedSecAiTurn({
+      user: { id: "holiday-user", username: "alice" },
+      access: { permissionSet: new Set(["calendar.create", "calendar.manage"]) },
+      headers: { cookie: "redsec_session=s%3Atest.sig" },
+      get: () => "/calendar",
+    }, [{ role: "user", content: "Add a public holiday for everyone on the 8th of June" }], {
+      path: "/calendar",
+      timeZone: "Australia/Sydney",
+    });
+
+    const body = turn.targetedContext.calls[0].args.body;
+    assert.equal(body.allDay, true);
+    assert.equal(body.timeZone, "Australia/Sydney");
+    assert.equal(Number.isFinite(body.startsAt), true);
+    assert.equal(Number.isFinite(body.endsAt), true);
+    assert.ok(body.endsAt > body.startsAt);
+    assert.deepEqual(body.assigneeUserIds, ["__all__"]);
+    assert.equal(turn.pendingActions[0].args.body.startsAt, body.startsAt);
+    assert.equal(turn.pendingActions[0].args.body.endsAt, body.endsAt);
+  } finally {
+    provider.chat = originalChat;
+  }
+});
+
+test("RedSecAI only creates everyone calendar actions for calendar managers", async () => {
+  const provider = require("../server/modules/redsecai/provider");
+  const orchestrator = require("../server/modules/redsecai/orchestrator");
+  const originalChat = provider.chat;
+  try {
+    provider.chat = async (messages, options = {}) => {
+      if (options.phase === "tool_router") {
+        return JSON.stringify({
+          useTools: true,
+          toolCalls: [{
+            tool: "calendar.entry.create",
+            args: { body: { title: "Public Holiday", type: "public_holiday", dateIntent: "2026-06-08", allDay: true, assigneeUserIds: ["__all__"] } },
+          }],
+        });
+      }
+      if (options.phase === "tool_planner") return JSON.stringify({ toolCalls: [] });
+      return "";
+    };
+    const limitedTurn = await orchestrator.prepareRedSecAiTurn({
+      user: { id: "calendar-create-user", username: "alice" },
+      access: { permissionSet: new Set(["calendar.create"]) },
+      headers: { cookie: "redsec_session=s%3Atest.sig" },
+      get: () => "/calendar",
+    }, [{ role: "user", content: "Add a public holiday for everyone on the 8th of June" }], {
+      path: "/calendar",
+      timeZone: "Australia/Sydney",
+    });
+    assert.equal(limitedTurn.targetedContext.calls[0].args.body.assigneeUserIds, undefined);
+
+    const managerTurn = await orchestrator.prepareRedSecAiTurn({
+      user: { id: "calendar-manager", username: "alice" },
+      access: { permissionSet: new Set(["calendar.create", "calendar.manage"]) },
+      headers: { cookie: "redsec_session=s%3Atest.sig" },
+      get: () => "/calendar",
+    }, [{ role: "user", content: "Add a public holiday for everyone on the 8th of June" }], {
+      path: "/calendar",
+      timeZone: "Australia/Sydney",
+    });
+    assert.deepEqual(managerTurn.targetedContext.calls[0].args.body.assigneeUserIds, ["__all__"]);
   } finally {
     provider.chat = originalChat;
   }

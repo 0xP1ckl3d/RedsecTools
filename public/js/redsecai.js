@@ -25,6 +25,18 @@ function formatDuration(ms) {
   return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
+function formatActionExpiry(expiresAtSeconds) {
+  const expiresAt = Number(expiresAtSeconds) * 1000;
+  if (!Number.isFinite(expiresAt) || expiresAt <= 0) return "expiry unknown";
+  const now = Date.now();
+  if (expiresAt <= now) return "expired";
+  const sameDay = new Date(expiresAt).toDateString() === new Date(now).toDateString();
+  const options = sameDay
+    ? { hour: "numeric", minute: "2-digit" }
+    : { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" };
+  return `expires ${new Date(expiresAt).toLocaleString("en-AU", options)}`;
+}
+
 function loadMessages() {
   try {
     const parsed = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || "[]");
@@ -245,6 +257,7 @@ async function initRedSecAI() {
   const timedOutJobIds = new Set();
   const pendingActionIds = new Set();
   const pendingActions = new Map();
+  const completedActionIds = new Set();
   let unreadCount = 0;
 
   renderMessages(messagesEl, messages);
@@ -355,6 +368,7 @@ async function initRedSecAI() {
 
   function renderActionCard(action) {
     if (!action?.id) return;
+    if (completedActionIds.has(action.id)) return;
     if (messagesEl.querySelector(`.redsecai-action-card[data-action-id="${CSS.escape(action.id)}"]`)) return;
     pendingActionIds.add(action.id);
     pendingActions.set(action.id, action);
@@ -363,7 +377,7 @@ async function initRedSecAI() {
     card.className = "redsecai-action-card";
     card.innerHTML = `
       <div class="redsecai-action-title">${escapeHtml(action.summary || action.tool)}</div>
-      <div class="redsecai-action-meta">${escapeHtml(action.tool)} · expires ${escapeHtml(new Date((action.expiresAt || 0) * 1000).toLocaleTimeString())}</div>
+      <div class="redsecai-action-meta">${escapeHtml(action.tool)} · ${escapeHtml(formatActionExpiry(action.expiresAt))}</div>
       <pre class="redsecai-action-args">${escapeHtml(JSON.stringify(action.args || {}, null, 2))}</pre>
       <div class="redsecai-action-row">
         <button type="button" class="redsecai-action-confirm">Confirm</button>
@@ -394,6 +408,7 @@ async function initRedSecAI() {
         card.remove();
       } catch (error) {
         confirmBtn.disabled = false;
+        if (error.stale) card.remove();
         if (resultEl) {
           resultEl.className = "redsecai-action-result error";
           resultEl.textContent = error.message || "Action failed.";
@@ -415,6 +430,7 @@ async function initRedSecAI() {
         card.remove();
       } catch (error) {
         dismissBtn.disabled = false;
+        if (error.stale) card.remove();
         if (resultEl) {
           resultEl.className = "redsecai-action-result error";
           resultEl.textContent = error.message || "Reject failed.";
@@ -428,7 +444,7 @@ async function initRedSecAI() {
   function renderActionCards(actions = []) {
     let newActionCount = 0;
     actions.forEach((action) => {
-      if (action?.id) {
+      if (action?.id && !completedActionIds.has(action.id)) {
         if (!pendingActions.has(action.id)) newActionCount += 1;
         pendingActions.set(action.id, action);
       }
@@ -436,7 +452,7 @@ async function initRedSecAI() {
     syncAlertBadge();
     const seen = new Set([...messagesEl.querySelectorAll(".redsecai-action-card")].map((card) => card.dataset.actionId));
     actions
-      .filter((action) => action?.id && !seen.has(action.id))
+      .filter((action) => action?.id && !completedActionIds.has(action.id) && !seen.has(action.id))
       .forEach(renderActionCard);
     return newActionCount;
   }
@@ -448,7 +464,18 @@ async function initRedSecAI() {
       headers: { accept: "application/json" },
     });
     const body = await res.json().catch(() => ({}));
-    if (!res.ok || !body.success) throw new Error(body.error || "Action failed.");
+    if (!res.ok || !body.success) {
+      const error = new Error(body.error || "Action failed.");
+      error.stale = res.status === 404 || /not found|expired/i.test(error.message);
+      if (error.stale) {
+        completedActionIds.add(action.id);
+        pendingActions.delete(action.id);
+        pendingActionIds.delete(action.id);
+        syncAlertBadge();
+      }
+      throw error;
+    }
+    completedActionIds.add(action.id);
     pendingActions.delete(action.id);
     pendingActionIds.delete(action.id);
     syncAlertBadge();
@@ -462,7 +489,18 @@ async function initRedSecAI() {
       headers: { accept: "application/json" },
     });
     const body = await res.json().catch(() => ({}));
-    if (!res.ok || !body.success) throw new Error(body.error || "Reject failed.");
+    if (!res.ok || !body.success) {
+      const error = new Error(body.error || "Reject failed.");
+      error.stale = res.status === 404 || /not found|expired/i.test(error.message);
+      if (error.stale) {
+        completedActionIds.add(action.id);
+        pendingActions.delete(action.id);
+        pendingActionIds.delete(action.id);
+        syncAlertBadge();
+      }
+      throw error;
+    }
+    completedActionIds.add(action.id);
     pendingActions.delete(action.id);
     pendingActionIds.delete(action.id);
     syncAlertBadge();

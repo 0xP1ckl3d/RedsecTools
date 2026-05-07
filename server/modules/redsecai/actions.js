@@ -148,6 +148,13 @@ function listPendingActionsForUser(userId) {
     .map(serializeAction);
 }
 
+function filterPendingActionsForUser(userId, actions = []) {
+  const liveActions = new Map(listPendingActionsForUser(userId).map((action) => [action.id, action]));
+  return (Array.isArray(actions) ? actions : [])
+    .map((action) => liveActions.get(action?.id))
+    .filter(Boolean);
+}
+
 function getRedSecAiActionStats() {
   cleanExpiredActions();
   const pending = [...pendingActions.values()];
@@ -165,6 +172,7 @@ module.exports = {
   cancelPendingAction,
   confirmPendingAction,
   createPendingAction,
+  filterPendingActionsForUser,
   getRedSecAiActionStats,
   listPendingActionsForUser,
   summarizeAction,
