@@ -377,6 +377,9 @@ async function initRedSecAI() {
   }
 
   function renderActionCards(actions = []) {
+    actions.forEach((action) => {
+      if (action?.id) pendingActions.set(action.id, action);
+    });
     const seen = new Set([...messagesEl.querySelectorAll(".redsecai-action-card")].map((card) => card.dataset.actionId));
     actions
       .filter((action) => action?.id && !seen.has(action.id))
