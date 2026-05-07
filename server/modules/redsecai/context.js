@@ -301,20 +301,32 @@ function isRedSecAiToolMutating(toolName) {
   return !!tool && tool.confirmRequired === true;
 }
 
+function sanitizeTimeZone(timeZone) {
+  if (!timeZone || typeof timeZone !== "string" || timeZone.length > 80) return null;
+  try {
+    new Intl.DateTimeFormat("en-AU", { timeZone }).format(new Date());
+    return timeZone;
+  } catch (_) {
+    return null;
+  }
+}
+
 function formatAiDateTime(unix, options = {}) {
   const value = Number(unix);
   if (!Number.isFinite(value) || value <= 0) return null;
+  const timeZone = sanitizeTimeZone(options.timeZone);
   const formatOptions = options.dateOnly
     ? { weekday: "short", day: "numeric", month: "short", year: "numeric" }
     : { weekday: "short", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" };
+  if (timeZone) formatOptions.timeZone = timeZone;
   return new Date(value * 1000).toLocaleString("en-AU", formatOptions);
 }
 
-function summarizeCalendarEntryForAi(entry, usersById, projectsById) {
+function summarizeCalendarEntryForAi(entry, usersById, projectsById, options = {}) {
   const assigneeId = entry?.assigneeUserId || entry?.ownerId || entry?.calendarUserId || null;
   const project = entry?.projectId ? projectsById.get(entry.projectId) : null;
-  const startLabel = formatAiDateTime(entry?.startsAt, { dateOnly: !!entry?.allDay });
-  const endLabel = formatAiDateTime(entry?.endsAt, { dateOnly: !!entry?.allDay });
+  const startLabel = formatAiDateTime(entry?.startsAt, { dateOnly: !!entry?.allDay, timeZone: options.timeZone });
+  const endLabel = formatAiDateTime(entry?.endsAt, { dateOnly: !!entry?.allDay, timeZone: options.timeZone });
   return {
     id: entry?.id,
     title: entry?.title || "Untitled calendar entry",
@@ -336,11 +348,12 @@ function summarizeCalendarEntryForAi(entry, usersById, projectsById) {
   };
 }
 
-function summarizeCalendarBootstrap(toolName, result) {
+function summarizeCalendarBootstrap(toolName, result, options = {}) {
   if (!result.ok) {
     return { tool: toolName, ok: false, status: result.status, error: result.error || `HTTP ${result.status}` };
   }
   const body = result.body || {};
+  const timeZone = sanitizeTimeZone(options.timeZone);
   const usersById = new Map((body.availableUsers || []).map((user) => [user.id, user]));
   if (body.selectedUser?.id && body.selectedUser?.username) usersById.set(body.selectedUser.id, body.selectedUser);
   const projectsById = new Map((body.projects || []).map((project) => [project.id, project]));
@@ -351,17 +364,19 @@ function summarizeCalendarBootstrap(toolName, result) {
     data: {
       scheduleView: body.scheduleView || null,
       scheduleLabel: body.scheduleLabel || null,
+      timeZone: timeZone || "server-local",
+      nowLabel: formatAiDateTime(Math.floor(Date.now() / 1000), { timeZone }),
       range: {
         startsAt: body.weekStart || null,
         endsAt: body.weekEnd || null,
-        startLabel: formatAiDateTime(body.weekStart, { dateOnly: true }),
-        endLabel: formatAiDateTime(body.weekEnd, { dateOnly: true }),
+        startLabel: formatAiDateTime(body.weekStart, { dateOnly: true, timeZone }),
+        endLabel: formatAiDateTime(body.weekEnd, { dateOnly: true, timeZone }),
       },
       selectedUser: body.selectedUser || null,
       entryCount: Array.isArray(body.scheduleEntries) ? body.scheduleEntries.length : 0,
       scheduleEntries: (body.scheduleEntries || [])
         .slice(0, 50)
-        .map((entry) => summarizeCalendarEntryForAi(entry, usersById, projectsById)),
+        .map((entry) => summarizeCalendarEntryForAi(entry, usersById, projectsById, { timeZone })),
       overviewStats: body.overviewStats?.summary || body.overviewStats || null,
       capabilities: body.capabilities || null,
     },
@@ -385,7 +400,7 @@ async function executeRedSecAiTool(req, toolName, args = {}, options = {}) {
   if (toolName === "threat.searchAlerts") return searchThreatAlerts(req, args);
   if (toolName === "wiki.search") return searchWiki(req, args);
   const result = await scopedApiRequest(req, toolName, args);
-  return summarizeResult(toolName, result);
+  return summarizeResult(toolName, result, args);
 }
 
 function deriveRedSecAiToolCalls(message, access) {
@@ -431,9 +446,9 @@ async function buildTargetedToolContext(req, messages = []) {
   };
 }
 
-function summarizeResult(toolName, result) {
+function summarizeResult(toolName, result, options = {}) {
   if (toolName === "calendar.bootstrap") {
-    return summarizeCalendarBootstrap(toolName, result);
+    return summarizeCalendarBootstrap(toolName, result, options);
   }
   if (!result.ok) {
     return { tool: toolName, ok: false, status: result.status, error: result.error || `HTTP ${result.status}` };

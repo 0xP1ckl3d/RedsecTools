@@ -358,6 +358,7 @@ async function initRedSecAI() {
   }
 
   async function fallbackPost() {
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
     const res = await fetch("/api/ai/chat", {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
@@ -366,6 +367,7 @@ async function initRedSecAI() {
         page: {
           path: window.location.pathname,
           title: document.title,
+          timeZone,
         },
       }),
     });
@@ -476,6 +478,7 @@ async function initRedSecAI() {
     startProgress({ jobId, startedAt, timeoutMs: status.timeoutMs || 0 });
 
     try {
+      const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
       aiSocket.send({
         type: "redsecai_chat",
         jobId,
@@ -483,6 +486,7 @@ async function initRedSecAI() {
         page: {
           path: window.location.pathname,
           title: document.title,
+          timeZone,
         },
       });
     } catch (_) {

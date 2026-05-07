@@ -12,6 +12,8 @@ const { logEvent } = require("../../core/logger");
 
 const MAX_MODEL_TOOL_CALLS = 4;
 const MAX_TOOL_ARG_CHARS = 1000;
+const DAY_SECONDS = 24 * 60 * 60;
+const WEEK_SECONDS = 7 * DAY_SECONDS;
 
 const SYSTEM_PROMPT = `You are RedSecAI, the built-in local assistant for RedSecTools.
 
@@ -61,8 +63,12 @@ function buildScopedToolContext(req, toolManifest, targetedContext, page = {}) {
   const sections = [
     `Current user: ${req.user?.username || "unknown"} (${req.user?.id || "unknown"})`,
     `Current page: ${String(page.path || req.get("referer") || "/").slice(0, 200)}`,
+    `User timezone: ${String(page.timeZone || "server-local").slice(0, 80)}`,
+    `Current server time: ${new Date().toISOString()}`,
     "RedSecAI tool execution is server-side allowlisted. It cannot call arbitrary routes and has no direct database handle.",
     "Only the selected tool results for this turn are included. If data is absent, say it is not available in the selected tool results.",
+    "For calendar answers, use scheduleEntries from selected calendar tool results as the source of truth. Do not infer 'no meetings' from capacity stats if scheduleEntries contains entries.",
+    "For 'rest of this week', answer from entries at or after the nowLabel/current time in TOOL_RESULTS and say the displayed timezone.",
     "Encrypted tools are intentionally excluded from scoped context: RedSecPaste, RedSecShare, RedSecTeam, and RedSecVault.",
     `TOOL_MANIFEST:\n${compactJson(selectedManifest)}`,
     targetedContext.text,
@@ -224,6 +230,63 @@ function sanitizeModelToolCalls(parsed, scopedContext) {
     .slice(0, MAX_MODEL_TOOL_CALLS);
 }
 
+function startOfWeekUnix(seedMs = Date.now()) {
+  const date = new Date(seedMs);
+  const day = date.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  date.setHours(0, 0, 0, 0);
+  date.setDate(date.getDate() + diff);
+  return Math.floor(date.getTime() / 1000);
+}
+
+function startOfMonthUnix(seedMs = Date.now()) {
+  const date = new Date(seedMs);
+  return Math.floor(new Date(date.getFullYear(), date.getMonth(), 1).getTime() / 1000);
+}
+
+function normalizeCalendarToolCalls(calls, messages, page = {}) {
+  const latest = latestUserText(messages).toLowerCase();
+  const timeZone = typeof page.timeZone === "string" ? page.timeZone.slice(0, 80) : "";
+  return (calls || []).map((call) => {
+    if (call.tool !== "calendar.bootstrap") return call;
+    const args = { ...(call.args || {}) };
+    if (timeZone) args.timeZone = timeZone;
+
+    const asksMonth = /\b(this|current|next|last)\s+month\b|\bmonth\b/.test(latest);
+    const asksNextWeek = /\bnext\s+week\b/.test(latest);
+    const asksLastWeek = /\blast\s+week\b/.test(latest);
+    const asksCurrentWeek = /\b(rest of\s+)?(this|current)\s+week\b|\bmeetings?\b|\bschedule\b|\bplanned\b/.test(latest);
+
+    if (asksMonth) {
+      const offsetDays = /\bnext\s+month\b/.test(latest) ? 32 : (/\blast\s+month\b/.test(latest) ? -32 : 0);
+      args.viewMode = "month";
+      args.weekStart = startOfMonthUnix(Date.now() + (offsetDays * DAY_SECONDS * 1000));
+    } else if (asksNextWeek) {
+      args.viewMode = "week";
+      args.weekStart = startOfWeekUnix((startOfWeekUnix() + WEEK_SECONDS) * 1000);
+    } else if (asksLastWeek) {
+      args.viewMode = "week";
+      args.weekStart = startOfWeekUnix((startOfWeekUnix() - WEEK_SECONDS) * 1000);
+    } else if (asksCurrentWeek) {
+      args.viewMode = "week";
+      delete args.weekStart;
+    }
+
+    return { ...call, args };
+  });
+}
+
+function inferMandatoryToolCalls(messages, toolManifest, page = {}) {
+  const latest = latestUserText(messages);
+  const lower = latest.toLowerCase();
+  const hasTool = new Set((toolManifest || []).map((tool) => tool.name));
+  const calls = [];
+  if (hasTool.has("calendar.bootstrap") && /\b(calendar|schedule|scheduled|meeting|meetings|planned|availability|rest of this week|this week|next week)\b/i.test(lower)) {
+    calls.push({ tool: "calendar.bootstrap", args: page?.timeZone ? { timeZone: page.timeZone } : {} });
+  }
+  return normalizeCalendarToolCalls(calls, messages, page);
+}
+
 async function planModelToolCalls(scopedContext, targetedContext, messages) {
   if (!scopedContext.toolManifest.length) return { calls: [], raw: "" };
   const raw = await provider.chat([
@@ -251,10 +314,12 @@ async function routeModelToolUse(req, messages, options = {}) {
     { role: "user", content: latestUserText(messages) },
   ], { phase: "tool_router" });
   const parsed = extractJsonObject(raw);
+  const mandatoryCalls = inferMandatoryToolCalls(messages, toolManifest, options.page || {});
   if (!parsed || typeof parsed.useTools !== "boolean") {
-    return { useTools: true, calls: [], raw, toolManifest };
+    return { useTools: true, calls: mandatoryCalls, raw, toolManifest };
   }
-  const calls = sanitizeModelToolCalls(parsed, { toolManifest });
+  const modelCalls = normalizeCalendarToolCalls(sanitizeModelToolCalls(parsed, { toolManifest }), messages, options.page || {});
+  const calls = modelCalls.length ? modelCalls : mandatoryCalls;
   return {
     useTools: parsed.useTools === true || calls.length > 0,
     calls,
@@ -319,13 +384,14 @@ async function executeToolCalls(req, calls, options = {}) {
 }
 
 async function buildModelRoutedToolContext(req, calls, options = {}) {
-  const results = await executeToolCalls(req, calls, options);
+  const normalizedCalls = normalizeCalendarToolCalls(calls, options.messages || [], options.page || {});
+  const results = await executeToolCalls(req, normalizedCalls, options);
   return {
-    calls,
+    calls: normalizedCalls,
     results,
     pendingActions: results.map((result) => result.action).filter(Boolean),
     text: results.length
-      ? `TARGETED_TOOL_CALLS:\n${compactJson(calls)}\n\nTARGETED_TOOL_RESULTS:\n${compactJson(results)}`
+      ? `TARGETED_TOOL_CALLS:\n${compactJson(normalizedCalls)}\n\nTARGETED_TOOL_RESULTS:\n${compactJson(results)}`
       : "TARGETED_TOOL_RESULTS: []",
   };
 }
@@ -353,7 +419,7 @@ async function prepareRedSecAiTurn(req, rawMessages, page = {}, options = {}) {
   }
 
   const startedAt = Date.now();
-  const routerPlan = await routeModelToolUse(req, messages, options);
+  const routerPlan = await routeModelToolUse(req, messages, { ...options, page });
   logEvent("redsecai:turn_router_ready", req, {
     elapsedMs: Date.now() - startedAt,
     useTools: routerPlan.useTools,
@@ -367,7 +433,7 @@ async function prepareRedSecAiTurn(req, rawMessages, page = {}, options = {}) {
   }
 
   const scopedReq = req;
-  const targetedContext = await buildModelRoutedToolContext(scopedReq, routerPlan.calls, options);
+  const targetedContext = await buildModelRoutedToolContext(scopedReq, routerPlan.calls, { ...options, messages, page });
   const scopedContext = buildScopedToolContext(scopedReq, routerPlan.toolManifest, targetedContext, page || {});
   logEvent("redsecai:turn_context_ready", req, {
     elapsedMs: Date.now() - startedAt,
@@ -383,9 +449,10 @@ async function prepareRedSecAiTurn(req, rawMessages, page = {}, options = {}) {
     plannedTools: modelPlan.calls.map((call) => call.tool),
     plannerRawChars: modelPlan.raw.length,
   });
-  const modelResults = await executeToolCalls(scopedReq, modelPlan.calls, options);
+  const normalizedModelCalls = normalizeCalendarToolCalls(modelPlan.calls, messages, page);
+  const modelResults = await executeToolCalls(scopedReq, normalizedModelCalls, options);
   const modelToolContext = {
-    calls: modelPlan.calls,
+    calls: normalizedModelCalls,
     results: modelResults,
     pendingActions: modelResults.map((result) => result.action).filter(Boolean),
     raw: modelPlan.raw,

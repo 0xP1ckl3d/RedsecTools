@@ -77,6 +77,14 @@ test("RedSecAI routes tool use with a lightweight model decision", async () => {
     const routed = await orchestrator.routeModelToolUse(req, [{ role: "user", content: "Summarise my current threat alerts about ransomware" }]);
     assert.equal(routed.useTools, true);
     assert.deepEqual(routed.calls.map((call) => call.tool), ["threat.searchAlerts"]);
+
+    provider.chat = async () => JSON.stringify({ useTools: false, toolCalls: [] });
+    const calendar = await orchestrator.routeModelToolUse(req, [{ role: "user", content: "No meetings?" }], { page: { timeZone: "Australia/Sydney" } });
+    assert.equal(calendar.useTools, true);
+    assert.deepEqual(calendar.calls.map((call) => call.tool), ["calendar.bootstrap"]);
+    assert.equal(calendar.calls[0].args.viewMode, "week");
+    assert.equal(calendar.calls[0].args.timeZone, "Australia/Sydney");
+    assert.equal(Object.prototype.hasOwnProperty.call(calendar.calls[0].args, "weekStart"), false);
   } finally {
     provider.chat = originalChat;
   }
@@ -143,8 +151,8 @@ test("RedSecAI calendar tool summarizes meeting times for the model", async () =
           type: "meeting",
           status: "scheduled",
           plannedStatus: "scheduled",
-          startsAt: 1778108400,
-          endsAt: 1778110200,
+          startsAt: Math.floor(Date.UTC(2026, 4, 7, 1, 0, 0) / 1000),
+          endsAt: Math.floor(Date.UTC(2026, 4, 7, 1, 30, 0) / 1000),
           allDay: false,
           assigneeUserId: "u1",
           projectId: "p1",
@@ -157,14 +165,16 @@ test("RedSecAI calendar tool summarizes meeting times for the model", async () =
     const result = await executeRedSecAiTool({
       access: { permissionSet: new Set(["calendar.view"]) },
       headers: { cookie: "redsec_session=s%3Atest.sig" },
-    }, "calendar.bootstrap", { viewMode: "week" });
+    }, "calendar.bootstrap", { viewMode: "week", timeZone: "Australia/Sydney" });
 
     assert.equal(result.ok, true);
     assert.equal(result.data.entryCount, 1);
     assert.equal(result.data.scheduleEntries[0].title, "Team Meeting");
     assert.equal(result.data.scheduleEntries[0].assigneeUsername, "0xP1ckl3d");
     assert.equal(result.data.scheduleEntries[0].projectName, "Internal Ops");
+    assert.equal(result.data.timeZone, "Australia/Sydney");
     assert.match(result.data.scheduleEntries[0].timeLabel, /to/);
+    assert.match(result.data.scheduleEntries[0].timeLabel, /11:00\s*am/i);
     assert.match(result.data.scheduleEntries[0].timeLabel, /2026|May/i);
   } finally {
     global.fetch = originalFetch;
