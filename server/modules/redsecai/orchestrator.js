@@ -230,18 +230,64 @@ function sanitizeModelToolCalls(parsed, scopedContext) {
     .slice(0, MAX_MODEL_TOOL_CALLS);
 }
 
-function startOfWeekUnix(seedMs = Date.now()) {
-  const date = new Date(seedMs);
-  const day = date.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  date.setHours(0, 0, 0, 0);
-  date.setDate(date.getDate() + diff);
-  return Math.floor(date.getTime() / 1000);
+function getZonedDateParts(date = new Date(), timeZone = null) {
+  const options = {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  };
+  if (timeZone) options.timeZone = timeZone;
+  const parts = new Intl.DateTimeFormat("en-CA", options).formatToParts(date);
+  const value = {};
+  for (const part of parts) {
+    if (part.type !== "literal") value[part.type] = Number(part.value);
+  }
+  if (value.hour === 24) value.hour = 0;
+  return value;
 }
 
-function startOfMonthUnix(seedMs = Date.now()) {
-  const date = new Date(seedMs);
-  return Math.floor(new Date(date.getFullYear(), date.getMonth(), 1).getTime() / 1000);
+function zonedLocalToUnix(year, month, day, hour, minute, second, timeZone = null) {
+  if (!timeZone) return Math.floor(new Date(year, month - 1, day, hour, minute, second, 0).getTime() / 1000);
+  const utcGuess = Date.UTC(year, month - 1, day, hour, minute, second, 0);
+  const actual = getZonedDateParts(new Date(utcGuess), timeZone);
+  const desiredAsUtc = Date.UTC(year, month - 1, day, hour, minute, second, 0);
+  const actualAsUtc = Date.UTC(actual.year, actual.month - 1, actual.day, actual.hour || 0, actual.minute || 0, actual.second || 0, 0);
+  return Math.floor((utcGuess + (desiredAsUtc - actualAsUtc)) / 1000);
+}
+
+function getCalendarRangeForPrompt(latest, timeZone = null) {
+  const now = new Date();
+  const local = getZonedDateParts(now, timeZone);
+  const localMidnightUtc = Date.UTC(local.year, local.month - 1, local.day, 0, 0, 0, 0);
+  const day = new Date(localMidnightUtc).getUTCDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  let startLocal = new Date(localMidnightUtc + (mondayOffset * DAY_SECONDS * 1000));
+  let viewMode = "week";
+
+  if (/\bmonth\b/.test(latest)) {
+    viewMode = "month";
+    const monthOffset = /\bnext\s+month\b/.test(latest) ? 1 : (/\blast\s+month\b/.test(latest) ? -1 : 0);
+    startLocal = new Date(Date.UTC(local.year, local.month - 1 + monthOffset, 1, 0, 0, 0, 0));
+    const endLocal = new Date(Date.UTC(startLocal.getUTCFullYear(), startLocal.getUTCMonth() + 1, 1, 0, 0, 0, 0));
+    return {
+      viewMode,
+      rangeStart: zonedLocalToUnix(startLocal.getUTCFullYear(), startLocal.getUTCMonth() + 1, startLocal.getUTCDate(), 0, 0, 0, timeZone),
+      rangeEnd: zonedLocalToUnix(endLocal.getUTCFullYear(), endLocal.getUTCMonth() + 1, endLocal.getUTCDate(), 0, 0, 0, timeZone) - 1,
+    };
+  }
+
+  if (/\bnext\s+week\b/.test(latest)) startLocal = new Date(startLocal.getTime() + (WEEK_SECONDS * 1000));
+  if (/\blast\s+week\b/.test(latest)) startLocal = new Date(startLocal.getTime() - (WEEK_SECONDS * 1000));
+  const endLocal = new Date(startLocal.getTime() + (WEEK_SECONDS * 1000));
+  return {
+    viewMode,
+    rangeStart: zonedLocalToUnix(startLocal.getUTCFullYear(), startLocal.getUTCMonth() + 1, startLocal.getUTCDate(), 0, 0, 0, timeZone),
+    rangeEnd: zonedLocalToUnix(endLocal.getUTCFullYear(), endLocal.getUTCMonth() + 1, endLocal.getUTCDate(), 0, 0, 0, timeZone) - 1,
+  };
 }
 
 function normalizeCalendarToolCalls(calls, messages, page = {}) {
@@ -257,19 +303,12 @@ function normalizeCalendarToolCalls(calls, messages, page = {}) {
     const asksLastWeek = /\blast\s+week\b/.test(latest);
     const asksCurrentWeek = /\b(rest of\s+)?(this|current)\s+week\b|\bmeetings?\b|\bschedule\b|\bplanned\b/.test(latest);
 
-    if (asksMonth) {
-      const offsetDays = /\bnext\s+month\b/.test(latest) ? 32 : (/\blast\s+month\b/.test(latest) ? -32 : 0);
-      args.viewMode = "month";
-      args.weekStart = startOfMonthUnix(Date.now() + (offsetDays * DAY_SECONDS * 1000));
-    } else if (asksNextWeek) {
-      args.viewMode = "week";
-      args.weekStart = startOfWeekUnix((startOfWeekUnix() + WEEK_SECONDS) * 1000);
-    } else if (asksLastWeek) {
-      args.viewMode = "week";
-      args.weekStart = startOfWeekUnix((startOfWeekUnix() - WEEK_SECONDS) * 1000);
-    } else if (asksCurrentWeek) {
-      args.viewMode = "week";
-      delete args.weekStart;
+    if (asksMonth || asksNextWeek || asksLastWeek || asksCurrentWeek) {
+      const range = getCalendarRangeForPrompt(latest, timeZone || null);
+      args.viewMode = range.viewMode;
+      args.weekStart = range.rangeStart;
+      args.rangeStart = range.rangeStart;
+      args.rangeEnd = range.rangeEnd;
     }
 
     return { ...call, args };

@@ -66,6 +66,21 @@ function shiftScheduleAnchor(delta) {
   return getStartOfWeekUnix((state.weekStart + (delta * WEEK_SECONDS)) * 1000);
 }
 
+function getScheduleRangeUnix() {
+  const start = new Date(state.weekStart * 1000);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  if (state.scheduleView === "month") {
+    end.setMonth(end.getMonth() + 1, 1);
+  } else {
+    end.setDate(end.getDate() + 7);
+  }
+  return {
+    startsAt: Math.floor(start.getTime() / 1000),
+    endsAt: Math.floor(end.getTime() / 1000) - 1,
+  };
+}
+
 async function fetchJson(url, options) {
   const res = await fetch(url, options);
   const data = await res.json().catch(() => ({}));
@@ -300,7 +315,15 @@ function initSidebarCollapse() {
 }
 
 async function loadBootstrap() {
-  const data = await fetchJson(`/api/calendar/bootstrap?weekStart=${state.weekStart}&scheduleUserId=${encodeURIComponent(state.selectedUserId || "")}&viewMode=${encodeURIComponent(state.scheduleView)}`);
+  const scheduleRange = getScheduleRangeUnix();
+  const params = new URLSearchParams({
+    weekStart: String(scheduleRange.startsAt),
+    rangeStart: String(scheduleRange.startsAt),
+    rangeEnd: String(scheduleRange.endsAt),
+    scheduleUserId: state.selectedUserId || "",
+    viewMode: state.scheduleView,
+  });
+  const data = await fetchJson(`/api/calendar/bootstrap?${params.toString()}`);
   state.capabilities = data.capabilities || state.capabilities;
   state.settings.dailyHours = Number(data.settings?.dailyHours || 7.6);
   state.settings.workdayStart = data.settings?.workdayStart || "08:30";

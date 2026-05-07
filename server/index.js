@@ -107,8 +107,8 @@ app.use(express.static(path.join(__dirname, "..", "public"), {
       res.setHeader("Cache-Control", "no-store");
       return;
     }
-    if (filePath.endsWith(".css") || filePath.endsWith(".js")) {
-      res.setHeader("Cache-Control", "public, max-age=3600, must-revalidate");
+    if (filePath.endsWith(".css") || filePath.endsWith(".js") || filePath.endsWith(".html")) {
+      res.setHeader("Cache-Control", "no-cache, must-revalidate");
     }
   },
 }));

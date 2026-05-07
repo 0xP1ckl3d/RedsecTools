@@ -146,7 +146,19 @@ function startOfMonthUnix(value) {
   return Math.floor(start.getTime() / 1000);
 }
 
-function parseScheduleRange(viewMode, anchorUnix) {
+function parseScheduleRange(viewMode, anchorUnix, rangeStartUnix = null, rangeEndUnix = null) {
+  if (Number.isFinite(rangeStartUnix) && Number.isFinite(rangeEndUnix) && rangeEndUnix >= rangeStartUnix) {
+    const rangeStartDate = new Date(rangeStartUnix * 1000);
+    return {
+      startsAt: rangeStartUnix,
+      endsAt: rangeEndUnix,
+      anchorUnix: rangeStartUnix,
+      label: viewMode === "month"
+        ? rangeStartDate.toLocaleDateString("en-AU", { month: "long", year: "numeric" })
+        : `${rangeStartDate.toLocaleDateString("en-AU", { day: "numeric", month: "short" })} to ${new Date(rangeEndUnix * 1000).toLocaleDateString("en-AU", { day: "numeric", month: "short" })}`,
+    };
+  }
+
   if (viewMode === "month") {
     const monthStart = startOfMonthUnix(anchorUnix);
     const monthDate = new Date(monthStart * 1000);
@@ -494,7 +506,12 @@ router.get("/calendar/bootstrap", requireUser, attachUserAccess, requireCalendar
   const capabilities = getCalendarCapabilities(req);
   const settings = getCalendarSettings();
   const viewMode = CALENDAR_SCHEDULE_VIEWS.has(String(req.query.viewMode || "week")) ? String(req.query.viewMode || "week") : "week";
-  const scheduleRange = parseScheduleRange(viewMode, normalizeUnix(req.query.weekStart));
+  const scheduleRange = parseScheduleRange(
+    viewMode,
+    normalizeUnix(req.query.weekStart),
+    normalizeUnix(req.query.rangeStart),
+    normalizeUnix(req.query.rangeEnd),
+  );
   const { users, me } = getAccessibleUsers(req);
   const selectedUser = resolveSelectedUser(req, req.query.scheduleUserId, users, me);
   const teamUsers = capabilities.canViewTeam ? users : [me];

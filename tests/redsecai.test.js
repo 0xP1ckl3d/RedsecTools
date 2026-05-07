@@ -84,7 +84,11 @@ test("RedSecAI routes tool use with a lightweight model decision", async () => {
     assert.deepEqual(calendar.calls.map((call) => call.tool), ["calendar.bootstrap"]);
     assert.equal(calendar.calls[0].args.viewMode, "week");
     assert.equal(calendar.calls[0].args.timeZone, "Australia/Sydney");
-    assert.equal(Object.prototype.hasOwnProperty.call(calendar.calls[0].args, "weekStart"), false);
+    assert.equal(Number.isFinite(calendar.calls[0].args.weekStart), true);
+    assert.equal(Number.isFinite(calendar.calls[0].args.rangeStart), true);
+    assert.equal(Number.isFinite(calendar.calls[0].args.rangeEnd), true);
+    assert.equal(calendar.calls[0].args.weekStart, calendar.calls[0].args.rangeStart);
+    assert.ok(calendar.calls[0].args.rangeEnd > calendar.calls[0].args.rangeStart);
   } finally {
     provider.chat = originalChat;
   }
