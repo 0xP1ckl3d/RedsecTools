@@ -411,6 +411,7 @@ async function convertToWebpIcon(buffer) {
   const id = crypto.randomBytes(16).toString("base64url");
   try {
     const webpBuffer = await sharp(buffer)
+      .rotate()
       .resize(64, 64, { fit: "cover" })
       .webp({ quality: 85 })
       .toBuffer();
@@ -466,6 +467,7 @@ router.post("/shortcuts/upload-icon", uploadIconLimiter, iconUpload.single("imag
   try {
     const id = crypto.randomBytes(16).toString("base64url");
     const buffer = await sharp(file.buffer)
+      .rotate()
       .resize(64, 64, { fit: "cover" })
       .webp({ quality: 85 })
       .toBuffer();

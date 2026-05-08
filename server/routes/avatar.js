@@ -55,6 +55,7 @@ router.post("/avatar", uploadLimiter, requireUser, upload.single("avatar"), asyn
 
   try {
     const buffer = await sharp(file.buffer)
+      .rotate()
       .resize(128, 128, { fit: "cover" })
       .webp({ quality: 85 })
       .toBuffer();

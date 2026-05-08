@@ -79,25 +79,24 @@
         "type": "apiKey",
         "in": "cookie",
         "name": "redsec_session",
-        "description": "Signed user session cookie for the main web app."
+        "description": "Signed user session cookie created by POST /api/auth/login. Required for all authenticated API routes under /api (except public endpoints like survey response). The session encodes the user ID and is verified against server-side session storage. Sessions expire based on server configuration (default 24h, extended sessions up to 30 days with 'keep me signed in'). MFA-protected accounts require completing POST /api/auth/login/mfa before the session is promoted to fully authenticated."
       },
       "GuestSessionCookie": {
         "type": "apiKey",
         "in": "cookie",
         "name": "redsec_guest",
-        "description": "Signed guest cookie created from /guest/{token}. Tool-scoped for paste or share."
+        "description": "Signed guest cookie created by visiting /guest/{token}. Grants access only to paste creation (POST /api/paste) or share creation (POST /api/share), depending on the link scope. Guest sessions cannot access any other API routes."
       },
       "ExtensionBearer": {
         "type": "http",
         "scheme": "bearer",
-        "bearerFormat": "opaque token",
-        "description": "Bearer token returned by /api/ext/auth/login or /api/ext/auth/login/mfa."
+        "description": "Bearer token returned by POST /api/ext/auth/login. Used by the Chrome extension API under /api/ext. Tokens expire based on server session TTL. Extension sessions have the same RBAC permissions as the linked user account but are separate from browser sessions."
       },
       "AdminCookie": {
         "type": "apiKey",
         "in": "cookie",
         "name": "redsec_admin",
-        "description": "Signed admin session cookie for /admin/api routes."
+        "description": "Signed admin session cookie created by POST /admin/login. Required for all routes under /admin/api. After initial bootstrap, admin API access also requires an active linked UserSessionCookie (redsec_session) — both cookies must be present. This two-step auth ensures admin actions are tied to a logged-in user session."
       }
     },
     "schemas": {

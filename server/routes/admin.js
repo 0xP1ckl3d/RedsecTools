@@ -1525,7 +1525,7 @@ router.post("/api/shortcuts/team/upload-icon", requireAdmin, teamIconUpload.sing
   try {
     const id = crypto.randomBytes(16).toString("base64url");
     const sharp = require("sharp");
-    const buffer = await sharp(file.buffer).resize(64, 64, { fit: "cover" }).webp({ quality: 85 }).toBuffer();
+    const buffer = await sharp(file.buffer).rotate().resize(64, 64, { fit: "cover" }).webp({ quality: 85 }).toBuffer();
     const iconsDir = path.join(__dirname, "..", "..", "data", "shortcut-icons");
     if (!fs.existsSync(iconsDir)) fs.mkdirSync(iconsDir, { recursive: true });
     fs.writeFileSync(path.join(iconsDir, `${id}.webp`), buffer);
