@@ -106,7 +106,7 @@ function createWidget(status, options = {}) {
           <h2>Local assistant</h2>
         </div>
         <div class="redsecai-header-actions">
-          <a class="redsecai-icon-btn" href="/ai/about" title="About RedSecAI" aria-label="About RedSecAI">${iconSvg("info")}</a>
+          <a class="redsecai-icon-btn" href="/ai?view=about" title="About RedSecAI" aria-label="About RedSecAI">${iconSvg("info")}</a>
           ${isPage ? "" : `<a class="redsecai-icon-btn" href="/ai" title="Open full page" aria-label="Open RedSecAI full page">${iconSvg("expand")}</a>`}
           <button type="button" class="redsecai-icon-btn" data-redsecai-clear title="Clear chat" aria-label="Clear chat">${iconSvg("refresh")}</button>
           ${isPage ? "" : `<button type="button" class="redsecai-icon-btn" data-redsecai-close title="Close" aria-label="Close">${iconSvg("close")}</button>`}
@@ -287,6 +287,13 @@ async function initRedSecAI() {
   let unreadCount = 0;
 
   renderMessages(messagesEl, messages);
+
+  function syncMobileViewportOffset() {
+    if (pageMode || !window.visualViewport) return;
+    const viewport = window.visualViewport;
+    const hiddenViewportHeight = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
+    widget.style.setProperty("--redsecai-mobile-keyboard-offset", `${Math.round(hiddenViewportHeight)}px`);
+  }
 
   function isPanelOpen() {
     if (pageMode) return true;
@@ -649,6 +656,8 @@ async function initRedSecAI() {
   launcher?.addEventListener("click", () => {
     panel.classList.toggle("hidden");
     if (!panel.classList.contains("hidden")) {
+      widget.classList.add("is-mobile-open");
+      syncMobileViewportOffset();
       clearUnread();
       checkStatus()
         .then((latest) => {
@@ -658,11 +667,15 @@ async function initRedSecAI() {
         .catch(() => renderActionCards([...pendingActions.values()]));
       input.focus();
     } else {
+      widget.classList.remove("is-mobile-open");
+      widget.style.removeProperty("--redsecai-mobile-keyboard-offset");
       syncAlertBadge();
     }
   });
   closeBtn?.addEventListener("click", () => {
     panel.classList.add("hidden");
+    widget.classList.remove("is-mobile-open");
+    widget.style.removeProperty("--redsecai-mobile-keyboard-offset");
     syncAlertBadge();
   });
   clearBtn?.addEventListener("click", () => {
@@ -725,6 +738,9 @@ async function initRedSecAI() {
     }
   });
 
+  window.visualViewport?.addEventListener("resize", syncMobileViewportOffset);
+  window.visualViewport?.addEventListener("scroll", syncMobileViewportOffset);
+  window.addEventListener("resize", syncMobileViewportOffset);
   window.addEventListener("beforeunload", () => aiSocket.close());
 }
 

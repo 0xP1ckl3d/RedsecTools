@@ -411,7 +411,7 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-function showFavLimitModal(message) {
+export function showFavLimitModal(message) {
   const modal = document.getElementById("fav-limit-modal");
   const msg = document.getElementById("fav-limit-msg");
   const closeBtn = document.getElementById("fav-limit-modal-close");

@@ -706,6 +706,10 @@
   // ── Open Conversation ───────────────────────────────────────────────────
 
   async function openConversation(convId) {
+    var aboutPanel = document.getElementById("chat-about-panel");
+    var chatContent = document.getElementById("chat-content-area");
+    if (aboutPanel) aboutPanel.classList.add("hidden");
+    if (chatContent) chatContent.classList.remove("hidden");
     try {
       await ChatState.setCurrentConversation(convId);
 
@@ -2375,6 +2379,29 @@
 
     // Window resize handler
     window.addEventListener("resize", handleResize);
+
+    // About panel toggle
+    var aboutBtn = document.getElementById("chat-about-btn");
+    var aboutClose = document.getElementById("chat-about-close");
+    var aboutPanel = document.getElementById("chat-about-panel");
+    var chatContent = document.getElementById("chat-content-area");
+    function showAbout() {
+      if (aboutPanel) aboutPanel.classList.remove("hidden");
+      if (chatContent) chatContent.classList.add("hidden");
+    }
+    function hideAbout() {
+      if (aboutPanel) aboutPanel.classList.add("hidden");
+      if (chatContent) chatContent.classList.remove("hidden");
+    }
+    if (aboutBtn) {
+      aboutBtn.addEventListener("click", showAbout);
+    }
+    if (aboutClose) {
+      aboutClose.addEventListener("click", hideAbout);
+    }
+    if (new URLSearchParams(window.location.search).get("view") === "about") {
+      showAbout();
+    }
   }
 
   // ── State Change Listener ───────────────────────────────────────────────

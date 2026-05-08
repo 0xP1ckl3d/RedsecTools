@@ -15,21 +15,6 @@ const TOOL_LINKS = [
   { href: "/ai", label: "RedSecAI", aiOnly: true },
 ];
 
-// Contextual about links based on current page path
-const ABOUT_LINKS = [
-  { pathPrefix: "/vault", href: "/vault/about", label: "About this tool" },
-  { pathPrefix: "/chat", href: "/chat/about", label: "About this tool" },
-  { pathPrefix: "/share", href: "/share/about", label: "About this tool" },
-  { pathPrefix: "/paste", href: "/paste/about", label: "About this tool" },
-  { pathPrefix: "/p/", href: "/paste/about", label: "About this tool" },
-  { pathPrefix: "/calendar", href: "/calendar/about", label: "About this tool" },
-  { pathPrefix: "/survey", href: "/survey/about", label: "About this tool" },
-  { pathPrefix: "/wiki", href: "/wiki/about", label: "About this tool" },
-  { pathPrefix: "/threat", href: "/threat/about", label: "About this tool" },
-  { pathPrefix: "/reporter", href: "/reporter/about", label: "About this tool" },
-  { pathPrefix: "/ai", href: "/ai/about", label: "About RedSecAI" },
-];
-
 export function initBurgerMenu() {
   const btn = document.getElementById("burger-btn");
   const nav = document.getElementById("burger-nav");
@@ -82,14 +67,6 @@ function injectLinks(nav, allowedToolKeys, options = {}) {
     html += "</div></details>";
   }
 
-  // Contextual "About" link for tool pages
-  const path = window.location.pathname;
-  const aboutMatch = ABOUT_LINKS.find(a => path.startsWith(a.pathPrefix));
-  if (aboutMatch) {
-    html += `<div class="burger-divider"></div>`;
-    html += `<a href="${aboutMatch.href}">${aboutMatch.label}</a>`;
-  }
-
   nav.innerHTML = html;
 }
 
@@ -115,7 +92,7 @@ async function addAuthLinks(nav) {
     if (data.authenticated && !data.guest) {
       nav.appendChild(divider.cloneNode());
       const profileLink = document.createElement("a");
-      profileLink.href = "/profile";
+      profileLink.href = "/?view=profile";
       profileLink.textContent = `Profile (${data.user.username})`;
       nav.appendChild(profileLink);
 
@@ -169,3 +146,37 @@ async function addAuthLinks(nav) {
 
 // Auto-initialize when loaded as standalone module
 initBurgerMenu();
+
+// --- Centralized footer ---
+(function initFooter() {
+  const TOOL_NAMES = {
+    "/": "RedSecTools",
+    "/paste": "RedSecPaste",
+    "/share": "RedSecShare",
+    "/chat": "RedSecTeam",
+    "/vault": "RedSecVault",
+    "/calendar": "RedSecCal",
+    "/wiki": "RedSecWiki",
+    "/survey": "RedSecSurvey",
+    "/threat": "RedSecThreat",
+    "/reporter": "RedSecReporter",
+    "/ai": "RedSecAI",
+  };
+
+  const path = window.location.pathname.replace(/\/index\.html$/, "").replace(/\/$/, "") || "/";
+  let name = TOOL_NAMES[path];
+  if (!name) {
+    for (const [prefix, label] of Object.entries(TOOL_NAMES)) {
+      if (prefix !== "/" && path.startsWith(prefix)) { name = label; break; }
+    }
+  }
+  if (!name) name = "RedSecTools";
+
+  const year = new Date().getFullYear();
+  const footer = document.createElement("footer");
+  footer.className = "footer";
+  footer.innerHTML = `&copy; ${year} <a href="/" class="text-accent hover:underline">RedSec</a> Offensive Security &mdash; ${name}`;
+
+  const main = document.querySelector(".dashboard-main") || document.querySelector(".dashboard-content") || document.querySelector(".dashboard-layout");
+  if (main) main.appendChild(footer);
+})();

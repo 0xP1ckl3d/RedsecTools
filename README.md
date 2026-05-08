@@ -18,7 +18,7 @@ A multi-tool security platform by [RedSec Offensive Security](https://github.com
 | **RedSecThreat** | Threat intelligence monitor with RSS/website/API/onion feed ingestion, keyword and regex matching, automatic IOC extraction, alert triage with criticality levels, and webhook/email/Discord notifications |
 | **RedSecWiki** | Team and personal Markdown wiki with page trees, subpages, live preview, published rendering, revision history, and search |
 | **RedSecReporter** | SysReptor-style pentest report builder with assigned-member projects, custom report designs, finding templates, CVSS scoring, comments, evidence, and versioned PDF generation |
-| **RedSecAI** | Local Qwen-powered assistant for scoped report drafting, calendar reasoning, and threat-intel summaries without access to encrypted paste/share/chat/vault plaintext |
+| **RedSecAI** | Local Ollama-powered assistant (Qwen, Gemma, or any compatible model) for scoped calendar reasoning, wiki drafting, threat-intel summaries, and confirmation-gated actions without access to encrypted paste/share/chat/vault plaintext |
 | **RedSecTools Chrome Extension** | Chrome Manifest V3 extension for Vault access, autofill, Paste creation, and Share creation using the same server and encryption model |
 
 **Key security properties:**
@@ -87,7 +87,7 @@ The landing page (`/`) is a fully featured dashboard with:
 - **BulletinBoard preview** — the latest 5 active workspace bulletins render as homepage cards below the weather section
 - **Quick Access** — 5 user-selected built-in tool favourites followed by 5 shortcut favourites on the homepage, filtered by the current user's role permissions
 - **Bulletin dashboard view** — pinned-first bulletin feed with full-message expansion, incremental loading, scheduling, recurrence, and permission-aware in-app management
-- **Collapsible sidebar** — navigate between Home, Tools, Bulletin, and Shortcuts views with collapsible Team and Personal link sections
+- **Collapsible sidebar** — navigate between Home, Tools, Bulletin, Shortcuts, Profile, and About views with collapsible Team and Personal link sections
 - **Mobile responsive** — sidebar collapses to a tab bar on mobile, weather grid adapts to 2 columns
 
 ### Roles and Permissions
@@ -117,7 +117,7 @@ Admin > Tools > RedSecReporter shows global report stats, recent projects, proje
 
 ### RedSecAI
 
-RedSecAI is the built-in local assistant. In Docker Compose it runs against a separate Ollama/Qwen container; local npm installs use a local Ollama service on `127.0.0.1:11434`.
+RedSecAI is the built-in local assistant backed by a configurable Ollama model (defaults to `qwen3.5:4b`). In Docker Compose it runs against a separate Ollama sidecar; local npm installs use a local Ollama service on `127.0.0.1:11434`. Cloud models (e.g. `gemma4:31b-cloud`) are also supported when the Ollama environment is signed in.
 
 RedSecAI provides an expandable chat bubble on authenticated pages. It can use a server-side allowlist of scoped application APIs for the logged-in user to help summarize permitted calendar, wiki, reporter, and threat-intel context. It does not have admin scope, does not read the database directly, and does not access decrypted RedSecPaste, RedSecShare, RedSecTeam, or RedSecVault content.
 
@@ -182,7 +182,7 @@ docker compose up -d
 
 That's it. The setup script creates a `.env` file with a randomly generated admin password and cookie secret.
 
-Docker starts RedSecAI as a separate `redsecai` Ollama container. Ollama binds to `0.0.0.0:11434` inside that sidecar so the app container can reach `http://redsecai:11434`; Compose also publishes it on `127.0.0.1:${REDSECAI_HOST_PORT:-11434}` for local diagnostics. On the first run, that container pulls the configured model into the `redsectools-ai` named volume unless `REDSECAI_AUTO_PULL=false`. The main RedSecTools app does not wait for that model download to finish; if the model is missing, the chat bubble reports RedSecAI as unavailable until the model is installed.
+Docker starts three containers: the main RedSecTools app, a `redsecai` Ollama sidecar for the AI assistant, and a `tor-proxy` sidecar for RedSecThreat onion feed support. Ollama binds to `0.0.0.0:11434` inside its sidecar so the app container can reach `http://redsecai:11434`; Compose also publishes it on `127.0.0.1:${REDSECAI_HOST_PORT:-11434}` for local diagnostics. On the first run, the AI container pulls the configured model into the `redsectools-ai` named volume unless `REDSECAI_AUTO_PULL=false`. The main RedSecTools app does not wait for that model download to finish; if the model is missing, the chat bubble reports RedSecAI as unavailable until the model is installed.
 
 Admin model changes are live app settings, not container rebuilds. Saving **Admin > Tool Settings > RedSecAI** updates the model name RedSecTools sends to Ollama, then refreshes the status panel. It does not sign in to Ollama Cloud, restart the `redsecai` sidecar, or change the sidecar's already-running `OLLAMA_MODEL` environment variable. For Docker deployments, install or pull models in the `redsecai` service itself.
 
@@ -534,7 +534,7 @@ The extension is currently distributed as an unpacked build only. It is not yet 
 
 ### Multi-Factor Authentication
 
-Users can enable TOTP-based MFA from their profile page. Supports:
+Users can enable TOTP-based MFA from the homepage Profile view. Supports:
 - Standard authenticator apps (Google Authenticator, Authy, 1Password, etc.)
 - Recovery codes (one-time use, regenerable)
 - "Remember this browser" — skip MFA for trusted devices (configurable duration)
@@ -557,9 +557,9 @@ All encryption uses the Web Crypto API. The server performs zero cryptographic o
 
 ### Tech Stack
 
-- **Backend:** Express.js, SQLite (better-sqlite3 with WAL mode), Helmet, bcrypt, Nodemailer, rss-parser, cheerio, socks-proxy-agent
+- **Backend:** Express.js, SQLite (better-sqlite3 with WAL mode), Helmet, bcrypt, Nodemailer, rss-parser, cheerio, socks-proxy-agent, Puppeteer (PDF generation)
 - **Frontend:** Vanilla JS (ES modules), Tailwind CSS, Web Crypto API
-- **Real-time:** WebSocket (ws library) for chat
+- **Real-time:** WebSocket (ws library) for chat and RedSecAI streaming
 - **Storage:** SQLite database + encrypted files on disk
 
 ### Key Files
@@ -580,8 +580,13 @@ All encryption uses the Web Crypto API. The server performs zero cryptographic o
 | `server/routes/calendar.js` | RedSecCal API |
 | `server/routes/survey.js` | RedSecSurvey API |
 | `server/routes/threat.js` | RedSecThreat user API (read-only feed catalogue, personal keywords/tags/alerts, personal notifications, health) |
+| `server/routes/reporter.js` | RedSecReporter API (projects, findings, sections, designs, templates, evidence, comments, notes, PDFs) |
+| `server/routes/redsecai.js` | RedSecAI HTTP API (status, chat, action confirm/reject) |
 | `server/threat-feed-service.js` | Feed fetch engine (RSS, website, API, onion), keyword matching, IOC extraction |
 | `server/threat-notify-service.js` | Notification dispatch (webhook, email, Discord) |
+| `server/chat-ws.js` | WebSocket server for encrypted real-time chat |
+| `server/redsecai-ws.js` | WebSocket server for RedSecAI streaming responses |
+| `server/modules/redsecai/` | RedSecAI orchestrator, tool routing, context builder, action review, and provider modules |
 | `server/routes/wiki.js` | RedSecWiki API |
 | `public/js/crypto.js` | AES-256-GCM + PBKDF2 (zero dependencies) |
 | `public/js/file-crypto.js` | File encryption module |
@@ -599,6 +604,8 @@ The SQLite database now includes the original encrypted content/auth/chat/vault 
 - `calendar_projects`, `calendar_entries` — RedSecCal projects and events/assignments
 - `surveys`, `survey_questions`, `survey_question_options`, `survey_responses`, `survey_answers` — RedSecSurvey
 - `wiki_pages`, `wiki_page_revisions` — RedSecWiki team/personal page tree, published markdown render, and revision history
+- `reporter_projects`, `reporter_findings`, `reporter_sections`, `reporter_designs`, `reporter_finding_templates`, `reporter_project_members`, `reporter_comments`, `reporter_evidence`, `reporter_notes`, `reporter_project_pdfs`, `reporter_import_jobs` — RedSecReporter projects, findings, designs, templates, membership, comments, evidence, and PDF versioning
+- `redsecai_pending_actions` — RedSecAI confirmation-gated pending write actions
 - `homepage_settings` — homepage layout plus built-in tool favourites
 - `threat_feeds`, `threat_keywords`, `threat_tags`, `threat_alerts`, `threat_api_templates`, `threat_notification_configs`, `threat_user_notifications`, `threat_suppressed_alerts` — RedSecThreat shared feed, template, and alert content tables
 - `threat_feed_keywords`, `threat_feed_tags`, `threat_keyword_tags`, `threat_alert_tags` — RedSecThreat shared many-to-many relationship tables

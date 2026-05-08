@@ -11,6 +11,7 @@ const {
   createBulletin,
   getBulletinById,
   getHomepageSettings,
+  getSetting,
   createBulletinAsset,
   getBulletinAssetById,
   BULLETIN_ASSETS_DIR,
@@ -36,6 +37,12 @@ const {
 
 const router = Router();
 
+const REDSECAI_TOOL_DEFINITION = Object.freeze({
+  key: "redsecai",
+  name: "RedSecAI",
+  href: "/ai",
+});
+
 const settingsLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 40,
@@ -49,16 +56,22 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 },
 });
 
+function isRedSecAiEnabled() {
+  return getSetting("redsecai_enabled") !== "false";
+}
+
+function getHomepageToolDefinitions(permissionSet) {
+  const tools = TOOL_DEFINITIONS.filter((tool) => isToolAvailable(tool, permissionSet));
+  return isRedSecAiEnabled() ? [...tools, REDSECAI_TOOL_DEFINITION] : tools;
+}
+
 function getSelectedToolFavourites(userId, permissionSet) {
   const settings = getHomepageSettings(userId);
   const allowedKeys = new Set(
-    TOOL_DEFINITIONS
-      .filter((tool) => isToolAvailable(tool, permissionSet))
-      .map((tool) => tool.key)
+    getHomepageToolDefinitions(permissionSet).map((tool) => tool.key)
   );
   const selected = Array.isArray(settings.toolFavourites) ? settings.toolFavourites.filter((key) => allowedKeys.has(key)) : [];
-  const fallback = TOOL_DEFINITIONS
-    .filter((tool) => allowedKeys.has(tool.key))
+  const fallback = getHomepageToolDefinitions(permissionSet)
     .slice(0, 5)
     .map((tool) => tool.key);
 
@@ -267,20 +280,23 @@ router.get("/bulletin-assets/:id", requireUser, (req, res) => {
 
 router.get("/tool-favourites", requireUser, attachUserAccess, (req, res) => {
   const selected = getSelectedToolFavourites(req.user.id, req.access.permissionSet);
-  const available = TOOL_DEFINITIONS
-    .filter((tool) => isToolAvailable(tool, req.access.permissionSet))
+  const available = getHomepageToolDefinitions(req.access.permissionSet)
     .map((tool) => ({ key: tool.key, name: tool.name, href: tool.href }));
   res.json({ selected, available });
 });
 
 router.put("/tool-favourites", settingsLimiter, requireUser, attachUserAccess, (req, res) => {
-  const selected = Array.isArray(req.body?.selected) ? req.body.selected.slice(0, 5) : [];
+  const selected = Array.isArray(req.body?.selected) ? req.body.selected : [];
+  if (selected.length > 5) {
+    return res.status(400).json({ error: "Maximum 5 tool favourites allowed" });
+  }
   const allowed = new Set(
-    TOOL_DEFINITIONS
-      .filter((tool) => isToolAvailable(tool, req.access.permissionSet))
-      .map((tool) => tool.key)
+    getHomepageToolDefinitions(req.access.permissionSet).map((tool) => tool.key)
   );
-  const normalized = [...new Set(selected.filter((key) => allowed.has(key)))].slice(0, 5);
+  const normalized = [...new Set(selected.filter((key) => allowed.has(key)))];
+  if (normalized.length > 5) {
+    return res.status(400).json({ error: "Maximum 5 tool favourites allowed" });
+  }
   const settings = getHomepageSettings(req.user.id);
   setHomepageSettings(req.user.id, {
     ...settings,

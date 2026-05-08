@@ -107,7 +107,6 @@ function pageRequireRedSecAiEnabled(req, res, next) {
 }
 
 app.get("/ai/index.html", pageRequireUser, pageRequireRedSecAiEnabled, (req, res) => res.sendFile(page("ai/index.html")));
-app.get("/ai/about.html", pageRequireUser, pageRequireRedSecAiEnabled, (req, res) => res.sendFile(page("ai/about.html")));
 
 // --- Static files ---
 app.use(express.static(path.join(__dirname, "..", "public"), {
@@ -152,32 +151,22 @@ app.get("/forgot-password", (req, res) => res.sendFile(page("forgot-password.htm
 app.get("/reset-password", (req, res) => res.sendFile(page("reset-password.html")));
 app.get("/p/:id", (req, res) => res.sendFile(page("paste/view.html")));
 app.get("/s/:id", (req, res) => res.sendFile(page("share/view.html")));
-app.get("/paste/about", (req, res) => res.sendFile(page("paste/about.html")));
-app.get("/share/about", (req, res) => res.sendFile(page("share/about.html")));
 
 // Auth-gated pages (server-side redirect if not authenticated)
 app.get("/", pageRequireUser, (req, res) => res.sendFile(page("index.html")));
-app.get("/profile", pageRequireUser, (req, res) => res.sendFile(page("profile.html")));
+app.get("/profile", pageRequireUser, (req, res) => res.redirect("/?view=profile"));
 app.get("/paste", pageRequireGuestOrUser("paste"), (req, res) => res.sendFile(page("paste/index.html")));
 app.get("/share", pageRequireGuestOrUser("share"), (req, res) => res.sendFile(page("share/index.html")));
 app.get("/chat", pageRequireUser, (req, res) => res.sendFile(page("chat/index.html")));
-app.get("/chat/about", (req, res) => res.sendFile(page("chat/about.html")));
 app.get("/vault", pageRequireUser, (req, res) => res.sendFile(page("vault/index.html")));
-app.get("/vault/about", (req, res) => res.sendFile(page("vault/about.html")));
 app.get("/calendar", pageRequireUser, pageRequireAnyPermission(["calendar.view", "calendar.view_team", "calendar.manage"]), (req, res) => res.sendFile(page("calendar/index.html")));
-app.get("/calendar/about", (req, res) => res.sendFile(page("calendar/about.html")));
 app.get("/survey", pageRequireUser, pageRequireAnyPermission(["survey.create", "survey.manage_any", "survey.view_results_any"]), (req, res) => res.sendFile(page("survey/index.html")));
 app.get("/survey/results", pageRequireUser, pageRequireAnyPermission(["survey.create", "survey.manage_any", "survey.view_results_any"]), (req, res) => res.sendFile(page("survey/results.html")));
-app.get("/survey/about", (req, res) => res.sendFile(page("survey/about.html")));
 app.get("/survey/r/:token", (req, res) => res.sendFile(page("survey/respond.html")));
 app.get("/wiki", pageRequireUser, pageRequireAnyPermission(["wiki.view", "wiki.create_personal", "wiki.create_team", "wiki.edit_team", "wiki.manage"]), (req, res) => res.sendFile(page("wiki/index.html")));
-app.get("/wiki/about", (req, res) => res.sendFile(page("wiki/about.html")));
 app.get("/threat", pageRequireUser, pageRequireAnyPermission(["threat.view", "threat.manage"]), (req, res) => res.sendFile(page("threat/index.html")));
-app.get("/threat/about", (req, res) => res.sendFile(page("threat/about.html")));
 app.get("/reporter", pageRequireUser, pageRequireAnyPermission(["reporter.view", "reporter.create", "reporter.edit_own", "reporter.edit_assigned", "reporter.review", "reporter.approve", "reporter.manage_templates", "reporter.manage_all"]), (req, res) => res.sendFile(page("reporter/index.html")));
-app.get("/reporter/about", (req, res) => res.sendFile(page("reporter/about.html")));
 app.get(["/ai", "/ai/"], pageRequireUser, pageRequireRedSecAiEnabled, (req, res) => res.sendFile(page("ai/index.html")));
-app.get("/ai/about", pageRequireUser, pageRequireRedSecAiEnabled, (req, res) => res.sendFile(page("ai/about.html")));
 app.get("/admin", (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   res.sendFile(page("admin.html"));

@@ -1,6 +1,6 @@
 import { showConfirmModal } from "./confirm-modal.js";
 
-// RedSecTools — Profile page logic
+// RedSecTools — embedded homepage Profile view logic
 
 const currentPasswordInput = document.getElementById("current-password");
 const newPasswordInput = document.getElementById("new-password");

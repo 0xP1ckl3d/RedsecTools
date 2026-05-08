@@ -473,6 +473,7 @@ function loadCurrentView() {
     case "mitre": loadMitre(); break;
     case "notifications": loadNotifications(); break;
     case "logs": loadLogs(); break;
+    case "about": break;
   }
 }
 
@@ -2488,6 +2489,9 @@ function initEvents() {
 
 async function init() {
   setCurrentView("dashboard");
+  if (new URLSearchParams(window.location.search).get("view") === "about") {
+    setCurrentView("about");
+  }
   initSidebarCollapse();
   initEvents();
   await loadBootstrap();

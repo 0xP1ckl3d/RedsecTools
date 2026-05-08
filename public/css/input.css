@@ -452,6 +452,10 @@ html.light {
     box-shadow: var(--shadow);
   }
 
+  .redsecai-widget.is-mobile-open {
+    --redsecai-mobile-keyboard-offset: 0px;
+  }
+
   .redsecai-header {
     display: flex;
     align-items: center;
@@ -785,15 +789,22 @@ html.light {
 
   @media (max-width: 640px) {
     .redsecai-widget {
-      right: 0.75rem;
-      bottom: 0.75rem;
+      right: max(0.75rem, env(safe-area-inset-right));
+      bottom: max(0.75rem, env(safe-area-inset-bottom));
     }
 
     .redsecai-panel {
       position: fixed;
-      inset: auto 0.75rem 4.5rem 0.75rem;
+      left: max(0.5rem, env(safe-area-inset-left));
+      right: max(0.5rem, env(safe-area-inset-right));
+      top: max(0.5rem, env(safe-area-inset-top));
+      bottom: calc(max(0.5rem, env(safe-area-inset-bottom)) + var(--redsecai-mobile-keyboard-offset, 0px));
       width: auto;
-      height: min(34rem, calc(100vh - 5.5rem));
+      max-width: none;
+      height: auto;
+      max-height: none;
+      grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+      border-radius: 0.75rem;
     }
 
     .redsecai-launcher {
@@ -807,18 +818,100 @@ html.light {
       display: none;
     }
 
+    .redsecai-header {
+      gap: 0.65rem;
+      padding: 0.7rem 0.75rem;
+    }
+
+    .redsecai-header-actions {
+      gap: 0.25rem;
+    }
+
+    .redsecai-icon-btn {
+      width: 2.15rem;
+      height: 2.15rem;
+    }
+
+    .redsecai-boundary {
+      padding: 0.5rem 0.75rem;
+      font-size: 0.7rem;
+    }
+
+    .redsecai-messages {
+      padding: 0.75rem;
+      gap: 0.65rem;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .redsecai-message {
+      max-width: 96%;
+    }
+
+    .redsecai-message-body {
+      padding: 0.6rem 0.68rem;
+      font-size: 0.84rem;
+    }
+
+    .redsecai-action-card {
+      padding: 0.65rem;
+    }
+
+    .redsecai-action-args {
+      max-height: 7.5rem;
+      font-size: 0.68rem;
+    }
+
+    .redsecai-form {
+      gap: 0.45rem;
+      padding: 0.6rem;
+    }
+
+    .redsecai-input {
+      min-height: 2.65rem;
+      max-height: 6.5rem;
+      resize: none;
+      font-size: 16px;
+    }
+
+    .redsecai-send {
+      width: 2.65rem;
+      height: 2.65rem;
+    }
+
+    .redsecai-footnote {
+      padding: 0 0.65rem 0.6rem;
+      font-size: 0.68rem;
+    }
+
     .redsecai-page-widget .redsecai-panel {
-      height: calc(100vh - 11rem);
-      min-height: 30rem;
+      height: min(42rem, calc(100svh - 11rem));
+      min-height: 26rem;
     }
 
     .redsecai-dashboard-shell .redsecai-page-widget .redsecai-panel {
-      height: calc(100vh - 16rem);
-      min-height: 28rem;
+      height: min(40rem, calc(100svh - 16rem));
+      min-height: 24rem;
     }
 
     .redsecai-page-widget .redsecai-message {
       max-width: 96%;
+    }
+  }
+
+  @supports (height: 100dvh) {
+    @media (max-width: 640px) {
+      .redsecai-panel {
+        max-height: calc(100dvh - 1rem - var(--redsecai-mobile-keyboard-offset, 0px));
+      }
+
+      .redsecai-page-widget .redsecai-panel {
+        height: min(42rem, calc(100dvh - 11rem));
+      }
+
+      .redsecai-dashboard-shell .redsecai-page-widget .redsecai-panel {
+        height: min(40rem, calc(100dvh - 16rem));
+      }
     }
   }
 
@@ -3800,7 +3893,6 @@ html.light {
 
 .wiki-dashboard-shell .dashboard-sidebar {
   width: 280px;
-  gap: 1.5rem;
 }
 
 .wiki-dashboard-shell .dashboard-sidebar.collapsed {
@@ -4021,6 +4113,11 @@ html.light {
   transition: border-color 160ms ease, background 160ms ease;
 }
 
+.wiki-tree-row .wiki-tree-item {
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+}
+
 .wiki-tree-item:hover,
 .wiki-result-card:hover,
 .wiki-tree-item.active,
@@ -4061,6 +4158,10 @@ html.light {
   margin-top: 0.25rem;
   font-size: 0.78rem;
   color: var(--text-muted);
+}
+
+.wiki-tree-row .wiki-tree-item-meta {
+  display: none;
 }
 
 .wiki-result-top {
@@ -5367,7 +5468,6 @@ html.light {
 
 .survey-dashboard-shell .dashboard-sidebar {
   width: 280px;
-  gap: 1.5rem;
 }
 
 .survey-dashboard-shell .dashboard-sidebar.collapsed {

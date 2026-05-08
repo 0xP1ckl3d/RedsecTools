@@ -374,3 +374,16 @@ function showToast(message) {
 
 // --- Init ---
 // Burger menu auto-initializes via burger-menu.js script tag
+
+document.querySelectorAll("[data-share-view]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const view = btn.dataset.shareView;
+    document.querySelectorAll("[data-share-view]").forEach((b) => b.classList.toggle("active", b.dataset.shareView === view));
+    document.querySelectorAll(".share-view").forEach((s) => s.classList.toggle("hidden", s.id !== "share-view-" + view));
+  });
+});
+
+if (new URLSearchParams(window.location.search).get("view") === "about") {
+  document.querySelectorAll("[data-share-view]").forEach((b) => b.classList.toggle("active", b.dataset.shareView === "about"));
+  document.querySelectorAll(".share-view").forEach((s) => s.classList.toggle("hidden", s.id !== "share-view-about"));
+}

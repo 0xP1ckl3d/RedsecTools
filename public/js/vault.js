@@ -1720,3 +1720,30 @@ function escAttr(str) {
   if (!str) return "";
   return escHtml(str);
 }
+
+document.querySelectorAll("[data-vault-view]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const view = btn.dataset.vaultView;
+    document.querySelectorAll("[data-vault-view]").forEach((b) => b.classList.toggle("active", b.dataset.vaultView === view));
+    const aboutSection = document.getElementById("vault-view-about");
+    const vaultContent = document.getElementById("vault-content");
+    const authRequired = document.getElementById("auth-required");
+    if (view === "about") {
+      if (aboutSection) aboutSection.classList.remove("hidden");
+      if (vaultContent) vaultContent.classList.add("hidden");
+      if (authRequired) authRequired.classList.add("hidden");
+    } else {
+      if (aboutSection) aboutSection.classList.add("hidden");
+    }
+  });
+});
+
+if (new URLSearchParams(window.location.search).get("view") === "about") {
+  document.querySelectorAll("[data-vault-view]").forEach((b) => b.classList.toggle("active", b.dataset.vaultView === "about"));
+  var _vaultAbout = document.getElementById("vault-view-about");
+  var _vaultContent = document.getElementById("vault-content");
+  var _vaultAuth = document.getElementById("auth-required");
+  if (_vaultAbout) _vaultAbout.classList.remove("hidden");
+  if (_vaultContent) _vaultContent.classList.add("hidden");
+  if (_vaultAuth) _vaultAuth.classList.add("hidden");
+}

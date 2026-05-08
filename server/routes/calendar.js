@@ -464,17 +464,19 @@ function buildStats(entries, projects, users, settings, startsAt, endsAt) {
   };
 }
 
-function parseDateRangeToUnix(startDate, endDate) {
+function parseDateRangeToUnix(startDate, endDate, tzOffsetMinutes) {
   if (!startDate || !endDate) return null;
-  const startsAt = Math.floor(new Date(`${startDate}T00:00`).getTime() / 1000);
-  const endsAt = Math.floor(new Date(`${endDate}T23:59`).getTime() / 1000);
+  const offset = typeof tzOffsetMinutes === "number" ? tzOffsetMinutes * 60 * 1000 : new Date().getTimezoneOffset() * -60 * 1000;
+  const startsAt = Math.floor((new Date(`${startDate}T00:00`).getTime() + offset - (new Date().getTimezoneOffset() * 60 * 1000)) / 1000);
+  const endsAt = Math.floor((new Date(`${endDate}T23:59`).getTime() + offset - (new Date().getTimezoneOffset() * 60 * 1000)) / 1000);
   if (!Number.isFinite(startsAt) || !Number.isFinite(endsAt) || endsAt < startsAt) return null;
   return { startsAt, endsAt };
 }
 
-function buildDailyAllocationSegments(startsAt, endsAt, hoursPerDay, workdaysOnly, settings) {
-  const start = new Date(startsAt * 1000);
-  const end = new Date(endsAt * 1000);
+function buildDailyAllocationSegments(startsAt, endsAt, hoursPerDay, workdaysOnly, settings, tzOffsetMinutes) {
+  const tzMs = typeof tzOffsetMinutes === "number" ? tzOffsetMinutes * 60 * 1000 : 0;
+  const start = new Date(startsAt * 1000 + tzMs);
+  const end = new Date(endsAt * 1000 + tzMs);
   const segments = [];
   const clampedHours = clamp(Number(hoursPerDay || 0), 0.5, settings.dailyHours);
   const segmentSpanHours = clamp(Number(((clampedHours / settings.dailyHours) * settings.workdaySpanHours).toFixed(2)), 0.5, 24);
@@ -488,8 +490,8 @@ function buildDailyAllocationSegments(startsAt, endsAt, hoursPerDay, workdaysOnl
     const segmentEnd = new Date(segmentStart);
     segmentEnd.setTime(segmentStart.getTime() + (segmentSpanHours * 60 * 60 * 1000));
     segments.push({
-      startsAt: Math.floor(segmentStart.getTime() / 1000),
-      endsAt: Math.floor(segmentEnd.getTime() / 1000),
+      startsAt: Math.floor((segmentStart.getTime() - tzMs) / 1000),
+      endsAt: Math.floor((segmentEnd.getTime() - tzMs) / 1000),
       allDay: false,
       scheduledHours: clampedHours,
     });
@@ -712,15 +714,16 @@ router.post("/calendar/allocations", writeLimiter, requireUser, attachUserAccess
   const baseTitle = String(req.body?.title || "").trim() || getProjectEntryTitle(project);
   const description = String(req.body?.description || "").trim() || project.description || "";
   const status = normalizeEntryStatus(String(req.body?.status || "scheduled"));
+  const tzOffsetMinutes = typeof req.body?.tzOffsetMinutes === "number" ? req.body.tzOffsetMinutes : undefined;
   const entriesToCreate = [];
 
   if (allocationMode === "daily") {
-    const dateRange = parseDateRangeToUnix(req.body?.startDate, req.body?.endDate);
+    const dateRange = parseDateRangeToUnix(req.body?.startDate, req.body?.endDate, tzOffsetMinutes);
     if (!dateRange) {
       return res.status(400).json({ error: "Choose a valid allocation date range" });
     }
     const hoursPerDay = Number.parseFloat(req.body?.hoursPerDay) || settings.dailyHours;
-    const segments = buildDailyAllocationSegments(dateRange.startsAt, dateRange.endsAt, hoursPerDay, req.body?.workdaysOnly !== false, settings);
+    const segments = buildDailyAllocationSegments(dateRange.startsAt, dateRange.endsAt, hoursPerDay, req.body?.workdaysOnly !== false, settings, tzOffsetMinutes);
     if (!segments.length) {
       return res.status(400).json({ error: "No allocation days were generated for that range" });
     }

@@ -12,7 +12,7 @@
 </head>
 <body>
   <div class="dashboard-layout wiki-dashboard-shell">
-    <aside id="wiki-sidebar" class="dashboard-sidebar">
+    <aside id="wiki-sidebar" class="dashboard-sidebar collapsed">
       <button type="button" id="wiki-sidebar-collapse-btn" class="sidebar-collapse-btn" title="Collapse sidebar">
         <svg class="sidebar-collapse-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
       </button>
@@ -33,6 +33,13 @@
         <button type="button" class="sidebar-nav-item" data-wiki-view="recent">
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
           <span class="sidebar-nav-text">Recent Changes</span>
+        </button>
+      </nav>
+      <div class="sidebar-divider"></div>
+      <nav class="sidebar-nav">
+        <button type="button" class="sidebar-nav-item" data-wiki-view="about">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M12 20.5a8.5 8.5 0 100-17 8.5 8.5 0 000 17z"/></svg>
+          <span class="sidebar-nav-text">About</span>
         </button>
       </nav>
 
@@ -84,6 +91,7 @@
         <button type="button" class="mobile-tab" data-wiki-view="personal">Personal</button>
         <button type="button" class="mobile-tab" data-wiki-view="search">Search</button>
         <button type="button" class="mobile-tab" data-wiki-view="recent">Recent</button>
+        <button type="button" class="mobile-tab" data-wiki-view="about">About</button>
       </div>
 
       <div class="dashboard-main">
@@ -155,7 +163,19 @@
           </aside>
         </div>
 
-        <footer class="footer">&copy; <span class="current-year"></span> RedSec Offensive Security</footer>
+        <section id="wiki-view-about" class="hidden">
+          <div class="card max-w-3xl mx-auto space-y-4 text-sm">
+            <p>RedSecWiki provides a structured knowledge base for your security operations team. Create, organise, and collaborate on documentation using a familiar Markdown editor with live preview.</p>
+            <p>The team wiki is shared across all team members with appropriate permissions. Personal wiki spaces let you draft private notes before publishing to the team. Pages support hierarchical trees with parent-child relationships, full revision history, and drag-and-drop reordering.</p>
+            <div class="flex flex-wrap gap-2">
+              <span class="badge badge-gray">Markdown</span>
+              <span class="badge badge-gray">Page Trees</span>
+              <span class="badge badge-gray">Revisions</span>
+              <span class="badge badge-gray">Team &amp; Personal</span>
+            </div>
+          </div>
+        </section>
+
       </div>
     </div>
   </div>

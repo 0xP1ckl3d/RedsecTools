@@ -37,7 +37,10 @@
     <div class="flex flex-1 overflow-hidden">
       <!-- Sidebar -->
       <aside id="chat-sidebar" class="w-80 border-r flex flex-col chat-border-r chat-sidebar-bg">
-        <!-- New conversation button -->
+        <!-- About & New conversation buttons -->
+        <div class="p-3 pb-0">
+          <button id="chat-about-btn" class="btn-secondary w-full text-sm">About RedSecTeam</button>
+        </div>
         <div class="p-3">
           <button id="new-conversation-btn" class="btn-primary w-full">New Conversation</button>
         </div>
@@ -58,6 +61,49 @@
 
       <!-- Chat area -->
       <main id="chat-main" class="flex-1 flex flex-col">
+        <!-- About panel (hidden by default) -->
+        <div id="chat-about-panel" class="hidden flex-1 overflow-y-auto">
+          <div class="max-w-2xl mx-auto p-6 space-y-4 text-sm">
+            <div class="text-center mb-6">
+              <svg class="w-12 h-12 text-accent mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+              <h2 class="text-xl font-bold"><span class="text-accent">RedSec</span><span class="text-secondary">Team</span></h2>
+              <p class="text-muted text-sm mt-1">End-to-end encrypted team chat</p>
+            </div>
+
+            <p>RedSecTeam is an end-to-end encrypted messaging platform built into RedSecTools. All messages are encrypted in your browser before being sent — the server never sees your conversations.</p>
+
+            <h3 class="font-bold text-base mt-6">How it works</h3>
+            <ul class="list-disc list-inside space-y-1 text-muted">
+              <li><strong class="text-primary">Hybrid encryption</strong> — each user has an RSA-2048 key pair. Conversation keys are AES-256-GCM, distributed to members via RSA-OAEP encryption.</li>
+              <li><strong class="text-primary">Key epochs</strong> — when members join or leave, a new conversation key is generated. Forward secrecy for group membership changes.</li>
+              <li><strong class="text-primary">Private key backup</strong> — your RSA private key is encrypted with your login password (PBKDF2, 600K iterations) and stored on the server as an opaque backup.</li>
+              <li><strong class="text-primary">Direct and group chats</strong> — private 1-on-1 conversations and group channels with member management.</li>
+              <li><strong class="text-primary">Embeds</strong> — share RedSecPaste links, RedSecShare files, and RedSecVault entries directly in conversations as encrypted embed cards.</li>
+            </ul>
+
+            <h3 class="font-bold text-base mt-6">Security properties</h3>
+            <ul class="list-disc list-inside space-y-1 text-muted">
+              <li>RSA-OAEP 2048-bit + AES-256-GCM hybrid encryption</li>
+              <li>PBKDF2 key derivation with 600K iterations (private key backup)</li>
+              <li>Server stores only encrypted ciphertext — zero server-side crypto</li>
+              <li>Messages auto-expire after 7 days</li>
+              <li>Real-time WebSocket delivery with reconnect</li>
+              <li>Presence indicators and typing notifications</li>
+            </ul>
+
+            <div class="flex gap-2 mt-6">
+              <span class="badge badge-red">E2E Encrypted</span>
+              <span class="badge badge-gray">Zero-knowledge</span>
+              <span class="badge badge-green">RSA-OAEP</span>
+            </div>
+
+            <div class="pt-4">
+              <button id="chat-about-close" class="btn-secondary">Back to Chat</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="chat-content-area" class="flex-1 flex flex-col min-h-0">
         <!-- Empty state -->
         <div id="chat-empty" class="flex-1 flex items-center justify-center">
           <div class="text-center text-muted">
@@ -144,6 +190,7 @@
               </button>
             </div>
           </div>
+        </div>
         </div>
       </main>
     </div>

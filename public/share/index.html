@@ -11,19 +11,19 @@
 </head>
 <body>
   <div class="dashboard-layout tool-dashboard-shell share-dashboard-shell">
-    <aside id="share-sidebar" class="dashboard-sidebar">
+    <aside id="share-sidebar" class="dashboard-sidebar collapsed">
       <button type="button" class="sidebar-collapse-btn" title="Collapse sidebar" data-tool-sidebar-toggle="share-sidebar">
         <svg class="sidebar-collapse-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
       </button>
       <nav class="sidebar-nav">
-        <a href="/share" class="sidebar-nav-item active">
+        <button type="button" class="sidebar-nav-item active" data-share-view="main">
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
           <span class="sidebar-nav-text">Share Files</span>
-        </a>
-        <a href="/share/about" class="sidebar-nav-item">
+        </button>
+        <button type="button" class="sidebar-nav-item" data-share-view="about">
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M12 20.5a8.5 8.5 0 100-17 8.5 8.5 0 000 17z"/></svg>
           <span class="sidebar-nav-text">About</span>
-        </a>
+        </button>
       </nav>
     </aside>
 
@@ -52,11 +52,12 @@
       </header>
 
       <div class="mobile-tabs">
-        <a href="/share" class="mobile-tab active">Share Files</a>
-        <a href="/share/about" class="mobile-tab">About</a>
+        <button type="button" class="mobile-tab active" data-share-view="main">Share Files</button>
+        <button type="button" class="mobile-tab" data-share-view="about">About</button>
       </div>
 
       <main class="dashboard-main tool-dashboard-main">
+        <section id="share-view-main" class="share-view">
         <section class="tool-create-grid" id="create-form">
           <div class="card tool-editor-card">
             <div class="card-header">
@@ -155,6 +156,47 @@
             <p id="email-result" class="text-sm mt-1 hidden"></p>
           </div>
           <button type="button" id="new-btn" class="btn-primary mt-4">Share more files</button>
+        </section>
+        </section>
+
+        <section id="share-view-about" class="share-view hidden">
+          <div class="max-w-3xl mx-auto space-y-6 text-sm">
+            <div class="card">
+              <div class="flex items-center gap-3 mb-4"><svg class="w-6 h-6 text-accent shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><h2 class="text-lg font-semibold">What is RedSecShare?</h2></div>
+              <p class="text-secondary text-sm leading-relaxed">RedSecShare is an encrypted file sharing tool built by <span class="text-accent font-medium">RedSec Offensive Security</span>. Files are encrypted in your browser before upload — the server only stores unreadable ciphertext and never has access to your files or encryption keys.</p>
+            </div>
+            <div class="card">
+              <div class="flex items-center gap-3 mb-4"><svg class="w-6 h-6 text-accent shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg><h2 class="text-lg font-semibold">How Encryption Works</h2></div>
+              <div class="space-y-4">
+                <div><h3 class="text-sm font-semibold mb-1.5">Link-Only Encryption (default)</h3><div class="text-secondary text-sm leading-relaxed space-y-2"><p>Your browser generates a random 256-bit AES key and encrypts the file content <strong>and</strong> filename locally using <span class="font-medium">AES-256-GCM</span>. The key is never sent to the server.</p><p>The share link contains the key in the URL fragment (after <span class="font-mono text-xs">#</span>). URL fragments are never transmitted to the server.</p></div>
+                <div class="info-box mt-3"><p class="text-xs text-muted font-mono"><span class="text-secondary">https://example.com/s/</span><span class="text-accent">share_id</span><span class="text-muted">#</span><span class="text-warning">encryption_key</span></p><p class="text-xs text-muted mt-1">The server only sees the share ID. The key after # stays in the browser.</p></div></div>
+                <div class="border-t border-theme my-4"></div>
+                <div><h3 class="text-sm font-semibold mb-1.5">Password-Protected Files (double encryption)</h3><div class="text-secondary text-sm leading-relaxed space-y-2"><p>Adding a password applies a second layer of encryption:</p><ol class="list-decimal list-inside space-y-1 pl-1"><li>Your file is encrypted with a random key <strong>K</strong> (stored in the URL fragment)</li><li>The resulting ciphertext is <strong>re-encrypted</strong> with a key derived from your password using <span class="font-medium">PBKDF2</span> with 600,000 iterations</li><li>Only the doubly-encrypted ciphertext is uploaded</li></ol><p>The recipient needs <strong>both</strong> the link and the password to decrypt the file.</p></div></div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="flex items-center gap-3 mb-4"><svg class="w-6 h-6 text-accent shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg><h2 class="text-lg font-semibold">Security Features</h2></div>
+              <ul class="space-y-3">
+                <li class="flex gap-3 text-sm text-secondary"><svg class="w-4 h-4 text-accent shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg><span><strong class="text-primary">Zero-knowledge server</strong> — files and filenames are encrypted before upload.</span></li>
+                <li class="flex gap-3 text-sm text-secondary"><svg class="w-4 h-4 text-accent shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg><span><strong class="text-primary">Encrypted filenames</strong> — even file names are encrypted.</span></li>
+                <li class="flex gap-3 text-sm text-secondary"><svg class="w-4 h-4 text-accent shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg><span><strong class="text-primary">Burn after reading</strong> — files can self-destruct after first download.</span></li>
+                <li class="flex gap-3 text-sm text-secondary"><svg class="w-4 h-4 text-accent shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg><span><strong class="text-primary">Auto-expiry</strong> — all files automatically expire and are permanently deleted.</span></li>
+                <li class="flex gap-3 text-sm text-secondary"><svg class="w-4 h-4 text-accent shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg><span><strong class="text-primary">Admin-configured limits</strong> — client-side encryption with server-enforced size ceilings.</span></li>
+                <li class="flex gap-3 text-sm text-secondary"><svg class="w-4 h-4 text-accent shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg><span><strong class="text-primary">No tracking</strong> — no cookies, no analytics, no accounts.</span></li>
+              </ul>
+            </div>
+            <div class="card">
+              <div class="flex items-center gap-3 mb-4"><svg class="w-6 h-6 text-accent shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg><h2 class="text-lg font-semibold">Technical Details</h2></div>
+              <div class="grid grid-cols-2 gap-3 text-sm">
+                <div class="info-box"><p class="text-xs text-muted uppercase tracking-wide mb-1">Encryption</p><p class="font-medium">AES-256-GCM</p></div>
+                <div class="info-box"><p class="text-xs text-muted uppercase tracking-wide mb-1">Key Derivation</p><p class="font-medium">PBKDF2-SHA256</p></div>
+                <div class="info-box"><p class="text-xs text-muted uppercase tracking-wide mb-1">PBKDF2 Iterations</p><p class="font-medium">600,000</p></div>
+                <div class="info-box"><p class="text-xs text-muted uppercase tracking-wide mb-1">Crypto API</p><p class="font-medium">Web Crypto (native)</p></div>
+                <div class="info-box"><p class="text-xs text-muted uppercase tracking-wide mb-1">Max File Size</p><p class="font-medium">Configurable by admin</p></div>
+                <div class="info-box"><p class="text-xs text-muted uppercase tracking-wide mb-1">Storage</p><p class="font-medium">Encrypted on disk</p></div>
+              </div>
+            </div>
+          </div>
         </section>
       </main>
     </div>

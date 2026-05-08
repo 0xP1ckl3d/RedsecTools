@@ -1,4 +1,4 @@
-import { EMOJI_DATA, loadShortcuts, initShortcutModal, onShortcutChange } from "./homepage-shortcuts.js";
+import { EMOJI_DATA, loadShortcuts, initShortcutModal, onShortcutChange, showFavLimitModal } from "./homepage-shortcuts.js";
 import { showConfirmModal } from "./confirm-modal.js";
 import { loadWeather } from "./homepage-weather.js";
 
@@ -75,6 +75,14 @@ const TOOL_MAP = {
     desc: "Pentest report builder",
     icon: '<svg class="quick-tool-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-6m4 6V7m4 10v-4m2 8H5a2 2 0 01-2-2V5a2 2 0 012-2h6.586a1 1 0 01.707.293l7.414 7.414A1 1 0 0120 11.414V19a2 2 0 01-2 2z"/></svg>',
   },
+  redsecai: {
+    key: "redsecai",
+    href: "/ai",
+    name: "RedSecAI",
+    shortName: "AI",
+    desc: "Scoped assistant",
+    icon: '<svg class="quick-tool-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5.75C4 4.23 5.23 3 6.75 3h10.5C18.77 3 20 4.23 20 5.75v7.5A2.75 2.75 0 0117.25 16H12l-4.1 3.25A.85.85 0 016.5 18.58V16A2.75 2.75 0 014 13.25v-7.5Z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 8.5h8M8 11.5h5.5"/></svg>',
+  },
 };
 
 let authState = null;
@@ -113,6 +121,7 @@ async function init() {
     }
 
     authState = data;
+    await addRedSecAiToolAvailability();
     hydrateBulletinCapabilitiesFromAuth();
 
     const greetingEl = document.getElementById("greeting-text");
@@ -157,12 +166,32 @@ async function init() {
     initToolsView();
     initBulletinView();
 
+    const initialView = new URLSearchParams(window.location.search).get("view");
+    const supportedInitialViews = new Set(["home", "tools", "bulletin", "shortcuts", "profile", "about"]);
+    if (initialView && supportedInitialViews.has(initialView) && switchViewFn) {
+      switchViewFn(initialView);
+    }
+
     await ensureHomeData();
     window.setTimeout(() => {
       ensureShortcutsData().catch(() => {});
     }, 0);
   } catch {
     window.location.href = "/login";
+  }
+}
+
+async function addRedSecAiToolAvailability() {
+  try {
+    const res = await fetch("/api/ai/status", { headers: { accept: "application/json" } });
+    const status = await res.json().catch(() => ({}));
+    if (!res.ok || status.enabled === false) return;
+    const tools = Array.isArray(authState.availableTools) ? authState.availableTools : [];
+    if (!tools.some((tool) => tool.key === "redsecai")) {
+      authState.availableTools = [...tools, { key: "redsecai", name: "RedSecAI", href: "/ai" }];
+    }
+  } catch (_) {
+    // Leave RedSecAI hidden when status cannot be confirmed.
   }
 }
 
@@ -384,14 +413,18 @@ function initToolsView() {
       }
 
       const selected = [...selectedSet];
-      await fetchJson("/api/homepage/tool-favourites", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ selected }),
-      });
-      selectedToolKeys = selected;
-      renderToolFavourites(selectedToolKeys);
-      syncToolFavouriteButtons(selectedToolKeys);
+      try {
+        const data = await fetchJson("/api/homepage/tool-favourites", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ selected }),
+        });
+        selectedToolKeys = Array.isArray(data.selected) ? data.selected : selected;
+        renderToolFavourites(selectedToolKeys);
+        syncToolFavouriteButtons(selectedToolKeys);
+      } catch (error) {
+        showFavLimitModal(error.message || "Failed to update tool favourites");
+      }
     });
   });
 }

@@ -11,7 +11,7 @@
 </head>
 <body>
   <div class="dashboard-layout calendar-dashboard-shell">
-    <aside id="calendar-sidebar" class="dashboard-sidebar">
+    <aside id="calendar-sidebar" class="dashboard-sidebar collapsed">
       <button type="button" id="calendar-sidebar-collapse-btn" class="sidebar-collapse-btn" title="Collapse sidebar">
         <svg class="sidebar-collapse-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
       </button>
@@ -32,6 +32,13 @@
         <button type="button" class="sidebar-nav-item" data-calendar-view="stats">
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6"/></svg>
           <span class="sidebar-nav-text">Statistics</span>
+        </button>
+      </nav>
+      <div class="sidebar-divider"></div>
+      <nav class="sidebar-nav">
+        <button type="button" class="sidebar-nav-item" data-calendar-view="about">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M12 20.5a8.5 8.5 0 100-17 8.5 8.5 0 000 17z"/></svg>
+          <span class="sidebar-nav-text">About</span>
         </button>
       </nav>
 
@@ -83,6 +90,7 @@
         <button type="button" class="mobile-tab" data-calendar-view="projects">Projects</button>
         <button type="button" class="mobile-tab" data-calendar-view="team">Team</button>
         <button type="button" class="mobile-tab" data-calendar-view="stats">Stats</button>
+        <button type="button" class="mobile-tab" data-calendar-view="about">About</button>
       </div>
 
       <div class="dashboard-main">
@@ -230,7 +238,20 @@
           </div>
         </section>
 
-        <footer class="footer">&copy; <span class="current-year"></span> RedSec Offensive Security</footer>
+        <section id="calendar-view-about" class="calendar-dashboard-view hidden">
+          <div class="card max-w-3xl mx-auto space-y-4 text-sm">
+            <p>RedSecCal is the scheduling and project management calendar for RedSecTools. It supports personal schedules, team delivery planning, project allocations, and utilisation tracking.</p>
+            <p>Create calendar entries for meetings, tasks, leave, and reminders. Assign project allocations to team members with daily hour tracking and automatic utilisation calculation. The schedule view shows your week or month at a glance with drag-friendly navigation.</p>
+            <p>Project managers can create projects, assign team members, and schedule work across date ranges. Statistics provide real-time dashboards showing utilisation rates, workday counts, and project breakdowns.</p>
+            <div class="flex flex-wrap gap-2">
+              <span class="badge badge-gray">Scheduling</span>
+              <span class="badge badge-gray">Projects</span>
+              <span class="badge badge-gray">Allocations</span>
+              <span class="badge badge-gray">Utilisation</span>
+            </div>
+          </div>
+        </section>
+
       </div>
     </div>
   </div>

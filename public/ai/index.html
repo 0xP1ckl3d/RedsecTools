@@ -11,20 +11,20 @@
 </head>
 <body>
   <div class="dashboard-layout redsecai-dashboard-shell">
-    <aside id="redsecai-sidebar" class="dashboard-sidebar">
+    <aside id="redsecai-sidebar" class="dashboard-sidebar collapsed">
       <button type="button" id="redsecai-sidebar-collapse-btn" class="sidebar-collapse-btn" title="Collapse sidebar">
         <svg class="sidebar-collapse-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
       </button>
 
       <nav class="sidebar-nav">
-        <a href="/ai" class="sidebar-nav-item active">
+        <button type="button" class="sidebar-nav-item active" data-redsecai-view="main">
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 4v-4z"/></svg>
           <span class="sidebar-nav-text">Assistant</span>
-        </a>
-        <a href="/ai/about" class="sidebar-nav-item">
+        </button>
+        <button type="button" class="sidebar-nav-item" data-redsecai-view="about">
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M12 20a8 8 0 100-16 8 8 0 000 16z"/></svg>
           <span class="sidebar-nav-text">About</span>
-        </a>
+        </button>
       </nav>
 
       <div class="sidebar-divider"></div>
@@ -61,7 +61,6 @@
           <p class="text-sm text-muted mt-1">Ask questions, inspect permitted RedSecTools data, and prepare confirmation-gated actions.</p>
         </div>
         <div class="flex items-center gap-2">
-          <a href="/ai/about" class="btn-secondary text-sm">About</a>
           <div class="relative">
             <button id="burger-btn" class="burger-btn" aria-label="Menu" aria-expanded="false">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
@@ -76,32 +75,127 @@
       </header>
 
       <div class="mobile-tabs">
-        <a href="/ai" class="mobile-tab active">Assistant</a>
-        <a href="/ai/about" class="mobile-tab">About</a>
+        <button type="button" class="mobile-tab active" data-redsecai-view="main">Assistant</button>
+        <button type="button" class="mobile-tab" data-redsecai-view="about">About</button>
       </div>
 
       <div class="dashboard-main">
-        <section class="card wiki-toolbar-card redsecai-toolbar-card">
-          <div class="wiki-toolbar-copy">
-            <div class="wiki-toolbar-kicker">Local Assistant</div>
-            <h2 class="wiki-toolbar-heading">RedSecAI Workspace</h2>
-            <p class="wiki-toolbar-description">Use one clear request at a time. Mutating work is prepared as an action card and only applied after confirmation.</p>
-          </div>
-          <div class="wiki-toolbar-actions">
-            <a href="/ai/about" class="btn-secondary">Prompting Guide</a>
+        <section id="redsecai-view-main" class="redsecai-view">
+          <section class="card wiki-toolbar-card redsecai-toolbar-card">
+            <div class="wiki-toolbar-copy">
+              <div class="wiki-toolbar-kicker">Local Assistant</div>
+              <h2 class="wiki-toolbar-heading">RedSecAI Workspace</h2>
+              <p class="wiki-toolbar-description">Use one clear request at a time. Mutating work is prepared as an action card and only applied after confirmation.</p>
+            </div>
+            <div class="wiki-toolbar-actions">
+              <button type="button" class="btn-secondary" data-redsecai-view="about">Prompting Guide</button>
+            </div>
+          </section>
+
+          <main class="redsecai-page-shell">
+            <div data-redsecai-page></div>
+          </main>
+        </section>
+
+        <section id="redsecai-view-about" class="redsecai-view hidden">
+          <div class="max-w-5xl mx-auto space-y-6">
+            <div class="card">
+              <div class="flex items-center gap-3 mb-4">
+                <svg class="w-6 h-6 text-accent shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 4v-4z"/></svg>
+                <h2 class="text-lg font-semibold">What is RedSecAI?</h2>
+              </div>
+              <p class="text-secondary text-sm leading-relaxed">RedSecAI is a local or Ollama-backed assistant for RedSecTools. It can answer general questions, inspect scoped RedSecTools data through approved tools, and prepare platform actions for you to confirm. It runs under your logged-in session, so role permissions still apply.</p>
+            </div>
+
+            <div class="grid gap-6 lg:grid-cols-2">
+              <section class="card">
+                <div class="flex items-center gap-3 mb-4">
+                  <svg class="w-6 h-6 text-accent shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+                  <h2 class="text-lg font-semibold">What it can do</h2>
+                </div>
+                <ul class="space-y-3 text-sm text-secondary">
+                  <li><strong class="text-primary">Calendar and projects</strong> - read permitted schedules, find projects, prepare entries, allocations, reminders, leave, public holidays, and project changes.</li>
+                  <li><strong class="text-primary">Wiki</strong> - search pages, read page content, draft improvements, and prepare confirmation-gated page updates.</li>
+                  <li><strong class="text-primary">Threat intelligence</strong> - summarize alerts, feeds, keywords, tags, MITRE mappings, IOCs, and feed health from RedSecThreat data.</li>
+                  <li><strong class="text-primary">Reporter and surveys</strong> - help with permitted project metadata, findings, notes, comments, report sections, templates, survey metadata, and results.</li>
+                  <li><strong class="text-primary">Homepage operations</strong> - prepare permitted bulletin, shortcut, and tool-favourite changes.</li>
+                </ul>
+              </section>
+
+              <section class="card">
+                <div class="flex items-center gap-3 mb-4">
+                  <svg class="w-6 h-6 text-accent shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M5.07 19h13.86c1.54 0 2.5-1.67 1.73-3L13.73 4c-.77-1.33-2.69-1.33-3.46 0L3.34 16c-.77 1.33.19 3 1.73 3z"/></svg>
+                  <h2 class="text-lg font-semibold">What it cannot do</h2>
+                </div>
+                <ul class="space-y-3 text-sm text-secondary">
+                  <li><strong class="text-primary">No encrypted plaintext</strong> - it cannot read decrypted RedSecPaste, RedSecShare, RedSecTeam, or RedSecVault content.</li>
+                  <li><strong class="text-primary">No secrets access</strong> - it cannot see vault passwords, API keys, SSH keys, TOTP secrets, recovery codes, or browser-held encryption keys.</li>
+                  <li><strong class="text-primary">No RBAC bypass</strong> - it cannot perform actions your account is not allowed to perform.</li>
+                  <li><strong class="text-primary">No arbitrary backend access</strong> - it can only use the scoped AI tools exposed by RedSecTools.</li>
+                  <li><strong class="text-primary">No silent writes</strong> - create, update, delete, assign, publish, and scheduling actions require a confirmation card.</li>
+                </ul>
+              </section>
+            </div>
+
+            <div class="card">
+              <div class="flex items-center gap-3 mb-4">
+                <svg class="w-6 h-6 text-accent shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+                <h2 class="text-lg font-semibold">How tool use works</h2>
+              </div>
+              <div class="grid gap-3 md:grid-cols-3 text-sm">
+                <div class="info-box">
+                  <h3 class="font-semibold mb-2">1. Decide</h3>
+                  <p class="text-secondary">The model decides whether it needs RedSecTools data or can answer directly.</p>
+                </div>
+                <div class="info-box">
+                  <h3 class="font-semibold mb-2">2. Inspect</h3>
+                  <p class="text-secondary">Read-only tools can fetch scoped data, such as calendar state, wiki matches, or threat alerts.</p>
+                </div>
+                <div class="info-box">
+                  <h3 class="font-semibold mb-2">3. Confirm</h3>
+                  <p class="text-secondary">Write tools create an action card. The action is not applied until you confirm it.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="flex items-center gap-3 mb-4">
+                <svg class="w-6 h-6 text-accent shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+                <h2 class="text-lg font-semibold">Prompting for best results</h2>
+              </div>
+              <ul class="grid gap-3 md:grid-cols-2 text-sm text-secondary">
+                <li class="info-box"><strong class="text-primary">Ask for one action at a time.</strong><br>Find the target, prepare one change, confirm it, then ask for the next step.</li>
+                <li class="info-box"><strong class="text-primary">Refresh for unrelated work.</strong><br>Use the refresh control when switching from one topic or workflow to another.</li>
+                <li class="info-box"><strong class="text-primary">Name the target when you know it.</strong><br>Project names, wiki titles, alert tags, dates, and user names reduce ambiguity.</li>
+                <li class="info-box"><strong class="text-primary">Be explicit with dates.</strong><br>Say the year for backdated work or future months that could be ambiguous.</li>
+                <li class="info-box"><strong class="text-primary">Ask it to check first when unsure.</strong><br>For example, ask it to find matching projects or wiki pages before preparing changes.</li>
+                <li class="info-box"><strong class="text-primary">Verify important writes.</strong><br>After confirming an action card, ask it to check the created or updated record.</li>
+              </ul>
+            </div>
+
+            <div class="card">
+              <div class="flex items-center gap-3 mb-4">
+                <svg class="w-6 h-6 text-accent shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"/></svg>
+                <h2 class="text-lg font-semibold">Example prompts</h2>
+              </div>
+              <div class="grid gap-3 md:grid-cols-2 text-sm">
+                <div class="info-box">Check my calendar for tomorrow in Australia/Sydney and list scheduled entries with times.</div>
+                <div class="info-box">Search the wiki for pages mentioning password reset and summarize the matching page titles before editing anything.</div>
+                <div class="info-box">Find RedSecThreat alerts tagged Fortinet from the last 7 days and summarize severity, source, and IOCs.</div>
+                <div class="info-box">Prepare one bulletin that says "Maintenance window tonight", style it as a notice, and expire it at 9 pm today.</div>
+                <div class="info-box">Find the project named "External retest" and show its current schedule before preparing any allocation.</div>
+                <div class="info-box">After I confirm the action card, check the record and tell me whether the change actually applied.</div>
+              </div>
+            </div>
           </div>
         </section>
 
-        <main class="redsecai-page-shell">
-          <div data-redsecai-page></div>
-        </main>
-
-        <footer class="footer">&copy; <span class="current-year"></span> RedSec Offensive Security</footer>
       </div>
     </div>
   </div>
 
   <script type="module" src="/js/burger-menu.js"></script>
+  <script type="module" src="/js/redsecai-views.js"></script>
   <script type="module" src="/js/theme.js?v=20260508-ai-page"></script>
 </body>
 </html>

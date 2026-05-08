@@ -367,6 +367,9 @@ async function loadBootstrap() {
   populateAllocationAssigneeSelect();
   syncActionButtons();
   setCurrentView(state.currentView);
+  if (new URLSearchParams(window.location.search).get("view") === "about") {
+    setCurrentView("about");
+  }
 }
 
 async function loadStats() {
@@ -619,7 +622,7 @@ function countWorkdaysInVisibleRange() {
 
 function getEntriesForDay(entries, dayStart, dayEnd) {
   return entries
-    .filter((entry) => entry.startsAt <= dayEnd && entry.endsAt >= dayStart)
+    .filter((entry) => entry.startsAt >= dayStart && entry.startsAt <= dayEnd)
     .sort((left, right) => left.startsAt - right.startsAt);
 }
 
@@ -818,7 +821,7 @@ function renderScheduleGrid(entries, users, options = {}) {
       </div>
       ${days.map((day) => {
         const dayEntries = entries
-          .filter((entry) => entry.calendarUserId === user.id && entry.startsAt <= day.end && entry.endsAt >= day.start)
+          .filter((entry) => entry.calendarUserId === user.id && entry.startsAt >= day.start && entry.startsAt <= day.end)
           .sort((left, right) => left.startsAt - right.startsAt);
         return `
           <div class="calendar-day-cell">
@@ -1040,7 +1043,8 @@ function renderStatsView() {
 }
 
 function syncActionButtons() {
-  document.getElementById("calendar-main-toolbar")?.classList.toggle("hidden", state.currentView === "stats");
+  const hideMainToolbar = state.currentView === "stats" || state.currentView === "about";
+  document.getElementById("calendar-main-toolbar")?.classList.toggle("hidden", hideMainToolbar);
   document.getElementById("calendar-add-entry-btn")?.classList.toggle("hidden", !(state.capabilities.canCreate && state.currentView === "personal"));
   document.getElementById("calendar-add-project-btn")?.classList.toggle("hidden", !(state.capabilities.canManageProjects && state.currentView === "projects"));
   document.getElementById("calendar-add-allocation-btn")?.classList.toggle("hidden", !(state.capabilities.canCreate && (state.currentView === "projects" || state.currentView === "team")));
@@ -1541,6 +1545,7 @@ async function saveAllocation() {
     title: document.getElementById("calendar-allocation-title").value.trim(),
     description: document.getElementById("calendar-allocation-description").value.trim(),
     status: document.getElementById("calendar-allocation-status").value,
+    tzOffsetMinutes: -new Date().getTimezoneOffset(),
   };
 
   if (!payload.projectId) {

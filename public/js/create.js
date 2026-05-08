@@ -218,3 +218,16 @@ emailBtn.addEventListener("click", async () => {
   emailResult.classList.remove("hidden");
   emailBtn.disabled = false;
 });
+
+document.querySelectorAll("[data-paste-view]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const view = btn.dataset.pasteView;
+    document.querySelectorAll("[data-paste-view]").forEach((b) => b.classList.toggle("active", b.dataset.pasteView === view));
+    document.querySelectorAll(".paste-view").forEach((s) => s.classList.toggle("hidden", s.id !== "paste-view-" + view));
+  });
+});
+
+if (new URLSearchParams(window.location.search).get("view") === "about") {
+  document.querySelectorAll("[data-paste-view]").forEach((b) => b.classList.toggle("active", b.dataset.pasteView === "about"));
+  document.querySelectorAll(".paste-view").forEach((s) => s.classList.toggle("hidden", s.id !== "paste-view-about"));
+}

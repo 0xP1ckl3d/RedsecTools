@@ -192,6 +192,17 @@ function setCurrentView(view) {
     btn.classList.toggle("active", isActive);
   });
 
+  const isAbout = view === "about";
+  const aboutSection = document.getElementById("survey-view-about");
+  if (aboutSection) aboutSection.classList.toggle("hidden", !isAbout);
+
+  const toolbarCard = document.querySelector(".wiki-toolbar-card");
+  const mainGrid = document.querySelector(".wiki-main-grid");
+  if (toolbarCard) toolbarCard.classList.toggle("hidden", isAbout);
+  if (mainGrid) mainGrid.classList.toggle("hidden", isAbout);
+
+  if (isAbout) return;
+
   const labels = { all: "All Surveys", published: "Active Surveys", draft: "Draft Surveys", closed: "Ended & Closed Surveys" };
   const descs = {
     all: "Create, edit, and publish surveys with tokenized response links.",
@@ -1169,6 +1180,9 @@ async function init() {
   document.querySelectorAll("[data-survey-view]").forEach((btn) => {
     btn.addEventListener("click", () => setCurrentView(btn.dataset.surveyView));
   });
+  if (new URLSearchParams(window.location.search).get("view") === "about") {
+    setCurrentView("about");
+  }
 
   // New survey
   document.getElementById("survey-new-btn")?.addEventListener("click", createNewSurvey);

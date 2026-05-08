@@ -16,6 +16,7 @@ The current spec now includes the collaboration feature set introduced in the ap
 - RedSecSurvey create/manage/respond/results/export route groups
 - RedSecThreat bootstrap, read-only feed catalogue, user-scoped keyword/tag/alert management, personal notifications, admin-managed template/feed policy endpoints, and feed health route groups
 - RedSecReporter bootstrap, project/design/template/comment/PDF routes, target-scoped comments, versioned PDF deletion, and member-scoped project access rules
+- RedSecAI status, chat, and confirmation-gated action confirm/reject routes
 - RedSecShare upload/download routes plus live upload-config endpoints used by the app and extension
 
 Important:

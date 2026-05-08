@@ -240,6 +240,9 @@ async function init() {
   showCapableButtons();
   renderDashboard();
   bindNavigation();
+  if (new URLSearchParams(window.location.search).get("view") === "about") {
+    setCurrentView("about");
+  }
   bindModals();
   bindBuilder();
 }

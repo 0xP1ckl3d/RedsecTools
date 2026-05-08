@@ -11,7 +11,7 @@
 </head>
 <body>
   <div class="dashboard-layout threat-dashboard-shell">
-    <aside id="threat-sidebar" class="dashboard-sidebar">
+    <aside id="threat-sidebar" class="dashboard-sidebar collapsed">
       <button type="button" id="threat-sidebar-collapse-btn" class="sidebar-collapse-btn" title="Collapse sidebar">
         <svg class="sidebar-collapse-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
       </button>
@@ -54,6 +54,13 @@
           <span class="sidebar-nav-text">Logs</span>
         </button>
       </nav>
+      <div class="sidebar-divider"></div>
+      <nav class="sidebar-nav">
+        <button type="button" class="sidebar-nav-item" data-threat-view="about">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M12 20.5a8.5 8.5 0 100-17 8.5 8.5 0 000 17z"/></svg>
+          <span class="sidebar-nav-text">About</span>
+        </button>
+      </nav>
     </aside>
 
     <div class="dashboard-content">
@@ -88,6 +95,7 @@
         <button type="button" class="mobile-tab" data-threat-view="feeds">Feeds</button>
         <button type="button" class="mobile-tab" data-threat-view="keywords">Keywords</button>
         <button type="button" class="mobile-tab" data-threat-view="logs">Logs</button>
+        <button type="button" class="mobile-tab" data-threat-view="about">About</button>
       </div>
 
       <div class="dashboard-main">
@@ -421,9 +429,36 @@
           </div>
         </section>
 
-        <footer class="footer">
-          <p>&copy; <span id="footer-year"></span> <a href="/" class="text-accent hover:underline">RedSec</a> Offensive Security &mdash; RedSecThreat</p>
-        </footer>
+        <!-- ===== ABOUT VIEW ===== -->
+        <section id="threat-view-about" class="threat-dashboard-view hidden">
+          <div class="card max-w-3xl mx-auto space-y-4 text-sm">
+            <p>RedSecThreat is the threat intelligence monitor for RedSecTools. It continuously collects and analyses data from configurable feed sources, watching for keywords and patterns that matter to your security operations.</p>
+            <p>Feeds are ingested from RSS, APIs, websites, and onion services. Each feed is monitored on a configurable schedule and scanned against keyword rules supporting both plain text and regular expression matching. Matched results are enriched with automatic IOC extraction and assigned criticality levels for triage.</p>
+            <p>Alerts route through configurable notification channels including webhooks, email, and Discord integrations. Tags provide a flexible organising layer across feeds, keywords, and alerts for filtering and reporting.</p>
+            <div class="flex flex-wrap gap-2">
+              <span class="badge badge-red">Feed Monitoring</span>
+              <span class="badge badge-red">Keyword Alerts</span>
+              <span class="badge badge-red">IOC Extraction</span>
+              <span class="badge badge-red">Notifications</span>
+              <span class="badge badge-gray">RSS</span>
+              <span class="badge badge-gray">API</span>
+              <span class="badge badge-gray">Website</span>
+              <span class="badge badge-gray">Onion</span>
+              <span class="badge badge-gray">Tags</span>
+            </div>
+            <h2 class="text-lg font-semibold mt-6">Feed Sources</h2>
+            <p>Configure feed sources from RSS feeds, websites, REST APIs, and Tor onion services. Each source runs on its own polling schedule and normalises content into a unified stream for keyword scanning.</p>
+            <h2 class="text-lg font-semibold mt-6">Keyword Monitoring</h2>
+            <p>Define keyword rules using plain text matching or full regular expression patterns. Rules are evaluated against every ingested item and grouped into logical sets for targeted alerting.</p>
+            <h2 class="text-lg font-semibold">Alert System</h2>
+            <p>Matched items generate alerts with assigned criticality levels and automatic IOC extraction for IPs, domains, hashes, URLs, and email addresses. Alerts are deduplicated and correlated across feeds to reduce noise.</p>
+            <h2 class="text-lg font-semibold">Notifications</h2>
+            <p>Route alerts to the right people through webhook, email, and Discord notification channels. Each channel can be filtered by criticality level, feed source, or keyword match set.</p>
+            <h2 class="text-lg font-semibold">Tags</h2>
+            <p>Apply tags to feeds, keywords, and alerts for cross-cutting organisation. Filter dashboards and reports by tag to focus on specific threat categories, campaigns, or operational contexts.</p>
+          </div>
+        </section>
+
       </div>
     </div>
   </div>

@@ -11,7 +11,7 @@
 </head>
 <body>
   <div class="dashboard-layout survey-dashboard-shell">
-    <aside id="survey-sidebar" class="dashboard-sidebar">
+    <aside id="survey-sidebar" class="dashboard-sidebar collapsed">
       <button type="button" id="survey-sidebar-collapse-btn" class="sidebar-collapse-btn" title="Collapse sidebar">
         <svg class="sidebar-collapse-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
       </button>
@@ -32,6 +32,14 @@
         <button type="button" class="sidebar-nav-item" data-survey-view="closed">
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/></svg>
           <span class="sidebar-nav-text">Closed</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-divider"></div>
+      <nav class="sidebar-nav">
+        <button type="button" class="sidebar-nav-item" data-survey-view="about">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M12 20.5a8.5 8.5 0 100-17 8.5 8.5 0 000 17z"/></svg>
+          <span class="sidebar-nav-text">About</span>
         </button>
       </nav>
 
@@ -87,6 +95,7 @@
         <button type="button" class="mobile-tab" data-survey-view="published">Active</button>
         <button type="button" class="mobile-tab" data-survey-view="draft">Drafts</button>
         <button type="button" class="mobile-tab" data-survey-view="closed">Closed</button>
+        <button type="button" class="mobile-tab" data-survey-view="about">About</button>
       </div>
 
       <div class="dashboard-main">
@@ -137,7 +146,19 @@
           </aside>
         </div>
 
-        <footer class="footer">&copy; <span class="current-year"></span> RedSec Offensive Security</footer>
+        <section id="survey-view-about" class="hidden">
+          <div class="card max-w-3xl mx-auto space-y-4 text-sm">
+            <p>RedSecSurvey is a full-featured survey tool within RedSecTools. Create surveys with a visual question builder, share tokenized response links, and analyze detailed per-question results with CSV export.</p>
+            <p>Features include: visual question builder with drag-to-reorder, seven question types (short text, long text, single/multiple choice, rating, yes/no, dropdown), one-question-at-a-time response flow, draft/publish/close lifecycle, timeline enforcement with time picker, named or anonymous response modes, detailed analytics with per-question breakdowns, response timeline charts, individual response viewer, and CSV export.</p>
+            <div class="flex gap-2">
+              <span class="badge badge-red">Visual Builder</span>
+              <span class="badge badge-red">Analytics</span>
+              <span class="badge badge-red">Token Links</span>
+              <span class="badge badge-red">Stepper Flow</span>
+            </div>
+          </div>
+        </section>
+
       </div>
     </div>
   </div>

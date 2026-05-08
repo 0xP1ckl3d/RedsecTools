@@ -11,7 +11,7 @@
 </head>
 <body>
   <div class="dashboard-layout reporter-dashboard-shell">
-    <aside id="reporter-sidebar" class="dashboard-sidebar">
+    <aside id="reporter-sidebar" class="dashboard-sidebar collapsed">
       <button type="button" id="reporter-sidebar-collapse-btn" class="sidebar-collapse-btn" title="Collapse sidebar">
         <svg class="sidebar-collapse-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
       </button>
@@ -32,6 +32,14 @@
         <button type="button" class="sidebar-nav-item" data-reporter-view="templates">
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
           <span class="sidebar-nav-text">Templates</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-divider"></div>
+      <nav class="sidebar-nav">
+        <button type="button" class="sidebar-nav-item" data-reporter-view="about">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M12 20.5a8.5 8.5 0 100-17 8.5 8.5 0 000 17z"/></svg>
+          <span class="sidebar-nav-text">About</span>
         </button>
       </nav>
     </aside>
@@ -65,6 +73,7 @@
         <button type="button" class="mobile-tab" data-reporter-view="projects">Projects</button>
         <button type="button" class="mobile-tab" data-reporter-view="designs">Designs</button>
         <button type="button" class="mobile-tab" data-reporter-view="templates">Templates</button>
+        <button type="button" class="mobile-tab" data-reporter-view="about">About</button>
       </div>
 
       <div class="dashboard-main">
@@ -451,6 +460,33 @@
           </div>
         </section>
 
+        <section id="reporter-view-about" class="reporter-view hidden">
+          <div class="card max-w-3xl mx-auto space-y-4 text-sm">
+            <p>RedSecReporter is the pentest reporting and findings management tool for RedSecTools. It provides a structured workflow for creating penetration test reports, managing security findings, and generating professional deliverables.</p>
+            <p>Projects are built on customisable report designs that define the section layout, finding fields, and output format. Each project supports team collaboration with role-based access for leads, pentesters, and reviewers. Findings are tracked through a full lifecycle from draft to approval with severity classification and optional CVSS scoring.</p>
+            <p>A shared finding template library lets teams reuse and standardise common vulnerability descriptions. Report sections support rich text editing for executive summaries, scope definitions, methodology descriptions, and custom content.</p>
+            <div class="flex flex-wrap gap-2">
+              <span class="badge badge-red">Pentest Reports</span>
+              <span class="badge badge-red">Findings Management</span>
+              <span class="badge badge-red">CVSS Scoring</span>
+              <span class="badge badge-red">PDF Generation</span>
+              <span class="badge badge-gray">Team Collaboration</span>
+              <span class="badge badge-gray">Template Library</span>
+              <span class="badge badge-gray">Report Designs</span>
+            </div>
+            <h2 class="text-lg font-semibold mt-6">Projects</h2>
+            <p>Create pentest projects from report designs. Assign team members with defined roles, set due dates, and track project status through draft, review, approval, and delivery stages. Duplicate completed projects to reuse structure for similar engagements.</p>
+            <h2 class="text-lg font-semibold mt-6">Findings</h2>
+            <p>Document security findings with structured fields including description, attack scenario, remediation guidance, and references. Each finding is classified by severity with optional CVSS vector scoring. Findings flow through a review pipeline from draft to approved, supporting retest tracking and client-ready status.</p>
+            <h2 class="text-lg font-semibold">Report Designs</h2>
+            <p>Define report templates with custom section layouts, finding field schemas, and output formatting. Designs control which fields are available, how findings are ordered and grouped, and the overall report structure. Multiple designs support different engagement types such as external, internal, web application, and red team assessments.</p>
+            <h2 class="text-lg font-semibold">Finding Templates</h2>
+            <p>Build a shared library of common findings with pre-written descriptions, severity defaults, and remediation guidance. Templates speed up finding creation and ensure consistency across engagements and team members.</p>
+            <h2 class="text-lg font-semibold">Sections</h2>
+            <p>Create structured report sections for executive summaries, scope definitions, methodology descriptions, and custom content. Sections are ordered independently and can be included or excluded from the final report.</p>
+          </div>
+        </section>
+
       </div>
     </div>
   </div>
@@ -467,6 +503,7 @@
     </div>
   </div>
 
+  <script type="module" src="/js/burger-menu.js"></script>
   <script type="module" src="/js/reporter.js"></script>
 </body>
 </html>
