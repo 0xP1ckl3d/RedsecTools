@@ -3953,6 +3953,24 @@ html.light {
   background: var(--accent-soft);
 }
 
+.wiki-tree-row.wiki-dragging {
+  opacity: 0.4;
+}
+
+.wiki-tree-row.wiki-drop-before {
+  border-top: 2px solid var(--accent);
+}
+
+.wiki-tree-row.wiki-drop-after {
+  border-bottom: 2px solid var(--accent);
+}
+
+.wiki-tree-row.wiki-drop-inside {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  background: var(--accent-soft);
+}
+
 .wiki-tree-item-title,
 .wiki-result-title {
   display: block;

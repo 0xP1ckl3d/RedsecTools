@@ -1729,6 +1729,7 @@ const stmts = {
     WHERE id = @id
   `),
   deleteWikiPage: db.prepare("DELETE FROM wiki_pages WHERE id = ?"),
+  reorderWikiPage: db.prepare("UPDATE wiki_pages SET parent_page_id = @parentPageId, sort_order = @sortOrder, updated_at = unixepoch() WHERE id = @id"),
   deleteWikiRevisionByPageId: db.prepare("DELETE FROM wiki_page_revisions WHERE page_id = ?"),
   getWikiPageById: db.prepare(`
     SELECT wp.*,
@@ -4494,6 +4495,16 @@ function updateWikiPage(payload) {
   });
 }
 
+function reorderWikiPages(items) {
+  for (const item of items) {
+    stmts.reorderWikiPage.run({
+      id: item.id,
+      parentPageId: item.parentPageId || null,
+      sortOrder: Number(item.sortOrder ?? 0),
+    });
+  }
+}
+
 function getWikiPageById(id) {
   const row = stmts.getWikiPageById.get(id);
   return row ? mapWikiPageRow(row) : null;
@@ -7008,6 +7019,7 @@ module.exports = {
   // Wiki
   createWikiPage,
   updateWikiPage,
+  reorderWikiPages,
   getWikiPageById,
   getWikiPageBySlug,
   listWikiPages,

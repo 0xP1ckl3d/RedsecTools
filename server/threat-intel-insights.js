@@ -232,7 +232,7 @@ const MITRE_RULES = [
   },
   {
     tacticId: "TA0005",
-    tactic: "Defense Evasion",
+    tactic: "Stealth",
     techniqueId: "T1027",
     technique: "Obfuscated Files or Information",
     patterns: [/obfuscat(ed|ion)/i, /packed payload/i, /encoded payload/i, /base64[-\s]?encoded/i],
@@ -442,23 +442,33 @@ function buildMitreCorpus(alert) {
   ].map(safeString).join("\n");
 }
 
+function escapeRegex(str) {
+  return String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function wordBoundaryTest(term, corpus) {
+  return new RegExp(`\\b${escapeRegex(term)}\\b`, "i").test(corpus);
+}
+
 function deriveMitreMatches(alert) {
   const corpus = buildMitreCorpus(alert);
   if (!corpus.trim()) return [];
-  const normalizedCorpus = corpus.toLowerCase();
   const matches = [];
   const seen = new Set();
+  const seenNames = new Set();
   const addMatch = (match) => {
-    const key = `${match.tacticId || ""}:${match.techniqueId || ""}`;
+    const key = match.techniqueId || match.tacticId;
     if (seen.has(key)) return;
+    if (match.technique && seenNames.has(match.technique.toLowerCase())) return;
     seen.add(key);
+    if (match.technique) seenNames.add(match.technique.toLowerCase());
     matches.push(match);
   };
   for (const rule of MITRE_RULES) {
-    const explicitTechnique = normalizedCorpus.includes(rule.techniqueId.toLowerCase())
-      || normalizedCorpus.includes(rule.technique.toLowerCase());
-    const explicitTactic = normalizedCorpus.includes(rule.tacticId.toLowerCase())
-      || normalizedCorpus.includes(rule.tactic.toLowerCase());
+    const explicitTechnique = wordBoundaryTest(rule.techniqueId, corpus)
+      || (rule.technique.length >= 4 && wordBoundaryTest(rule.technique, corpus));
+    const explicitTactic = wordBoundaryTest(rule.tacticId, corpus)
+      || wordBoundaryTest(rule.tactic, corpus);
     if (!explicitTechnique && !explicitTactic && !rule.patterns.some((pattern) => pattern.test(corpus))) continue;
     addMatch({
       tacticId: rule.tacticId,
@@ -468,22 +478,19 @@ function deriveMitreMatches(alert) {
     });
   }
   for (const technique of MITRE_ENTERPRISE_CATALOGUE.techniques) {
-    const explicitTechnique = normalizedCorpus.includes(technique.techniqueId.toLowerCase())
-      || normalizedCorpus.includes(technique.technique.toLowerCase());
+    const explicitTechnique = wordBoundaryTest(technique.techniqueId, corpus)
+      || (technique.technique.length >= 4 && wordBoundaryTest(technique.technique, corpus));
     if (!explicitTechnique) continue;
-    technique.tacticIds.forEach((tacticId, index) => {
-      addMatch({
-        tacticId,
-        tactic: technique.tactics[index] || tacticId,
-        techniqueId: technique.techniqueId,
-        technique: technique.technique,
-      });
+    addMatch({
+      tacticId: technique.tacticIds[0],
+      tactic: technique.tactics[0] || technique.tacticIds[0],
+      techniqueId: technique.techniqueId,
+      technique: technique.technique,
     });
   }
   for (const tactic of MITRE_ENTERPRISE_CATALOGUE.tactics) {
-    const explicitTactic = normalizedCorpus.includes(tactic.tacticId.toLowerCase())
-      || normalizedCorpus.includes(tactic.tactic.toLowerCase())
-      || (MITRE_TACTIC_ALIASES.get(tactic.tacticId) || []).some((alias) => normalizedCorpus.includes(alias));
+    const explicitTactic = wordBoundaryTest(tactic.tacticId, corpus)
+      || wordBoundaryTest(tactic.tactic, corpus);
     if (explicitTactic) {
       addMatch({
         tacticId: tactic.tacticId,

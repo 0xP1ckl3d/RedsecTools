@@ -145,7 +145,7 @@ function buildTreeHtml(pages, parentId = null, depth = 0) {
     const collapsed = hasChildren && state.collapsedNodes.has(page.id);
     return `
       <div class="wiki-tree-node" data-node-id="${escapeHtml(page.id)}">
-        <div class="wiki-tree-row wiki-tree-depth-${Math.min(depth, 6)}">
+        <div class="wiki-tree-row wiki-tree-depth-${Math.min(depth, 6)}" draggable="true" data-node-id="${escapeHtml(page.id)}" data-parent-id="${escapeHtml(page.parentPageId || "")}" data-sort-order="${page.sortOrder || 0}">
           <button type="button"
             class="wiki-tree-toggle${hasChildren ? "" : " wiki-tree-leaf"}"
             data-toggle-id="${escapeHtml(page.id)}"
@@ -260,6 +260,129 @@ function renderPrimaryList() {
       }
     });
   });
+
+  initTreeDragDrop(body);
+}
+
+function initTreeDragDrop(body) {
+  let dragNodeId = null;
+  let dropIndicator = null;
+
+  body.addEventListener("dragstart", (e) => {
+    const row = e.target.closest(".wiki-tree-row[draggable]");
+    if (!row) return e.preventDefault();
+    dragNodeId = row.dataset.nodeId;
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", dragNodeId);
+    row.closest(".wiki-tree-node").classList.add("wiki-dragging");
+  });
+
+  body.addEventListener("dragend", () => {
+    if (dragNodeId) {
+      const node = body.querySelector(`[data-node-id="${CSS.escape(dragNodeId)}"].wiki-tree-node`);
+      if (node) node.classList.remove("wiki-dragging");
+    }
+    dragNodeId = null;
+    clearDropIndicators(body);
+  });
+
+  body.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    const row = e.target.closest(".wiki-tree-row[draggable]");
+    if (!row || row.dataset.nodeId === dragNodeId) return;
+
+    clearDropIndicators(body);
+
+    const rect = row.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    const h = rect.height;
+
+    if (y < h * 0.25) {
+      row.classList.add("wiki-drop-before");
+      dropIndicator = "before";
+    } else if (y > h * 0.75) {
+      row.classList.add("wiki-drop-after");
+      dropIndicator = "after";
+    } else {
+      row.classList.add("wiki-drop-inside");
+      dropIndicator = "inside";
+    }
+  });
+
+  body.addEventListener("dragleave", (e) => {
+    const row = e.target.closest(".wiki-tree-row[draggable]");
+    if (row && !row.contains(e.relatedTarget)) {
+      row.classList.remove("wiki-drop-before", "wiki-drop-after", "wiki-drop-inside");
+    }
+  });
+
+  body.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    const targetRow = e.target.closest(".wiki-tree-row[draggable]");
+    if (!targetRow || !dragNodeId || !dropIndicator) return;
+
+    const targetId = targetRow.dataset.nodeId;
+    if (targetId === dragNodeId) return;
+
+    const pages = getPagesForScope(getCurrentWorkspaceScope());
+    const draggedPage = pages.find((p) => p.id === dragNodeId);
+    if (!draggedPage) return;
+
+    const descendantIds = getDescendantIds(dragNodeId, getCombinedPages(), new Set([dragNodeId]));
+    if (descendantIds.has(targetId)) return;
+
+    const targetPage = pages.find((p) => p.id === targetId);
+    if (!targetPage) return;
+
+    let newParentId, newSortOrder;
+
+    if (dropIndicator === "inside") {
+      newParentId = targetId;
+      const children = pages.filter((p) => (p.parentPageId || null) === targetId);
+      newSortOrder = children.length ? Math.max(...children.map((p) => p.sortOrder || 0)) + 1 : 0;
+    } else {
+      newParentId = targetPage.parentPageId || null;
+      const siblings = pages.filter((p) => (p.parentPageId || null) === newParentId && p.id !== dragNodeId);
+      const targetSort = targetPage.sortOrder || 0;
+
+      if (dropIndicator === "before") {
+        newSortOrder = targetSort;
+        siblings.filter((p) => (p.sortOrder || 0) >= targetSort).forEach((p) => p._bumpSort = true);
+      } else {
+        newSortOrder = targetSort + 1;
+        siblings.filter((p) => (p.sortOrder || 0) > targetSort).forEach((p) => p._bumpSort = true);
+      }
+    }
+
+    const items = [{ id: dragNodeId, parentPageId: newParentId, sortOrder: newSortOrder }];
+    pages.forEach((p) => {
+      if (p._bumpSort) {
+        items.push({ id: p.id, parentPageId: p.parentPageId || null, sortOrder: (p.sortOrder || 0) + 1 });
+        delete p._bumpSort;
+      }
+    });
+
+    clearDropIndicators(body);
+
+    try {
+      await fetchJson("/api/wiki/pages/reorder", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items }),
+      });
+      await loadBootstrap(dragNodeId);
+    } catch (error) {
+      console.error("Wiki reorder failed:", error);
+    }
+  });
+}
+
+function clearDropIndicators(body) {
+  body.querySelectorAll(".wiki-drop-before, .wiki-drop-after, .wiki-drop-inside").forEach((el) => {
+    el.classList.remove("wiki-drop-before", "wiki-drop-after", "wiki-drop-inside");
+  });
+  dropIndicator = null;
 }
 
 function buildBreadcrumbs(page) {

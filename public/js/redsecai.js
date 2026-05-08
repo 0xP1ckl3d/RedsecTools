@@ -408,7 +408,13 @@ async function initRedSecAI() {
         card.remove();
       } catch (error) {
         confirmBtn.disabled = false;
-        if (error.stale) card.remove();
+        if (error.stale) {
+          card.remove();
+          const staleMessage = { role: "assistant", content: error.message || "This RedSecAI action is no longer pending." };
+          messages.push(staleMessage);
+          saveMessages(messages);
+          appendMessage(messagesEl, staleMessage);
+        }
         if (resultEl) {
           resultEl.className = "redsecai-action-result error";
           resultEl.textContent = error.message || "Action failed.";
@@ -441,7 +447,24 @@ async function initRedSecAI() {
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
-  function renderActionCards(actions = []) {
+  function removeActionCard(actionId) {
+    if (!actionId) return;
+    pendingActions.delete(actionId);
+    pendingActionIds.delete(actionId);
+    const card = messagesEl.querySelector(`.redsecai-action-card[data-action-id="${CSS.escape(actionId)}"]`);
+    if (card) card.remove();
+  }
+
+  function renderActionCards(actions = [], options = {}) {
+    if (options.replace) {
+      const liveIds = new Set(actions.map((action) => action?.id).filter(Boolean));
+      [...pendingActions.keys()].forEach((actionId) => {
+        if (!liveIds.has(actionId)) removeActionCard(actionId);
+      });
+      [...messagesEl.querySelectorAll(".redsecai-action-card")].forEach((card) => {
+        if (!liveIds.has(card.dataset.actionId)) card.remove();
+      });
+    }
     let newActionCount = 0;
     actions.forEach((action) => {
       if (action?.id && !completedActionIds.has(action.id)) {
@@ -459,6 +482,20 @@ async function initRedSecAI() {
 
   async function confirmAction(action) {
     if (!action?.id) throw new Error("No pending action selected.");
+    const latest = await checkStatus();
+    if (Array.isArray(latest?.pendingActions)) {
+      renderActionCards(latest.pendingActions, { replace: true });
+      const liveAction = latest.pendingActions.find((item) => item.id === action.id);
+      if (!liveAction) {
+        const error = new Error("This RedSecAI action is no longer pending. Please ask RedSecAI to prepare it again.");
+        error.stale = true;
+        completedActionIds.add(action.id);
+        removeActionCard(action.id);
+        syncAlertBadge();
+        throw error;
+      }
+      action = liveAction;
+    }
     const res = await fetch(`/api/ai/actions/${encodeURIComponent(action.id)}/confirm`, {
       method: "POST",
       headers: { accept: "application/json" },
@@ -469,15 +506,13 @@ async function initRedSecAI() {
       error.stale = res.status === 404 || /not found|expired/i.test(error.message);
       if (error.stale) {
         completedActionIds.add(action.id);
-        pendingActions.delete(action.id);
-        pendingActionIds.delete(action.id);
+        removeActionCard(action.id);
         syncAlertBadge();
       }
       throw error;
     }
     completedActionIds.add(action.id);
-    pendingActions.delete(action.id);
-    pendingActionIds.delete(action.id);
+    removeActionCard(action.id);
     syncAlertBadge();
     return body;
   }
@@ -494,15 +529,13 @@ async function initRedSecAI() {
       error.stale = res.status === 404 || /not found|expired/i.test(error.message);
       if (error.stale) {
         completedActionIds.add(action.id);
-        pendingActions.delete(action.id);
-        pendingActionIds.delete(action.id);
+        removeActionCard(action.id);
         syncAlertBadge();
       }
       throw error;
     }
     completedActionIds.add(action.id);
-    pendingActions.delete(action.id);
-    pendingActionIds.delete(action.id);
+    removeActionCard(action.id);
     syncAlertBadge();
     return body;
   }
@@ -584,13 +617,18 @@ async function initRedSecAI() {
     },
   });
 
-  renderActionCards(status.pendingActions || []);
+  renderActionCards(status.pendingActions || [], { replace: true });
 
   launcher.addEventListener("click", () => {
     panel.classList.toggle("hidden");
     if (!panel.classList.contains("hidden")) {
       clearUnread();
-      renderActionCards([...pendingActions.values()]);
+      checkStatus()
+        .then((latest) => {
+          if (Array.isArray(latest?.pendingActions)) renderActionCards(latest.pendingActions, { replace: true });
+          else renderActionCards([...pendingActions.values()]);
+        })
+        .catch(() => renderActionCards([...pendingActions.values()]));
       input.focus();
     } else {
       syncAlertBadge();

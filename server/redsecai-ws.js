@@ -4,7 +4,7 @@ const { WebSocketServer } = require("ws");
 const cookieParser = require("cookie-parser");
 const crypto = require("crypto");
 const { getSession, getRolePermissionsByUserId, getUserById } = require("./database");
-const { normalizeMessages, prepareRedSecAiTurn } = require("./modules/redsecai/orchestrator");
+const { guardRedSecAiFinalResponse, normalizeMessages, prepareRedSecAiTurn } = require("./modules/redsecai/orchestrator");
 const provider = require("./modules/redsecai/provider");
 const { filterPendingActionsForUser } = require("./modules/redsecai/actions");
 const { logEvent, logWarn } = require("./core/logger");
@@ -187,13 +187,12 @@ async function startJob(ws, auth, msg) {
       });
     }
 
-    emitStatus({ phase: "final_stream", label: "Writing the response" });
-    for await (const chunk of provider.chatStream(turn.finalMessages, { phase: "final_stream" })) {
-      job.buffer += chunk;
-      job.updatedAt = Date.now();
-      trimBuffer(job);
-      broadcastToUser(auth.user.id, { type: "redsecai_delta", jobId, delta: chunk });
-    }
+    emitStatus({ phase: "final_answer", label: "Writing the response" });
+    const rawResponse = await provider.chat(turn.finalMessages, { phase: "final_answer" });
+    job.buffer = guardRedSecAiFinalResponse(rawResponse, turn);
+    job.updatedAt = Date.now();
+    trimBuffer(job);
+    broadcastToUser(auth.user.id, { type: "redsecai_delta", jobId, delta: job.buffer });
     job.done = true;
     job.updatedAt = Date.now();
     if (turn.pendingActions?.length) {

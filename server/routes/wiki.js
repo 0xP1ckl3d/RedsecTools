@@ -6,6 +6,7 @@ const { attachUserAccess } = require("../middleware/permissions");
 const {
   createWikiPage,
   updateWikiPage,
+  reorderWikiPages,
   getWikiPageById,
   getWikiPageBySlug,
   listWikiPages,
@@ -389,6 +390,23 @@ router.delete("/wiki/pages/:id", writeLimiter, requireUser, attachUserAccess, (r
   }
 
   deleteWikiPageById(page.id);
+  res.json({ success: true });
+});
+
+router.patch("/wiki/pages/reorder", writeLimiter, requireUser, attachUserAccess, (req, res) => {
+  const items = Array.isArray(req.body?.items) ? req.body.items : [];
+  if (!items.length) return res.status(400).json({ error: "No items to reorder" });
+  if (items.length > 50) return res.status(400).json({ error: "Too many items" });
+
+  for (const item of items) {
+    if (typeof item.id !== "string" || !item.id) return res.status(400).json({ error: "Each item requires a valid id" });
+    if (typeof item.sortOrder !== "number") return res.status(400).json({ error: "Each item requires a numeric sortOrder" });
+    const page = getWikiPageById(item.id);
+    if (!page || !canViewPage(req, page)) return res.status(404).json({ error: `Page ${item.id} not found` });
+    if (!canEditPage(req, page, getWikiSettings())) return res.status(403).json({ error: `Cannot reorder page ${item.id}` });
+  }
+
+  reorderWikiPages(items);
   res.json({ success: true });
 });
 
