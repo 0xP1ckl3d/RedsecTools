@@ -12,6 +12,7 @@ const TOOL_LINKS = [
   { href: "/wiki", label: "RedSecWiki", key: "wiki" },
   { href: "/threat", label: "RedSecThreat", key: "threat" },
   { href: "/reporter", label: "RedSecReporter", key: "reporter" },
+  { href: "/ai", label: "RedSecAI", aiOnly: true },
 ];
 
 // Contextual about links based on current page path
@@ -26,6 +27,7 @@ const ABOUT_LINKS = [
   { pathPrefix: "/wiki", href: "/wiki/about", label: "About this tool" },
   { pathPrefix: "/threat", href: "/threat/about", label: "About this tool" },
   { pathPrefix: "/reporter", href: "/reporter/about", label: "About this tool" },
+  { pathPrefix: "/ai", href: "/ai/about", label: "About RedSecAI" },
 ];
 
 export function initBurgerMenu() {
@@ -34,7 +36,7 @@ export function initBurgerMenu() {
 
   if (!btn || !nav) return;
 
-  injectLinks(nav, []);
+  injectLinks(nav, [], { aiEnabled: false });
 
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -61,10 +63,13 @@ export function initBurgerMenu() {
   addAuthLinks(nav);
 }
 
-function injectLinks(nav, allowedToolKeys) {
+function injectLinks(nav, allowedToolKeys, options = {}) {
   let html = '<a href="/">Home</a>';
   const allowed = new Set(allowedToolKeys || []);
-  const visibleTools = TOOL_LINKS.filter((link) => !link.key || !allowed.size || allowed.has(link.key));
+  const visibleTools = TOOL_LINKS.filter((link) => {
+    if (link.aiOnly) return !!options.aiEnabled;
+    return !link.key || !allowed.size || allowed.has(link.key);
+  });
 
   if (visibleTools.length) {
     html += '<div class="burger-divider"></div>';
@@ -92,7 +97,17 @@ async function addAuthLinks(nav) {
   try {
     const res = await fetch("/api/auth/me");
     const data = await res.json();
-    injectLinks(nav, (data.availableTools || []).map((tool) => tool.key));
+    let aiEnabled = false;
+    if (data.authenticated && !data.guest) {
+      try {
+        const aiRes = await fetch("/api/ai/status", { headers: { accept: "application/json" } });
+        const aiStatus = await aiRes.json().catch(() => ({}));
+        aiEnabled = aiRes.ok && aiStatus.enabled !== false;
+      } catch (_) {
+        aiEnabled = false;
+      }
+    }
+    injectLinks(nav, (data.availableTools || []).map((tool) => tool.key), { aiEnabled });
 
     const divider = document.createElement("div");
     divider.className = "burger-divider";

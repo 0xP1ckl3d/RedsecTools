@@ -130,8 +130,8 @@ const EXTRA_TOOL_INPUT_SCHEMAS = Object.freeze({
       body: {
         type: "object",
         properties: {
-          title: { type: "string" },
-          url: { type: "string" },
+          title: { type: "string", description: "Shortcut display title. Required." },
+          url: { type: "string", description: "Shortcut target URL. Must start with /, http://, or https://. Required." },
           icon: { type: "string" },
           icon_url: { type: "string" },
           description: { type: "string" },
@@ -853,7 +853,7 @@ const EXTRA_TOOL_ALLOWLIST = Object.freeze({
   "homepage.settings": { method: "GET", path: "/api/homepage/settings", allowAuthenticated: true, capability: "homepage.read", description: "Read the logged-in user's homepage layout settings." },
   "homepage.settings.update": { method: "PUT", path: "/api/homepage/settings", allowAuthenticated: true, capability: "homepage.write", confirmRequired: true, description: "Update the logged-in user's homepage layout settings after confirmation." },
   "homepage.shortcuts": { method: "GET", path: "/api/homepage/shortcuts", allowAuthenticated: true, capability: "homepage.read", description: "List personal and team shortcuts visible on the homepage." },
-  "homepage.shortcut.create": { method: "POST", path: "/api/homepage/shortcuts", allowAuthenticated: true, capability: "homepage.write", confirmRequired: true, description: "Create a personal homepage shortcut after confirmation." },
+  "homepage.shortcut.create": { method: "POST", path: "/api/homepage/shortcuts", allowAuthenticated: true, capability: "homepage.write", confirmRequired: true, description: "Create a personal homepage shortcut after confirmation. Requires only body.title and body.url; do not ask for a workspace when the user provides both." },
   "homepage.shortcut.update": { method: "PUT", path: "/api/homepage/shortcuts/:id", allowAuthenticated: true, capability: "homepage.write", confirmRequired: true, description: "Update a personal homepage shortcut after confirmation." },
   "homepage.shortcut.delete": { method: "DELETE", path: "/api/homepage/shortcuts/:id", allowAuthenticated: true, capability: "homepage.write", confirmRequired: true, description: "Delete a personal homepage shortcut after confirmation." },
   "homepage.shortcut.favourite": { method: "PUT", path: "/api/homepage/shortcuts/:id/favourite", allowAuthenticated: true, capability: "homepage.write", confirmRequired: true, description: "Toggle a homepage shortcut favourite after confirmation." },

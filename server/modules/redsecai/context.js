@@ -824,6 +824,17 @@ function getRedSecAiActionValidationError(toolName, args = {}) {
       return "Wiki page bodyMarkdown cannot be empty";
     }
   }
+  if (toolName === "homepage.shortcut.create") {
+    const title = String(body.title || "").trim();
+    const url = String(body.url || "").trim();
+    if (!title) return "Shortcut creation requires a title";
+    if (title.length > 100) return "Shortcut title must be 100 characters or less";
+    if (!url) return "Shortcut creation requires a URL";
+    if (url.length > 500) return "Shortcut URL must be 500 characters or less";
+    if (!url.startsWith("/") && !/^https?:\/\//i.test(url)) {
+      return "Shortcut URL must start with /, http://, or https://";
+    }
+  }
   if (toolName === "calendar.entry.create") {
     if (!String(body.title || "").trim()) return "Calendar entry creation requires a title";
     const startsAt = Number(body.startsAt);
@@ -1474,8 +1485,11 @@ function deriveRedSecAiToolCalls(message, access) {
   )) {
     calls.push({ tool: "survey.list", args: {} });
   }
+  if (access?.userId && /\b(homepage|shortcut|shortcuts|favourite|favorite)\b/i.test(lower)) {
+    calls.push({ tool: "homepage.shortcuts", args: {} });
+  }
   if (hasAny(access, ["bulletin.view", "bulletin.create", "bulletin.edit_any", "bulletin.pin", "bulletin.manage"]) && (
-    /\b(bulletin|homepage|announcement|shortcut|favourite|favorite)\b/i.test(lower)
+    /\b(bulletin|announcement)\b/i.test(lower)
   )) {
     calls.push({ tool: "homepage.bulletins", args: { limit: 10 } });
   }

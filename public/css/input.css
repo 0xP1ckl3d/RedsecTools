@@ -499,6 +499,18 @@ html.light {
     width: 2rem;
     height: 2rem;
     font-size: 1rem;
+    text-decoration: none;
+  }
+
+  .redsecai-icon-btn svg,
+  .redsecai-send svg {
+    width: 1rem;
+    height: 1rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 2;
   }
 
   .redsecai-icon-btn:hover,
@@ -721,6 +733,56 @@ html.light {
     font-size: 0.72rem;
   }
 
+  .redsecai-page-shell {
+    min-height: calc(100vh - 10rem);
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .redsecai-dashboard-shell .dashboard-sidebar.collapsed .wiki-sidebar-panel {
+    display: none;
+  }
+
+  .redsecai-toolbar-card {
+    margin-bottom: 1.5rem;
+  }
+
+  .redsecai-dashboard-shell .redsecai-page-shell {
+    min-height: 0;
+  }
+
+  .redsecai-page-widget {
+    position: static;
+    z-index: auto;
+    width: 100%;
+    min-height: 0;
+  }
+
+  .redsecai-page-widget .redsecai-panel {
+    position: static;
+    width: 100%;
+    height: min(52rem, calc(100vh - 13rem));
+    min-height: 34rem;
+    box-shadow: none;
+  }
+
+  .redsecai-dashboard-shell .redsecai-page-widget .redsecai-panel {
+    height: min(46rem, calc(100vh - 18rem));
+    min-height: 32rem;
+  }
+
+  .redsecai-page-widget .redsecai-messages {
+    padding: 1.25rem;
+  }
+
+  .redsecai-page-widget .redsecai-message {
+    max-width: min(58rem, 86%);
+  }
+
+  .redsecai-page-widget .redsecai-action-card {
+    max-width: min(58rem, 100%);
+  }
+
   @media (max-width: 640px) {
     .redsecai-widget {
       right: 0.75rem;
@@ -743,6 +805,20 @@ html.light {
 
     .redsecai-launcher-mark {
       display: none;
+    }
+
+    .redsecai-page-widget .redsecai-panel {
+      height: calc(100vh - 11rem);
+      min-height: 30rem;
+    }
+
+    .redsecai-dashboard-shell .redsecai-page-widget .redsecai-panel {
+      height: calc(100vh - 16rem);
+      min-height: 28rem;
+    }
+
+    .redsecai-page-widget .redsecai-message {
+      max-width: 96%;
     }
   }
 

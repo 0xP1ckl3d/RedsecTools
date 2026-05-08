@@ -99,6 +99,16 @@ app.use(
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser(COOKIE_SECRET));
 
+const page = (file) => path.join(__dirname, "..", "public", file);
+
+function pageRequireRedSecAiEnabled(req, res, next) {
+  if (redsecAiProvider.getConfig().enabled) return next();
+  return res.status(404).sendFile(page("error.html"));
+}
+
+app.get("/ai/index.html", pageRequireUser, pageRequireRedSecAiEnabled, (req, res) => res.sendFile(page("ai/index.html")));
+app.get("/ai/about.html", pageRequireUser, pageRequireRedSecAiEnabled, (req, res) => res.sendFile(page("ai/about.html")));
+
 // --- Static files ---
 app.use(express.static(path.join(__dirname, "..", "public"), {
   index: false,
@@ -135,8 +145,6 @@ app.use("/admin", adminRouter);
 app.use("/admin", adminCollabRouter);
 
 // --- Page routes ---
-const page = (file) => path.join(__dirname, "..", "public", file);
-
 // Public pages (no auth needed)
 app.get("/login", (req, res) => res.sendFile(page("login.html")));
 app.get("/register", (req, res) => res.sendFile(page("register.html")));
@@ -168,6 +176,8 @@ app.get("/threat", pageRequireUser, pageRequireAnyPermission(["threat.view", "th
 app.get("/threat/about", (req, res) => res.sendFile(page("threat/about.html")));
 app.get("/reporter", pageRequireUser, pageRequireAnyPermission(["reporter.view", "reporter.create", "reporter.edit_own", "reporter.edit_assigned", "reporter.review", "reporter.approve", "reporter.manage_templates", "reporter.manage_all"]), (req, res) => res.sendFile(page("reporter/index.html")));
 app.get("/reporter/about", (req, res) => res.sendFile(page("reporter/about.html")));
+app.get(["/ai", "/ai/"], pageRequireUser, pageRequireRedSecAiEnabled, (req, res) => res.sendFile(page("ai/index.html")));
+app.get("/ai/about", pageRequireUser, pageRequireRedSecAiEnabled, (req, res) => res.sendFile(page("ai/about.html")));
 app.get("/admin", (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   res.sendFile(page("admin.html"));

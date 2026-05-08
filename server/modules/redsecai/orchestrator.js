@@ -152,6 +152,7 @@ function buildScopedToolContext(req, toolManifest, targetedContext, page = {}) {
     `Current page: ${String(page.path || req.get("referer") || "/").slice(0, 200)}`,
     `User timezone: ${String(page.timeZone || "server-local").slice(0, 80)}`,
     `Current server time: ${new Date().toISOString()}`,
+    `Current user-local date/time: ${localDateTimeLabel(page.timeZone || null)}`,
     "RedSecAI tool execution is server-side allowlisted. It cannot call arbitrary routes and has no direct database handle.",
     "Only the selected tool results for this turn are included. If data is absent, say it is not available in the selected tool results.",
     "For calendar answers, use scheduleEntries from selected calendar tool results as the source of truth. Do not infer 'no meetings' from capacity stats if scheduleEntries contains entries.",
@@ -333,6 +334,7 @@ function emitStatus(options, status) {
 }
 
 function buildToolPlannerPrompt(scopedContext, options = {}) {
+  const timeZone = String(options.page?.timeZone || "server-local").slice(0, 80);
   const actionReviewRules = options.actionReview ? `
 Action-review mode:
 - The user may already have asked RedSecAI to change RedSecTools data. If the available read/search results identify the target and the requested change can be drafted safely, return the matching write tool call now.
@@ -341,6 +343,10 @@ Action-review mode:
   return {
     role: "system",
     content: `Before answering, decide whether extra scoped internal tools are needed.
+
+Current server time: ${new Date().toISOString()}
+Current user timezone: ${timeZone}
+Current user-local date/time: ${localDateTimeLabel(options.page?.timeZone || null)}
 
 Return ONLY strict JSON in this format:
 {"toolCalls":[{"tool":"tool.name","args":{"query":"short search text","limit":8}}]}
@@ -362,12 +368,14 @@ Rules:
 - For calendar "everyone" requests, only use assigneeUserIds:["__all__"] if calendar.settings, calendar.bootstrap, or users.search exposes that as an allowed assignment value.
 - If the user asks to create a calendar project, use calendar.project.create with body.name and body.startDate/body.endDate in YYYY-MM-DD format.
 - If the user asks to assign, allocate, schedule, or put a project into a calendar and the project may need to be created or linked, use calendar.project.schedule. Use calendar.allocation.create only when an existing projectId is already known.
+- For month/day dates without a year, resolve against the user-local date above. Use the current year when the date or range is today, future, or already underway; use next year when the entire requested date or range has already passed and the user did not ask for a past/backdated item.
 - For Reporter project creation, read reporter.bootstrap first and use an actual designId from that result.
 - If the user asks about reports, findings, sections, comments, members, templates, clients, or evidence metadata, use the specific Reporter read tool listed in TOOL_MANIFEST. Do not fetch evidence file downloads or exports.
 - If the user asks to create/update Reporter notes, findings, sections, comments, members, evidence metadata, or templates, use the matching Reporter write tool after reading any missing project/member/template IDs.
 - If the user asks about surveys or survey results, use survey.list, survey.get, survey.stats, survey.results, or survey.response.get as appropriate.
 - If the user asks to create/update survey questions, use exact questionType values from the schema: short_text, long_text, single_choice, multi_choice, rating, yes_no, dropdown.
 - If the user asks about homepage shortcuts, homepage settings, tool favourites, or bulletins, use the matching homepage or bulletin tool.
+- For homepage shortcut creation, use homepage.shortcut.create when the user provides a shortcut title and URL. It creates a personal shortcut for the logged-in user; do not ask for a target workspace/environment unless the title or URL is missing.
 - If the user asks to create/update wiki content, use wiki.page.create or wiki.page.update.
 ${actionReviewRules}
 
@@ -376,12 +384,14 @@ ${compactJson(scopedContext.toolManifest, 8000)}`,
   };
 }
 
-function buildToolRouterPrompt(toolCatalog, messages = []) {
+function buildToolRouterPrompt(toolCatalog, messages = [], page = {}) {
   return {
     role: "system",
     content: `Decide whether this RedSecAI turn needs scoped RedSecTools internal tools before answering.
 
 Current server time: ${new Date().toISOString()}
+Current user timezone: ${String(page.timeZone || "server-local").slice(0, 80)}
+Current user-local date/time: ${localDateTimeLabel(page.timeZone || null)}
 
 Return ONLY strict JSON in this format:
 {"useTools":false,"toolCalls":[]}
@@ -558,7 +568,7 @@ function baselineToolNamesForDomain(domain) {
     wiki: ["wiki.bootstrap", "wiki.search", "wiki.page.get", "wiki.page.getBySlug"],
     threat: ["threat.bootstrap", "threat.alerts", "threat.searchAlerts", "threat.keywords", "threat.tags", "threat.news", "threat.mitre"],
     reporter: ["reporter.bootstrap", "reporter.projects", "reporter.project.get", "reporter.users", "reporter.templates"],
-    homepage: ["homepage.home", "homepage.shortcuts", "homepage.bulletins", "homepage.toolFavourites"],
+    homepage: ["homepage.home", "homepage.shortcuts", "homepage.bulletins", "homepage.toolFavourites", "homepage.shortcut.create", "homepage.shortcut.update", "homepage.shortcut.delete", "homepage.shortcut.favourite", "homepage.shortcuts.reorder", "homepage.toolFavourites.update", "homepage.settings.update"],
     survey: ["survey.list", "survey.get", "survey.stats", "survey.results"],
   };
   return baselines[domain] || [];
@@ -658,7 +668,7 @@ function extractSelectedToolNames(parsed, calls = []) {
 
 function shouldUseRecoveredToolsWhenRouterDeclines(messages = []) {
   const text = `${latestUserText(messages)}\n${(messages || []).slice(-4).map((message) => message?.content || "").join("\n")}`.toLowerCase();
-  return /\b(calendar|schedule|scheduled|meeting|meetings|wiki|page|runbook|threat|alert|alerts|reporter|report|finding|survey|bulletin|shortcut|project|client|evidence)\b/.test(text)
+  return /\b(calendar|schedule|scheduled|meeting|meetings|wiki|page|runbook|threat|alert|alerts|reporter|report|finding|survey|homepage|bulletin|shortcut|project|client|evidence)\b/.test(text)
     || /\b(no meetings|anything on|what have i got|check it|is it there|did it work)\b/.test(text);
 }
 
@@ -718,6 +728,105 @@ function getZonedToday(timeZone = null) {
   return { year: local.year, month: local.month, day: local.day };
 }
 
+function recentUserText(messages = []) {
+  return (Array.isArray(messages) ? messages : [])
+    .filter((message) => message?.role !== "assistant")
+    .slice(-6)
+    .map((message) => String(message?.content || ""))
+    .join("\n");
+}
+
+function userMentionedYear(messages = [], year) {
+  const text = recentUserText(messages);
+  return new RegExp(`\\b${String(year).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(text);
+}
+
+function userAskedForPastDate(messages = []) {
+  const text = recentUserText(messages);
+  return /\b(past|historical|backdate|backdated|back-date|back-dated)\b/i.test(text)
+    || /\b(last|previous)\s+(week|month|year|quarter|monday|tuesday|wednesday|thursday|friday|saturday|sunday|january|february|march|april|may|june|july|august|september|october|november|december)\b/i.test(text);
+}
+
+function parseIsoDateOnly(value) {
+  const raw = String(value || "").trim();
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  return {
+    raw,
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+    monthText: match[2],
+    dayText: match[3],
+  };
+}
+
+function compareDateParts(left, right) {
+  if (!left || !right) return 0;
+  if (left.year !== right.year) return left.year < right.year ? -1 : 1;
+  if (left.month !== right.month) return left.month < right.month ? -1 : 1;
+  if (left.day !== right.day) return left.day < right.day ? -1 : 1;
+  return 0;
+}
+
+function formatIsoDateOnly(parts) {
+  return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
+}
+
+function shouldPreserveModelDateYear(page = {}, values = []) {
+  if (userAskedForPastDate(page.messages || [])) return true;
+  return values
+    .map(parseIsoDateOnly)
+    .filter(Boolean)
+    .some((parts) => userMentionedYear(page.messages || [], parts.year));
+}
+
+function normalizeModelDateOnlyYear(value, page = {}, options = {}) {
+  const parsed = parseIsoDateOnly(value);
+  if (!parsed) return value;
+  if (shouldPreserveModelDateYear(page, [parsed.raw])) return parsed.raw;
+  const currentYear = getZonedToday(page.timeZone || null).year;
+  const normalized = { year: parsed.year, month: parsed.month, day: parsed.day };
+  if (Number.isInteger(normalized.year) && normalized.year < currentYear) {
+    normalized.year = currentYear;
+  }
+  if (options.rollPastToNextYear) {
+    const today = getZonedToday(page.timeZone || null);
+    if (compareDateParts(normalized, today) < 0) normalized.year += 1;
+  }
+  return formatIsoDateOnly(normalized);
+}
+
+function normalizeDateIntentForUserYear(value, page = {}, options = {}) {
+  return normalizeModelDateOnlyYear(value, page, options);
+}
+
+function normalizeDateRangeForUserIntent(startValue, endValue, page = {}) {
+  let startDate = normalizeDateIntentForUserYear(startValue, page);
+  let endDate = normalizeDateIntentForUserYear(endValue, page);
+  if (shouldPreserveModelDateYear(page, [startValue, endValue])) return { startDate, endDate };
+
+  const start = parseIsoDateOnly(startDate);
+  const end = parseIsoDateOnly(endDate);
+  if (start && end && compareDateParts(end, getZonedToday(page.timeZone || null)) < 0) {
+    start.year += 1;
+    end.year += 1;
+    startDate = formatIsoDateOnly(start);
+    endDate = formatIsoDateOnly(end);
+  }
+  return { startDate, endDate };
+}
+
+function localDateLabel(timeZone = null) {
+  const today = getZonedToday(timeZone || null);
+  return `${today.year}-${String(today.month).padStart(2, "0")}-${String(today.day).padStart(2, "0")}`;
+}
+
+function localDateTimeLabel(timeZone = null) {
+  const local = getZonedDateParts(new Date(), timeZone || null);
+  return `${localDateLabel(timeZone || null)} ${String(local.hour || 0).padStart(2, "0")}:${String(local.minute || 0).padStart(2, "0")}:${String(local.second || 0).padStart(2, "0")}`;
+}
+
 function resolveDateIntent(dateIntent, timeZone = null) {
   const raw = String(dateIntent || "today").trim().toLowerCase();
   const today = getZonedToday(timeZone);
@@ -751,13 +860,14 @@ function normalizeCalendarWriteCall(call, page = {}, access = null) {
   const isoEnd = typeof endTimeAlias === "string"
     ? endTimeAlias.match(/^(\d{4}-\d{2}-\d{2})[T\s](\d{1,2}:\d{2})(?::\d{2})?$/)
     : null;
-  if (isoStart && !body.dateIntent && !body.dateLocal && !body.date) body.dateIntent = isoStart[1];
+  if (isoStart && !body.dateIntent && !body.dateLocal && !body.date) body.dateIntent = normalizeDateIntentForUserYear(isoStart[1], page, { rollPastToNextYear: true });
   if (isoStart) body.startLocal = isoStart[2];
   else if (startTimeAlias && !body.startLocal) body.startLocal = startTimeAlias;
   if (isoEnd) body.endLocal = isoEnd[2];
   else if (endTimeAlias && !body.endLocal) body.endLocal = endTimeAlias;
 
-  const date = resolveDateIntent(body.dateIntent || body.dateLocal || body.date, timeZone || null);
+  const dateIntent = normalizeDateIntentForUserYear(body.dateIntent || body.dateLocal || body.date, page, { rollPastToNextYear: true });
+  const date = resolveDateIntent(dateIntent, timeZone || null);
   const start = parseLocalTime(body.startLocal || body.startTimeLocal);
   const end = parseLocalTime(body.endLocal || body.endTimeLocal);
   const durationMinutes = Number.parseInt(body.durationMinutes, 10);
@@ -800,6 +910,11 @@ function normalizeProjectWriteCall(call, page = {}) {
   const args = { ...(call.args || {}) };
   const body = { ...(args.body || args) };
   const timeZone = String(body.timeZone || page.timeZone || "").slice(0, 80);
+  if (body.startDate || body.endDate) {
+    const range = normalizeDateRangeForUserIntent(body.startDate, body.endDate, page);
+    if (body.startDate) body.startDate = range.startDate;
+    if (body.endDate) body.endDate = range.endDate;
+  }
 
   if (body.startDate && !Number.isFinite(Number(body.startsAt))) {
     const date = resolveDateIntent(body.startDate, timeZone || null);
@@ -825,12 +940,18 @@ function normalizeAllocationWriteCall(call, page = {}, access = null) {
   if (currentUserId && (body.assigneeUserId === "me" || body.assigneeUserId === "self" || body.assigneeUserId === "myself")) {
     body.assigneeUserId = currentUserId;
   }
+  if (body.startDate || body.endDate) {
+    const range = normalizeDateRangeForUserIntent(body.startDate, body.endDate, page);
+    if (body.startDate) body.startDate = range.startDate;
+    if (body.endDate) body.endDate = range.endDate;
+  }
 
   const start = parseLocalTime(body.startLocal || body.startTimeLocal);
   const end = parseLocalTime(body.endLocal || body.endTimeLocal);
   const durationMinutes = Number.parseInt(body.durationMinutes, 10);
   if (start) {
-    const date = resolveDateIntent(body.dateIntent || body.dateLocal || body.date || body.startDate, timeZone || null);
+    const dateIntent = normalizeDateIntentForUserYear(body.dateIntent || body.dateLocal || body.date || body.startDate, page, { rollPastToNextYear: true });
+    const date = resolveDateIntent(dateIntent, timeZone || null);
     body.startsAt = zonedLocalToUnix(date.year, date.month, date.day, start.hour, start.minute, 0, timeZone || null);
     if (end) {
       body.endsAt = zonedLocalToUnix(date.year, date.month, date.day, end.hour, end.minute, 0, timeZone || null);
@@ -846,6 +967,20 @@ function normalizeAllocationWriteCall(call, page = {}, access = null) {
     delete body[helperField];
   }
 
+  return { ...call, args: { ...args, body } };
+}
+
+function normalizeProjectScheduleWriteCall(call, page = {}) {
+  if (call.tool !== "calendar.project.schedule") return call;
+  const args = { ...(call.args || {}) };
+  const body = args.body && typeof args.body === "object" && !Array.isArray(args.body)
+    ? { ...args.body }
+    : {};
+  if (body.startDate || body.endDate) {
+    const range = normalizeDateRangeForUserIntent(body.startDate, body.endDate, page);
+    if (body.startDate) body.startDate = range.startDate;
+    if (body.endDate) body.endDate = range.endDate;
+  }
   return { ...call, args: { ...args, body } };
 }
 
@@ -916,6 +1051,7 @@ function resolveLocalUnixFromParts({ dateIntent, localTime, natural, defaultLoca
 
   const time = parseLocalTime(resolvedLocalTime || defaultLocalTime);
   if (!time) return null;
+  resolvedDateIntent = normalizeDateIntentForUserYear(resolvedDateIntent, page);
   const date = resolveDateIntent(resolvedDateIntent, timeZone || null);
   return zonedLocalToUnix(date.year, date.month, date.day, time.hour, time.minute, 0, timeZone || null);
 }
@@ -1054,12 +1190,12 @@ function normalizeCalendarRangeArgs(args = {}, page = {}, fields = {}) {
     const endDateIntent = output.endDateIntent || output.endDate || dateIntent || startDateIntent;
     if (!Number.isFinite(Number(output[startField])) && startDateIntent) {
       const startTime = parseLocalTime(output.startLocal || output.startTimeLocal || output.startTime || "00:00") || { hour: 0, minute: 0 };
-      const date = resolveDateIntent(startDateIntent, timeZone || null);
+      const date = resolveDateIntent(normalizeDateIntentForUserYear(startDateIntent, page), timeZone || null);
       output[startField] = zonedLocalToUnix(date.year, date.month, date.day, startTime.hour, startTime.minute, 0, timeZone || null);
     }
     if (!Number.isFinite(Number(output[endField])) && endDateIntent) {
       const endTime = parseLocalTime(output.endLocal || output.endTimeLocal || output.endTime || "23:59") || { hour: 23, minute: 59 };
-      const date = resolveDateIntent(endDateIntent, timeZone || null);
+      const date = resolveDateIntent(normalizeDateIntentForUserYear(endDateIntent, page), timeZone || null);
       output[endField] = zonedLocalToUnix(date.year, date.month, date.day, endTime.hour, endTime.minute, 0, timeZone || null);
     }
   }
@@ -1125,6 +1261,7 @@ function normalizeCalendarToolCalls(calls, page = {}, access = null) {
     if (["calendar.entry.create", "calendar.entry.update"].includes(call.tool)) return normalizeCalendarWriteCall(call, page, access);
     if (["calendar.project.create", "calendar.project.update"].includes(call.tool)) return normalizeProjectWriteCall(call, page);
     if (call.tool === "calendar.allocation.create") return normalizeAllocationWriteCall(call, page, access);
+    if (call.tool === "calendar.project.schedule") return normalizeProjectScheduleWriteCall(call, page);
     if (["homepage.bulletin.create", "homepage.bulletin.update"].includes(call.tool)) return normalizeBulletinWriteCall(call, page);
     if (["survey.create", "survey.update"].includes(call.tool)) return normalizeSurveyWriteCall(call, page);
     if (["reporter.project.create", "reporter.project.update"].includes(call.tool)) return normalizeReporterProjectWriteCall(call, page);
@@ -1179,6 +1316,7 @@ async function planModelToolCalls(scopedContext, targetedContext, messages, opti
 }
 
 function buildActionCompilerPrompt(scopedContext, targetedContext, options = {}) {
+  const timeZone = String(options.page?.timeZone || "server-local").slice(0, 80);
   const writeManifest = (scopedContext.toolManifest || [])
     .filter((tool) => tool.confirmRequired)
     .map((tool) => ({
@@ -1209,10 +1347,14 @@ Rules:
 - For local dates/times, use the helper fields exposed by the schema such as dateIntent/startLocal/endLocal/durationMinutes/startDate/endDate/expiresAt/dueDateIntent and include timeZone when available. Do not convert local user intent to UTC in the tool call.
 - For plain text bulletin content, use body.message unless rich bodyHtml is explicitly provided.
 - For bulletin colour/tone requests such as red, use body.tone or body.color so RedSecAI can normalize to the app's allowed presentation preset.
+- For homepage shortcut creation, use homepage.shortcut.create with body.title and body.url. A shortcut is personal to the logged-in user; do not ask for a workspace or environment when the user supplied both title and URL.
 - For calendar team-wide/everyone requests, use assigneeUserIds:["__all__"] only when selected tool results expose that assignment value or the schema explicitly says it is allowed and the user has calendar manage access in the scoped results.
+- For month/day dates without a year, resolve against the user-local date below. Use the current year when the date or range is today, future, or already underway; use next year when the entire requested date or range has already passed and the user did not ask for a past/backdated item.
 - If no listed write tool matches the requested action, return missingInfo explaining the unsupported action.
 
-Current page timezone: ${String(options.page?.timeZone || "server-local").slice(0, 80)}
+Current page timezone: ${timeZone}
+Current server time: ${new Date().toISOString()}
+Current user-local date/time: ${localDateTimeLabel(options.page?.timeZone || null)}
 
 AVAILABLE_CONTEXT:
 ${targetedContext.text}
@@ -1247,7 +1389,7 @@ async function routeModelToolUse(req, messages, options = {}) {
   emitStatus(options, { phase: "tool_router", label: "Deciding whether RedSecTools data is needed" });
   const raw = await provider.chat([
     { role: "system", content: SYSTEM_PROMPT },
-    buildToolRouterPrompt(toolCatalog, messages),
+    buildToolRouterPrompt(toolCatalog, messages, options.page || {}),
     { role: "user", content: `Route the latest user turn using the recent conversation above. Latest user turn: ${latestUserText(messages)}` },
   ], { phase: "tool_router" });
   const parsed = extractJsonObject(raw);
@@ -1255,9 +1397,10 @@ async function routeModelToolUse(req, messages, options = {}) {
   const recoveredWriteIntent = inferWriteIntentFromMessages(messages)
     && recovered.candidateToolNames.some((name) => isRedSecAiToolMutating(name));
   if (!parsed || typeof parsed.useTools !== "boolean") {
+    const normalizationPage = { ...(options.page || {}), messages };
     const recoveredReadCalls = normalizeCalendarToolCalls(
       recovered.calls.filter((call) => !isRedSecAiToolMutating(call.tool)),
-      options.page || {},
+      normalizationPage,
       req.access
     );
     return {
@@ -1276,7 +1419,11 @@ async function routeModelToolUse(req, messages, options = {}) {
   if (!calls.length && (parsed.useTools === true || (recovered.calls.length && allowRecoveredContext))) {
     calls = recovered.calls;
   }
-  calls = normalizeCalendarToolCalls(calls.filter((call) => !isRedSecAiToolMutating(call.tool)), options.page || {}, req.access);
+  calls = normalizeCalendarToolCalls(
+    calls.filter((call) => !isRedSecAiToolMutating(call.tool)),
+    { ...(options.page || {}), messages },
+    req.access
+  );
   const selectedToolNames = extractSelectedToolNames(parsed, sanitizedCalls);
   const candidateToolNames = selectedToolNames.length
     ? expandCandidateToolNames(selectedToolNames, toolCatalog, messages)
@@ -1335,9 +1482,13 @@ function prepareDirectRedSecAiTurn(rawMessages) {
 async function executeToolCalls(req, calls, options = {}) {
   const results = [];
   for (const rawCall of calls) {
+    const normalizationPage = {
+      ...(options.page || {}),
+      messages: options.messages || options.page?.messages || [],
+    };
     const call = normalizeCalendarToolCalls(
       [normalizeRedSecAiToolCall(rawCall)],
-      options.page || {},
+      normalizationPage,
       req.access
     )[0];
     const rawTool = String(call?.tool || rawCall?.tool || "");
@@ -1706,7 +1857,7 @@ async function prepareRedSecAiTurn(req, rawMessages, page = {}, options = {}) {
     throw error;
   }
 
-  page = { ...page, currentUserId: req.user?.id || null };
+  page = { ...page, currentUserId: req.user?.id || null, messages };
 
   const startedAt = Date.now();
   const routerPlan = await routeModelToolUse(req, messages, { ...options, page });
@@ -1738,14 +1889,14 @@ async function prepareRedSecAiTurn(req, rawMessages, page = {}, options = {}) {
     targetedTools: targetedContext.calls.map((call) => call.tool),
   });
   emitStatus(options, { phase: "tool_planner", label: describePlannerStep(scopedContext, targetedContext, messages) });
-  const modelPlan = await planModelToolCalls(scopedContext, targetedContext, messages);
+  const modelPlan = await planModelToolCalls(scopedContext, targetedContext, messages, { page });
   logEvent("redsecai:turn_planner_ready", req, {
     elapsedMs: Date.now() - startedAt,
     plannedTools: modelPlan.calls.map((call) => call.tool),
     plannerRawChars: modelPlan.raw.length,
   });
   let normalizedModelCalls = modelPlan.calls;
-  let modelResults = await executeToolCalls(scopedReq, normalizedModelCalls, { ...options, page });
+  let modelResults = await executeToolCalls(scopedReq, normalizedModelCalls, { ...options, page, messages });
   const modelPlanRaws = [modelPlan.raw].filter(Boolean);
 
   if (shouldRunFollowUpPlanner(scopedContext, normalizedModelCalls, modelResults)) {
@@ -1759,7 +1910,7 @@ async function prepareRedSecAiTurn(req, rawMessages, page = {}, options = {}) {
       ].join("\n\n"),
     };
     emitStatus(options, { phase: "tool_planner", label: describePlannerStep(scopedContext, plannerContext, messages, { followUp: true }) });
-    const followUpPlan = await planModelToolCalls(scopedContext, plannerContext, messages);
+    const followUpPlan = await planModelToolCalls(scopedContext, plannerContext, messages, { page, followUp: true });
     modelPlanRaws.push(followUpPlan.raw);
     const remaining = MAX_MODEL_TOOL_CALLS - normalizedModelCalls.length;
     const followUpCalls = filterNewToolCalls(
@@ -1773,7 +1924,7 @@ async function prepareRedSecAiTurn(req, rawMessages, page = {}, options = {}) {
       plannerRawChars: followUpPlan.raw.length,
     });
     if (followUpCalls.length) {
-      const followUpResults = await executeToolCalls(scopedReq, followUpCalls, { ...options, page });
+      const followUpResults = await executeToolCalls(scopedReq, followUpCalls, { ...options, page, messages });
       normalizedModelCalls = [...normalizedModelCalls, ...followUpCalls];
       modelResults = [...modelResults, ...followUpResults];
     }
@@ -1790,7 +1941,7 @@ async function prepareRedSecAiTurn(req, rawMessages, page = {}, options = {}) {
       ].join("\n\n"),
     };
     emitStatus(options, { phase: "tool_planner", label: describePlannerStep(scopedContext, actionReviewContext, messages, { actionReview: true }) });
-    const actionReviewPlan = await planModelToolCalls(scopedContext, actionReviewContext, messages, { actionReview: true });
+    const actionReviewPlan = await planModelToolCalls(scopedContext, actionReviewContext, messages, { actionReview: true, page });
     modelPlanRaws.push(actionReviewPlan.raw);
     const remaining = MAX_MODEL_TOOL_CALLS - normalizedModelCalls.length;
     const actionReviewCalls = filterNewToolCalls(
@@ -1804,7 +1955,7 @@ async function prepareRedSecAiTurn(req, rawMessages, page = {}, options = {}) {
       plannerRawChars: actionReviewPlan.raw.length,
     });
     if (actionReviewCalls.length) {
-      const actionReviewResults = await executeToolCalls(scopedReq, actionReviewCalls, { ...options, page });
+      const actionReviewResults = await executeToolCalls(scopedReq, actionReviewCalls, { ...options, page, messages });
       normalizedModelCalls = [...normalizedModelCalls, ...actionReviewCalls];
       modelResults = [...modelResults, ...actionReviewResults];
     }
@@ -1836,7 +1987,7 @@ async function prepareRedSecAiTurn(req, rawMessages, page = {}, options = {}) {
       compilerRawChars: actionCompilerPlan.raw.length,
     });
     if (actionCompilerCalls.length) {
-      const actionCompilerResults = await executeToolCalls(scopedReq, actionCompilerCalls, { ...options, page });
+      const actionCompilerResults = await executeToolCalls(scopedReq, actionCompilerCalls, { ...options, page, messages });
       normalizedModelCalls = [...normalizedModelCalls, ...actionCompilerCalls];
       modelResults = [...modelResults, ...actionCompilerResults];
     } else if (actionCompilerPlan.missingInfo) {

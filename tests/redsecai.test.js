@@ -5,6 +5,35 @@ const { compactJson, executeRedSecAiTool, hasAny } = require("../server/modules/
 const { checkModelHealth, getConfig, isCloudModel, runDiagnostics } = require("../server/modules/redsecai/provider");
 const { extractJsonObject, guardRedSecAiFinalResponse, sanitizeModelToolCalls } = require("../server/modules/redsecai/orchestrator");
 
+async function withMockedDate(isoString, fn) {
+  const RealDate = global.Date;
+  const fixedMs = RealDate.parse(isoString);
+  class MockDate extends RealDate {
+    constructor(...args) {
+      if (args.length) return new RealDate(...args);
+      return new RealDate(fixedMs);
+    }
+
+    static now() {
+      return fixedMs;
+    }
+
+    static parse(value) {
+      return RealDate.parse(value);
+    }
+
+    static UTC(...args) {
+      return RealDate.UTC(...args);
+    }
+  }
+  global.Date = MockDate;
+  try {
+    return await fn();
+  } finally {
+    global.Date = RealDate;
+  }
+}
+
 test("RedSecAI permission helper accepts only explicit scoped permissions", () => {
   assert.equal(hasAny({ permissionSet: new Set(["calendar.view"]) }, ["calendar.view", "calendar.manage"]), true);
   assert.equal(hasAny({ permissionSet: new Set(["admin.manage"]) }, ["calendar.view", "calendar.manage"]), false);
@@ -985,6 +1014,65 @@ test("RedSecAI compiles selected write intent into a bulletin action instead of 
   }
 });
 
+test("RedSecAI recovers homepage shortcut write intent and prepares a shortcut action", async () => {
+  const provider = require("../server/modules/redsecai/provider");
+  const orchestrator = require("../server/modules/redsecai/orchestrator");
+  const originalChat = provider.chat;
+  try {
+    provider.chat = async (messages, options = {}) => {
+      if (options.phase === "tool_router") {
+        return JSON.stringify({ useTools: false, intent: "read", toolCalls: [] });
+      }
+      if (options.phase === "tool_planner") return JSON.stringify({ toolCalls: [] });
+      if (options.phase === "tool_action_compiler") {
+        const joined = messages.map((message) => message.content).join("\n");
+        assert.ok(joined.includes("homepage.shortcut.create"));
+        return JSON.stringify({
+          toolCalls: [{
+            tool: "homepage.shortcut.create",
+            args: {
+              body: {
+                title: "Admin Panel",
+                url: "http://localhost:3000/admin",
+              },
+            },
+          }],
+          missingInfo: "",
+        });
+      }
+      return "";
+    };
+
+    const turn = await orchestrator.prepareRedSecAiTurn({
+      user: { id: "shortcut-user", username: "alice" },
+      access: { userId: "shortcut-user", permissionSet: new Set() },
+      headers: { cookie: "redsec_session=s%3Atest.sig" },
+      get: () => "/",
+    }, [{ role: "user", content: 'Create a new homepage shorctut for "Admin Panel" that links to http://localhost:3000/admin.' }], {
+      path: "/",
+      timeZone: "Australia/Sydney",
+    });
+
+    assert.equal(turn.pendingActions.length, 1);
+    assert.equal(turn.pendingActions[0].tool, "homepage.shortcut.create");
+    assert.equal(turn.pendingActions[0].args.body.title, "Admin Panel");
+    assert.equal(turn.pendingActions[0].args.body.url, "http://localhost:3000/admin");
+  } finally {
+    provider.chat = originalChat;
+  }
+});
+
+test("RedSecAI validates shortcut action payloads before creating cards", () => {
+  const { getRedSecAiActionValidationError } = require("../server/modules/redsecai/context");
+
+  assert.equal(getRedSecAiActionValidationError("homepage.shortcut.create", {
+    body: { title: "Admin Panel", url: "http://localhost:3000/admin" },
+  }), null);
+  assert.match(getRedSecAiActionValidationError("homepage.shortcut.create", {
+    body: { title: "Admin Panel", url: "localhost:3000/admin" },
+  }), /must start with/i);
+});
+
 test("RedSecAI action compiler falls back to a missing-info question when a write cannot be safely prepared", async () => {
   const provider = require("../server/modules/redsecai/provider");
   const orchestrator = require("../server/modules/redsecai/orchestrator");
@@ -1675,6 +1763,188 @@ test("RedSecAI schedules a named calendar project and allocation in one confirme
   } finally {
     provider.chat = originalChat;
     global.fetch = originalFetch;
+  }
+});
+
+test("RedSecAI corrects model-invented past years for yearless project allocations", async () => {
+  const provider = require("../server/modules/redsecai/provider");
+  const orchestrator = require("../server/modules/redsecai/orchestrator");
+  const originalChat = provider.chat;
+  const originalFetch = global.fetch;
+  try {
+    await withMockedDate("2026-05-08T02:00:00.000Z", async () => {
+      provider.chat = async (messages, options = {}) => {
+        if (options.phase === "tool_router") {
+          return JSON.stringify({
+            useTools: true,
+            intent: "write",
+            selectedTools: ["calendar.allocation.create"],
+            toolCalls: [],
+          });
+        }
+        if (options.phase === "tool_planner") {
+          assert.ok(messages.some((message) => String(message.content).includes("Current user-local date/time: 2026-05-08")));
+          return JSON.stringify({
+            toolCalls: [{
+              tool: "calendar.allocation.create",
+              args: {
+                body: {
+                  projectId: "project-cv",
+                  allocationMode: "daily",
+                  startDate: "2025-05-18",
+                  endDate: "2025-05-27",
+                  hoursPerDay: 8,
+                  workdaysOnly: true,
+                },
+              },
+            }],
+          });
+        }
+        return "";
+      };
+      global.fetch = async () => new Response(JSON.stringify({ success: true, projects: [], results: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+
+      const turn = await orchestrator.prepareRedSecAiTurn({
+        user: { id: "u1", username: "alice" },
+        access: { permissionSet: new Set(["calendar.create", "calendar.manage"]) },
+        headers: { cookie: "redsec_session=s%3Atest.sig" },
+        get: () => "/calendar",
+      }, [
+        { role: "user", content: "The project dates are 18-27 May" },
+        { role: "user", content: "Ok, now last step, put the dates in my calendar against the project" },
+      ], {
+        path: "/calendar",
+        timeZone: "Australia/Sydney",
+      });
+
+      assert.equal(turn.pendingActions.length, 1);
+      assert.equal(turn.pendingActions[0].tool, "calendar.allocation.create");
+      assert.equal(turn.pendingActions[0].args.body.startDate, "2026-05-18");
+      assert.equal(turn.pendingActions[0].args.body.endDate, "2026-05-27");
+    });
+  } finally {
+    provider.chat = originalChat;
+    global.fetch = originalFetch;
+  }
+});
+
+test("RedSecAI rolls elapsed yearless allocation ranges into next year", async () => {
+  const provider = require("../server/modules/redsecai/provider");
+  const orchestrator = require("../server/modules/redsecai/orchestrator");
+  const originalChat = provider.chat;
+  const originalFetch = global.fetch;
+  try {
+    await withMockedDate("2026-05-08T02:00:00.000Z", async () => {
+      provider.chat = async (messages, options = {}) => {
+        if (options.phase === "tool_router") {
+          return JSON.stringify({
+            useTools: true,
+            intent: "write",
+            selectedTools: ["calendar.allocation.create"],
+            toolCalls: [],
+          });
+        }
+        if (options.phase === "tool_planner") {
+          return JSON.stringify({
+            toolCalls: [{
+              tool: "calendar.allocation.create",
+              args: {
+                body: {
+                  projectId: "project-jan",
+                  allocationMode: "daily",
+                  startDate: "2026-01-12",
+                  endDate: "2026-01-16",
+                  hoursPerDay: 8,
+                  workdaysOnly: true,
+                },
+              },
+            }],
+          });
+        }
+        return "";
+      };
+      global.fetch = async () => new Response(JSON.stringify({ success: true, projects: [], results: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+
+      const turn = await orchestrator.prepareRedSecAiTurn({
+        user: { id: "u1", username: "alice" },
+        access: { permissionSet: new Set(["calendar.create", "calendar.manage"]) },
+        headers: { cookie: "redsec_session=s%3Atest.sig" },
+        get: () => "/calendar",
+      }, [
+        { role: "user", content: "Put the project in my calendar for January" },
+      ], {
+        path: "/calendar",
+        timeZone: "Australia/Sydney",
+      });
+
+      assert.equal(turn.pendingActions.length, 1);
+      assert.equal(turn.pendingActions[0].args.body.startDate, "2027-01-12");
+      assert.equal(turn.pendingActions[0].args.body.endDate, "2027-01-16");
+    });
+  } finally {
+    provider.chat = originalChat;
+    global.fetch = originalFetch;
+  }
+});
+
+test("RedSecAI preserves explicit user-supplied past years", async () => {
+  const provider = require("../server/modules/redsecai/provider");
+  const orchestrator = require("../server/modules/redsecai/orchestrator");
+  const originalChat = provider.chat;
+  try {
+    await withMockedDate("2026-05-08T02:00:00.000Z", async () => {
+      provider.chat = async (messages, options = {}) => {
+        if (options.phase === "tool_router") {
+          return JSON.stringify({
+            useTools: true,
+            intent: "write",
+            selectedTools: ["calendar.allocation.create"],
+            toolCalls: [],
+          });
+        }
+        if (options.phase === "tool_planner") {
+          return JSON.stringify({
+            toolCalls: [{
+              tool: "calendar.allocation.create",
+              args: {
+                body: {
+                  projectId: "project-history",
+                  allocationMode: "daily",
+                  startDate: "2025-05-18",
+                  endDate: "2025-05-27",
+                  hoursPerDay: 8,
+                  workdaysOnly: true,
+                },
+              },
+            }],
+          });
+        }
+        return "";
+      };
+
+      const turn = await orchestrator.prepareRedSecAiTurn({
+        user: { id: "u1", username: "alice" },
+        access: { permissionSet: new Set(["calendar.create", "calendar.manage"]) },
+        get: () => "/calendar",
+      }, [
+        { role: "user", content: "Backdate this allocation to 18-27 May 2025" },
+      ], {
+        path: "/calendar",
+        timeZone: "Australia/Sydney",
+      });
+
+      assert.equal(turn.pendingActions.length, 1);
+      assert.equal(turn.pendingActions[0].args.body.startDate, "2025-05-18");
+      assert.equal(turn.pendingActions[0].args.body.endDate, "2025-05-27");
+    });
+  } finally {
+    provider.chat = originalChat;
   }
 });
 

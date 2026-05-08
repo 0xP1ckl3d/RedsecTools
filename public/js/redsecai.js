@@ -70,14 +70,27 @@ async function checkStatus() {
   return res.json();
 }
 
-function createWidget(status) {
+function iconSvg(name) {
+  const icons = {
+    refresh: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8.1 8.1 0 0 0-15.5-2M4 5v4h4"></path><path d="M4 13a8.1 8.1 0 0 0 15.5 2M20 19v-4h-4"></path></svg>',
+    expand: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6"></path><path d="M20 4l-9 9"></path><path d="M20 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h5"></path></svg>',
+    info: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 10v6"></path><path d="M12 7h.01"></path></svg>',
+    close: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"></path><path d="M18 6L6 18"></path></svg>',
+    send: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13"></path><path d="M13 6l6 6-6 6"></path></svg>',
+  };
+  return icons[name] || "";
+}
+
+function createWidget(status, options = {}) {
+  const mode = options.mode === "page" ? "page" : "widget";
+  const isPage = mode === "page";
   const readyText = status.ready
     ? `Model: ${escapeHtml(status.model)}${status.cloudModel ? " (cloud)" : ""}`
     : escapeHtml(status.installing ? "Installing local model..." : (status.error || "Model is not ready"));
   const root = document.createElement("section");
-  root.className = "redsecai-widget";
+  root.className = isPage ? "redsecai-widget redsecai-page-widget" : "redsecai-widget";
   root.innerHTML = `
-    <button type="button" class="redsecai-launcher" aria-label="Open RedSecAI" title="RedSecAI">
+    ${isPage ? "" : `<button type="button" class="redsecai-launcher" aria-label="Open RedSecAI" title="RedSecAI">
       <svg class="redsecai-launcher-icon" viewBox="0 0 24 24" aria-hidden="true">
         <path d="M4 5.75C4 4.23 5.23 3 6.75 3h10.5C18.77 3 20 4.23 20 5.75v7.5A2.75 2.75 0 0 1 17.25 16H12l-4.1 3.25A.85.85 0 0 1 6.5 18.58V16A2.75 2.75 0 0 1 4 13.25v-7.5Z"></path>
         <path d="M8 8.5h8M8 11.5h5.5"></path>
@@ -85,16 +98,18 @@ function createWidget(status) {
       <span class="redsecai-launcher-mark">RedSecAI</span>
       <span class="redsecai-status-dot ${status.ready ? "ready" : "offline"}"></span>
       <span class="redsecai-alert-badge hidden" aria-hidden="true"></span>
-    </button>
-    <div class="redsecai-panel hidden" role="dialog" aria-label="RedSecAI assistant">
+    </button>`}
+    <div class="redsecai-panel ${isPage ? "" : "hidden"}" role="${isPage ? "region" : "dialog"}" aria-label="RedSecAI assistant">
       <header class="redsecai-header">
         <div>
           <div class="redsecai-kicker">RedSecAI</div>
           <h2>Local assistant</h2>
         </div>
         <div class="redsecai-header-actions">
-          <button type="button" class="redsecai-icon-btn" data-redsecai-clear title="Clear chat" aria-label="Clear chat">R</button>
-          <button type="button" class="redsecai-icon-btn" data-redsecai-close title="Close" aria-label="Close">x</button>
+          <a class="redsecai-icon-btn" href="/ai/about" title="About RedSecAI" aria-label="About RedSecAI">${iconSvg("info")}</a>
+          ${isPage ? "" : `<a class="redsecai-icon-btn" href="/ai" title="Open full page" aria-label="Open RedSecAI full page">${iconSvg("expand")}</a>`}
+          <button type="button" class="redsecai-icon-btn" data-redsecai-clear title="Clear chat" aria-label="Clear chat">${iconSvg("refresh")}</button>
+          ${isPage ? "" : `<button type="button" class="redsecai-icon-btn" data-redsecai-close title="Close" aria-label="Close">${iconSvg("close")}</button>`}
         </div>
       </header>
       <div class="redsecai-boundary">
@@ -103,12 +118,13 @@ function createWidget(status) {
       <div class="redsecai-messages" aria-live="polite"></div>
       <form class="redsecai-form">
         <textarea class="redsecai-input" rows="2" placeholder="Ask about reports, calendar, or threat intel..."></textarea>
-        <button type="submit" class="redsecai-send" title="Send" aria-label="Send">-&gt;</button>
+        <button type="submit" class="redsecai-send" title="Send" aria-label="Send">${iconSvg("send")}</button>
       </form>
       <p class="redsecai-footnote">${readyText}</p>
     </div>
   `;
-  document.body.appendChild(root);
+  if (isPage && options.mount) options.mount.appendChild(root);
+  else document.body.appendChild(root);
   return root;
 }
 
@@ -226,15 +242,25 @@ function createRedSecAiSocket({ onStart, onStatus, onDelta, onDone, onError, onS
 }
 
 async function initRedSecAI() {
+  const pageMount = document.querySelector("[data-redsecai-page]");
+  const pageMode = !!pageMount;
+  document.getElementById("redsecai-sidebar-collapse-btn")?.addEventListener("click", () => {
+    document.getElementById("redsecai-sidebar")?.classList.toggle("collapsed");
+  });
   let status;
   try {
     status = await checkStatus();
   } catch (_) {
     status = null;
   }
-  if (!status || status.enabled === false) return;
+  if (!status || status.enabled === false) {
+    if (pageMode && pageMount) {
+      pageMount.innerHTML = '<div class="info-box text-sm">RedSecAI is not enabled for this site.</div>';
+    }
+    return;
+  }
 
-  const widget = createWidget(status);
+  const widget = createWidget(status, { mode: pageMode ? "page" : "widget", mount: pageMount });
   const launcher = widget.querySelector(".redsecai-launcher");
   const panel = widget.querySelector(".redsecai-panel");
   const closeBtn = widget.querySelector("[data-redsecai-close]");
@@ -263,13 +289,14 @@ async function initRedSecAI() {
   renderMessages(messagesEl, messages);
 
   function isPanelOpen() {
+    if (pageMode) return true;
     return !panel.classList.contains("hidden");
   }
 
   function syncAlertBadge() {
     const actionCount = pendingActions.size;
     const total = unreadCount + actionCount;
-    if (!alertBadge) return;
+    if (!alertBadge || !launcher) return;
     alertBadge.classList.toggle("hidden", total <= 0);
     alertBadge.textContent = total > 9 ? "9+" : String(total);
     launcher.classList.toggle("has-alert", total > 0);
@@ -619,7 +646,7 @@ async function initRedSecAI() {
 
   renderActionCards(status.pendingActions || [], { replace: true });
 
-  launcher.addEventListener("click", () => {
+  launcher?.addEventListener("click", () => {
     panel.classList.toggle("hidden");
     if (!panel.classList.contains("hidden")) {
       clearUnread();
@@ -634,11 +661,11 @@ async function initRedSecAI() {
       syncAlertBadge();
     }
   });
-  closeBtn.addEventListener("click", () => {
+  closeBtn?.addEventListener("click", () => {
     panel.classList.add("hidden");
     syncAlertBadge();
   });
-  clearBtn.addEventListener("click", () => {
+  clearBtn?.addEventListener("click", () => {
     messages = [];
     saveMessages(messages);
     setActiveJob(null);

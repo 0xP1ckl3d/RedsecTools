@@ -27,4 +27,4 @@ document.querySelectorAll("#theme-toggle").forEach((btn) => {
   });
 });
 
-import("./redsecai.js?v=20260507-ai-calendar").catch(() => {});
+import("./redsecai.js?v=20260508-ai-page").catch(() => {});

@@ -11,9 +11,16 @@
 </head>
 <body>
   <div class="page-wide py-12">
-    <header class="flex justify-between items-center mb-10">
-      <h1 class="text-2xl font-bold"><span class="text-accent">RedSec</span><span class="text-secondary">Threat</span></h1>
-      <div class="flex items-center gap-2">
+    <header class="grid grid-cols-[1fr_3fr_1fr] items-center mb-10">
+      <div></div>
+      <div class="text-center">
+        <h1 class="text-2xl font-bold">
+          <a href="/threat" class="hover:underline transition-colors">
+            <span class="text-accent">RedSec</span><span class="text-secondary">Threat</span>
+          </a>
+        </h1>
+      </div>
+      <div class="flex items-center gap-2 justify-end">
         <div class="relative">
           <button id="burger-btn" class="burger-btn" aria-label="Menu" aria-expanded="false">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
