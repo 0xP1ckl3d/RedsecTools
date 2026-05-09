@@ -7,6 +7,10 @@ const {
   EXTRA_TOOL_INPUT_SCHEMAS,
   EXTRA_TOOL_PATH_PARAM_ALIASES,
 } = require("./tool-definitions");
+const {
+  buildRedSecAiToolGovernanceMatrix,
+  getRedSecAiToolGovernance,
+} = require("./governance");
 
 const MAX_CONTEXT_CHARS = 12000;
 
@@ -582,6 +586,7 @@ function getRedSecAiToolManifest(access, selectedNames = null) {
       method: tool.method,
       path: tool.path,
       confirmRequired: !!tool.confirmRequired,
+      governance: getRedSecAiToolGovernance(name, tool),
       description: tool.description,
       inputSchema: TOOL_INPUT_SCHEMAS[name] || null,
     }));
@@ -1839,6 +1844,8 @@ module.exports = {
   deriveRedSecAiToolCalls,
   executeRedSecAiTool,
   getRedSecAiToolCatalog,
+  getRedSecAiToolGovernance,
+  getRedSecAiToolGovernanceMatrix: () => buildRedSecAiToolGovernanceMatrix(TOOL_ALLOWLIST),
   getRedSecAiToolManifest,
   getRedSecAiActionValidationError,
   getRedSecAiSchemaValidationError,

@@ -80,7 +80,7 @@ RedSecAI routes (`/api/ai/*`) are **not publicly accessible**. They require an a
 | `/api/ai/actions/{id}/confirm` | POST | UserSessionCookie + rate limit | Confirms and executes a previously prepared action against the RBAC-protected API |
 | `/api/ai/actions/{id}/reject` | POST | UserSessionCookie + rate limit | Cancels a pending action without applying it |
 
-RedSecAI streaming uses a same-origin WebSocket at `/ws/redsecai` (not an HTTP route) and requires the same authenticated session.
+RedSecAI streaming uses a same-origin WebSocket at `/ws/redsecai` (not an HTTP route) and requires the same authenticated session. Browser upgrade requests are accepted only when the `Origin` matches the request host, a configured `TRUSTED_PUBLIC_ORIGINS` entry, or a local development origin outside production.
 
 ## Permission-gated routes
 

@@ -2,6 +2,7 @@ const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
 const { SYSTEM_ROLE_DEFINITIONS, normalizePermissionList } = require("./access");
+const { redactObject } = require("./core/logger");
 const {
   openDatabase,
   DB_PATH,
@@ -2525,6 +2526,7 @@ const DEFAULTS = {
   redsecai_num_ctx: process.env.REDSECAI_NUM_CTX || "4096",
   redsecai_autostart: process.env.REDSECAI_AUTOSTART || "true",
   redsecai_auto_pull: process.env.REDSECAI_AUTO_PULL || "true",
+  redsecai_action_ttl_seconds: process.env.REDSECAI_ACTION_TTL_SECONDS || "7200",
 };
 for (const [key, value] of Object.entries(DEFAULTS)) {
   if (!getSetting(key)) setSetting(key, value);
@@ -5799,7 +5801,7 @@ function createAuditEvent(event) {
     targetType: event.targetType || null,
     targetId: event.targetId || null,
     outcome: event.outcome || "success",
-    metadataJson: JSON.stringify(event.metadata || {}),
+    metadataJson: JSON.stringify(redactObject(event.metadata || {})),
   };
   stmts.createAuditEvent.run(payload);
   return payload.id;

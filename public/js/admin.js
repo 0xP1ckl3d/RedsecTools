@@ -1144,6 +1144,8 @@ const redsecAiAutostart = document.getElementById("redsecai-autostart");
 const redsecAiBaseUrl = document.getElementById("redsecai-base-url");
 const redsecAiModel = document.getElementById("redsecai-model");
 const redsecAiTimeoutMs = document.getElementById("redsecai-timeout-ms");
+const redsecAiActionTtlSeconds = document.getElementById("redsecai-action-ttl-seconds");
+const redsecAiEndpointBox = document.getElementById("redsecai-endpoint-box");
 const redsecAiStatusBox = document.getElementById("redsecai-status-box");
 const redsecAiDiagnosticsBox = document.getElementById("redsecai-diagnostics-box");
 const redsecAiDiagnosticsBtn = document.getElementById("redsecai-diagnostics-btn");
@@ -1166,6 +1168,7 @@ async function loadRedSecAiSettings() {
     if (redsecAiBaseUrl) redsecAiBaseUrl.value = data.baseUrl || "http://127.0.0.1:11434";
     if (redsecAiModel) redsecAiModel.value = data.model || "qwen3.5:4b";
     if (redsecAiTimeoutMs) redsecAiTimeoutMs.value = data.timeoutMs || 120000;
+    if (redsecAiActionTtlSeconds) redsecAiActionTtlSeconds.value = data.actionTtlSeconds || 7200;
 
     setRedSecAiText("redsecai-stat-enabled", data.enabled ? "On" : "Off");
     setRedSecAiText("redsecai-stat-ready", data.ready ? (data.cloudModel ? "Cloud" : "Yes") : (data.installing ? "Pulling" : "No"));
@@ -1185,6 +1188,16 @@ async function loadRedSecAiSettings() {
         ? `${readyText}<br>${models}`
         : "RedSecAI is globally disabled.";
     }
+    if (redsecAiEndpointBox) {
+      const warnings = Array.isArray(data.endpointWarnings) ? data.endpointWarnings : [];
+      redsecAiEndpointBox.className = `info-box text-sm mt-4 ${data.endpointRisk === "elevated" ? "text-warning" : "text-muted"}`;
+      redsecAiEndpointBox.innerHTML = [
+        `<strong>Processing mode:</strong> ${escapeHtml(data.processingMode || "unknown")}`,
+        warnings.length
+          ? warnings.map((warning) => escapeHtml(warning)).join("<br>")
+          : "Prompt context stays within the configured local or internal Ollama endpoint unless a cloud model is selected.",
+      ].join("<br>");
+    }
     if (redsecAiActionsBox) {
       const events = data.actionStats?.recentEvents || [];
       redsecAiActionsBox.innerHTML = events.length
@@ -1197,6 +1210,7 @@ async function loadRedSecAiSettings() {
       redsecAiStatusBox.textContent = "Failed to load RedSecAI settings.";
     }
     if (redsecAiActionsBox) redsecAiActionsBox.textContent = "Failed to load RedSecAI activity.";
+    if (redsecAiEndpointBox) redsecAiEndpointBox.textContent = "Failed to load RedSecAI endpoint processing mode.";
   }
 }
 
@@ -1211,6 +1225,7 @@ redsecAiSaveBtn?.addEventListener("click", async () => {
         baseUrl: redsecAiBaseUrl?.value || "",
         model: redsecAiModel?.value || "",
         timeoutMs: parseInt(redsecAiTimeoutMs?.value, 10) || 120000,
+        actionTtlSeconds: parseInt(redsecAiActionTtlSeconds?.value, 10) || 7200,
         autostart: !!redsecAiAutostart?.checked,
         autoPull: !!redsecAiAutoPull?.checked,
       }),
@@ -1263,6 +1278,7 @@ redsecAiDiagnosticsBtn?.addEventListener("click", async () => {
       redsecAiDiagnosticsBox.innerHTML = [
         `<strong>Endpoint:</strong> ${escapeHtml(data.config?.baseUrl || "-")}`,
         `<strong>Model:</strong> ${escapeHtml(data.config?.model || "-")}${data.config?.cloudModel ? " (cloud)" : ""}`,
+        `<strong>Processing mode:</strong> ${escapeHtml(data.config?.processingMode || "unknown")}`,
         `<strong>Health:</strong> ${data.health?.ok ? "ready" : escapeHtml(data.health?.error || "not ready")}`,
         formatProbe("/api/generate", generate),
         formatProbe("/api/chat", chat),

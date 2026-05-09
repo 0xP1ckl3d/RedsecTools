@@ -1,6 +1,7 @@
 "use strict";
 
 const { spawn } = require("child_process");
+const net = require("net");
 const { logEvent, logWarn } = require("../../core/logger");
 
 const DEFAULT_MODEL = "qwen3.5:4b";
@@ -17,6 +18,60 @@ function isCloudModel(model) {
 
 function hasLocalModel(models, model) {
   return models.some((name) => name === model || name.startsWith(`${model}:`));
+}
+
+function isPrivateIpv4(hostname) {
+  const parts = String(hostname || "").split(".").map((part) => parseInt(part, 10));
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false;
+  const [a, b] = parts;
+  return a === 10
+    || a === 127
+    || a === 0
+    || (a === 172 && b >= 16 && b <= 31)
+    || (a === 192 && b === 168)
+    || (a === 169 && b === 254);
+}
+
+function classifyEndpoint(baseUrl, model) {
+  let url;
+  try {
+    url = new URL(String(baseUrl || ""));
+  } catch (_) {
+    return {
+      processingMode: "unknown",
+      endpointRisk: "unknown",
+      endpointWarnings: ["RedSecAI endpoint is not a valid http(s) origin."],
+      endpointHost: "",
+    };
+  }
+
+  const hostname = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  const cloudModel = isCloudModel(model);
+  const local = hostname === "localhost" || hostname === "::1" || hostname === "127.0.0.1";
+  const privateIp = net.isIP(hostname) === 4 && isPrivateIpv4(hostname);
+  const privateIpv6 = net.isIP(hostname) === 6 && (hostname === "::1" || hostname.startsWith("fc") || hostname.startsWith("fd") || hostname.startsWith("fe80"));
+  const internalName = !hostname.includes(".") || hostname.endsWith(".local") || hostname.endsWith(".internal") || hostname.endsWith(".lan");
+  const internal = !local && (privateIp || privateIpv6 || internalName);
+  const external = !local && !internal;
+
+  const warnings = [];
+  if (cloudModel) {
+    warnings.push("Cloud models send prompt context and selected tool results through the configured Ollama service to the cloud provider.");
+  }
+  if (external) {
+    warnings.push("This RedSecAI endpoint is not local or private-network scoped. Treat it as an external AI processor.");
+  }
+
+  return {
+    processingMode: local
+      ? (cloudModel ? "local-ollama-cloud-model" : "local-ollama-local-model")
+      : internal
+        ? (cloudModel ? "internal-ollama-cloud-model" : "internal-ollama-local-model")
+        : (cloudModel ? "external-cloud-model" : "external-ollama-endpoint"),
+    endpointRisk: external || cloudModel ? "elevated" : "local",
+    endpointWarnings: warnings,
+    endpointHost: hostname,
+  };
 }
 
 function getConfig() {
@@ -42,6 +97,7 @@ function getConfig() {
   const autostartRaw = setting("redsecai_autostart") || process.env.REDSECAI_AUTOSTART || "";
   const autoPullRaw = setting("redsecai_auto_pull") || process.env.REDSECAI_AUTO_PULL || "true";
   const isLocalhost = /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(baseUrl);
+  const endpoint = classifyEndpoint(baseUrl, model);
   return {
     enabled: enabledRaw !== "false",
     baseUrl,
@@ -54,6 +110,7 @@ function getConfig() {
       : isLocalhost,
     autoPull: autoPullRaw !== "false",
     isLocalhost,
+    ...endpoint,
   };
 }
 
@@ -94,6 +151,9 @@ async function checkModelHealth() {
       timeoutMs: config.timeoutMs,
       numCtx: config.numCtx,
       cloudModel: config.cloudModel,
+      processingMode: config.processingMode,
+      endpointRisk: config.endpointRisk,
+      endpointWarnings: config.endpointWarnings,
       availableModels: models,
       installing,
       error: modelReady ? null : (pullState === "failed" ? "Model pull failed" : missingModelError),
@@ -107,6 +167,9 @@ async function checkModelHealth() {
       timeoutMs: config.timeoutMs,
       numCtx: config.numCtx,
       cloudModel: config.cloudModel,
+      processingMode: config.processingMode,
+      endpointRisk: config.endpointRisk,
+      endpointWarnings: config.endpointWarnings,
       error: error.name === "AbortError" ? "Model service timed out" : "Model service unavailable",
     };
   } finally {
@@ -368,6 +431,9 @@ async function runDiagnostics(timeoutMs = 60000) {
       numCtx: config.numCtx,
       autostart: config.autostart,
       autoPull: config.autoPull,
+      processingMode: config.processingMode,
+      endpointRisk: config.endpointRisk,
+      endpointWarnings: config.endpointWarnings,
     },
     health,
     probes: {
@@ -453,6 +519,7 @@ async function ensureModelInstalled(model) {
 
 module.exports = {
   DEFAULT_MODEL,
+  classifyEndpoint,
   isCloudModel,
   getConfig,
   checkModelHealth,

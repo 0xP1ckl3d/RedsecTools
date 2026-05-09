@@ -48,6 +48,7 @@ const {
   deleteReporterFindingTemplateById,
   getReporterGlobalStats,
   getReporterProjectStats,
+  createAuditEvent,
   createReporterPdfGenerationRow,
   updateReporterPdfGenerationRow,
   getReporterPdfGenerationById,
@@ -86,6 +87,7 @@ const {
   defaultCssTemplate,
 } = require("../reporter-render-service");
 const { renderMarkdownToHtml } = require("../wiki-render");
+const { logEvent, redactObject } = require("../core/logger");
 
 const router = Router();
 const REPORTER_EVIDENCE_DIR = path.join(__dirname, "..", "..", "data", "reporter-evidence");
@@ -101,6 +103,26 @@ const writeLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+function auditReporter(req, { action, targetType = "reporter_project", targetId = null, outcome = "success", metadata = {} }) {
+  try {
+    createAuditEvent({
+      actorUserId: req.access?.userId || req.user?.id || null,
+      actorUsername: req.access?.username || req.user?.username || null,
+      actorType: req.access?.userId || req.user?.id ? "user" : "system",
+      ipAddress: req.ip || null,
+      userAgent: req.get("user-agent") || null,
+      category: "reporter",
+      action,
+      targetType,
+      targetId,
+      outcome,
+      metadata: redactObject(metadata),
+    });
+  } catch (error) {
+    logEvent("audit:write_failed", req, { action, error: error.message });
+  }
+}
 
 // --- Permission helpers ---
 
@@ -581,6 +603,11 @@ router.post("/reporter/projects", writeLimiter, requireUser, attachUserAccess, c
       updateReporterProjectRow(row.id, { title: row.title, clientName: row.clientName, tags });
     }
     recordReporterHistory(row.id, "project", row.id, row, "Project created", req.access.userId, row.version || 1);
+    auditReporter(req, {
+      action: "project_create",
+      targetId: row.id,
+      metadata: { title: row.title, reportType: row.reportType, memberCount: memberList.length },
+    });
     res.json({ success: true, id: row.id });
   } catch (err) {
     res.status(500).json({ error: "Failed to create project" });
@@ -638,6 +665,11 @@ router.delete("/reporter/projects/:id", writeLimiter, requireUser, attachUserAcc
     if (resolvedFile.startsWith(resolvedDir + path.sep) && fs.existsSync(resolvedFile)) fs.unlinkSync(resolvedFile);
   }
   deleteReporterProjectById(req.params.id);
+  auditReporter(req, {
+    action: "project_delete",
+    targetId: req.params.id,
+    metadata: { title: project.title, status: project.status },
+  });
   res.json({ success: true });
 });
 
@@ -648,6 +680,11 @@ router.put("/reporter/projects/:id/status", writeLimiter, requireUser, attachUse
   if (!VALID_PROJECT_STATUSES.includes(status)) return res.status(400).json({ error: "Invalid status" });
   const updated = updateReporterProjectStatus(req.params.id, status);
   recordReporterHistory(req.params.id, "project", req.params.id, updated || { ...project, status }, `Project status changed to ${status}`, req.access.userId, updated?.version || project.version || 1);
+  auditReporter(req, {
+    action: "project_status_change",
+    targetId: req.params.id,
+    metadata: { from: project.status, to: status },
+  });
   res.json({ success: true });
 });
 
@@ -655,6 +692,7 @@ router.post("/reporter/projects/:id/archive", writeLimiter, requireUser, attachU
   const project = await loadProjectForEdit(req, req.params.id);
   if (!project) return res.status(404).json({ error: "Project not found or no edit access" });
   archiveReporterProjectRow(req.params.id, true);
+  auditReporter(req, { action: "project_archive", targetId: req.params.id, metadata: { title: project.title } });
   res.json({ success: true });
 });
 
@@ -662,6 +700,7 @@ router.post("/reporter/projects/:id/unarchive", writeLimiter, requireUser, attac
   const project = await loadProjectForEdit(req, req.params.id);
   if (!project) return res.status(404).json({ error: "Project not found or no edit access" });
   archiveReporterProjectRow(req.params.id, false);
+  auditReporter(req, { action: "project_unarchive", targetId: req.params.id, metadata: { title: project.title } });
   res.json({ success: true });
 });
 
@@ -677,6 +716,11 @@ router.put("/reporter/projects/:id/readonly", writeLimiter, requireUser, attachU
   if (typeof readonly !== "boolean") return res.status(400).json({ error: "readonly must be boolean" });
   setReporterProjectReadonly(req.params.id, readonly);
   recordReporterHistory(req.params.id, "project", req.params.id, project, readonly ? "Project locked (readonly)" : "Project unlocked", req.access.userId);
+  auditReporter(req, {
+    action: "project_readonly_change",
+    targetId: req.params.id,
+    metadata: { readonly: !!readonly, title: project.title },
+  });
   res.json({ success: true });
 });
 
@@ -761,6 +805,12 @@ router.post("/reporter/projects/:id/render-pdf", writeLimiter, requireUser, atta
       status: "complete",
       errorMessage: null,
       renderOptions: req.body?.options || {},
+    });
+    auditReporter(req, {
+      action: "pdf_generate",
+      targetType: "reporter_pdf",
+      targetId: generation.id,
+      metadata: { projectId: req.params.id, fileSize: pdf.length },
     });
     res.json({ success: true, generation: updated });
   } catch (err) {
@@ -852,6 +902,12 @@ router.get("/reporter/pdfs/:id/download", requireUser, attachUserAccess, canView
   const filenameBase = `${String(project.title || "report").replace(/[^a-z0-9._-]+/gi, "-").replace(/^-+|-+$/g, "") || "report"}${version}`;
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `attachment; filename="${filenameBase}.pdf"`);
+  auditReporter(req, {
+    action: "pdf_download",
+    targetType: "reporter_pdf",
+    targetId: generation.id,
+    metadata: { projectId: project.id, filename: `${filenameBase}.pdf` },
+  });
   fs.createReadStream(resolvedFile).pipe(res);
 });
 
@@ -1271,6 +1327,11 @@ router.post("/reporter/projects/:id/members", writeLimiter, requireUser, attachU
   const r = VALID_MEMBER_ROLES.includes(role) ? role : "pentester";
   try {
     addReporterProjectMember(req.params.id, userId, r);
+    auditReporter(req, {
+      action: "project_member_add",
+      targetId: req.params.id,
+      metadata: { userId, role: r },
+    });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: "Failed to add member" });
@@ -1288,6 +1349,11 @@ router.put("/reporter/projects/:id/members/:userId", writeLimiter, requireUser, 
   const { role } = req.body;
   if (!VALID_MEMBER_ROLES.includes(role)) return res.status(400).json({ error: "Invalid role" });
   updateReporterProjectMemberRoleRow(req.params.id, req.params.userId, role);
+  auditReporter(req, {
+    action: "project_member_update",
+    targetId: req.params.id,
+    metadata: { userId: req.params.userId, role },
+  });
   res.json({ success: true });
 });
 
@@ -1301,6 +1367,11 @@ router.delete("/reporter/projects/:id/members/:userId", writeLimiter, requireUse
   const isLead = requesterMember?.role === "lead" || caps.canManageAll;
   if (!isLead) return res.status(403).json({ error: "Only project leads can remove members" });
   removeReporterProjectMemberRow(req.params.id, req.params.userId);
+  auditReporter(req, {
+    action: "project_member_remove",
+    targetId: req.params.id,
+    metadata: { userId: req.params.userId },
+  });
   res.json({ success: true });
 });
 

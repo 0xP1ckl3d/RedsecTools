@@ -1,58 +1,43 @@
 "use strict";
 
 const crypto = require("crypto");
-const { db } = require("../../database");
 const { executeRedSecAiTool, normalizeRedSecAiToolCall, TOOL_ALLOWLIST } = require("./context");
+const actionRepo = require("./action-repo");
+const { isHighImpactRedSecAiTool } = require("./governance");
 
-const ACTION_TTL_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_ACTION_TTL_SECONDS = 2 * 60 * 60;
+const MIN_ACTION_TTL_SECONDS = 5 * 60;
+const MAX_ACTION_TTL_SECONDS = 24 * 60 * 60;
+const HIGH_IMPACT_ACTION_TTL_SECONDS = 30 * 60;
 const MAX_PENDING_PER_USER = 20;
 const recentEvents = [];
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS redsecai_pending_actions (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    username TEXT,
-    tool TEXT NOT NULL,
-    capability TEXT,
-    method TEXT,
-    path TEXT,
-    args_json TEXT NOT NULL,
-    summary TEXT,
-    source TEXT,
-    created_at INTEGER NOT NULL,
-    expires_at INTEGER NOT NULL,
-    executed_at INTEGER
-  );
-  CREATE INDEX IF NOT EXISTS idx_redsecai_pending_actions_user ON redsecai_pending_actions(user_id, expires_at);
-  CREATE INDEX IF NOT EXISTS idx_redsecai_pending_actions_expires ON redsecai_pending_actions(expires_at);
-`);
-
-const stmts = {
-  upsertAction: db.prepare(`
-    INSERT OR REPLACE INTO redsecai_pending_actions (
-      id, user_id, username, tool, capability, method, path, args_json, summary, source, created_at, expires_at, executed_at
-    ) VALUES (
-      @id, @userId, @username, @tool, @capability, @method, @path, @argsJson, @summary, @source, @createdAt, @expiresAt, @executedAt
-    )
-  `),
-  getAction: db.prepare("SELECT * FROM redsecai_pending_actions WHERE id = ?"),
-  deleteAction: db.prepare("DELETE FROM redsecai_pending_actions WHERE id = ?"),
-  deleteExpiredActions: db.prepare("DELETE FROM redsecai_pending_actions WHERE expires_at <= ? OR executed_at IS NOT NULL"),
-  listActionsForUser: db.prepare(`
-    SELECT * FROM redsecai_pending_actions
-    WHERE user_id = ? AND expires_at > ? AND executed_at IS NULL
-    ORDER BY created_at DESC
-  `),
-  listPendingActions: db.prepare(`
-    SELECT * FROM redsecai_pending_actions
-    WHERE expires_at > ? AND executed_at IS NULL
-    ORDER BY created_at DESC
-  `),
-};
-
 function now() {
   return Date.now();
+}
+
+function clampActionTtlSeconds(value) {
+  const parsed = parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return DEFAULT_ACTION_TTL_SECONDS;
+  return Math.min(MAX_ACTION_TTL_SECONDS, Math.max(MIN_ACTION_TTL_SECONDS, parsed));
+}
+
+function getConfiguredActionTtlSeconds() {
+  try {
+    const { getSetting } = require("../../database");
+    return clampActionTtlSeconds(getSetting("redsecai_action_ttl_seconds") || process.env.REDSECAI_ACTION_TTL_SECONDS);
+  } catch (_) {
+    return clampActionTtlSeconds(process.env.REDSECAI_ACTION_TTL_SECONDS);
+  }
+}
+
+function getRedSecAiActionTtlMs(toolName) {
+  const ttlSeconds = getConfiguredActionTtlSeconds();
+  const tool = TOOL_ALLOWLIST[toolName] || {};
+  const effectiveSeconds = isHighImpactRedSecAiTool(toolName, tool)
+    ? Math.min(ttlSeconds, HIGH_IMPACT_ACTION_TTL_SECONDS)
+    : ttlSeconds;
+  return effectiveSeconds * 1000;
 }
 
 function summarizeAction(toolName, args = {}) {
@@ -121,7 +106,7 @@ function summarizeAction(toolName, args = {}) {
 }
 
 function cleanExpiredActions() {
-  stmts.deleteExpiredActions.run(now());
+  actionRepo.deleteExpiredActions(now());
 }
 
 function rememberEvent(event) {
@@ -138,7 +123,7 @@ function createPendingAction(user, call, source = "model") {
   const userId = user?.id || user?.userId;
   const existing = listInternalActionsForUser(userId);
   for (const action of existing.slice(MAX_PENDING_PER_USER - 1)) {
-    stmts.deleteAction.run(action.id);
+    actionRepo.deleteAction(action.id);
   }
 
   const id = crypto.randomBytes(16).toString("base64url");
@@ -155,7 +140,7 @@ function createPendingAction(user, call, source = "model") {
     summary: summarizeAction(normalizedCall.tool, normalizedCall.args || {}),
     source,
     createdAt: now(),
-    expiresAt: now() + ACTION_TTL_MS,
+    expiresAt: now() + getRedSecAiActionTtlMs(normalizedCall.tool),
     executedAt: null,
   };
   persistAction(action);
@@ -170,7 +155,7 @@ function createPendingAction(user, call, source = "model") {
 }
 
 function persistAction(action) {
-  stmts.upsertAction.run({
+  actionRepo.upsertAction({
     id: action.id,
     userId: action.userId,
     username: action.username || null,
@@ -182,7 +167,7 @@ function persistAction(action) {
     summary: action.summary || `Run ${action.tool}`,
     source: action.source || "model",
     createdAt: Number(action.createdAt) || now(),
-    expiresAt: Number(action.expiresAt) || (now() + ACTION_TTL_MS),
+    expiresAt: Number(action.expiresAt) || (now() + getRedSecAiActionTtlMs(action.tool)),
     executedAt: action.executedAt || null,
   });
 }
@@ -213,13 +198,13 @@ function parseActionRow(row) {
 }
 
 function getInternalAction(actionId) {
-  return parseActionRow(stmts.getAction.get(actionId));
+  return parseActionRow(actionRepo.getAction(actionId));
 }
 
 function listInternalActionsForUser(userId) {
   if (!userId) return [];
   cleanExpiredActions();
-  return stmts.listActionsForUser.all(userId, now()).map(parseActionRow).filter(Boolean);
+  return actionRepo.listActionsForUser(userId, now()).map(parseActionRow).filter(Boolean);
 }
 
 function serializeAction(action) {
@@ -248,7 +233,7 @@ async function confirmPendingAction(req, actionId) {
   action.args = normalizedCall.args;
   const result = await executeRedSecAiTool(req, action.tool, action.args, { confirmed: true });
   action.executedAt = now();
-  stmts.deleteAction.run(action.id);
+  actionRepo.deleteAction(action.id);
   rememberEvent({
     type: result.ok ? "action_executed" : "action_failed",
     userId: action.userId,
@@ -268,7 +253,7 @@ function cancelPendingAction(req, actionId) {
     error.status = 404;
     throw error;
   }
-  stmts.deleteAction.run(action.id);
+  actionRepo.deleteAction(action.id);
   rememberEvent({
     type: "action_rejected",
     userId: action.userId,
@@ -292,13 +277,15 @@ function filterPendingActionsForUser(userId, actions = []) {
 
 function getRedSecAiActionStats() {
   cleanExpiredActions();
-  const pending = stmts.listPendingActions.all(now()).map(parseActionRow).filter(Boolean);
+  const pending = actionRepo.listPendingActions(now()).map(parseActionRow).filter(Boolean);
   return {
     pendingCount: pending.length,
     pendingByTool: pending.reduce((acc, action) => {
       acc[action.tool] = (acc[action.tool] || 0) + 1;
       return acc;
     }, {}),
+    actionTtlSeconds: getConfiguredActionTtlSeconds(),
+    highImpactActionTtlSeconds: HIGH_IMPACT_ACTION_TTL_SECONDS,
     recentEvents: recentEvents.slice(0, 30),
   };
 }
@@ -309,6 +296,7 @@ module.exports = {
   createPendingAction,
   filterPendingActionsForUser,
   getRedSecAiActionStats,
+  getRedSecAiActionTtlMs,
   listPendingActionsForUser,
   summarizeAction,
 };

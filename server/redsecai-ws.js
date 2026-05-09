@@ -8,6 +8,7 @@ const { guardRedSecAiFinalResponse, normalizeMessages, prepareRedSecAiTurn } = r
 const provider = require("./modules/redsecai/provider");
 const { filterPendingActionsForUser } = require("./modules/redsecai/actions");
 const { logEvent, logWarn } = require("./core/logger");
+const { isAllowedWebSocketOrigin } = require("./core/security/ws-origin");
 
 const COOKIE_SECRET = process.env.COOKIE_SECRET;
 const HEARTBEAT_INTERVAL = 30000;
@@ -241,6 +242,13 @@ function initRedSecAiWebSocket(server) {
   server.on("upgrade", (req, socket, head) => {
     if (!String(req.url || "").startsWith("/ws/redsecai")) return;
 
+    if (!isAllowedRedSecAiWebSocketOrigin(req)) {
+      logWarn("redsecai:ws_origin_rejected", { origin: req.headers.origin || null, host: req.headers.host || null });
+      socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+
     authenticateUpgrade(req)
       .then((auth) => {
         if (!auth) {
@@ -308,6 +316,11 @@ function initRedSecAiWebSocket(server) {
   return wss;
 }
 
+function isAllowedRedSecAiWebSocketOrigin(req) {
+  return isAllowedWebSocketOrigin(req);
+}
+
 module.exports = {
   initRedSecAiWebSocket,
+  isAllowedRedSecAiWebSocketOrigin,
 };

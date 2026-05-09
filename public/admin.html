@@ -967,6 +967,13 @@
               <span class="text-xs font-semibold uppercase tracking-wide text-muted">Timeout (ms)</span>
               <input id="redsecai-timeout-ms" type="number" min="5000" max="600000" step="1000" class="input-field">
             </label>
+            <label class="space-y-1">
+              <span class="text-xs font-semibold uppercase tracking-wide text-muted">Action expiry (seconds)</span>
+              <input id="redsecai-action-ttl-seconds" type="number" min="300" max="86400" step="60" class="input-field">
+            </label>
+          </div>
+
+          <div class="grid gap-4 md:grid-cols-2 mt-4">
             <label class="bulletin-checkbox-row">
               <input id="redsecai-autostart" type="checkbox" class="checkbox-field">
               <span>
@@ -976,6 +983,7 @@
             </label>
           </div>
 
+          <div id="redsecai-endpoint-box" class="info-box text-sm mt-4">Loading endpoint processing mode...</div>
           <div id="redsecai-status-box" class="info-box text-sm mt-4">Loading RedSecAI status...</div>
           <div id="redsecai-diagnostics-box" class="info-box text-sm mt-4 hidden"></div>
           <div id="redsecai-actions-box" class="info-box text-sm mt-4">Loading RedSecAI action activity...</div>

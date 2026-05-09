@@ -5,11 +5,32 @@ const rateLimit = require("express-rate-limit");
 const { requireUser } = require("../middleware/auth");
 const { attachUserAccess } = require("../middleware/permissions");
 const { logEvent, logWarn } = require("../core/logger");
+const { createAuditEvent } = require("../database");
 const provider = require("../modules/redsecai/provider");
 const { normalizeMessages, runRedSecAiChat } = require("../modules/redsecai/orchestrator");
 const { cancelPendingAction, confirmPendingAction, listPendingActionsForUser } = require("../modules/redsecai/actions");
 
 const router = Router();
+
+function auditRedSecAi(req, { action, targetId = null, outcome = "success", metadata = {} }) {
+  try {
+    createAuditEvent({
+      actorUserId: req.user?.id || null,
+      actorUsername: req.user?.username || null,
+      actorType: req.user?.id ? "user" : "system",
+      ipAddress: req.ip || null,
+      userAgent: req.get("user-agent") || null,
+      category: "redsecai",
+      action,
+      targetType: "pending_action",
+      targetId,
+      outcome,
+      metadata,
+    });
+  } catch (error) {
+    logWarn("redsecai:audit_write_failed", { action, error: error.message });
+  }
+}
 
 const chatLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -20,6 +41,7 @@ const chatLimiter = rateLimit({
 });
 
 router.get("/ai/status", requireUser, attachUserAccess, async (req, res) => {
+  const config = provider.getConfig();
   const health = await provider.checkModelHealth();
   res.json({
     enabled: health.enabled,
@@ -29,6 +51,9 @@ router.get("/ai/status", requireUser, attachUserAccess, async (req, res) => {
     baseUrl: health.baseUrl,
     timeoutMs: health.timeoutMs,
     numCtx: health.numCtx,
+    processingMode: health.processingMode || config.processingMode,
+    endpointRisk: health.endpointRisk || config.endpointRisk,
+    endpointWarnings: health.endpointWarnings || config.endpointWarnings || [],
     installing: !!health.installing,
     error: health.error,
     pendingActions: listPendingActionsForUser(req.user.id),
@@ -43,6 +68,16 @@ router.post("/ai/actions/:id/confirm", chatLimiter, requireUser, attachUserAcces
       status: confirmed.result.status,
       ok: confirmed.result.ok,
     });
+    auditRedSecAi(req, {
+      action: "pending_action_confirm",
+      targetId: confirmed.action.id,
+      outcome: confirmed.result.ok ? "success" : "failure",
+      metadata: {
+        tool: confirmed.action.tool,
+        status: confirmed.result.status,
+        ok: confirmed.result.ok,
+      },
+    });
     res.status(confirmed.result.ok ? 200 : confirmed.result.status || 400).json({
       success: !!confirmed.result.ok,
       action: confirmed.action,
@@ -51,6 +86,12 @@ router.post("/ai/actions/:id/confirm", chatLimiter, requireUser, attachUserAcces
     });
   } catch (error) {
     logWarn("redsecai:action_confirm_failed", { message: error.message, status: error.status || 500 });
+    auditRedSecAi(req, {
+      action: "pending_action_confirm",
+      targetId: req.params.id,
+      outcome: "failure",
+      metadata: { status: error.status || 500, reason: error.message },
+    });
     res.status(error.status || 500).json({ error: error.message || "RedSecAI action could not be confirmed" });
   }
 });
@@ -61,9 +102,20 @@ router.post("/ai/actions/:id/reject", chatLimiter, requireUser, attachUserAccess
     logEvent("redsecai:action_rejected", req, {
       tool: action.tool,
     });
+    auditRedSecAi(req, {
+      action: "pending_action_reject",
+      targetId: action.id,
+      metadata: { tool: action.tool },
+    });
     res.json({ success: true, action });
   } catch (error) {
     logWarn("redsecai:action_reject_failed", { message: error.message, status: error.status || 500 });
+    auditRedSecAi(req, {
+      action: "pending_action_reject",
+      targetId: req.params.id,
+      outcome: "failure",
+      metadata: { status: error.status || 500, reason: error.message },
+    });
     res.status(error.status || 500).json({ error: error.message || "RedSecAI action could not be rejected" });
   }
 });

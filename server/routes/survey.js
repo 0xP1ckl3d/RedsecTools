@@ -20,7 +20,9 @@ const {
   reorderSurveyQuestions,
   getSurveyStats,
   getSurveyResponseById,
+  createAuditEvent,
 } = require("../database");
+const { logEvent, redactObject } = require("../core/logger");
 
 const router = Router();
 
@@ -43,6 +45,26 @@ const publicSurveyLimiter = rateLimit({
 const SURVEY_RESPONSE_COOKIE = "redsec_survey_response";
 const SURVEY_RESPONSE_COOKIE_TTL = 7 * 24 * 60 * 60;
 const SURVEY_RESPONSE_COOKIE_MAX_ENTRIES = 24;
+
+function auditSurvey(req, { action, targetId = null, outcome = "success", metadata = {} }) {
+  try {
+    createAuditEvent({
+      actorUserId: req.user?.id || null,
+      actorUsername: req.user?.username || null,
+      actorType: req.user?.id ? "user" : "system",
+      ipAddress: req.ip || null,
+      userAgent: req.get("user-agent") || null,
+      category: "survey",
+      action,
+      targetType: "survey",
+      targetId,
+      outcome,
+      metadata: redactObject(metadata),
+    });
+  } catch (error) {
+    logEvent("audit:write_failed", req, { action, error: error.message });
+  }
+}
 
 function getSurveyResponseCookieEntries(req) {
   const cookie = req.signedCookies?.[SURVEY_RESPONSE_COOKIE];
@@ -151,6 +173,11 @@ router.post("/survey", surveyWriteLimiter, requireUser, attachUserAccess, (req, 
     endsAt: endsAt ? parseInt(endsAt, 10) : null,
   });
   replaceSurveyQuestions(id, Array.isArray(questions) ? questions : []);
+  auditSurvey(req, {
+    action: shouldPublish ? "survey_create_published" : "survey_create",
+    targetId: id,
+    metadata: { title: title.trim().slice(0, 160), responseMode, questionCount: Array.isArray(questions) ? questions.length : 0 },
+  });
   res.json({ success: true, id, publicToken });
 });
 
@@ -179,6 +206,13 @@ router.put("/survey/:id", surveyWriteLimiter, requireUser, attachUserAccess, (re
     replaceSurveyQuestions(survey.id, req.body.questions);
   }
   const refreshed = getSurveyById(survey.id);
+  if (survey.status !== refreshed.status) {
+    auditSurvey(req, {
+      action: "survey_status_change",
+      targetId: survey.id,
+      metadata: { from: survey.status, to: refreshed.status },
+    });
+  }
   res.json({ success: true, survey: mapSurvey(refreshed) });
 });
 
@@ -189,6 +223,7 @@ router.delete("/survey/:id", surveyWriteLimiter, requireUser, attachUserAccess, 
     return res.status(403).json({ error: "Survey management denied" });
   }
   deleteSurveyById(survey.id);
+  auditSurvey(req, { action: "survey_delete", targetId: survey.id, metadata: { title: survey.title, status: survey.status } });
   res.json({ success: true });
 });
 
@@ -243,6 +278,11 @@ router.put("/survey/:id/status", surveyWriteLimiter, requireUser, attachUserAcce
 
   updateSurvey(updates);
   const refreshed = getSurveyById(survey.id);
+  auditSurvey(req, {
+    action: action === "publish" || action === "reopen" ? "survey_publish" : "survey_close",
+    targetId: survey.id,
+    metadata: { lifecycleAction: action, from: survey.status, to: refreshed.status },
+  });
   res.json({ success: true, survey: mapSurvey(refreshed) });
 });
 

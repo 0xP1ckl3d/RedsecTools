@@ -75,6 +75,26 @@ function auditAdmin(req, { category = "admin", action, targetType = null, target
   }
 }
 
+function auditAdminLogin(req, linkedUserSession, { outcome, metadata = {}, targetId = null }) {
+  try {
+    createAuditEvent({
+      actorUserId: linkedUserSession?.id || null,
+      actorUsername: linkedUserSession?.username || null,
+      actorType: "admin",
+      ipAddress: req.ip || null,
+      userAgent: req.get("user-agent") || null,
+      category: "auth",
+      action: "admin_login",
+      targetType: targetId ? "admin_session" : null,
+      targetId,
+      outcome,
+      metadata: redactObject(metadata),
+    });
+  } catch (error) {
+    logEvent("audit:write_failed", req, { action: "admin_login", error: error.message });
+  }
+}
+
 function getDirectorySize(dirPath) {
   let total = 0;
   try {
@@ -239,6 +259,7 @@ router.post("/login", adminLoginLimiter, (req, res) => {
   if (userCount > 0) {
     linkedUserSession = getActiveUserSession(req);
     if (!linkedUserSession) {
+      auditAdminLogin(req, null, { outcome: "failure", metadata: { reason: "user_session_required" } });
       return res.status(403).json({ error: "Admin access requires an active user session. Please log in to your account first." });
     }
   }
@@ -248,27 +269,11 @@ router.post("/login", adminLoginLimiter, (req, res) => {
   const b = Buffer.from(String(ADMIN_PASSWORD), "utf8");
   if (a.length !== b.length) {
     crypto.timingSafeEqual(a, a); // Constant-time dummy
-    createAuditEvent({
-      actorType: "admin",
-      ipAddress: req.ip || null,
-      userAgent: req.get("user-agent") || null,
-      category: "auth",
-      action: "admin_login",
-      outcome: "failure",
-      metadata: { reason: "invalid_password" },
-    });
+    auditAdminLogin(req, linkedUserSession, { outcome: "failure", metadata: { reason: "invalid_password" } });
     return res.status(401).json({ error: "Invalid password" });
   }
   if (!crypto.timingSafeEqual(a, b)) {
-    createAuditEvent({
-      actorType: "admin",
-      ipAddress: req.ip || null,
-      userAgent: req.get("user-agent") || null,
-      category: "auth",
-      action: "admin_login",
-      outcome: "failure",
-      metadata: { reason: "invalid_password" },
-    });
+    auditAdminLogin(req, linkedUserSession, { outcome: "failure", metadata: { reason: "invalid_password" } });
     return res.status(401).json({ error: "Invalid password" });
   }
 
@@ -285,17 +290,7 @@ router.post("/login", adminLoginLimiter, (req, res) => {
   res.cookie("redsec_admin", sessionToken, adminCookieOptions());
 
   logEvent("admin:login", req, { userId: linkedUserSession?.id || null });
-  createAuditEvent({
-    actorUserId: linkedUserSession?.id || null,
-    actorUsername: linkedUserSession?.username || null,
-    actorType: "admin",
-    ipAddress: req.ip || null,
-    userAgent: req.get("user-agent") || null,
-    category: "auth",
-    action: "admin_login",
-    targetType: "admin_session",
-    outcome: "success",
-  });
+  auditAdminLogin(req, linkedUserSession, { outcome: "success", targetId: sessionToken });
   res.json({ success: true });
 });
 
@@ -523,7 +518,11 @@ router.get("/api/settings/redsecai", requireAdmin, async (req, res) => {
     baseUrl: config.baseUrl,
     model: config.model,
     cloudModel: config.cloudModel,
+    processingMode: config.processingMode,
+    endpointRisk: config.endpointRisk,
+    endpointWarnings: config.endpointWarnings,
     timeoutMs: config.timeoutMs,
+    actionTtlSeconds: actionStats.actionTtlSeconds,
     autostart: config.autostart,
     autoPull: config.autoPull,
     ready: health.ok,
@@ -547,8 +546,12 @@ router.post("/api/settings/redsecai", requireAdmin, (req, res) => {
   const baseUrl = String(req.body?.baseUrl || "").trim().replace(/\/+$/, "");
   const model = String(req.body?.model || "").trim();
   const timeoutMs = parseInt(req.body?.timeoutMs, 10);
+  const actionTtlSeconds = req.body?.actionTtlSeconds === undefined
+    ? (parseInt(getSetting("redsecai_action_ttl_seconds"), 10) || 7200)
+    : parseInt(req.body?.actionTtlSeconds, 10);
   const autostart = req.body?.autostart === true;
   const autoPull = req.body?.autoPull !== false;
+  const endpoint = redsecAiProvider.classifyEndpoint(baseUrl, model);
 
   if (!/^https?:\/\/[A-Za-z0-9._:-]+$/i.test(baseUrl)) {
     return res.status(400).json({ error: "RedSecAI base URL must be an http(s) origin without a path" });
@@ -559,11 +562,15 @@ router.post("/api/settings/redsecai", requireAdmin, (req, res) => {
   if (!Number.isInteger(timeoutMs) || timeoutMs < 5000 || timeoutMs > 600000) {
     return res.status(400).json({ error: "RedSecAI timeout must be between 5000 and 600000 ms" });
   }
+  if (!Number.isInteger(actionTtlSeconds) || actionTtlSeconds < 300 || actionTtlSeconds > 86400) {
+    return res.status(400).json({ error: "RedSecAI action expiry must be between 300 and 86400 seconds" });
+  }
 
   setSetting("redsecai_enabled", enabled ? "true" : "false");
   setSetting("redsecai_base_url", baseUrl);
   setSetting("redsecai_model", model);
   setSetting("redsecai_timeout_ms", String(timeoutMs));
+  setSetting("redsecai_action_ttl_seconds", String(actionTtlSeconds));
   setSetting("redsecai_autostart", autostart ? "true" : "false");
   setSetting("redsecai_auto_pull", autoPull ? "true" : "false");
 
@@ -571,7 +578,17 @@ router.post("/api/settings/redsecai", requireAdmin, (req, res) => {
     category: "settings",
     action: "redsecai_update",
     targetType: "redsecai_settings",
-    metadata: { enabled, baseUrl, model, timeoutMs, autostart, autoPull },
+    metadata: {
+      enabled,
+      baseUrl,
+      model,
+      timeoutMs,
+      actionTtlSeconds,
+      autostart,
+      autoPull,
+      processingMode: endpoint.processingMode,
+      endpointRisk: endpoint.endpointRisk,
+    },
   });
 
   res.json({ success: true });

@@ -2,7 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const { compactJson, executeRedSecAiTool, hasAny } = require("../server/modules/redsecai/context");
-const { checkModelHealth, getConfig, isCloudModel, runDiagnostics } = require("../server/modules/redsecai/provider");
+const { checkModelHealth, classifyEndpoint, getConfig, isCloudModel, runDiagnostics } = require("../server/modules/redsecai/provider");
 const { extractJsonObject, guardRedSecAiFinalResponse, sanitizeModelToolCalls } = require("../server/modules/redsecai/orchestrator");
 
 async function withMockedDate(isoString, fn) {
@@ -95,6 +95,134 @@ test("Every RedSecAI allowlisted tool has a strict input schema", () => {
       /not a valid field/,
       `${toolName} should reject unknown top-level fields`
     );
+  }
+});
+
+test("Every RedSecAI allowlisted tool has governance metadata and excludes encrypted products", () => {
+  const {
+    getRedSecAiToolGovernanceMatrix,
+    getRedSecAiToolManifest,
+    TOOL_ALLOWLIST,
+  } = require("../server/modules/redsecai/context");
+  const { findEncryptedRedSecAiTools } = require("../server/modules/redsecai/governance");
+  const matrix = getRedSecAiToolGovernanceMatrix();
+  assert.deepEqual(findEncryptedRedSecAiTools(TOOL_ALLOWLIST), []);
+
+  for (const [name, tool] of Object.entries(TOOL_ALLOWLIST)) {
+    assert.ok(matrix[name], `${name} missing governance`);
+    assert.ok(matrix[name].domain, `${name} missing domain`);
+    assert.ok(matrix[name].dataClass, `${name} missing data class`);
+    assert.equal(matrix[name].confirmRequired, !!tool.confirmRequired, `${name} confirmation mismatch`);
+    if (tool.confirmRequired) assert.match(matrix[name].riskLevel, /^(medium|high)$/);
+  }
+
+  const manifest = getRedSecAiToolManifest({
+    userId: "u1",
+    permissionSet: new Set(["wiki.view", "wiki.edit_team"]),
+  }, ["wiki.page.update"]);
+  assert.equal(manifest.length, 1);
+  assert.equal(manifest[0].governance.confirmRequired, true);
+  assert.equal(manifest[0].governance.domain, "wiki");
+});
+
+test("RedSecAI endpoint classifier distinguishes local, internal, external, and cloud modes", () => {
+  assert.equal(classifyEndpoint("http://127.0.0.1:11434", "qwen3.5:4b").processingMode, "local-ollama-local-model");
+  assert.equal(classifyEndpoint("http://redsecai:11434", "gemma4:31b-cloud").processingMode, "internal-ollama-cloud-model");
+  assert.equal(classifyEndpoint("https://ai.example.com", "qwen3.5:4b").processingMode, "external-ollama-endpoint");
+  const cloud = classifyEndpoint("http://redsecai:11434", "kimi-k2.5:cloud");
+  assert.equal(cloud.endpointRisk, "elevated");
+  assert.ok(cloud.endpointWarnings.some((warning) => warning.includes("Cloud models")));
+});
+
+test("RedSecAI WebSocket origin checks allow same-origin/trusted and reject cross-site origins", () => {
+  const { isAllowedWebSocketOrigin } = require("../server/core/security/ws-origin");
+  assert.equal(isAllowedWebSocketOrigin({
+    headers: { origin: "https://tools.example.com", host: "tools.example.com" },
+  }), true);
+  assert.equal(isAllowedWebSocketOrigin({
+    headers: { origin: "https://tools.example.com", host: "internal:3000", "x-forwarded-host": "tools.example.com" },
+  }), true);
+  assert.equal(isAllowedWebSocketOrigin({
+    headers: { origin: "https://trusted.example.com", host: "tools.example.com" },
+  }, { trustedOrigins: ["https://trusted.example.com"] }), true);
+  assert.equal(isAllowedWebSocketOrigin({
+    headers: { origin: "https://evil.example.com", host: "tools.example.com" },
+  }, { trustedOrigins: ["https://trusted.example.com"] }), false);
+});
+
+test("CSP keeps RedSecAI WebSocket same-origin instead of allowing arbitrary ws origins", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const source = fs.readFileSync(path.join(__dirname, "../server/index.js"), "utf8");
+  const connectSrcLine = source.split(/\r?\n/).find((line) => line.includes("connectSrc"));
+  assert.ok(connectSrcLine.includes("\"'self'\""));
+  assert.equal(connectSrcLine.includes("\"ws:\""), false);
+  assert.equal(connectSrcLine.includes("\"wss:\""), false);
+});
+
+test("RedSecAI keeps /ai as the canonical page without stale /ai/about links", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const root = path.join(__dirname, "..");
+  assert.equal(fs.existsSync(path.join(root, "public/ai/about.html")), false);
+  const files = [
+    "server/index.js",
+    "public/js/redsecai.js",
+    "public/js/burger-menu.js",
+    "README.md",
+    "docs/api/README.md",
+  ];
+  for (const file of files) {
+    const source = fs.readFileSync(path.join(root, file), "utf8");
+    assert.equal(source.includes("/ai/about"), false, `${file} should not link to stale /ai/about`);
+  }
+  const aiScript = fs.readFileSync(path.join(root, "public/js/redsecai.js"), "utf8");
+  assert.ok(aiScript.includes("/ai?view=about"), "RedSecAI widget should link to the canonical AI page about view");
+});
+
+test("RedSecAI pending actions use configurable expiry, shorten high-impact actions, and stay user-scoped", () => {
+  const {
+    cancelPendingAction,
+    createPendingAction,
+    getRedSecAiActionTtlMs,
+    listPendingActionsForUser,
+  } = require("../server/modules/redsecai/actions");
+
+  const normalTtl = getRedSecAiActionTtlMs("wiki.page.update");
+  const highRiskTtl = getRedSecAiActionTtlMs("reporter.project.delete");
+  assert.ok(normalTtl >= 5 * 60 * 1000);
+  assert.ok(highRiskTtl <= 30 * 60 * 1000);
+  assert.ok(highRiskTtl <= normalTtl);
+
+  const action = createPendingAction({ id: "scope-user-a", username: "alice" }, {
+    tool: "wiki.page.update",
+    args: { pathParams: { id: "page-123" }, body: { title: "Updated" } },
+  });
+  assert.ok(listPendingActionsForUser("scope-user-a").some((item) => item.id === action.id));
+  assert.equal(listPendingActionsForUser("scope-user-b").some((item) => item.id === action.id), false);
+  assert.throws(
+    () => cancelPendingAction({ user: { id: "scope-user-b" } }, action.id),
+    /not found or expired/
+  );
+  cancelPendingAction({ user: { id: "scope-user-a" } }, action.id);
+});
+
+test("RedSecAI expired pending actions are not returned after refresh/resume", () => {
+  const {
+    createPendingAction,
+    listPendingActionsForUser,
+  } = require("../server/modules/redsecai/actions");
+  const realNow = Date.now;
+  try {
+    Date.now = () => realNow() - (3 * 60 * 60 * 1000);
+    const action = createPendingAction({ id: "expired-user", username: "alice" }, {
+      tool: "wiki.page.update",
+      args: { pathParams: { id: "page-expired" }, body: { title: "Expired" } },
+    });
+    Date.now = realNow;
+    assert.equal(listPendingActionsForUser("expired-user").some((item) => item.id === action.id), false);
+  } finally {
+    Date.now = realNow;
   }
 });
 

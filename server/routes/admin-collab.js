@@ -255,6 +255,7 @@ router.post("/api/threat/feeds", writeLimiter, requireAdmin, (req, res) => {
     fetchInterval: interval,
     feedMetadata: feedMetadata ? JSON.stringify(feedMetadata) : "{}",
   });
+  auditAdmin(req, { category: "threat", action: "feed_create", targetType: "threat_feed", targetId: feed.id, metadata: { name: feed.name, feedType: feed.feedType, enabled: feed.enabled } });
   res.json({ success: true, feed });
 });
 
@@ -276,6 +277,7 @@ router.put("/api/threat/feeds/:id", writeLimiter, requireAdmin, (req, res) => {
   if (typeof req.body?.feedMetadata === "object") updates.feedMetadata = JSON.stringify(req.body.feedMetadata);
   const updated = updateThreatFeed(feedId, updates);
   if (!updated) return res.status(404).json({ error: "Feed not found" });
+  auditAdmin(req, { category: "threat", action: "feed_update", targetType: "threat_feed", targetId: feedId, metadata: { changedFields: Object.keys(updates), feedType: updated.feedType, enabled: updated.enabled } });
   res.json({ success: true, feed: updated });
 });
 
@@ -291,6 +293,7 @@ router.post("/api/threat/feeds/refresh-all", writeLimiter, requireAdmin, async (
 router.delete("/api/threat/feeds/:id", writeLimiter, requireAdmin, (req, res) => {
   const deleted = deleteThreatFeedById(req.params.id);
   if (!deleted) return res.status(404).json({ error: "Feed not found" });
+  auditAdmin(req, { category: "threat", action: "feed_delete", targetType: "threat_feed", targetId: req.params.id });
   res.json({ success: true });
 });
 
@@ -309,6 +312,7 @@ router.post("/api/threat/templates", writeLimiter, requireAdmin, (req, res) => {
     configuration: req.body?.configuration || {},
     enabled: req.body?.enabled !== false,
   });
+  auditAdmin(req, { category: "threat", action: "api_template_create", targetType: "threat_api_template", targetId: template.id, metadata: { name: template.name, enabled: template.enabled } });
   res.json({ success: true, template });
 });
 
@@ -320,6 +324,7 @@ router.put("/api/threat/templates/:id", writeLimiter, requireAdmin, (req, res) =
     enabled: req.body?.enabled,
   });
   if (!template) return res.status(404).json({ error: "Template not found" });
+  auditAdmin(req, { category: "threat", action: "api_template_update", targetType: "threat_api_template", targetId: req.params.id, metadata: { name: template.name, enabled: template.enabled } });
   res.json({ success: true, template });
 });
 
@@ -328,6 +333,7 @@ router.delete("/api/threat/templates/:id", writeLimiter, requireAdmin, (req, res
   if (!template) return res.status(404).json({ error: "Template not found" });
   if (template.isSystem) return res.status(403).json({ error: "System templates cannot be deleted." });
   deleteThreatApiTemplateById(req.params.id);
+  auditAdmin(req, { category: "threat", action: "api_template_delete", targetType: "threat_api_template", targetId: req.params.id, metadata: { name: template.name } });
   res.json({ success: true });
 });
 
@@ -381,6 +387,12 @@ router.put("/api/threat/settings", writeLimiter, requireAdmin, (req, res) => {
   setSetting("threat_notify_discord_avatar_url", typeof discordPolicy.avatarUrl === "string" ? discordPolicy.avatarUrl.trim() : "");
 
   restartFeedFetchInterval();
+  auditAdmin(req, {
+    category: "threat",
+    action: "settings_update",
+    targetType: "threat_settings",
+    metadata: { autoFetch, fetchIntervalMinutes, alertRetentionDays, torProxyUrlSet: !!torProxyUrl, notificationPolicyChanged: true },
+  });
 
   res.json({
     success: true,
@@ -411,6 +423,7 @@ router.post("/api/threat/notifications", writeLimiter, requireAdmin, (req, res) 
     destination: String(destination).trim(),
     enabled: enabled !== false,
   });
+  auditAdmin(req, { category: "threat", action: "notification_create", targetType: "threat_notification", targetId: notification.id, metadata: { name: notification.name, channelType: notification.channelType, enabled: notification.enabled } });
   res.json({ success: true, notification });
 });
 
@@ -421,12 +434,14 @@ router.put("/api/threat/notifications/:id", writeLimiter, requireAdmin, (req, re
     enabled: req.body?.enabled,
   });
   if (!updated) return res.status(404).json({ error: "Notification config not found" });
+  auditAdmin(req, { category: "threat", action: "notification_update", targetType: "threat_notification", targetId: req.params.id, metadata: { name: updated.name, channelType: updated.channelType, enabled: updated.enabled } });
   res.json({ success: true, notification: updated });
 });
 
 router.delete("/api/threat/notifications/:id", writeLimiter, requireAdmin, (req, res) => {
   const deleted = deleteThreatNotificationConfigById(req.params.id);
   if (!deleted) return res.status(404).json({ error: "Notification config not found" });
+  auditAdmin(req, { category: "threat", action: "notification_delete", targetType: "threat_notification", targetId: req.params.id });
   res.json({ success: true });
 });
 

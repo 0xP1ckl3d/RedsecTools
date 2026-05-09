@@ -121,11 +121,11 @@ RedSecAI is the built-in local assistant backed by a configurable Ollama model (
 
 RedSecAI provides an expandable chat bubble on authenticated pages. It can use a server-side allowlist of scoped application APIs for the logged-in user to help summarize permitted calendar, wiki, reporter, and threat-intel context. It does not have admin scope, does not read the database directly, and does not access decrypted RedSecPaste, RedSecShare, RedSecTeam, or RedSecVault content.
 
-Phase 2 adds confirmation-gated actions. RedSecAI can draft scoped calendar entries/updates, wiki page changes, and Reporter notes, but the browser shows an action card and the logged-in user must explicitly confirm before the server calls the existing RBAC-protected API. The model never receives direct database access and cannot silently mutate records.
+Phase 2 adds confirmation-gated actions. RedSecAI can draft scoped calendar entries/updates, wiki page changes, Reporter records, bulletins, shortcuts, threat metadata, and survey changes, but the browser shows an action card and the logged-in user must explicitly confirm before the server calls the existing RBAC-protected API. Pending action cards are persisted server-side until confirmed, rejected, or expired. The model never receives direct database access and cannot silently mutate records.
 
-Admins control RedSecAI globally from **Admin > Tool Settings > RedSecAI** after installation. The `.env` values are bootstrap defaults and emergency overrides; database-backed Admin settings determine the live global enable flag, Ollama base URL, model name, timeout, autostart, and auto-pull behavior. The same Admin panel shows pending confirmed-action counts and recent RedSecAI action activity.
+Admins control RedSecAI globally from **Admin > Tool Settings > RedSecAI** after installation. The `.env` values are bootstrap defaults and emergency overrides; database-backed Admin settings determine the live global enable flag, Ollama base URL, model name, timeout, action-card expiry, autostart, and auto-pull behavior. The same Admin panel shows endpoint processing mode, cloud/external warnings, pending confirmed-action counts, and recent RedSecAI action activity.
 
-RedSecAI uses a same-origin WebSocket at `/ws/redsecai` for streaming responses. The legacy `/api/ai/chat` POST route remains available for health checks and fallback use. If RedSecTools is behind a reverse proxy, make sure WebSocket upgrades are allowed for both `/ws` and `/ws/redsecai`.
+RedSecAI uses a same-origin WebSocket at `/ws/redsecai` for streaming responses. WebSocket upgrades are checked against the request host and `TRUSTED_PUBLIC_ORIGINS`; cross-site browser origins are rejected. The legacy `/api/ai/chat` POST route remains available for health checks and fallback use. If RedSecTools is behind a reverse proxy, make sure WebSocket upgrades are allowed for both `/ws` and `/ws/redsecai` and that the proxy forwards the public `Host` or `X-Forwarded-Host`.
 
 ### BulletinBoard
 
@@ -204,6 +204,8 @@ docker compose restart redsectools
 
 The sign-in state and model metadata live in the `redsectools-ai:/root/.ollama` named volume. They persist across normal container restarts and app updates, but are removed if the Docker volume is deleted with commands such as `docker compose down -v` or volume pruning.
 
+Cloud models and external Ollama-compatible endpoints are treated as external AI processors. RedSecAI only sends the current prompt plus selected, RBAC-scoped tool context to the configured endpoint, but admins should assume that context leaves the server when a cloud model or external base URL is used. Encrypted paste, share, chat, and vault plaintext is still excluded by design.
+
 ---
 
 ## Local Install (npm)
@@ -262,6 +264,7 @@ Configuration is managed through a `.env` file in the project root. The setup sc
 | `REDSECAI_MODEL` | No | `qwen3.5:4b` | Ollama model name used by RedSecAI. Cloud models such as `gemma4:31b-cloud` require `ollama signin` and `ollama pull` in the Ollama environment first |
 | `REDSECAI_TIMEOUT_MS` | No | `300000` | Timeout for local model responses |
 | `REDSECAI_NUM_CTX` | No | `4096` | Ollama context window requested by RedSecAI |
+| `REDSECAI_ACTION_TTL_SECONDS` | No | `7200` | Default expiry for pending RedSecAI confirmation cards. High-impact actions are capped at 30 minutes |
 | `REDSECAI_AUTOSTART` | No | `true` for local Ollama URLs | Starts local Ollama automatically when RedSecTools starts. Docker disables this because the AI runs in its own container |
 | `REDSECAI_AUTO_PULL` | No | `true` | Pulls the configured model if it is missing. In Docker this runs in the `redsecai` container entrypoint at sidecar startup; in local npm mode it controls local Ollama auto-pull. Cloud pulls still require the Ollama environment to be signed in |
 | `REDSECAI_HOST` | No | `127.0.0.1` | Docker-only host bind address for the diagnostic Ollama port |
