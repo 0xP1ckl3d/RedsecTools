@@ -293,6 +293,8 @@ const EngageEngagements = (() => {
     if (caps.canCreateEngagement || caps.canManageAll) {
       html += '<button type="button" class="btn-secondary text-sm eng-link-cal-btn">Link Calendar</button>';
       html += '<button type="button" class="btn-secondary text-sm eng-link-reporter-btn">Link Reporter</button>';
+      html += '<button type="button" class="btn-primary text-sm eng-create-report-btn">Create Report</button>';
+      html += '<button type="button" class="btn-secondary text-sm eng-create-cal-btn">Create Calendar Project</button>';
     }
     html += '<button type="button" class="btn-primary text-sm eng-request-qa-btn">Request QA</button>';
     html += '<button type="button" class="btn-secondary text-sm eng-note-btn">Add Note</button>';
@@ -325,10 +327,18 @@ const EngageEngagements = (() => {
 
     // Linked resources
     const links = [];
-    if (e.redseccal_project_id) links.push(`Calendar: <span class="engage-link-badge">${esc(e.redseccal_project_id)}</span>`);
-    if (e.redsec_reporter_project_id) links.push(`Reporter: <span class="engage-link-badge">${esc(e.redsec_reporter_project_id)}</span>`);
-    if (e.proposal_reporter_doc_id) links.push(`Proposal: <span class="engage-link-badge">${esc(e.proposal_reporter_doc_id)}</span>`);
-    if (e.delivery_reporter_project_id) links.push(`Delivery Report: <span class="engage-link-badge">${esc(e.delivery_reporter_project_id)}</span>`);
+    if (data.linkedCalendarProject) {
+      const lp = data.linkedCalendarProject;
+      links.push(`Calendar: <a href="/calendar/" class="engage-link-badge" target="_blank">${esc(lp.name || "Calendar Project")}</a> <span class="text-muted text-xs">${esc(lp.status || "")}</span>`);
+    } else if (e.redseccal_project_id) {
+      links.push(`Calendar: <span class="engage-link-badge">${esc(e.redseccal_project_id)}</span>`);
+    }
+    if (data.linkedReporterProject) {
+      const lr = data.linkedReporterProject;
+      links.push(`Reporter: <a href="/reporter/" class="engage-link-badge" target="_blank">${esc(lr.title || "Report Project")}</a> <span class="text-muted text-xs">${esc(lr.status || "")}</span>`);
+    } else if (e.redsec_reporter_project_id) {
+      links.push(`Reporter: <span class="engage-link-badge">${esc(e.redsec_reporter_project_id)}</span>`);
+    }
     if (links.length > 0) {
       html += `<div class="mt-3"><span class="text-xs font-semibold uppercase tracking-wide text-muted">Linked Resources</span><div class="mt-1">${links.join(" &middot; ")}</div></div>`;
     }
@@ -512,32 +522,22 @@ const EngageEngagements = (() => {
 
     // Link Calendar
     section.querySelector(".eng-link-cal-btn")?.addEventListener("click", async () => {
-      const result = await EngageModal.confirm({
-        title: "Link RedSecCal Project",
-        message: "Enter the Calendar Project ID in the confirmation field to link it.",
-        confirmLabel: "Link",
-      });
-      if (!result) return;
-      openLinkInputModal("RedSecCal Project ID", async (val) => {
-        try {
-          await EngageApi.linkCalendar(e.id, { redseccalProjectId: val });
-          await openEngagement(e.id);
-        } catch (err) {
-          await EngageModal.alert({ title: "Error", message: "Failed to link calendar: " + err.message });
-        }
-      });
+      openCalendarProjectPicker(e);
     });
 
     // Link Reporter
     section.querySelector(".eng-link-reporter-btn")?.addEventListener("click", async () => {
-      openLinkInputModal("Reporter Project ID", async (val) => {
-        try {
-          await EngageApi.linkReporter(e.id, { redsecReporterProjectId: val });
-          await openEngagement(e.id);
-        } catch (err) {
-          await EngageModal.alert({ title: "Error", message: "Failed to link Reporter: " + err.message });
-        }
-      });
+      openReporterProjectPicker(e);
+    });
+
+    // Create Report
+    section.querySelector(".eng-create-report-btn")?.addEventListener("click", async () => {
+      openCreateReporterProject(e);
+    });
+
+    // Create Calendar Project
+    section.querySelector(".eng-create-cal-btn")?.addEventListener("click", async () => {
+      openCreateCalendarProject(e);
     });
 
     // Remove team member
@@ -622,6 +622,90 @@ const EngageEngagements = (() => {
       renderList();
     } catch {
       state.engagements = [];
+    }
+  }
+
+  async function openReporterProjectPicker(e) {
+    const data = await EngageApi.get("/engage/reporter/projects");
+    const projects = data.projects || [];
+    if (!projects.length) {
+      await EngageModal.alert({ title: "No Projects", message: "No active Reporter projects found." });
+      return;
+    }
+    const items = projects.map((p) => `<option value="${esc(p.id)}">${esc(p.title)} — ${esc(p.clientName || "No client")} [${esc(p.status)}]</option>`).join("");
+    const html = `<div class="space-y-3">
+      <label class="block text-sm text-muted mb-1">Select Reporter Project</label>
+      <select id="eng-reporter-pick" class="input-field w-full"><option value="">Choose...</option>${items}</select>
+    </div>`;
+    const confirmed = await EngageModal.confirm({ title: "Link Reporter Project", message: html, confirmLabel: "Link" });
+    if (!confirmed) return;
+    const selectedId = document.getElementById("eng-reporter-pick")?.value;
+    if (!selectedId) { await EngageModal.alert({ title: "Error", message: "Select a project." }); return; }
+    try {
+      await EngageApi.linkReporter(e.id, { redsecReporterProjectId: selectedId });
+      await openEngagement(e.id);
+    } catch (err) {
+      await EngageModal.alert({ title: "Error", message: "Failed to link: " + err.message });
+    }
+  }
+
+  async function openCalendarProjectPicker(e) {
+    const data = await EngageApi.get("/engage/calendar/projects");
+    const projects = data.projects || [];
+    if (!projects.length) {
+      await EngageModal.alert({ title: "No Calendar Projects", message: "No Calendar projects found." });
+      return;
+    }
+    const items = projects.map((p) => `<option value="${esc(p.id)}">${esc(p.name)} — ${esc(p.clientName || "No client")} [${esc(p.status || "")}]</option>`).join("");
+    const html = `<div class="space-y-3">
+      <label class="block text-sm text-muted mb-1">Select Calendar Project</label>
+      <select id="eng-cal-pick" class="input-field w-full"><option value="">Choose...</option>${items}</select>
+    </div>`;
+    const confirmed = await EngageModal.confirm({ title: "Link Calendar Project", message: html, confirmLabel: "Link" });
+    if (!confirmed) return;
+    const selectedId = document.getElementById("eng-cal-pick")?.value;
+    if (!selectedId) { await EngageModal.alert({ title: "Error", message: "Select a project." }); return; }
+    try {
+      await EngageApi.linkCalendar(e.id, { redseccalProjectId: selectedId });
+      await openEngagement(e.id);
+    } catch (err) {
+      await EngageModal.alert({ title: "Error", message: "Failed to link: " + err.message });
+    }
+  }
+
+  async function openCreateReporterProject(e) {
+    const html = `<div class="space-y-3">
+      <label class="block text-sm text-muted mb-1">Report Title</label>
+      <input type="text" id="eng-create-report-title" class="input-field w-full" value="${esc(e.title + " - Report")}">
+    </div>`;
+    const confirmed = await EngageModal.confirm({ title: "Create Reporter Project", message: html, confirmLabel: "Create" });
+    if (!confirmed) return;
+    const title = document.getElementById("eng-create-report-title")?.value;
+    if (!title?.trim()) { await EngageModal.alert({ title: "Error", message: "Title is required." }); return; }
+    try {
+      const result = await EngageApi.createReporterProject(e.id, { title: title.trim() });
+      await EngageModal.alert({ title: "Project Created", message: `Created "${result.project.title}" in Reporter.` });
+      await openEngagement(e.id);
+    } catch (err) {
+      await EngageModal.alert({ title: "Error", message: "Failed to create: " + err.message });
+    }
+  }
+
+  async function openCreateCalendarProject(e) {
+    const html = `<div class="space-y-3">
+      <label class="block text-sm text-muted mb-1">Project Name</label>
+      <input type="text" id="eng-create-cal-name" class="input-field w-full" value="${esc(e.title)}">
+    </div>`;
+    const confirmed = await EngageModal.confirm({ title: "Create Calendar Project", message: html, confirmLabel: "Create" });
+    if (!confirmed) return;
+    const name = document.getElementById("eng-create-cal-name")?.value;
+    if (!name?.trim()) { await EngageModal.alert({ title: "Error", message: "Name is required." }); return; }
+    try {
+      const result = await EngageApi.createCalendarProject(e.id, { name: name.trim() });
+      await EngageModal.alert({ title: "Calendar Project Created", message: `Created "${result.project.name}" in Calendar.` });
+      await openEngagement(e.id);
+    } catch (err) {
+      await EngageModal.alert({ title: "Error", message: "Failed to create: " + err.message });
     }
   }
 

@@ -3,6 +3,7 @@ const rateLimit = require("express-rate-limit");
 const crypto = require("crypto");
 const { requireUser } = require("../middleware/auth");
 const { attachUserAccess } = require("../middleware/permissions");
+const { createNotification } = require("../core/notifications");
 const {
   createCalendarProject,
   updateCalendarProject,
@@ -16,6 +17,7 @@ const {
   getCalendarEntryById,
   listCalendarEntries,
   getSetting,
+  getEngageEngagementByCalendarProject,
 } = require("../database");
 
 const router = Router();
@@ -528,7 +530,10 @@ router.get("/calendar/bootstrap", requireUser, attachUserAccess, requireCalendar
     listCalendarEntries({ startsAfter: 0, endsBefore: FAR_FUTURE_UNIX }).map((entry) => serializeEntry(entry, settings)),
     teamUsers.map((user) => user.id),
   );
-  const projects = buildProjectSummaries(listCalendarProjects(), allVisibleEntries, teamUsers, settings);
+  const projects = buildProjectSummaries(listCalendarProjects(), allVisibleEntries, teamUsers, settings).map((p) => {
+    const engage = getEngageEngagementByCalendarProject(p.id);
+    return { ...p, engageEngagement: engage || null };
+  });
   const overviewStats = buildStats(
     filterEntriesForUsers(weekEntries, selectedScopeUsers.map((user) => user.id)),
     projects,
@@ -773,6 +778,15 @@ router.post("/calendar/allocations", writeLimiter, requireUser, attachUserAccess
   }
 
   entriesToCreate.forEach((entry) => createCalendarEntry(entry));
+  if (assigneeUserId !== req.user.id) {
+    createNotification({
+      userId: assigneeUserId, category: "calendar", action: "allocation_created",
+      title: "Allocated to project",
+      body: `You were allocated to "${project.title}"`,
+      linkUrl: "/calendar", entityType: "calendar_project", entityId: projectId,
+      dedupeKey: `calendar:alloc:${projectId}:${assigneeUserId}`,
+    });
+  }
   res.json({ success: true, createdCount: entriesToCreate.length });
 });
 
@@ -853,6 +867,17 @@ router.post("/calendar/entries", writeLimiter, requireUser, attachUserAccess, re
   const entries = listCalendarEntries({ startsAfter: startsAt, endsBefore: endsAt })
     .map((item) => serializeEntry(item, settings))
     .filter((item) => createdEntries.includes(item.id));
+  for (const uid of validAssigneeUserIds) {
+    if (uid !== req.user.id) {
+      createNotification({
+        userId: uid, category: "calendar", action: "entry_created",
+        title: "Calendar entry created",
+        body: `"${title}" was scheduled for you`,
+        linkUrl: "/calendar", entityType: "calendar_entry", entityId: createdEntries[0],
+        dedupeKey: `calendar:entry:${createdEntries[0]}:${uid}`,
+      });
+    }
+  }
   res.json({ success: true, entry: entries[0] || null, entries, createdCount: entries.length });
 });
 
@@ -917,6 +942,15 @@ router.put("/calendar/entries/:id", writeLimiter, requireUser, attachUserAccess,
   });
 
   const entry = listCalendarEntries({ startsAfter: startsAt, endsBefore: endsAt }).map((item) => serializeEntry(item, settings)).find((item) => item.id === existing.id) || null;
+  if (assigneeUserId !== req.user.id) {
+    createNotification({
+      userId: assigneeUserId, category: "calendar", action: "entry_updated",
+      title: "Calendar entry updated",
+      body: `"${title}" was updated`,
+      linkUrl: "/calendar", entityType: "calendar_entry", entityId: existing.id,
+      dedupeKey: `calendar:entry:${existing.id}:${assigneeUserId}`,
+    });
+  }
   res.json({ success: true, entry });
 });
 
@@ -932,6 +966,14 @@ router.delete("/calendar/entries/:id", writeLimiter, requireUser, attachUserAcce
   }
 
   deleteCalendarEntryById(existing.id);
+  if (existing.assignee_user_id && existing.assignee_user_id !== req.user.id) {
+    createNotification({
+      userId: existing.assignee_user_id, category: "calendar", action: "entry_cancelled",
+      title: "Calendar entry cancelled",
+      body: `"${existing.title || "Entry"}" was cancelled`,
+      linkUrl: "/calendar",
+    });
+  }
   res.json({ success: true });
 });
 

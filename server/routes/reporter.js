@@ -6,6 +6,7 @@ const crypto = require("crypto");
 const multer = require("multer");
 const { requireUser } = require("../middleware/auth");
 const { attachUserAccess } = require("../middleware/permissions");
+const { createNotification } = require("../core/notifications");
 const {
   createReporterDesignRow,
   getReporterDesignById,
@@ -77,6 +78,32 @@ const {
   listReporterImportJobsByProject,
   incrementReporterTemplateUsage,
   listUsers,
+  getUserByUsername,
+  getEngageEngagementByReporterProject,
+  getEngageOpportunityById,
+  getReporterProposalById,
+  listReporterProposals,
+  createReporterProposalRow,
+  updateReporterProposalRow,
+  updateReporterProposalStatus,
+  archiveReporterProposalRow,
+  unarchiveReporterProposalRow,
+  listReporterProposalSections,
+  getReporterProposalSectionById,
+  createReporterProposalSectionRow,
+  updateReporterProposalSectionRow,
+  deleteReporterProposalSectionById,
+  reorderReporterProposalSectionsRow,
+  createReporterProposalGenerationRow,
+  updateReporterProposalGenerationRow,
+  getReporterProposalGenerationById,
+  listReporterProposalGenerations,
+  deleteReporterProposalGenerationById,
+  listReporterProposalTemplates,
+  getReporterProposalTemplateById,
+  listReporterProposalTemplateSections,
+  listReporterTestTypeTemplates,
+  getReporterTestTypeTemplateByType,
 } = require("../database");
 const {
   REPORTER_PDF_DIR,
@@ -390,11 +417,6 @@ router.post("/reporter/markdown-preview", requireUser, attachUserAccess, canView
 // --- Designs ---
 
 router.get("/reporter/designs", requireUser, attachUserAccess, canViewReporter, (req, res) => {
-  const type = req.query.type;
-  if (type) {
-    const { listReporterDesignsByType } = require("../database");
-    return res.json(listReporterDesignsByType(type));
-  }
   res.json(listReporterDesigns());
 });
 
@@ -568,10 +590,6 @@ router.delete("/reporter/designs/:id", writeLimiter, requireUser, attachUserAcce
 router.get("/reporter/projects", requireUser, attachUserAccess, canViewReporter, (req, res) => {
   const caps = getCapabilities(req);
   const projects = listReporterProjects(req.access.userId, caps.canManageAll);
-  const type = req.query.type;
-  if (type) {
-    return res.json(projects.filter((p) => p.projectType === type));
-  }
   res.json(projects);
 });
 
@@ -598,7 +616,8 @@ router.post("/reporter/projects", writeLimiter, requireUser, attachUserAccess, c
       dueDate: dueDate ? parseInt(dueDate, 10) || null : null,
       members: memberList,
       createdBy: req.access.userId,
-      projectType: design.projectType || "report",
+      projectType: design.projectType || "report", // compatibility: column retained but proposals now use reporter_proposals table
+      testTypes: Array.isArray(req.body.testTypes) ? req.body.testTypes : [],
     });
     for (const section of normalizeSectionDefinitions(design.sectionDefinitions)) {
       createReporterSectionRow({
@@ -632,7 +651,8 @@ router.get("/reporter/projects/:id", requireUser, attachUserAccess, canViewRepor
   const members = listReporterProjectMembers(req.params.id);
   const stats = getReporterProjectStats(req.params.id);
   const design = getReporterDesignById(project.designId);
-  res.json({ project, members, ...stats, design: design ? { id: design.id, name: design.name, findingFieldDefinitions: design.findingFieldDefinitions } : null });
+  const engageLink = getEngageEngagementByReporterProject(req.params.id);
+  res.json({ project, members, ...stats, design: design ? { id: design.id, name: design.name, findingFieldDefinitions: design.findingFieldDefinitions } : null, engageEngagement: engageLink || null });
 });
 
 router.put("/reporter/projects/:id", writeLimiter, requireUser, attachUserAccess, async (req, res) => {
@@ -696,6 +716,18 @@ router.put("/reporter/projects/:id/status", writeLimiter, requireUser, attachUse
     targetId: req.params.id,
     metadata: { from: project.status, to: status },
   });
+  if (["in_review", "approved"].includes(status)) {
+    const notifyMembers = listReporterProjectMembers(req.params.id);
+    for (const m of notifyMembers) {
+      if (m.userId === req.access.userId) continue;
+      createNotification({
+        userId: m.userId, category: "reporter", action: "project_status_changed",
+        title: status === "in_review" ? "Report sent for review" : "Report approved",
+        body: `"${project.title}" is now ${status.replace(/_/g, " ")}`,
+        linkUrl: "/reporter", entityType: "reporter_project", entityId: req.params.id,
+      });
+    }
+  }
   res.json({ success: true });
 });
 
@@ -823,6 +855,13 @@ router.post("/reporter/projects/:id/render-pdf", writeLimiter, requireUser, atta
       targetId: generation.id,
       metadata: { projectId: req.params.id, fileSize: pdf.length },
     });
+    createNotification({
+      userId: req.access.userId, category: "reporter", action: "pdf_generation_complete",
+      title: "Report PDF generated",
+      body: `PDF for "${project.title}" is ready`,
+      linkUrl: "/reporter", entityType: "reporter_project", entityId: req.params.id,
+      severity: "success",
+    });
     res.json({ success: true, generation: updated });
   } catch (err) {
     const failed = updateReporterPdfGenerationRow(generation.id, {
@@ -831,6 +870,13 @@ router.post("/reporter/projects/:id/render-pdf", writeLimiter, requireUser, atta
       status: "failed",
       errorMessage: err.message || "PDF rendering failed",
       renderOptions: req.body?.options || {},
+    });
+    createNotification({
+      userId: req.access.userId, category: "reporter", action: "pdf_generation_failed",
+      title: "Report PDF generation failed",
+      body: `PDF for "${project.title}" failed: ${(err.message || "").substring(0, 100)}`,
+      linkUrl: "/reporter", entityType: "reporter_project", entityId: req.params.id,
+      severity: "critical",
     });
     res.status(500).json({ error: failed.errorMessage, generation: failed });
   }
@@ -1029,6 +1075,24 @@ router.post("/reporter/projects/:id/comments", writeLimiter, requireUser, attach
   const id = createReporterCommentRow({ projectId: req.params.id, targetType, targetId, content, createdBy: req.access.userId });
   const comment = getReporterCommentById(id);
   recordReporterHistory(req.params.id, targetType, targetId, comment, "Comment added", req.access.userId);
+  const mentionMatches = content.match(/@(\w[\w.-]*)/g);
+  if (mentionMatches) {
+    const seen = new Set();
+    for (const match of mentionMatches) {
+      const username = match.substring(1);
+      if (seen.has(username.toLowerCase())) continue;
+      seen.add(username.toLowerCase());
+      const user = getUserByUsername(username);
+      if (user && user.id !== req.access.userId) {
+        createNotification({
+          userId: user.id, category: "reporter", action: "comment_mention",
+          title: "Mentioned in a comment",
+          body: `You were mentioned in "${project.title}"`,
+          linkUrl: "/reporter", entityType: "reporter_project", entityId: req.params.id,
+        });
+      }
+    }
+  }
   res.json({ success: true, comment });
 });
 
@@ -1343,6 +1407,14 @@ router.post("/reporter/projects/:id/members", writeLimiter, requireUser, attachU
       targetId: req.params.id,
       metadata: { userId, role: r },
     });
+    if (userId !== req.access.userId) {
+      createNotification({
+        userId, category: "reporter", action: "project_member_added",
+        title: "Added to report project",
+        body: `You were added to "${project.title}" as ${r}`,
+        linkUrl: "/reporter", entityType: "reporter_project", entityId: req.params.id,
+      });
+    }
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: "Failed to add member" });
@@ -1365,6 +1437,14 @@ router.put("/reporter/projects/:id/members/:userId", writeLimiter, requireUser, 
     targetId: req.params.id,
     metadata: { userId: req.params.userId, role },
   });
+  if (req.params.userId !== req.access.userId) {
+    createNotification({
+      userId: req.params.userId, category: "reporter", action: "project_member_role_changed",
+      title: "Role changed on report project",
+      body: `Your role on "${project.title}" was changed to ${role}`,
+      linkUrl: "/reporter", entityType: "reporter_project", entityId: req.params.id,
+    });
+  }
   res.json({ success: true });
 });
 
@@ -1383,6 +1463,14 @@ router.delete("/reporter/projects/:id/members/:userId", writeLimiter, requireUse
     targetId: req.params.id,
     metadata: { userId: req.params.userId },
   });
+  if (req.params.userId !== req.access.userId) {
+    createNotification({
+      userId: req.params.userId, category: "reporter", action: "project_member_removed",
+      title: "Removed from report project",
+      body: `You were removed from "${project.title}"`,
+      linkUrl: "/reporter", entityType: "reporter_project", entityId: req.params.id,
+    });
+  }
   res.json({ success: true });
 });
 
@@ -1534,6 +1622,19 @@ router.put("/reporter/findings/:id/status", writeLimiter, requireUser, attachUse
   if (!VALID_FINDING_STATUSES.includes(status)) return res.status(400).json({ error: "Invalid status" });
   const updated = updateReporterFindingStatusRow(req.params.id, status, req.access.userId);
   recordReporterHistory(finding.projectId, "finding", req.params.id, updated || { ...finding, status }, `Finding status changed to ${status}`, req.access.userId);
+  if (["changes_requested", "approved"].includes(status)) {
+    const notifyMembers = listReporterProjectMembers(finding.projectId);
+    for (const m of notifyMembers) {
+      if (m.userId === req.access.userId) continue;
+      createNotification({
+        userId: m.userId, category: "reporter", action: "finding_status_changed",
+        title: status === "changes_requested" ? "Finding needs changes" : "Finding approved",
+        body: `A finding in "${project.title}" was marked ${status.replace(/_/g, " ")}`,
+        linkUrl: "/reporter", entityType: "reporter_project", entityId: finding.projectId,
+        severity: status === "changes_requested" ? "warning" : "info",
+      });
+    }
+  }
   res.json({ success: true });
 });
 
@@ -1718,6 +1819,383 @@ router.delete("/reporter/templates/:id", writeLimiter, requireUser, attachUserAc
   if (template.isBuiltin) return res.status(403).json({ error: "Cannot delete built-in templates" });
   deleteReporterFindingTemplateById(req.params.id);
   res.json({ success: true });
+});
+
+// ============================================================
+// Reporter Proposals
+// ============================================================
+
+const PROPOSAL_PDF_DIR = path.join(__dirname, "..", "..", "data", "reporter-proposals");
+const VALID_PROPOSAL_STATUSES = ["draft", "in_review", "changes_required", "approved", "sent", "accepted", "rejected", "archived"];
+const VALID_TEST_TYPES = ["internal", "external", "webapp", "cloud", "build_review", "red_team", "wireless", "configuration_review", "assumed_breach", "custom"];
+
+function ensureProposalPdfDir() {
+  if (!fs.existsSync(PROPOSAL_PDF_DIR)) fs.mkdirSync(PROPOSAL_PDF_DIR, { recursive: true });
+}
+
+function getProposalCapabilities(req) {
+  const caps = getCapabilities(req);
+  return {
+    canView: caps.canViewReporter,
+    canCreate: caps.canCreateReporter,
+    canManage: caps.canManageTemplates,
+  };
+}
+
+function canViewProposals(req, res, next) {
+  const caps = getProposalCapabilities(req);
+  if (!caps.canView) return res.status(403).json({ error: "Reporter access required" });
+  next();
+}
+
+function canCreateProposals(req, res, next) {
+  const caps = getProposalCapabilities(req);
+  if (!caps.canCreate) return res.status(403).json({ error: "Reporter create permission required" });
+  next();
+}
+
+// List proposals
+router.get("/reporter/proposals", requireUser, attachUserAccess, canViewProposals, (req, res) => {
+  const proposals = listReporterProposals();
+  const caps = getProposalCapabilities(req);
+  res.json({ proposals, capabilities: caps });
+});
+
+// List proposal templates
+router.get("/reporter/proposals/templates", requireUser, attachUserAccess, canViewProposals, (req, res) => {
+  const templates = listReporterProposalTemplates();
+  const enriched = templates.map((t) => ({
+    ...t,
+    sections: listReporterProposalTemplateSections(t.id),
+  }));
+  res.json({ templates: enriched });
+});
+
+// List test type write-ups
+router.get("/reporter/proposals/test-types", requireUser, attachUserAccess, canViewProposals, (req, res) => {
+  const types = listReporterTestTypeTemplates();
+  res.json({ testTypes: types });
+});
+
+// Create proposal
+router.post("/reporter/proposals", writeLimiter, requireUser, attachUserAccess, canCreateProposals, (req, res) => {
+  const { templateId, title, clientName, testTypes } = req.body;
+  if (!title || !title.trim()) return res.status(400).json({ error: "Title is required" });
+
+  const selectedTypes = Array.isArray(testTypes) ? testTypes.filter((t) => VALID_TEST_TYPES.includes(t)) : [];
+
+  // Load template sections
+  const template = templateId ? getReporterProposalTemplateById(templateId) : getReporterProposalTemplateById("builtin-proposal-default");
+  const templateSections = template ? listReporterProposalTemplateSections(template.id) : [];
+
+  // Build sections from template, inserting test-type write-ups
+  const sections = [];
+  let orderIdx = 0;
+
+  for (const ts of templateSections) {
+    if (ts.content && ts.content.includes("{{test_type_inserts}}")) {
+      // Insert each selected test type as separate subsections
+      let combined = ts.content.replace("{{test_type_inserts}}", "");
+      for (const tt of selectedTypes) {
+        const writeup = getReporterTestTypeTemplateByType(tt);
+        if (writeup) {
+          combined += `\n\n### ${writeup.name}\n\n${writeup.methodology_writeup || ""}\n\n**Scope:** ${writeup.scope_guidance || ""}\n\n**Deliverables:** ${writeup.deliverables || ""}\n`;
+        }
+      }
+      sections.push({ title: ts.title, sectionType: ts.section_type, content: combined, orderIndex: orderIdx++, isIncluded: true });
+    } else if (ts.content && ts.content.includes("{{client_requirements_insert}}")) {
+      let combined = ts.content;
+      const reqs = selectedTypes.map((tt) => {
+        const w = getReporterTestTypeTemplateByType(tt);
+        return w ? `- **${w.name}:** ${w.client_requirements || ""}` : null;
+      }).filter(Boolean).join("\n");
+      combined = combined.replace("{{client_requirements_insert}}", reqs);
+      sections.push({ title: ts.title, sectionType: ts.section_type, content: combined, orderIndex: orderIdx++, isIncluded: true });
+    } else if (ts.content && ts.content.includes("{{consultant_requirements_insert}}")) {
+      let combined = ts.content;
+      const reqs = selectedTypes.map((tt) => {
+        const w = getReporterTestTypeTemplateByType(tt);
+        return w ? `- **${w.name}:** ${w.consultant_requirements || ""}` : null;
+      }).filter(Boolean).join("\n");
+      combined = combined.replace("{{consultant_requirements_insert}}", reqs);
+      sections.push({ title: ts.title, sectionType: ts.section_type, content: combined, orderIndex: orderIdx++, isIncluded: true });
+    } else {
+      sections.push({ title: ts.title, sectionType: ts.section_type, content: ts.content || "", orderIndex: orderIdx++, isIncluded: true });
+    }
+  }
+
+  const proposal = createReporterProposalRow({
+    templateId: template ? template.id : null,
+    title: title.trim(),
+    clientName: clientName || "",
+    testTypes: selectedTypes,
+    createdBy: req.session.user.id,
+    sections,
+  });
+
+  createAuditEvent({ userId: req.session.user.id, action: "reporter:proposal:create", targetType: "reporter_proposal", targetId: proposal.id, details: { title: proposal.title } });
+  res.json({ proposal });
+});
+
+// Get proposal detail
+router.get("/reporter/proposals/:id", requireUser, attachUserAccess, canViewProposals, (req, res) => {
+  const proposal = getReporterProposalById(req.params.id);
+  if (!proposal) return res.status(404).json({ error: "Proposal not found" });
+  const sections = listReporterProposalSections(proposal.id);
+  const generations = listReporterProposalGenerations(proposal.id);
+  const caps = getProposalCapabilities(req);
+  const engageOpp = proposal.opportunityId ? getEngageOpportunityById(proposal.opportunityId) : null;
+  res.json({ proposal, sections, generations, capabilities: caps, engageOpportunity: engageOpp ? { id: engageOpp.id, title: engageOpp.title, stage: engageOpp.stage, clientName: engageOpp.client_name || "" } : null });
+});
+
+// Update proposal metadata
+router.put("/reporter/proposals/:id", writeLimiter, requireUser, attachUserAccess, canCreateProposals, (req, res) => {
+  const proposal = getReporterProposalById(req.params.id);
+  if (!proposal) return res.status(404).json({ error: "Proposal not found" });
+  if (proposal.archivedAt) return res.status(400).json({ error: "Archived proposals cannot be edited" });
+
+  const payload = {};
+  const allowedFields = ["title", "clientName", "clientId", "primaryContactName", "primaryContactEmail", "preparedForName", "preparedForEmail", "preparedByUserId", "proposalType", "testTypes", "proposalMetadata", "validUntil", "estimatedDays", "quotedValue"];
+  for (const f of allowedFields) {
+    if (req.body[f] !== undefined) payload[f] = req.body[f];
+  }
+
+  if (payload.testTypes) {
+    payload.testTypes = payload.testTypes.filter((t) => VALID_TEST_TYPES.includes(t));
+  }
+
+  const updated = updateReporterProposalRow(proposal.id, payload);
+  createAuditEvent({ userId: req.session.user.id, action: "reporter:proposal:update", targetType: "reporter_proposal", targetId: proposal.id });
+  res.json({ proposal: updated });
+});
+
+// Update proposal status
+router.put("/reporter/proposals/:id/status", writeLimiter, requireUser, attachUserAccess, canCreateProposals, (req, res) => {
+  const proposal = getReporterProposalById(req.params.id);
+  if (!proposal) return res.status(404).json({ error: "Proposal not found" });
+
+  const { status } = req.body;
+  if (!VALID_PROPOSAL_STATUSES.includes(status)) return res.status(400).json({ error: "Invalid status" });
+
+  const updated = updateReporterProposalStatus(proposal.id, status);
+  createAuditEvent({ userId: req.session.user.id, action: "reporter:proposal:status", targetType: "reporter_proposal", targetId: proposal.id, details: { status } });
+  res.json({ proposal: updated });
+});
+
+// Archive proposal
+router.post("/reporter/proposals/:id/archive", writeLimiter, requireUser, attachUserAccess, canCreateProposals, (req, res) => {
+  const proposal = getReporterProposalById(req.params.id);
+  if (!proposal) return res.status(404).json({ error: "Proposal not found" });
+  const updated = archiveReporterProposalRow(proposal.id);
+  createAuditEvent({ userId: req.session.user.id, action: "reporter:proposal:archive", targetType: "reporter_proposal", targetId: proposal.id });
+  res.json({ proposal: updated });
+});
+
+// Unarchive proposal
+router.post("/reporter/proposals/:id/unarchive", writeLimiter, requireUser, attachUserAccess, canCreateProposals, (req, res) => {
+  const proposal = getReporterProposalById(req.params.id);
+  if (!proposal) return res.status(404).json({ error: "Proposal not found" });
+  const updated = unarchiveReporterProposalRow(proposal.id);
+  createAuditEvent({ userId: req.session.user.id, action: "reporter:proposal:unarchive", targetType: "reporter_proposal", targetId: proposal.id });
+  res.json({ proposal: updated });
+});
+
+// List proposal sections
+router.get("/reporter/proposals/:id/sections", requireUser, attachUserAccess, canViewProposals, (req, res) => {
+  const proposal = getReporterProposalById(req.params.id);
+  if (!proposal) return res.status(404).json({ error: "Proposal not found" });
+  res.json({ sections: listReporterProposalSections(proposal.id) });
+});
+
+// Create proposal section
+router.post("/reporter/proposals/:id/sections", writeLimiter, requireUser, attachUserAccess, canCreateProposals, (req, res) => {
+  const proposal = getReporterProposalById(req.params.id);
+  if (!proposal) return res.status(404).json({ error: "Proposal not found" });
+  if (proposal.archivedAt) return res.status(400).json({ error: "Archived proposals cannot be edited" });
+
+  const { title, sectionType, content, orderIndex } = req.body;
+  if (!title) return res.status(400).json({ error: "Section title is required" });
+
+  const section = createReporterProposalSectionRow({
+    proposalId: proposal.id,
+    title,
+    sectionType: sectionType || "markdown",
+    content: content || "",
+    orderIndex: orderIndex != null ? orderIndex : 999,
+    createdBy: req.session.user.id,
+  });
+  res.json({ section });
+});
+
+// Update proposal section
+router.put("/reporter/proposals/sections/:sectionId", writeLimiter, requireUser, attachUserAccess, canCreateProposals, (req, res) => {
+  const section = getReporterProposalSectionById(req.params.sectionId);
+  if (!section) return res.status(404).json({ error: "Section not found" });
+
+  const proposal = getReporterProposalById(section.proposalId);
+  if (!proposal || proposal.archivedAt) return res.status(400).json({ error: "Cannot edit archived proposal" });
+
+  const updated = updateReporterProposalSectionRow(section.id, {
+    title: req.body.title,
+    content: req.body.content,
+    isIncluded: req.body.isIncluded,
+  });
+  res.json({ section: updated });
+});
+
+// Delete proposal section
+router.delete("/reporter/proposals/sections/:sectionId", writeLimiter, requireUser, attachUserAccess, canCreateProposals, (req, res) => {
+  const section = getReporterProposalSectionById(req.params.sectionId);
+  if (!section) return res.status(404).json({ error: "Section not found" });
+
+  const proposal = getReporterProposalById(section.proposalId);
+  if (!proposal || proposal.archivedAt) return res.status(400).json({ error: "Cannot edit archived proposal" });
+
+  deleteReporterProposalSectionById(section.id);
+  res.json({ success: true });
+});
+
+// Reorder proposal sections
+router.put("/reporter/proposals/:id/sections/reorder", writeLimiter, requireUser, attachUserAccess, canCreateProposals, (req, res) => {
+  const proposal = getReporterProposalById(req.params.id);
+  if (!proposal) return res.status(404).json({ error: "Proposal not found" });
+
+  const { sectionIds } = req.body;
+  if (!Array.isArray(sectionIds)) return res.status(400).json({ error: "sectionIds array required" });
+
+  reorderReporterProposalSectionsRow(proposal.id, sectionIds);
+  res.json({ success: true });
+});
+
+// List proposal generations
+router.get("/reporter/proposals/:id/generations", requireUser, attachUserAccess, canViewProposals, (req, res) => {
+  const proposal = getReporterProposalById(req.params.id);
+  if (!proposal) return res.status(404).json({ error: "Proposal not found" });
+  res.json({ generations: listReporterProposalGenerations(proposal.id) });
+});
+
+// Generate proposal PDF
+router.post("/reporter/proposals/:id/render-pdf", writeLimiter, requireUser, attachUserAccess, canCreateProposals, async (req, res) => {
+  const proposal = getReporterProposalById(req.params.id);
+  if (!proposal) return res.status(404).json({ error: "Proposal not found" });
+
+  ensureProposalPdfDir();
+
+  const sections = listReporterProposalSections(proposal.id);
+  const version = (await listReporterProposalGenerations(proposal.id)).length + 1;
+  const filename = `proposal-${proposal.id.substring(0, 8)}-v${version}.pdf`;
+  const filePath = path.join(PROPOSAL_PDF_DIR, filename);
+
+  const generation = createReporterProposalGenerationRow({
+    proposalId: proposal.id,
+    filename,
+    filePath,
+    version,
+    status: "pending",
+    createdBy: req.session.user.id,
+  });
+
+  res.json({ generation });
+
+  // Async PDF generation
+  try {
+    const sectionHtml = sections
+      .filter((s) => s.isIncluded)
+      .map((s) => `<h2>${escapeHtmlSimple(s.title)}</h2>${renderMarkdownToHtmlSync(s.content || "")}`)
+      .join("\n");
+
+    const html = buildProposalHtml(proposal, sectionHtml);
+    const pdfBuffer = await renderPdfBuffer(html);
+
+    fs.writeFileSync(filePath, pdfBuffer);
+    updateReporterProposalGenerationRow(generation.id, {
+      status: "completed",
+      filePath,
+      completedAt: Math.floor(Date.now() / 1000),
+    });
+  } catch (err) {
+    updateReporterProposalGenerationRow(generation.id, {
+      status: "failed",
+      errorMessage: err.message || "PDF generation failed",
+    });
+    createNotification({
+      userId: req.session.user.id,
+      category: "reporter",
+      action: "proposal_pdf_failed",
+      title: "Proposal PDF generation failed",
+      body: `Failed to generate PDF for "${proposal.title}"`,
+      entityType: "reporter_proposal",
+      entityId: proposal.id,
+      severity: "critical",
+    });
+  }
+});
+
+function escapeHtmlSimple(str) {
+  return String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function renderMarkdownToSync(md) {
+  try { return renderMarkdownToHtml(md); } catch { return escapeHtmlSimple(md); }
+}
+
+function buildProposalHtml(proposal, bodyHtml) {
+  return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 800px; margin: 0 auto; padding: 40px 20px; color: #1a1a1a; line-height: 1.6; }
+  h1 { color: #dc2626; border-bottom: 2px solid #dc2626; padding-bottom: 8px; }
+  h2 { color: #374151; margin-top: 32px; }
+  h3 { color: #6b7280; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+  th, td { border: 1px solid #d1d5db; padding: 8px 12px; text-align: left; }
+  th { background: #f3f4f6; }
+  blockquote { border-left: 3px solid #dc2626; padding-left: 12px; color: #6b7280; }
+  .meta { color: #6b7280; font-size: 14px; }
+</style></head><body>
+<h1>${escapeHtmlSimple(proposal.title)}</h1>
+<p class="meta">Prepared for <strong>${escapeHtmlSimple(proposal.clientName)}</strong> &middot; ${proposal.testTypes.map((t) => escapeHtmlSimple(t)).join(", ")}</p>
+${proposal.quotedValue ? `<p class="meta"><strong>Fee:</strong> ${escapeHtmlSimple(String(proposal.quotedValue))}</p>` : ""}
+${proposal.estimatedDays ? `<p class="meta"><strong>Estimated Days:</strong> ${proposal.estimatedDays}</p>` : ""}
+<hr>
+${bodyHtml}
+</body></html>`;
+}
+
+// Download proposal PDF
+router.get("/reporter/proposals/generations/:generationId/download", requireUser, attachUserAccess, canViewProposals, (req, res) => {
+  const gen = getReporterProposalGenerationById(req.params.generationId);
+  if (!gen) return res.status(404).json({ error: "Generation not found" });
+  if (!gen.file_path || !fs.existsSync(gen.file_path)) return res.status(404).json({ error: "PDF file not found" });
+
+  res.download(gen.file_path, gen.filename || "proposal.pdf");
+});
+
+// Delete proposal PDF generation
+router.delete("/reporter/proposals/generations/:generationId", writeLimiter, requireUser, attachUserAccess, canCreateProposals, (req, res) => {
+  const gen = getReporterProposalGenerationById(req.params.generationId);
+  if (!gen) return res.status(404).json({ error: "Generation not found" });
+
+  if (gen.file_path && fs.existsSync(gen.file_path)) {
+    try { fs.unlinkSync(gen.file_path); } catch {}
+  }
+  deleteReporterProposalGenerationById(gen.id);
+  res.json({ success: true });
+});
+
+// Proposal preview
+router.get("/reporter/proposals/:id/preview", requireUser, attachUserAccess, canViewProposals, (req, res) => {
+  const proposal = getReporterProposalById(req.params.id);
+  if (!proposal) return res.status(404).json({ error: "Proposal not found" });
+
+  const sections = listReporterProposalSections(proposal.id);
+  const sectionHtml = sections
+    .filter((s) => s.isIncluded)
+    .map((s) => `<h2>${escapeHtmlSimple(s.title)}</h2>${renderMarkdownToSync(s.content || "")}`)
+    .join("\n");
+
+  const html = buildProposalHtml(proposal, sectionHtml);
+  res.setHeader("Content-Type", "text/html");
+  res.send(html);
 });
 
 // --- Stats ---

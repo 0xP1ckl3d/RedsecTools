@@ -281,7 +281,9 @@ const EngageOpportunities = (() => {
     html += `<div><span class="text-xs font-semibold uppercase tracking-wide text-muted">Decision Date</span><div>${opp.expected_decision_date || "---"}</div></div>`;
     html += '</div>';
 
-    if (opp.proposal_reporter_doc_id) {
+    if (opp.reporter_proposal_id) {
+      html += `<div class="mt-3"><span class="text-xs font-semibold uppercase tracking-wide text-muted">Proposal</span> <a href="/reporter/?view=proposals" class="engage-link-badge" target="_blank" title="Open in Reporter">Open Proposal in Reporter</a></div>`;
+    } else if (opp.proposal_reporter_doc_id) {
       html += `<div class="mt-3"><span class="text-xs font-semibold uppercase tracking-wide text-muted">Proposal Document</span> <span class="engage-link-badge">${esc(opp.proposal_reporter_doc_id)}</span></div>`;
     }
     if (opp.lost_reason) {
@@ -312,26 +314,12 @@ const EngageOpportunities = (() => {
       });
     });
 
-    section.querySelector(".opp-link-proposal-btn")?.addEventListener("click", () => {
-      EngageLinks.openProposalPicker(async (data) => {
-        try {
-          await EngageApi.linkProposal(opp.id, data);
-          await openOpp(opp.id);
-        } catch (err) {
-          await EngageModal.alert({ title: "Error", message: "Failed to link proposal: " + err.message });
-        }
-      });
+    section.querySelector(".opp-link-proposal-btn")?.addEventListener("click", async () => {
+      openProposalPicker(opp);
     });
 
-    section.querySelector(".opp-create-proposal-btn")?.addEventListener("click", () => {
-      EngageLinks.openCreateProposal({ title: opp.title, clientName: "" }, async (data) => {
-        try {
-          await EngageApi.linkProposal(opp.id, data);
-          await openOpp(opp.id);
-        } catch (err) {
-          await EngageModal.alert({ title: "Error", message: "Failed to create/link proposal: " + err.message });
-        }
-      });
+    section.querySelector(".opp-create-proposal-btn")?.addEventListener("click", async () => {
+      openCreateProposalFromOpp(opp);
     });
 
     section.querySelector(".opp-note-btn")?.addEventListener("click", () => {
@@ -461,6 +449,56 @@ const EngageOpportunities = (() => {
       renderPipeline();
     } catch {
       state.opportunities = [];
+    }
+  }
+
+  async function openProposalPicker(opp) {
+    const data = await EngageApi.get("/reporter/proposals");
+    const proposals = (data.proposals || []).filter((p) => !p.archivedAt);
+    if (!proposals.length) {
+      await EngageModal.alert({ title: "No Proposals", message: "No active proposals found. Create one first." });
+      return;
+    }
+    const items = proposals.map((p) => `<option value="${esc(p.id)}">${esc(p.title)} — ${esc(p.clientName || "No client")}</option>`).join("");
+    const html = `<div class="space-y-3">
+      <label class="block text-sm text-muted mb-1">Select Proposal</label>
+      <select id="opp-proposal-pick" class="input-field w-full"><option value="">Choose...</option>${items}</select>
+    </div>`;
+    const confirmed = await EngageModal.confirm({ title: "Link Proposal", message: html, confirmLabel: "Link" });
+    if (!confirmed) return;
+    const selectedId = document.getElementById("opp-proposal-pick")?.value;
+    if (!selectedId) { await EngageModal.alert({ title: "Error", message: "Select a proposal." }); return; }
+    try {
+      await EngageApi.post(`/engage/opportunities/${opp.id}/link-proposal`, { reporterProposalId: selectedId });
+      await refresh();
+    } catch (err) {
+      await EngageModal.alert({ title: "Error", message: "Failed to link: " + err.message });
+    }
+  }
+
+  async function openCreateProposalFromOpp(opp) {
+    const oppTypes = parseOppTypes(opp.opportunity_type);
+    const typeChecks = OPP_TYPES.map((t) => {
+      const checked = oppTypes.includes(t) ? "checked" : "";
+      return `<label class="engage-type-checkbox"><input type="checkbox" value="${t}" ${checked}> ${esc(OPP_TYPE_LABELS[t] || t)}</label>`;
+    }).join("");
+    const html = `<div class="space-y-3">
+      <label class="block text-sm text-muted mb-1">Proposal Title</label>
+      <input type="text" id="opp-create-proposal-title" class="input-field w-full" value="${esc(opp.title + " - Proposal")}">
+      <label class="block text-sm text-muted mb-1 mt-3">Test Types</label>
+      <div id="opp-create-proposal-types" style="display:flex;flex-wrap:wrap;gap:0.5rem">${typeChecks}</div>
+    </div>`;
+    const confirmed = await EngageModal.confirm({ title: "Create Proposal", message: html, confirmLabel: "Create" });
+    if (!confirmed) return;
+    const title = document.getElementById("opp-create-proposal-title")?.value;
+    const types = Array.from(document.getElementById("opp-create-proposal-types")?.querySelectorAll("input:checked") || []).map((cb) => cb.value);
+    if (!title?.trim()) { await EngageModal.alert({ title: "Error", message: "Title is required." }); return; }
+    try {
+      const result = await EngageApi.post(`/engage/opportunities/${opp.id}/create-proposal`, { title: title.trim(), testTypes: types });
+      await EngageModal.alert({ title: "Proposal Created", message: `Created "${result.proposal.title}" with ${result.proposal.testTypes?.length || 0} test types.` });
+      await refresh();
+    } catch (err) {
+      await EngageModal.alert({ title: "Error", message: "Failed to create: " + err.message });
     }
   }
 

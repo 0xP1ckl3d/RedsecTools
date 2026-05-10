@@ -1,5 +1,6 @@
 const { Router } = require("express");
 const rateLimit = require("express-rate-limit");
+const crypto = require("crypto");
 const { requireUser } = require("../middleware/auth");
 const { attachUserAccess } = require("../middleware/permissions");
 const { hasPermission } = require("../access");
@@ -7,6 +8,7 @@ const {
   createEngageClient, getEngageClientById, listEngageClients, updateEngageClient, archiveEngageClient,
   createEngageContact, getEngageContactById, updateEngageContact, archiveEngageContact,
   createEngageOpportunity, getEngageOpportunityById, listEngageOpportunities, listEngageOpportunitiesByClient, updateEngageOpportunity, updateEngageOpportunityStage,
+  linkEngageOpportunityProposal,
   createEngageEngagement, getEngageEngagementById, listEngageEngagements, listEngageEngagementsByUser, listEngageEngagementsByClient,
   updateEngageEngagement, updateEngageEngagementStatus, archiveEngageEngagement,
   createEngageMember, listEngageMembersByEngagement, updateEngageMember, deleteEngageMember,
@@ -21,6 +23,24 @@ const {
   listUsers,
   listUsersByPermission,
   createAuditEvent,
+} = require("../database");
+const {
+  getReporterProposalById,
+  listReporterProposals,
+  createReporterProposalRow,
+  listReporterProposalTemplates,
+  getReporterProposalTemplateById,
+  listReporterProposalTemplateSections,
+  getReporterTestTypeTemplateByType,
+  listReporterProjects,
+  listCalendarProjects,
+  getReporterProjectById,
+  getCalendarProjectById,
+  createReporterProjectRow,
+  listReporterDesigns,
+  createCalendarProject,
+  createCalendarEntry,
+  getEngageEngagementByCalendarProject,
 } = require("../database");
 const { createNotification } = require("../core/notifications");
 const { logEvent } = require("../core/logger");
@@ -466,6 +486,93 @@ router.post("/engage/contacts/:id/archive", writeLimiter, requireUser, attachUse
 });
 
 // ============================================================
+// Cross-tool: Reporter Proposals (search for pickers)
+// ============================================================
+
+router.get("/engage/reporter/proposals", readLimiter, requireUser, attachUserAccess, (req, res) => {
+  if (!canViewEngage(req)) return res.status(403).json({ error: "Forbidden." });
+  try {
+    const query = (req.query.query || "").toLowerCase();
+    let proposals = listReporterProposals();
+    proposals = proposals.filter((p) => !p.archivedAt);
+    if (query) {
+      proposals = proposals.filter(
+        (p) =>
+          (p.title || "").toLowerCase().includes(query) ||
+          (p.clientName || "").toLowerCase().includes(query)
+      );
+    }
+    const results = proposals.slice(0, 20).map((p) => ({
+      id: p.id,
+      title: p.title,
+      clientName: p.clientName,
+      status: p.status,
+      testTypes: p.testTypes,
+      updatedAt: p.updatedAt,
+    }));
+    res.json({ proposals: results });
+  } catch {
+    res.status(500).json({ error: "Failed to search proposals." });
+  }
+});
+
+router.get("/engage/reporter/projects", readLimiter, requireUser, attachUserAccess, (req, res) => {
+  if (!canViewEngage(req)) return res.status(403).json({ error: "Forbidden." });
+  try {
+    const query = (req.query.query || "").toLowerCase();
+    let projects = listReporterProjects();
+    projects = projects.filter((p) => !p.isArchived);
+    if (query) {
+      projects = projects.filter(
+        (p) =>
+          (p.title || "").toLowerCase().includes(query) ||
+          (p.clientName || "").toLowerCase().includes(query)
+      );
+    }
+    const results = projects.slice(0, 20).map((p) => ({
+      id: p.id,
+      title: p.title,
+      clientName: p.clientName,
+      status: p.status,
+      reportType: p.reportType,
+      testTypes: p.testTypes,
+      dueDate: p.dueDate,
+      updatedAt: p.updatedAt,
+    }));
+    res.json({ projects: results });
+  } catch {
+    res.status(500).json({ error: "Failed to search Reporter projects." });
+  }
+});
+
+router.get("/engage/calendar/projects", readLimiter, requireUser, attachUserAccess, (req, res) => {
+  if (!canViewEngage(req)) return res.status(403).json({ error: "Forbidden." });
+  try {
+    const query = (req.query.query || "").toLowerCase();
+    let projects = listCalendarProjects();
+    if (query) {
+      projects = projects.filter(
+        (p) =>
+          (p.name || "").toLowerCase().includes(query) ||
+          (p.client_name || "").toLowerCase().includes(query)
+      );
+    }
+    const results = projects.slice(0, 20).map((p) => ({
+      id: p.id,
+      name: p.name,
+      clientName: p.client_name || "",
+      status: p.status,
+      startDate: p.start_date,
+      endDate: p.end_date,
+      estimatedHours: p.estimated_hours,
+    }));
+    res.json({ projects: results });
+  } catch {
+    res.status(500).json({ error: "Failed to search Calendar projects." });
+  }
+});
+
+// ============================================================
 // Opportunities
 // ============================================================
 
@@ -656,7 +763,15 @@ router.get("/engage/engagements/:id", readLimiter, requireUser, attachUserAccess
     const engagement = getEngageEngagementById(req.params.id);
     if (!engagement || engagement.archived_at) return res.status(404).json({ error: "Engagement not found." });
     if (!canAccessEngagement(req, engagement)) return res.status(403).json({ error: "Forbidden." });
-    res.status(200).json({ engagement: maybeStripCommercials(req, engagement) });
+
+    const linkedReporterProject = engagement.redsec_reporter_project_id ? getReporterProjectById(engagement.redsec_reporter_project_id) : null;
+    const linkedCalendarProject = engagement.redseccal_project_id ? getCalendarProjectById(engagement.redseccal_project_id) : null;
+
+    res.status(200).json({
+      engagement: maybeStripCommercials(req, engagement),
+      linkedReporterProject: linkedReporterProject ? { id: linkedReporterProject.id, title: linkedReporterProject.title, status: linkedReporterProject.status, clientName: linkedReporterProject.clientName, testTypes: linkedReporterProject.testTypes } : null,
+      linkedCalendarProject: linkedCalendarProject ? { id: linkedCalendarProject.id, name: linkedCalendarProject.name, status: linkedCalendarProject.status, clientName: linkedCalendarProject.client_name, startDate: linkedCalendarProject.starts_at, endDate: linkedCalendarProject.ends_at } : null,
+    });
   } catch {
     res.status(500).json({ error: "Failed to get engagement." });
   }
@@ -1112,10 +1227,24 @@ router.post("/engage/opportunities/:id/link-proposal", writeLimiter, requireUser
   try {
     const existing = getEngageOpportunityById(req.params.id);
     if (!existing) return res.status(404).json({ error: "Opportunity not found." });
-    const { proposalReporterDocId, proposalPdfGenerationId } = req.body;
-    if (!proposalReporterDocId && !proposalPdfGenerationId) {
-      return res.status(400).json({ error: "proposalReporterDocId or proposalPdfGenerationId is required." });
+    const { reporterProposalId, proposalReporterDocId, proposalPdfGenerationId } = req.body;
+    if (!reporterProposalId && !proposalReporterDocId && !proposalPdfGenerationId) {
+      return res.status(400).json({ error: "reporterProposalId, proposalReporterDocId, or proposalPdfGenerationId is required." });
     }
+
+    if (reporterProposalId) {
+      const proposal = getReporterProposalById(reporterProposalId);
+      if (!proposal) return res.status(404).json({ error: "Reporter proposal not found." });
+      const opportunity = linkEngageOpportunityProposal(req.params.id, reporterProposalId);
+      createEngageActivity({
+        entityType: "opportunity", entityId: req.params.id, action: "proposal_linked",
+        userId: req.user.id, username: req.user.username,
+        details: { reporterProposalId, proposalTitle: proposal.title },
+      });
+      auditEngage(req, { action: "proposal_linked", targetType: "engage_opportunity", targetId: req.params.id, metadata: { reporterProposalId } });
+      return res.status(200).json({ opportunity: maybeStripCommercials(req, opportunity) });
+    }
+
     const opportunity = updateEngageOpportunity({
       id: req.params.id,
       title: existing.title, opportunityType: existing.opportunity_type, stage: existing.stage,
@@ -1136,6 +1265,98 @@ router.post("/engage/opportunities/:id/link-proposal", writeLimiter, requireUser
     res.status(200).json({ opportunity: maybeStripCommercials(req, opportunity) });
   } catch {
     res.status(500).json({ error: "Failed to link proposal." });
+  }
+});
+
+const VALID_TEST_TYPES = ["internal", "external", "webapp", "cloud", "build_review", "red_team", "wireless", "configuration_review", "assumed_breach", "custom"];
+
+router.post("/engage/opportunities/:id/create-proposal", writeLimiter, requireUser, attachUserAccess, (req, res) => {
+  const set = req.access.permissionSet;
+  if (!set.has("engage.edit_opportunity") && !set.has("engage.manage_all")) {
+    return res.status(403).json({ error: "Forbidden." });
+  }
+  try {
+    const existing = getEngageOpportunityById(req.params.id);
+    if (!existing) return res.status(404).json({ error: "Opportunity not found." });
+
+    const { title, testTypes } = req.body;
+    const proposalTitle = (title || existing.title + " - Proposal").trim();
+    if (!proposalTitle) return res.status(400).json({ error: "Title is required." });
+
+    const selectedTypes = Array.isArray(testTypes) ? testTypes.filter((t) => VALID_TEST_TYPES.includes(t)) : [];
+
+    const template = getReporterProposalTemplateById("builtin-proposal-default");
+    const templateSections = template ? listReporterProposalTemplateSections(template.id) : [];
+
+    const sections = [];
+    let orderIdx = 0;
+    for (const ts of templateSections) {
+      if (ts.content && ts.content.includes("{{test_type_inserts}}")) {
+        let combined = ts.content.replace("{{test_type_inserts}}", "");
+        for (const tt of selectedTypes) {
+          const writeup = getReporterTestTypeTemplateByType(tt);
+          if (writeup) combined += `\n\n### ${writeup.name}\n\n${writeup.methodology_writeup || ""}\n\n**Scope:** ${writeup.scope_guidance || ""}\n\n**Deliverables:** ${writeup.deliverables || ""}\n`;
+        }
+        sections.push({ title: ts.title, sectionType: ts.section_type, content: combined, orderIndex: orderIdx++, isIncluded: true });
+      } else if (ts.content && ts.content.includes("{{client_requirements_insert}}")) {
+        let combined = ts.content;
+        const reqs = selectedTypes.map((tt) => { const w = getReporterTestTypeTemplateByType(tt); return w ? `- **${w.name}:** ${w.client_requirements || ""}` : null; }).filter(Boolean).join("\n");
+        combined = combined.replace("{{client_requirements_insert}}", reqs);
+        sections.push({ title: ts.title, sectionType: ts.section_type, content: combined, orderIndex: orderIdx++, isIncluded: true });
+      } else if (ts.content && ts.content.includes("{{consultant_requirements_insert}}")) {
+        let combined = ts.content;
+        const reqs = selectedTypes.map((tt) => { const w = getReporterTestTypeTemplateByType(tt); return w ? `- **${w.name}:** ${w.consultant_requirements || ""}` : null; }).filter(Boolean).join("\n");
+        combined = combined.replace("{{consultant_requirements_insert}}", reqs);
+        sections.push({ title: ts.title, sectionType: ts.section_type, content: combined, orderIndex: orderIdx++, isIncluded: true });
+      } else {
+        sections.push({ title: ts.title, sectionType: ts.section_type, content: ts.content || "", orderIndex: orderIdx++, isIncluded: true });
+      }
+    }
+
+    const proposal = createReporterProposalRow({
+      templateId: template ? template.id : null,
+      title: proposalTitle,
+      clientName: existing.client_name || "",
+      clientId: existing.client_id,
+      opportunityId: existing.id,
+      testTypes: selectedTypes,
+      estimatedDays: existing.estimated_days,
+      quotedValue: existing.quoted_value,
+      createdBy: req.user.id,
+      sections,
+    });
+
+    linkEngageOpportunityProposal(existing.id, proposal.id);
+
+    createEngageActivity({
+      entityType: "opportunity", entityId: existing.id, action: "proposal_created",
+      userId: req.user.id, username: req.user.username,
+      details: { proposalId: proposal.id, proposalTitle: proposal.title },
+    });
+    auditEngage(req, { action: "proposal_created", targetType: "engage_opportunity", targetId: existing.id, metadata: { proposalId: proposal.id } });
+
+    res.status(201).json({ proposal });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to create proposal." });
+  }
+});
+
+router.post("/engage/opportunities/:id/generate-proposal-pdf", writeLimiter, requireUser, attachUserAccess, (req, res) => {
+  const set = req.access.permissionSet;
+  if (!set.has("engage.edit_opportunity") && !set.has("engage.manage_all")) {
+    return res.status(403).json({ error: "Forbidden." });
+  }
+  try {
+    const existing = getEngageOpportunityById(req.params.id);
+    if (!existing) return res.status(404).json({ error: "Opportunity not found." });
+    if (!existing.reporter_proposal_id) return res.status(400).json({ error: "No proposal linked to this opportunity." });
+
+    const proposal = getReporterProposalById(existing.reporter_proposal_id);
+    if (!proposal) return res.status(404).json({ error: "Linked proposal not found." });
+
+    res.json({ redirectUrl: `/reporter/?proposalId=${proposal.id}`, proposalId: proposal.id });
+  } catch {
+    res.status(500).json({ error: "Failed to generate proposal PDF." });
   }
 });
 
@@ -1257,6 +1478,171 @@ router.post("/engage/engagements/:id/link-reporter", writeLimiter, requireUser, 
     res.status(200).json({ engagement: maybeStripCommercials(req, engagement) });
   } catch {
     res.status(500).json({ error: "Failed to link Reporter project." });
+  }
+});
+
+const ROLE_MAP = { technical_lead: "lead", manager: "reviewer", tester: "pentester", qa_reviewer: "reviewer", observer: "reviewer" };
+
+router.post("/engage/engagements/:id/create-reporter-project", writeLimiter, requireUser, attachUserAccess, (req, res) => {
+  const set = req.access.permissionSet;
+  if (!set.has("engage.create_engagement") && !set.has("engage.manage_all")) {
+    return res.status(403).json({ error: "Forbidden." });
+  }
+  try {
+    const existing = getEngageEngagementById(req.params.id);
+    if (!existing || existing.archived_at) return res.status(404).json({ error: "Engagement not found." });
+
+    const { designId, title } = req.body;
+    const designs = listReporterDesigns();
+    const design = designId ? designs.find((d) => d.id === designId) : designs[0];
+    if (!design) return res.status(400).json({ error: "No report design available." });
+
+    const oppTypes = existing.engagement_type ? JSON.parse(existing.engagement_type) : [];
+    const projectTitle = (title || existing.title + " - Report").trim();
+
+    const members = listEngageMembersByEngagement(existing.id);
+    const projectMembers = members.map((m) => ({
+      userId: m.user_id,
+      role: ROLE_MAP[m.role] || "pentester",
+    }));
+    if (!projectMembers.find((m) => m.userId === req.user.id)) {
+      projectMembers.push({ userId: req.user.id, role: "lead" });
+    }
+
+    const project = createReporterProjectRow({
+      designId: design.id,
+      title: projectTitle,
+      reportType: oppTypes[0] || "custom",
+      clientName: existing.client_display_name || existing.client_name || "",
+      testTypes: oppTypes,
+      dueDate: existing.scheduled_end_date || null,
+      createdBy: req.user.id,
+      members: projectMembers,
+    });
+
+    updateEngageEngagement({
+      id: existing.id, title: existing.title, engagementType: existing.engagement_type,
+      status: existing.status, priority: existing.priority, commercialValue: existing.commercial_value,
+      estimatedDays: existing.estimated_days, scheduledStartDate: existing.scheduled_start_date,
+      scheduledEndDate: existing.scheduled_end_date, actualStartDate: existing.actual_start_date,
+      actualEndDate: existing.actual_end_date,
+      engagementManagerUserId: existing.engagement_manager_user_id,
+      technicalLeadUserId: existing.technical_lead_user_id,
+      redseccalProjectId: existing.redseccal_project_id,
+      redsecReporterProjectId: project.id,
+      proposalReporterDocId: existing.proposal_reporter_doc_id,
+      deliveryReporterProjectId: existing.delivery_reporter_project_id,
+      highLevelScopeSummary: existing.high_level_scope_summary, notes: existing.notes,
+    });
+
+    createEngageActivity({
+      entityType: "engagement", entityId: existing.id, action: "reporter_project_created",
+      userId: req.user.id, username: req.user.username,
+      details: { projectId: project.id, projectTitle: project.title },
+    });
+    auditEngage(req, { action: "reporter_project_created", targetType: "engage_engagement", targetId: existing.id, metadata: { projectId: project.id } });
+    res.status(201).json({ project });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to create Reporter project." });
+  }
+});
+
+router.post("/engage/engagements/:id/create-calendar-project", writeLimiter, requireUser, attachUserAccess, (req, res) => {
+  const set = req.access.permissionSet;
+  if (!set.has("engage.create_engagement") && !set.has("engage.manage_all")) {
+    return res.status(403).json({ error: "Forbidden." });
+  }
+  try {
+    const existing = getEngageEngagementById(req.params.id);
+    if (!existing || existing.archived_at) return res.status(404).json({ error: "Engagement not found." });
+
+    const { name } = req.body;
+    const projectName = (name || existing.title).trim();
+    if (!projectName) return res.status(400).json({ error: "Name is required." });
+
+    const oppTypes = existing.engagement_type ? JSON.parse(existing.engagement_type) : [];
+
+    const project = createCalendarProject({
+      id: crypto.randomBytes(16).toString("base64url"),
+      name: projectName,
+      clientName: existing.client_display_name || existing.client_name || "",
+      status: "active",
+      startsAt: existing.scheduled_start_date ? Math.floor(new Date(existing.scheduled_start_date).getTime() / 1000) : null,
+      endsAt: existing.scheduled_end_date ? Math.floor(new Date(existing.scheduled_end_date).getTime() / 1000) : null,
+      estimatedHours: existing.estimated_days ? Math.round(existing.estimated_days * 7.5) : 0,
+      notes: `Created from Engage engagement: ${existing.title}`,
+      createdBy: req.user.id,
+    });
+
+    updateEngageEngagement({
+      id: existing.id, title: existing.title, engagementType: existing.engagement_type,
+      status: existing.status, priority: existing.priority, commercialValue: existing.commercial_value,
+      estimatedDays: existing.estimated_days, scheduledStartDate: existing.scheduled_start_date,
+      scheduledEndDate: existing.scheduled_end_date, actualStartDate: existing.actual_start_date,
+      actualEndDate: existing.actual_end_date,
+      engagementManagerUserId: existing.engagement_manager_user_id,
+      technicalLeadUserId: existing.technical_lead_user_id,
+      redseccalProjectId: project.id,
+      redsecReporterProjectId: existing.redsec_reporter_project_id,
+      proposalReporterDocId: existing.proposal_reporter_doc_id,
+      deliveryReporterProjectId: existing.delivery_reporter_project_id,
+      highLevelScopeSummary: existing.high_level_scope_summary, notes: existing.notes,
+    });
+
+    createEngageActivity({
+      entityType: "engagement", entityId: existing.id, action: "calendar_project_created",
+      userId: req.user.id, username: req.user.username,
+      details: { calendarProjectId: project.id, name: projectName },
+    });
+    auditEngage(req, { action: "calendar_project_created", targetType: "engage_engagement", targetId: existing.id, metadata: { calendarProjectId: project.id } });
+    res.status(201).json({ project });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to create Calendar project." });
+  }
+});
+
+router.post("/engage/engagements/:id/calendar-allocations", writeLimiter, requireUser, attachUserAccess, (req, res) => {
+  const set = req.access.permissionSet;
+  if (!set.has("engage.create_engagement") && !set.has("engage.manage_all")) {
+    return res.status(403).json({ error: "Forbidden." });
+  }
+  try {
+    const existing = getEngageEngagementById(req.params.id);
+    if (!existing || existing.archived_at) return res.status(404).json({ error: "Engagement not found." });
+    if (!existing.redseccal_project_id) return res.status(400).json({ error: "No Calendar project linked." });
+
+    const { assigneeUserIds, startDate, endDate, hoursPerDay, title } = req.body;
+    if (!Array.isArray(assigneeUserIds) || !assigneeUserIds.length) return res.status(400).json({ error: "assigneeUserIds array is required." });
+    if (!startDate || !endDate) return res.status(400).json({ error: "startDate and endDate are required." });
+
+    const startsAt = Math.floor(new Date(startDate + "T00:00:00").getTime() / 1000);
+    const endsAt = Math.floor(new Date(endDate + "T23:59:59").getTime() / 1000);
+    const hpd = parseFloat(hoursPerDay) || 7.5;
+
+    const entries = [];
+    for (const userId of assigneeUserIds) {
+      const entry = createCalendarEntry({
+        id: crypto.randomBytes(16).toString("base64url"),
+        projectId: existing.redseccal_project_id,
+        title: title || existing.title,
+        startsAt,
+        endsAt,
+        assigneeUserId: userId,
+        scheduledHours: hpd * Math.ceil((endsAt - startsAt) / 86400),
+        createdBy: req.user.id,
+      });
+      entries.push(entry);
+    }
+
+    createEngageActivity({
+      entityType: "engagement", entityId: existing.id, action: "allocations_created",
+      userId: req.user.id, username: req.user.username,
+      details: { assigneeCount: assigneeUserIds.length, startDate, endDate },
+    });
+    auditEngage(req, { action: "calendar_allocations_created", targetType: "engage_engagement", targetId: existing.id, metadata: { count: entries.length } });
+    res.status(201).json({ created: entries.length });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to create allocations." });
   }
 });
 

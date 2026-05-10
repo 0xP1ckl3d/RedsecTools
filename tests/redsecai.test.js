@@ -2128,3 +2128,85 @@ test("RedSecAI verifies calendar after calendar write follow-ups", async () => {
     provider.chat = originalChat;
   }
 });
+
+test("RedSecAI Engage tools require Engage permission and hide commercial fields", () => {
+  const { getRedSecAiToolManifest, TOOL_ALLOWLIST } = require("../server/modules/redsecai/context");
+
+  const noEngage = getRedSecAiToolManifest({
+    userId: "u1",
+    permissionSet: new Set(["calendar.view", "reporter.view"]),
+  });
+  assert.ok(!noEngage.some((t) => t.name.startsWith("engage.")));
+
+  const withEngage = getRedSecAiToolManifest({
+    userId: "u1",
+    permissionSet: new Set(["engage.view_team"]),
+  });
+  assert.ok(withEngage.some((t) => t.name === "engage.dashboard.summary"));
+
+  assert.ok(TOOL_ALLOWLIST["engage.opportunities.search"].description.includes("Commercial fields remain hidden"));
+  assert.ok(TOOL_ALLOWLIST["engage.opportunity.get"].description.includes("Commercial fields remain hidden"));
+});
+
+test("RedSecAI Engage write tools are confirmation-gated", () => {
+  const { TOOL_ALLOWLIST } = require("../server/modules/redsecai/context");
+
+  assert.equal(TOOL_ALLOWLIST["engage.note.create"].confirmRequired, true);
+  assert.equal(TOOL_ALLOWLIST["engage.engagement.update_status"].confirmRequired, true);
+  assert.equal(TOOL_ALLOWLIST["engage.qa.request"].confirmRequired, true);
+  assert.equal(TOOL_ALLOWLIST["engage.qa.assign"].confirmRequired, true);
+});
+
+test("RedSecAI cannot change commercial values or set won/lost/rejected opportunity stages in v1", () => {
+  const { TOOL_ALLOWLIST, TOOL_INPUT_SCHEMAS, getRedSecAiSchemaValidationError } = require("../server/modules/redsecai/context");
+
+  const engageToolNames = Object.keys(TOOL_ALLOWLIST).filter((n) => n.startsWith("engage."));
+  assert.ok(!engageToolNames.some((n) => n.includes("commercial")));
+  assert.ok(!engageToolNames.some((n) => n.includes("billing")));
+
+  for (const name of engageToolNames) {
+    const schema = TOOL_INPUT_SCHEMAS[name];
+    if (!schema) continue;
+    const bodyProps = schema.properties?.body?.properties;
+    if (!bodyProps) continue;
+    assert.equal(bodyProps.commercialValue, undefined, `${name} should not accept commercialValue`);
+    assert.equal(bodyProps.estimatedValue, undefined, `${name} should not accept estimatedValue`);
+    assert.equal(bodyProps.billableRate, undefined, `${name} should not accept billableRate`);
+  }
+
+  const stageEnum = TOOL_INPUT_SCHEMAS["engage.opportunity.update_stage"].properties.body.properties.stage.enum;
+  assert.ok(!stageEnum.includes("won"));
+  assert.ok(!stageEnum.includes("lost"));
+  assert.ok(!stageEnum.includes("rejected"));
+
+  const wonError = getRedSecAiSchemaValidationError("engage.opportunity.update_stage", {
+    pathParams: { id: "opp-1" },
+    body: { stage: "won" },
+  });
+  assert.ok(wonError);
+  assert.match(wonError, /must be one of/i);
+});
+
+test("RedSecAI Engage link tools require appropriate access and are confirmation-gated", () => {
+  const { getRedSecAiToolManifest, TOOL_ALLOWLIST } = require("../server/modules/redsecai/context");
+
+  assert.equal(TOOL_ALLOWLIST["engage.link.reporter_document"].confirmRequired, true);
+  assert.equal(TOOL_ALLOWLIST["engage.link.reporter_project"].confirmRequired, true);
+  assert.equal(TOOL_ALLOWLIST["engage.link.calendar_project"].confirmRequired, true);
+
+  const viewerOnly = getRedSecAiToolManifest({
+    userId: "u1",
+    permissionSet: new Set(["engage.view_own"]),
+  });
+  assert.ok(!viewerOnly.some((t) => t.name === "engage.link.reporter_project"));
+  assert.ok(!viewerOnly.some((t) => t.name === "engage.link.calendar_project"));
+  assert.ok(!viewerOnly.some((t) => t.name === "engage.link.reporter_document"));
+
+  const editor = getRedSecAiToolManifest({
+    userId: "u1",
+    permissionSet: new Set(["engage.view_team", "engage.edit_engagement", "engage.edit_opportunity"]),
+  });
+  assert.ok(editor.some((t) => t.name === "engage.link.reporter_project"));
+  assert.ok(editor.some((t) => t.name === "engage.link.reporter_document"));
+  assert.ok(editor.some((t) => t.name === "engage.link.calendar_project"));
+});

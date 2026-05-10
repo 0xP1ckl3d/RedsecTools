@@ -72,6 +72,11 @@ const EngageApi = (() => {
     archiveEngagement: (id) => api(`/engage/engagements/${id}/archive`, json("POST", {})),
     linkCalendar: (id, data) => api(`/engage/engagements/${id}/link-calendar`, json("POST", data)),
     linkReporter: (id, data) => api(`/engage/engagements/${id}/link-reporter`, json("POST", data)),
+    createReporterProject: (id, data) => api(`/engage/engagements/${id}/create-reporter-project`, json("POST", data)),
+    createCalendarProject: (id, data) => api(`/engage/engagements/${id}/create-calendar-project`, json("POST", data)),
+    listReporterProjects: (query) => api(`/engage/reporter/projects${query ? "?query=" + encodeURIComponent(query) : ""}`),
+    listCalendarProjects: (query) => api(`/engage/calendar/projects${query ? "?query=" + encodeURIComponent(query) : ""}`),
+    listReporterProposals: (query) => api(`/engage/reporter/proposals${query ? "?query=" + encodeURIComponent(query) : ""}`),
 
     // Users
     listUsers: () => api("/engage/users"),
@@ -102,10 +107,5 @@ const EngageApi = (() => {
     createOpportunityNote: (id, content) => api(`/engage/opportunities/${id}/notes`, json("POST", { content })),
     createClientNote: (id, content) => api(`/engage/clients/${id}/notes`, json("POST", { content })),
 
-    // Reporter integration
-    listProposalDesigns: () => api("/reporter/designs?type=proposal"),
-    listProposalProjects: () => api("/reporter/projects?type=proposal"),
-    createReporterProject: (data) => api("/reporter/projects", json("POST", data)),
-    renderPdf: (projectId) => api(`/reporter/projects/${projectId}/render-pdf`, json("POST", {})),
   };
 })();

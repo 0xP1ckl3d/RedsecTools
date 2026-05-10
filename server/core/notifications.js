@@ -6,7 +6,7 @@ const { pushNotificationToUser, pushUnreadCountToUser } = require("../notificati
 const VALID_CATEGORIES = new Set(["engage", "reporter", "calendar", "redsecai", "survey", "threat", "system"]);
 const VALID_SEVERITIES = new Set(["info", "success", "warning", "critical"]);
 
-function createNotification({ userId, category, action, title, body, linkUrl, entityType, entityId, severity }) {
+function createNotification({ userId, category, action, title, body, linkUrl, entityType, entityId, severity, dedupeKey }) {
   const notification = dbCreateNotification({
     userId,
     category: VALID_CATEGORIES.has(category) ? category : "system",
@@ -17,6 +17,7 @@ function createNotification({ userId, category, action, title, body, linkUrl, en
     entityType: entityType || null,
     entityId: entityId || null,
     severity: VALID_SEVERITIES.has(severity) ? severity : "info",
+    dedupeKey: dedupeKey || null,
   });
 
   pushNotificationToUser(userId, notification);

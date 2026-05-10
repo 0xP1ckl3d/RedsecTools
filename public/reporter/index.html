@@ -26,6 +26,10 @@
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
           <span class="sidebar-nav-text">Projects</span>
         </button>
+        <button type="button" class="sidebar-nav-item" data-reporter-view="proposals">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          <span class="sidebar-nav-text">Proposals</span>
+        </button>
         <button type="button" class="sidebar-nav-item" data-reporter-view="designs">
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm0 8a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zm10 0a1 1 0 011-1h4a1 1 0 011 1v6a1 1 0 01-1 1h-4a1 1 0 01-1-1v-6z"/></svg>
           <span class="sidebar-nav-text">Designs</span>
@@ -72,6 +76,7 @@
       <div class="mobile-tabs">
         <button type="button" class="mobile-tab active" data-reporter-view="dashboard">Dashboard</button>
         <button type="button" class="mobile-tab" data-reporter-view="projects">Projects</button>
+        <button type="button" class="mobile-tab" data-reporter-view="proposals">Proposals</button>
         <button type="button" class="mobile-tab" data-reporter-view="designs">Designs</button>
         <button type="button" class="mobile-tab" data-reporter-view="templates">Templates</button>
         <button type="button" class="mobile-tab" data-reporter-view="about">About</button>
@@ -330,6 +335,164 @@
           </button>
         </section>
 
+        <!-- ===== PROPOSALS VIEW ===== -->
+        <section id="reporter-view-proposals" class="reporter-view hidden">
+          <div class="card">
+            <div class="card-header flex justify-between items-center flex-wrap gap-3">
+              <h2 class="text-lg font-semibold">Proposals</h2>
+              <div class="flex gap-2 flex-wrap">
+                <input type="text" id="reporter-proposals-search" class="input-field reporter-search-input" placeholder="Search proposals...">
+                <select id="reporter-proposals-filter" class="input-field">
+                  <option value="active">Active</option>
+                  <option value="archived">Archived</option>
+                  <option value="all">All</option>
+                </select>
+                <button type="button" id="reporter-new-proposal-btn" class="btn-primary text-sm hidden">New Proposal</button>
+              </div>
+            </div>
+            <div id="reporter-proposals-list">
+              <p class="text-sm text-muted">Loading...</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- ===== PROPOSAL DETAIL VIEW ===== -->
+        <section id="reporter-view-proposal-detail" class="reporter-view hidden">
+          <div class="card mb-3">
+            <div class="flex justify-between items-center flex-wrap gap-3">
+              <div>
+                <div class="flex items-center gap-3 mb-1">
+                  <button type="button" id="reporter-proposal-back-btn" class="btn-secondary text-sm">Back</button>
+                  <h2 class="text-lg font-semibold" id="reporter-proposal-title">Proposal</h2>
+                  <span id="reporter-proposal-status-badge" class="badge badge-gray">draft</span>
+                </div>
+                <p class="text-sm text-muted" id="reporter-proposal-meta"></p>
+              </div>
+              <div class="flex gap-2 flex-wrap" id="reporter-proposal-actions"></div>
+            </div>
+          </div>
+
+          <div class="reporter-builder">
+            <div id="reporter-proposal-builder-sidebar" class="reporter-builder-sidebar">
+              <div class="reporter-builder-sidebar-header">
+                <span class="text-sm font-semibold">Sections</span>
+                <button type="button" id="reporter-proposal-add-section-btn" class="btn-primary text-sm reporter-tree-add-btn" title="Add section">+</button>
+              </div>
+              <nav id="reporter-proposal-tree-nav" class="reporter-tree-nav">
+                <div id="reporter-proposal-tree-sections"></div>
+              </nav>
+              <div class="reporter-tree-meta">
+                <button type="button" class="reporter-tree-meta-btn" data-proposal-meta="metadata">Details</button>
+                <button type="button" class="reporter-tree-meta-btn" data-proposal-meta="generations">PDFs</button>
+              </div>
+            </div>
+
+            <div id="reporter-proposal-builder-editor" class="reporter-builder-editor">
+              <div id="reporter-proposal-editor-overview" class="reporter-editor-panel">
+                <div class="card">
+                  <div class="card-header"><h3 class="font-semibold">Proposal Overview</h3></div>
+                  <div id="reporter-proposal-overview-content"></div>
+                </div>
+              </div>
+
+              <div id="reporter-proposal-editor-section" class="reporter-editor-panel hidden">
+                <div class="reporter-inline-toolbar">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <label class="flex items-center gap-1 text-sm">
+                      <input type="checkbox" id="reporter-proposal-section-included" checked>
+                      Included
+                    </label>
+                    <button type="button" id="reporter-proposal-save-section-btn" class="btn-primary text-sm">Save</button>
+                    <button type="button" id="reporter-proposal-delete-section-btn" class="btn-danger text-sm">Delete</button>
+                  </div>
+                </div>
+                <div class="reporter-inline-body">
+                  <input type="text" id="reporter-proposal-section-title" class="input-field reporter-inline-title" placeholder="Section title">
+                  <div class="reporter-finding-field-split">
+                    <div class="reporter-finding-field-edit">
+                      <div class="reporter-finding-field-label">Content (markdown)</div>
+                      <textarea id="reporter-proposal-section-content" class="input-field reporter-inline-content" rows="20" placeholder="Section content (markdown)..."></textarea>
+                    </div>
+                    <div class="reporter-finding-field-preview" id="reporter-proposal-section-preview"></div>
+                  </div>
+                </div>
+              </div>
+
+              <div id="reporter-proposal-editor-metadata" class="reporter-editor-panel hidden">
+                <div class="card">
+                  <div class="card-header"><h3 class="font-semibold">Proposal Details</h3></div>
+                  <div class="space-y-3">
+                    <div>
+                      <label class="block text-sm text-muted mb-1">Title</label>
+                      <input type="text" id="reporter-proposal-edit-title" class="input-field w-full">
+                    </div>
+                    <div>
+                      <label class="block text-sm text-muted mb-1">Client Name</label>
+                      <input type="text" id="reporter-proposal-edit-client" class="input-field w-full">
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                      <div>
+                        <label class="block text-sm text-muted mb-1">Primary Contact Name</label>
+                        <input type="text" id="reporter-proposal-edit-contact-name" class="input-field w-full">
+                      </div>
+                      <div>
+                        <label class="block text-sm text-muted mb-1">Primary Contact Email</label>
+                        <input type="text" id="reporter-proposal-edit-contact-email" class="input-field w-full">
+                      </div>
+                    </div>
+                    <div>
+                      <label class="block text-sm text-muted mb-1">Test Types</label>
+                      <div id="reporter-proposal-edit-types" class="reporter-type-checkboxes"></div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                      <div>
+                        <label class="block text-sm text-muted mb-1">Estimated Days</label>
+                        <input type="text" inputmode="numeric" id="reporter-proposal-edit-days" class="input-field w-full">
+                      </div>
+                      <div>
+                        <label class="block text-sm text-muted mb-1">Quoted Value</label>
+                        <input type="text" id="reporter-proposal-edit-value" class="input-field w-full">
+                      </div>
+                    </div>
+                    <div>
+                      <label class="block text-sm text-muted mb-1">Valid Until</label>
+                      <input type="date" id="reporter-proposal-edit-valid-until" class="input-field w-full">
+                    </div>
+                    <div class="flex justify-end">
+                      <button type="button" id="reporter-proposal-save-metadata-btn" class="btn-primary text-sm">Save Details</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div id="reporter-proposal-editor-generations" class="reporter-editor-panel hidden">
+                <div class="card">
+                  <div class="card-header flex justify-between items-center">
+                    <h3 class="font-semibold">Generated PDFs</h3>
+                    <div class="flex gap-2">
+                      <button type="button" id="reporter-proposal-refresh-gens-btn" class="btn-secondary text-sm">Refresh</button>
+                      <button type="button" id="reporter-proposal-generate-pdf-btn" class="btn-primary text-sm">Generate PDF</button>
+                    </div>
+                  </div>
+                  <div id="reporter-proposal-generations-list"></div>
+                </div>
+              </div>
+            </div>
+
+            <div id="reporter-proposal-builder-preview" class="reporter-builder-preview hidden">
+              <div class="reporter-preview-header">
+                <span class="text-sm font-semibold">Preview</span>
+                <button type="button" id="reporter-proposal-close-preview-btn" class="btn-secondary text-sm">Close</button>
+              </div>
+              <iframe id="reporter-proposal-preview-iframe" class="reporter-preview-iframe"></iframe>
+            </div>
+          </div>
+
+          <button type="button" id="reporter-proposal-toggle-preview-btn" class="reporter-toggle-preview-btn hidden" title="Toggle preview">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+          </button>
+        </section>
+
         <!-- ===== DESIGNS VIEW ===== -->
         <section id="reporter-view-designs" class="reporter-view hidden">
           <div class="card">
@@ -506,6 +669,7 @@
 
   <script type="module" src="/js/burger-menu.js"></script>
   <script src="/js/notifications.js"></script>
+  <script src="/js/reporter-proposals.js"></script>
   <script type="module" src="/js/reporter.js"></script>
 </body>
 </html>

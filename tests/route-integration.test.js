@@ -37,3 +37,7 @@ test("Notification routes handle creation, listing, read status, cross-user isol
 test("Engage routes enforce RBAC, CRUD, commercial field gating, team management, QA workflow, and activity logging", async () => {
   await runFixture("engage-route-integration.js");
 });
+
+test("Cross-tool integration covers proposals, Reporter projects, Calendar projects, allocations, notifications, and audit trails", async () => {
+  await runFixture("engage-cross-tool-integration.js");
+});

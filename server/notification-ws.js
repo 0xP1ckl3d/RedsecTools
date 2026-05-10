@@ -1,6 +1,8 @@
 const { WebSocketServer } = require("ws");
 const cookieParser = require("cookie-parser");
 const { getSession, getUnreadNotificationCount } = require("./database");
+const { isAllowedWebSocketOrigin } = require("./core/security/ws-origin");
+const { logWarn } = require("./core/logger");
 
 const COOKIE_SECRET = process.env.COOKIE_SECRET;
 
@@ -83,6 +85,13 @@ function initNotificationWebSocket(server) {
 
   server.on("upgrade", (req, socket, head) => {
     if (req.url !== "/ws/notifications") return;
+
+    if (!isAllowedWebSocketOrigin(req)) {
+      logWarn("notification:ws_origin_rejected", { origin: req.headers.origin || null, host: req.headers.host || null });
+      socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+      socket.destroy();
+      return;
+    }
 
     authenticateUpgrade(req)
       .then((auth) => {

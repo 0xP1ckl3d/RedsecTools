@@ -2243,8 +2243,8 @@ const stmts = {
 
   // --- Reporter: Projects ---
   createReporterProject: db.prepare(`
-    INSERT INTO reporter_projects (id, design_id, title, report_type, status, client_name, project_metadata, due_date, source_project_id, created_by, project_type)
-    VALUES (@id, @designId, @title, @reportType, @status, @clientName, @projectMetadata, @dueDate, @sourceProjectId, @createdBy, @projectType)
+    INSERT INTO reporter_projects (id, design_id, title, report_type, status, client_name, project_metadata, due_date, source_project_id, created_by, project_type, test_types)
+    VALUES (@id, @designId, @title, @reportType, @status, @clientName, @projectMetadata, @dueDate, @sourceProjectId, @createdBy, @projectType, @testTypes)
   `),
   getReporterProjectById: db.prepare(`
     SELECT rp.*, d.name AS design_name, creator.username AS creator_username
@@ -2273,7 +2273,8 @@ const stmts = {
   updateReporterProject: db.prepare(`
     UPDATE reporter_projects SET
       title = @title, client_name = @clientName, project_metadata = @projectMetadata,
-      due_date = @dueDate, tags = @tags, override_finding_order = @overrideFindingOrder, updated_at = unixepoch()
+      due_date = @dueDate, tags = @tags, override_finding_order = @overrideFindingOrder,
+      test_types = @testTypes, updated_at = unixepoch()
     WHERE id = @id
   `),
   updateReporterProjectStatus: db.prepare(`
@@ -2497,10 +2498,106 @@ const stmts = {
   deleteReporterFindingsByProject: db.prepare("DELETE FROM reporter_findings WHERE project_id = ?"),
   deleteReporterSectionsByProject: db.prepare("DELETE FROM reporter_sections WHERE project_id = ?"),
 
+  // --- Reporter: Proposals ---
+  createReporterProposal: db.prepare(`
+    INSERT INTO reporter_proposals (id, template_id, title, client_name, client_id, primary_contact_name, primary_contact_email,
+      prepared_for_name, prepared_for_email, prepared_by_user_id, opportunity_id, engagement_id, status, proposal_type,
+      test_types, proposal_metadata, valid_until, estimated_days, quoted_value, created_by)
+    VALUES (@id, @templateId, @title, @clientName, @clientId, @primaryContactName, @primaryContactEmail,
+      @preparedForName, @preparedForEmail, @preparedByUserId, @opportunityId, @engagementId, @status, @proposalType,
+      @testTypes, @proposalMetadata, @validUntil, @estimatedDays, @quotedValue, @createdBy)
+  `),
+  getReporterProposalById: db.prepare(`
+    SELECT rp.*, creator.username AS creator_username, prepared_by.username AS prepared_by_username
+    FROM reporter_proposals rp
+    LEFT JOIN users creator ON creator.id = rp.created_by
+    LEFT JOIN users prepared_by ON prepared_by.id = rp.prepared_by_user_id
+    WHERE rp.id = ?
+  `),
+  listReporterProposals: db.prepare(`
+    SELECT rp.*, creator.username AS creator_username
+    FROM reporter_proposals rp
+    LEFT JOIN users creator ON creator.id = rp.created_by
+    ORDER BY rp.updated_at DESC
+  `),
+  updateReporterProposal: db.prepare(`
+    UPDATE reporter_proposals SET
+      title = @title, client_name = @clientName, client_id = @clientId,
+      primary_contact_name = @primaryContactName, primary_contact_email = @primaryContactEmail,
+      prepared_for_name = @preparedForName, prepared_for_email = @preparedForEmail,
+      prepared_by_user_id = @preparedByUserId, proposal_type = @proposalType,
+      test_types = @testTypes, proposal_metadata = @proposalMetadata,
+      valid_until = @validUntil, estimated_days = @estimatedDays, quoted_value = @quotedValue,
+      updated_at = unixepoch()
+    WHERE id = @id
+  `),
+  updateReporterProposalStatus: db.prepare(`
+    UPDATE reporter_proposals SET status = @status, updated_at = unixepoch() WHERE id = @id
+  `),
+  archiveReporterProposal: db.prepare(`
+    UPDATE reporter_proposals SET archived_at = unixepoch(), updated_at = unixepoch() WHERE id = @id
+  `),
+  unarchiveReporterProposal: db.prepare(`
+    UPDATE reporter_proposals SET archived_at = NULL, updated_at = unixepoch() WHERE id = @id
+  `),
+  countReporterProposals: db.prepare("SELECT COUNT(*) AS total FROM reporter_proposals WHERE archived_at IS NULL"),
+
+  // --- Reporter: Proposal Sections ---
+  createReporterProposalSection: db.prepare(`
+    INSERT INTO reporter_proposal_sections (id, proposal_id, title, section_type, content, order_index, is_included, created_by)
+    VALUES (@id, @proposalId, @title, @sectionType, @content, @orderIndex, @isIncluded, @createdBy)
+  `),
+  getReporterProposalSectionById: db.prepare("SELECT * FROM reporter_proposal_sections WHERE id = ?"),
+  listReporterProposalSections: db.prepare(`
+    SELECT * FROM reporter_proposal_sections WHERE proposal_id = ? ORDER BY order_index ASC, created_at ASC
+  `),
+  updateReporterProposalSection: db.prepare(`
+    UPDATE reporter_proposal_sections SET
+      title = @title, content = @content, is_included = @isIncluded, updated_at = unixepoch()
+    WHERE id = @id
+  `),
+  deleteReporterProposalSection: db.prepare("DELETE FROM reporter_proposal_sections WHERE id = ?"),
+  reorderReporterProposalSections: db.prepare(`
+    UPDATE reporter_proposal_sections SET order_index = @orderIndex WHERE id = @id
+  `),
+  deleteReporterProposalSectionsByProposal: db.prepare("DELETE FROM reporter_proposal_sections WHERE proposal_id = ?"),
+
+  // --- Reporter: Proposal Generations ---
+  createReporterProposalGeneration: db.prepare(`
+    INSERT INTO reporter_proposal_generations (id, proposal_id, filename, file_path, version, status, created_by)
+    VALUES (@id, @proposalId, @filename, @filePath, @version, @status, @createdBy)
+  `),
+  updateReporterProposalGeneration: db.prepare(`
+    UPDATE reporter_proposal_generations SET
+      file_path = @filePath, status = @status, completed_at = @completedAt,
+      error_message = @errorMessage
+    WHERE id = @id
+  `),
+  getReporterProposalGenerationById: db.prepare("SELECT * FROM reporter_proposal_generations WHERE id = ?"),
+  listReporterProposalGenerations: db.prepare(`
+    SELECT * FROM reporter_proposal_generations WHERE proposal_id = ? ORDER BY created_at DESC
+  `),
+  deleteReporterProposalGenerationById: db.prepare("DELETE FROM reporter_proposal_generations WHERE id = ?"),
+
+  // --- Reporter: Proposal Templates (read-only for now) ---
+  listReporterProposalTemplates: db.prepare(`
+    SELECT * FROM reporter_proposal_templates WHERE archived_at IS NULL ORDER BY sort_order ASC, created_at ASC
+  `),
+  getReporterProposalTemplateById: db.prepare("SELECT * FROM reporter_proposal_templates WHERE id = ?"),
+  listReporterProposalTemplateSections: db.prepare(`
+    SELECT * FROM reporter_proposal_template_sections WHERE template_id = ? ORDER BY order_index ASC
+  `),
+
+  // --- Reporter: Test Type Templates (read-only for now) ---
+  listReporterTestTypeTemplates: db.prepare(`
+    SELECT * FROM reporter_test_type_templates ORDER BY sort_order ASC
+  `),
+  getReporterTestTypeTemplateByType: db.prepare("SELECT * FROM reporter_test_type_templates WHERE test_type = ?"),
+
   // --- Notification statements ---
   createNotification: db.prepare(`
-    INSERT INTO notifications (id, user_id, category, action, title, body, link_url, entity_type, entity_id, severity, expires_at)
-    VALUES (@id, @userId, @category, @action, @title, @body, @linkUrl, @entityType, @entityId, @severity, @expiresAt)
+    INSERT INTO notifications (id, user_id, category, action, title, body, link_url, entity_type, entity_id, severity, expires_at, dedupe_key)
+    VALUES (@id, @userId, @category, @action, @title, @body, @linkUrl, @entityType, @entityId, @severity, @expiresAt, @dedupeKey)
   `),
   getNotificationsByUserId: db.prepare(`
     SELECT * FROM notifications
@@ -2518,6 +2615,18 @@ const stmts = {
     UPDATE notifications SET read_at = unixepoch() WHERE user_id = ? AND read_at IS NULL
   `),
   getNotificationById: db.prepare("SELECT * FROM notifications WHERE id = ?"),
+  findUnreadNotificationByDedupe: db.prepare(`
+    SELECT * FROM notifications
+    WHERE user_id = ? AND dedupe_key = ? AND read_at IS NULL
+    LIMIT 1
+  `),
+  updateNotificationDedupe: db.prepare(`
+    UPDATE notifications SET
+      category = @category, action = @action, title = @title, body = @body,
+      link_url = @linkUrl, entity_type = @entityType, entity_id = @entityId,
+      severity = @severity, created_at = unixepoch()
+    WHERE id = @id
+  `),
   deleteExpiredNotifications: db.prepare(`
     DELETE FROM notifications WHERE expires_at IS NOT NULL AND expires_at < unixepoch()
   `),
@@ -2601,6 +2710,9 @@ const stmts = {
   updateEngageOpportunityStage: db.prepare(`
     UPDATE engage_opportunities SET stage = @stage, closed_at = @closedAt, updated_at = unixepoch() WHERE id = @id
   `),
+  linkEngageOpportunityProposal: db.prepare(`
+    UPDATE engage_opportunities SET reporter_proposal_id = @reporterProposalId, updated_at = unixepoch() WHERE id = @id
+  `),
 
   // --- Engage engagement statements ---
   createEngageEngagement: db.prepare(`
@@ -2616,6 +2728,20 @@ const stmts = {
     FROM engage_engagements e
     LEFT JOIN engage_clients c ON c.id = e.client_id
     WHERE e.id = ?
+  `),
+  getEngageEngagementByReporterProject: db.prepare(`
+    SELECT e.id, e.title, e.status, c.name AS client_name
+    FROM engage_engagements e
+    LEFT JOIN engage_clients c ON c.id = e.client_id
+    WHERE e.redsec_reporter_project_id = ? AND e.archived_at IS NULL
+    LIMIT 1
+  `),
+  getEngageEngagementByCalendarProject: db.prepare(`
+    SELECT e.id, e.title, e.status, c.name AS client_name
+    FROM engage_engagements e
+    LEFT JOIN engage_clients c ON c.id = e.client_id
+    WHERE e.redseccal_project_id = ? AND e.archived_at IS NULL
+    LIMIT 1
   `),
   listEngageEngagements: db.prepare(`
     SELECT e.*, c.name AS client_name, c.display_name AS client_display_name
@@ -6310,6 +6436,7 @@ function createReporterProjectRow(payload) {
     sourceProjectId: payload.sourceProjectId || null,
     createdBy: payload.createdBy,
     projectType: payload.projectType || "report",
+    testTypes: JSON.stringify(payload.testTypes || []),
   });
   if (Array.isArray(payload.members)) {
     for (const m of payload.members) {
@@ -6342,6 +6469,7 @@ function updateReporterProjectRow(id, payload) {
     dueDate: payload.dueDate || null,
     tags: Array.isArray(payload.tags) ? payload.tags.join(",") : (existing?.tags?.join(",") || ""),
     overrideFindingOrder: payload.overrideFindingOrder !== undefined ? (payload.overrideFindingOrder ? 1 : 0) : (existing?.overrideFindingOrder ? 1 : 0),
+    testTypes: JSON.stringify(payload.testTypes !== undefined ? payload.testTypes : (existing?.testTypes || [])),
   });
   return getReporterProjectById(id);
 }
@@ -6975,6 +7103,7 @@ function mapReporterProjectRow(row) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     projectType: row.project_type || "report",
+    testTypes: safeParseJSON(row.test_types),
   };
 }
 
@@ -7132,23 +7261,281 @@ function safeParseJSON(str, fallback = []) {
 }
 
 // ============================================================
+// Reporter Proposal functions
+// ============================================================
+
+function mapReporterProposalRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    templateId: row.template_id,
+    title: row.title,
+    clientName: row.client_name,
+    clientId: row.client_id,
+    primaryContactName: row.primary_contact_name,
+    primaryContactEmail: row.primary_contact_email,
+    preparedForName: row.prepared_for_name,
+    preparedForEmail: row.prepared_for_email,
+    preparedByUserId: row.prepared_by_user_id,
+    preparedByUsername: row.prepared_by_username || null,
+    opportunityId: row.opportunity_id,
+    engagementId: row.engagement_id,
+    status: row.status,
+    proposalType: row.proposal_type,
+    testTypes: safeParseJSON(row.test_types),
+    proposalMetadata: safeParseJSON(row.proposal_metadata, {}),
+    validUntil: row.valid_until,
+    estimatedDays: row.estimated_days,
+    quotedValue: row.quoted_value,
+    createdBy: row.created_by,
+    creatorUsername: row.creator_username || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    archivedAt: row.archived_at,
+  };
+}
+
+function getReporterProposalById(id) {
+  const row = stmts.getReporterProposalById.get(id);
+  return row ? mapReporterProposalRow(row) : null;
+}
+
+function listReporterProposals() {
+  return stmts.listReporterProposals.all().map(mapReporterProposalRow);
+}
+
+function createReporterProposalRow(payload) {
+  const id = payload.id || generateId();
+  stmts.createReporterProposal.run({
+    id,
+    templateId: payload.templateId || null,
+    title: payload.title,
+    clientName: payload.clientName || "",
+    clientId: payload.clientId || null,
+    primaryContactName: payload.primaryContactName || "",
+    primaryContactEmail: payload.primaryContactEmail || "",
+    preparedForName: payload.preparedForName || "",
+    preparedForEmail: payload.preparedForEmail || "",
+    preparedByUserId: payload.preparedByUserId || null,
+    opportunityId: payload.opportunityId || null,
+    engagementId: payload.engagementId || null,
+    status: payload.status || "draft",
+    proposalType: payload.proposalType || "security_assessment",
+    testTypes: JSON.stringify(payload.testTypes || []),
+    proposalMetadata: JSON.stringify(payload.proposalMetadata || {}),
+    validUntil: payload.validUntil || null,
+    estimatedDays: payload.estimatedDays || null,
+    quotedValue: payload.quotedValue || null,
+    createdBy: payload.createdBy,
+  });
+  if (Array.isArray(payload.sections)) {
+    for (let i = 0; i < payload.sections.length; i++) {
+      const s = payload.sections[i];
+      stmts.createReporterProposalSection.run({
+        id: generateId(),
+        proposalId: id,
+        title: s.title,
+        sectionType: s.sectionType || "markdown",
+        content: s.content || "",
+        orderIndex: s.orderIndex != null ? s.orderIndex : i,
+        isIncluded: s.isIncluded !== false ? 1 : 0,
+        createdBy: payload.createdBy,
+      });
+    }
+  }
+  return getReporterProposalById(id);
+}
+
+function updateReporterProposalRow(id, payload) {
+  const existing = getReporterProposalById(id);
+  if (!existing) return null;
+  stmts.updateReporterProposal.run({
+    id,
+    title: payload.title != null ? payload.title : existing.title,
+    clientName: payload.clientName != null ? payload.clientName : existing.clientName,
+    clientId: payload.clientId != null ? payload.clientId : existing.clientId,
+    primaryContactName: payload.primaryContactName != null ? payload.primaryContactName : existing.primaryContactName,
+    primaryContactEmail: payload.primaryContactEmail != null ? payload.primaryContactEmail : existing.primaryContactEmail,
+    preparedForName: payload.preparedForName != null ? payload.preparedForName : existing.preparedForName,
+    preparedForEmail: payload.preparedForEmail != null ? payload.preparedForEmail : existing.preparedForEmail,
+    preparedByUserId: payload.preparedByUserId != null ? payload.preparedByUserId : existing.preparedByUserId,
+    proposalType: payload.proposalType != null ? payload.proposalType : existing.proposalType,
+    testTypes: JSON.stringify(payload.testTypes != null ? payload.testTypes : existing.testTypes),
+    proposalMetadata: JSON.stringify(payload.proposalMetadata != null ? payload.proposalMetadata : existing.proposalMetadata),
+    validUntil: payload.validUntil != null ? payload.validUntil : existing.validUntil,
+    estimatedDays: payload.estimatedDays != null ? payload.estimatedDays : existing.estimatedDays,
+    quotedValue: payload.quotedValue != null ? payload.quotedValue : existing.quotedValue,
+  });
+  return getReporterProposalById(id);
+}
+
+function updateReporterProposalStatus(id, status) {
+  stmts.updateReporterProposalStatus.run({ id, status });
+  return getReporterProposalById(id);
+}
+
+function archiveReporterProposalRow(id) {
+  stmts.archiveReporterProposal.run({ id });
+  return getReporterProposalById(id);
+}
+
+function unarchiveReporterProposalRow(id) {
+  stmts.unarchiveReporterProposal.run({ id });
+  return getReporterProposalById(id);
+}
+
+// Proposal sections
+function mapReporterProposalSectionRow(row) {
+  return {
+    id: row.id,
+    proposalId: row.proposal_id,
+    title: row.title,
+    sectionType: row.section_type,
+    content: row.content,
+    orderIndex: row.order_index,
+    isIncluded: !!row.is_included,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function listReporterProposalSections(proposalId) {
+  return stmts.listReporterProposalSections.all(proposalId).map(mapReporterProposalSectionRow);
+}
+
+function getReporterProposalSectionById(id) {
+  const row = stmts.getReporterProposalSectionById.get(id);
+  return row ? mapReporterProposalSectionRow(row) : null;
+}
+
+function createReporterProposalSectionRow(payload) {
+  const id = generateId();
+  stmts.createReporterProposalSection.run({
+    id,
+    proposalId: payload.proposalId,
+    title: payload.title,
+    sectionType: payload.sectionType || "markdown",
+    content: payload.content || "",
+    orderIndex: payload.orderIndex || 0,
+    isIncluded: payload.isIncluded !== false ? 1 : 0,
+    createdBy: payload.createdBy,
+  });
+  return getReporterProposalSectionById(id);
+}
+
+function updateReporterProposalSectionRow(id, payload) {
+  stmts.updateReporterProposalSection.run({
+    id,
+    title: payload.title,
+    content: payload.content || "",
+    isIncluded: payload.isIncluded !== undefined ? (payload.isIncluded ? 1 : 0) : 1,
+  });
+  return getReporterProposalSectionById(id);
+}
+
+function deleteReporterProposalSectionById(id) {
+  stmts.deleteReporterProposalSection.run(id);
+}
+
+function reorderReporterProposalSectionsRow(proposalId, orderedIds) {
+  const txn = db.transaction(() => {
+    for (let i = 0; i < orderedIds.length; i++) {
+      stmts.reorderReporterProposalSections.run({ id: orderedIds[i], orderIndex: i });
+    }
+  });
+  txn();
+}
+
+// Proposal generations
+function createReporterProposalGenerationRow(payload) {
+  const id = generateId();
+  stmts.createReporterProposalGeneration.run({
+    id,
+    proposalId: payload.proposalId,
+    filename: payload.filename || "proposal.pdf",
+    filePath: payload.filePath || "",
+    version: payload.version || 1,
+    status: payload.status || "pending",
+    createdBy: payload.createdBy,
+  });
+  return stmts.getReporterProposalGenerationById.get(id);
+}
+
+function updateReporterProposalGenerationRow(id, payload) {
+  stmts.updateReporterProposalGeneration.run({
+    id,
+    filePath: payload.filePath || "",
+    status: payload.status,
+    completedAt: payload.completedAt || null,
+    errorMessage: payload.errorMessage || null,
+  });
+  return stmts.getReporterProposalGenerationById.get(id);
+}
+
+function getReporterProposalGenerationById(id) {
+  return stmts.getReporterProposalGenerationById.get(id);
+}
+
+function listReporterProposalGenerations(proposalId) {
+  return stmts.listReporterProposalGenerations.all(proposalId);
+}
+
+function deleteReporterProposalGenerationById(id) {
+  stmts.deleteReporterProposalGenerationById.run(id);
+}
+
+// Proposal templates (read-only)
+function listReporterProposalTemplates() {
+  return stmts.listReporterProposalTemplates.all();
+}
+
+function getReporterProposalTemplateById(id) {
+  return stmts.getReporterProposalTemplateById.get(id);
+}
+
+function listReporterProposalTemplateSections(templateId) {
+  return stmts.listReporterProposalTemplateSections.all(templateId);
+}
+
+// Test type templates (read-only)
+function listReporterTestTypeTemplates() {
+  return stmts.listReporterTestTypeTemplates.all();
+}
+
+function getReporterTestTypeTemplateByType(testType) {
+  return stmts.getReporterTestTypeTemplateByType.get(testType);
+}
+
+// ============================================================
 // Notification functions
 // ============================================================
 
-function createNotification({ userId, category, action, title, body, linkUrl, entityType, entityId, severity, expiresAt }) {
+function createNotification({ userId, category, action, title, body, linkUrl, entityType, entityId, severity, expiresAt, dedupeKey }) {
+  const cat = category || "system";
+  const sev = severity || "info";
+  const act = action || "";
+
+  if (dedupeKey) {
+    const existing = stmts.findUnreadNotificationByDedupe.get(userId, dedupeKey);
+    if (existing) {
+      stmts.updateNotificationDedupe.run({
+        id: existing.id,
+        category: cat, action: act, title, body: body || "",
+        linkUrl: linkUrl || null, entityType: entityType || null, entityId: entityId || null,
+        severity: sev,
+      });
+      return stmts.getNotificationById.get(existing.id);
+    }
+  }
+
   const id = crypto.randomBytes(16).toString("base64url");
   stmts.createNotification.run({
-    id,
-    userId,
-    category: category || "system",
-    action: action || "",
-    title,
-    body: body || "",
-    linkUrl: linkUrl || null,
-    entityType: entityType || null,
-    entityId: entityId || null,
-    severity: severity || "info",
-    expiresAt: expiresAt || null,
+    id, userId,
+    category: cat, action: act, title, body: body || "",
+    linkUrl: linkUrl || null, entityType: entityType || null, entityId: entityId || null,
+    severity: sev, expiresAt: expiresAt || null,
+    dedupeKey: dedupeKey || null,
   });
   return stmts.getNotificationById.get(id);
 }
@@ -7352,6 +7739,11 @@ function updateEngageOpportunityStage(id, stage) {
   return stmts.getEngageOpportunityById.get(id);
 }
 
+function linkEngageOpportunityProposal(opportunityId, reporterProposalId) {
+  stmts.linkEngageOpportunityProposal.run({ id: opportunityId, reporterProposalId });
+  return stmts.getEngageOpportunityById.get(opportunityId);
+}
+
 function createEngageEngagement(payload) {
   const id = payload.id || generateId();
   stmts.createEngageEngagement.run({
@@ -7379,6 +7771,14 @@ function getEngageEngagementById(id) {
   return stmts.getEngageEngagementById.get(id);
 }
 
+function getEngageEngagementByReporterProject(projectId) {
+  return stmts.getEngageEngagementByReporterProject.get(projectId);
+}
+
+function getEngageEngagementByCalendarProject(calendarProjectId) {
+  return stmts.getEngageEngagementByCalendarProject.get(calendarProjectId);
+}
+
 function listEngageEngagements(limit = 50, offset = 0) {
   return stmts.listEngageEngagements.all(limit, offset);
 }
@@ -7393,12 +7793,6 @@ function listEngageEngagementsByClient(clientId) {
 
 function listEngageOpportunitiesByClient(clientId) {
   return stmts.listEngageOpportunitiesByClient.all(clientId);
-}
-
-function listReporterDesignsByType(projectType) {
-  return stmts.listReporterDesigns.all()
-    .filter((d) => d.project_type === projectType)
-    .map(mapReporterDesignRow);
 }
 
 function updateEngageEngagement(payload) {
@@ -8017,7 +8411,6 @@ module.exports = {
   createReporterDesignRow,
   getReporterDesignById,
   listReporterDesigns,
-  listReporterDesignsByType,
   updateReporterDesignRow,
   deleteReporterDesignById,
   createReporterProjectRow,
@@ -8084,6 +8477,31 @@ module.exports = {
   listReporterImportJobsByProject,
   incrementReporterTemplateUsage: (id) => stmts.incrementReporterTemplateUsage.run(id),
 
+  // --- Reporter Proposal functions ---
+  getReporterProposalById,
+  listReporterProposals,
+  createReporterProposalRow,
+  updateReporterProposalRow,
+  updateReporterProposalStatus,
+  archiveReporterProposalRow,
+  unarchiveReporterProposalRow,
+  listReporterProposalSections,
+  getReporterProposalSectionById,
+  createReporterProposalSectionRow,
+  updateReporterProposalSectionRow,
+  deleteReporterProposalSectionById,
+  reorderReporterProposalSectionsRow,
+  createReporterProposalGenerationRow,
+  updateReporterProposalGenerationRow,
+  getReporterProposalGenerationById,
+  listReporterProposalGenerations,
+  deleteReporterProposalGenerationById,
+  listReporterProposalTemplates,
+  getReporterProposalTemplateById,
+  listReporterProposalTemplateSections,
+  listReporterTestTypeTemplates,
+  getReporterTestTypeTemplateByType,
+
   // --- Notification functions ---
   createNotification,
   getNotificationsByUserId,
@@ -8110,8 +8528,11 @@ module.exports = {
   listEngageOpportunitiesByClient,
   updateEngageOpportunity,
   updateEngageOpportunityStage,
+  linkEngageOpportunityProposal,
   createEngageEngagement,
   getEngageEngagementById,
+  getEngageEngagementByReporterProject,
+  getEngageEngagementByCalendarProject,
   listEngageEngagements,
   listEngageEngagementsByUser,
   listEngageEngagementsByClient,

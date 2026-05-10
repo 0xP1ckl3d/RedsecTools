@@ -240,6 +240,7 @@ async function init() {
   showCapableButtons();
   renderDashboard();
   bindNavigation();
+  window.ReporterProposals?.init(state.capabilities);
   if (new URLSearchParams(window.location.search).get("view") === "about") {
     setCurrentView("about");
   }
@@ -319,6 +320,7 @@ function setCurrentView(view) {
   if (view === "projects") renderProjectsList();
   if (view === "designs") renderDesignsList();
   if (view === "templates") renderTemplatesList();
+  if (view === "proposals") window.ReporterProposals?.showListView();
 }
 
 // --- Dashboard ---
@@ -404,6 +406,7 @@ async function openProject(projectId) {
     state.projectMembers = data.members || [];
     state.projectDesign = data.design || null;
     state.projectStats = { findings: data.findings || 0, sections: data.sections || 0, bySeverity: data.bySeverity || {} };
+    state.engageEngagement = data.engageEngagement || null;
   } catch (err) {
     await showAlertModal({ title: "Error", message: err.message });
     return;
@@ -587,11 +590,18 @@ function showOverview() {
   if (statsContainer && state.projectStats) {
     const s = state.projectStats;
     const bs = s.bySeverity || {};
+    let engageHtml = "";
+    if (state.engageEngagement) {
+      const eng = state.engageEngagement;
+      engageHtml = `<div class="card mt-3"><div class="card-header"><h3 class="font-semibold">Engage Engagement</h3></div>
+        <div class="p-3"><a href="/engage/" class="text-accent" target="_blank">${escapeHtml(eng.title)}</a> — ${escapeHtml(eng.status)} — ${escapeHtml(eng.client_name || "")}</div></div>`;
+    }
     statsContainer.innerHTML = `
       <div class="stat-card"><div class="stat-value">${state.projectFindings.length}</div><div class="stat-label">Findings</div></div>
       <div class="stat-card"><div class="stat-value">${bs.critical || 0}</div><div class="stat-label">Critical</div></div>
       <div class="stat-card"><div class="stat-value">${bs.high || 0}</div><div class="stat-label">High</div></div>
       <div class="stat-card"><div class="stat-value">${state.projectSections.length}</div><div class="stat-label">Sections</div></div>
+      ${engageHtml}
     `;
   }
 }
