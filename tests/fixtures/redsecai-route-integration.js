@@ -2,7 +2,7 @@ const assert = require("node:assert/strict");
 const { createRouteHarness } = require("../helpers/route-harness");
 
 (async () => {
-  const harness = await createRouteHarness({ name: "redsecai-routes", routes: ["redsecai", "homepage"] });
+  const harness = await createRouteHarness({ name: "redsecai-routes", routes: ["redsecai", "homepage", "engage"] });
   try {
     const provider = require("../../server/modules/redsecai/provider");
     provider.checkModelHealth = async () => ({
@@ -25,6 +25,11 @@ const { createRouteHarness } = require("../helpers/route-harness");
 
     const user = harness.createUserWithSession({ id: "ai-user", permissions: ["wiki.view"] });
     const other = harness.createUserWithSession({ id: "other-user", permissions: ["wiki.view"] });
+    const engageManager = harness.createUserWithSession({
+      id: "ai-engage-manager",
+      username: "engage-manager",
+      permissions: ["engage.view_team", "engage.create_client", "engage.create_engagement", "engage.edit_engagement"],
+    });
 
     const status = await harness.requestJson({ path: "/api/ai/status", cookie: user.cookie });
     assert.equal(status.status, 200);
@@ -116,6 +121,36 @@ const { createRouteHarness } = require("../helpers/route-harness");
     });
     assert.equal(reporterConfirm.status, 403);
     assert.equal(reporterConfirm.body.success, false);
+
+    const client = await harness.requestJson({
+      method: "POST",
+      path: "/api/engage/clients",
+      cookie: engageManager.cookie,
+      body: { name: "AI Client" },
+    });
+    assert.equal(client.status, 201);
+    const engagement = await harness.requestJson({
+      method: "POST",
+      path: "/api/engage/engagements",
+      cookie: engageManager.cookie,
+      body: { clientId: client.body.client.id, title: "AI Review Engagement" },
+    });
+    assert.equal(engagement.status, 201);
+    const engageAction = createPendingAction(engageManager, {
+      tool: "engage.engagement.update_status",
+      args: {
+        pathParams: { id: engagement.body.engagement.id },
+        body: { status: "testing_in_progress" },
+      },
+    });
+    const engageConfirm = await harness.requestJson({
+      method: "POST",
+      path: `/api/ai/actions/${engageAction.id}/confirm`,
+      cookie: engageManager.cookie,
+    });
+    assert.equal(engageConfirm.status, 200);
+    assert.equal(engageConfirm.body.success, true);
+    assert.equal(engageConfirm.body.result.data.engagement.status, "testing_in_progress");
 
     console.log(JSON.stringify({ ok: true }));
   } finally {

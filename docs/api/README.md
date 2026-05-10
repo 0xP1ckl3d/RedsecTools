@@ -16,6 +16,7 @@ The current spec covers all HTTP routes across the platform:
 - RedSecSurvey create/manage/respond/results/export route groups
 - RedSecThreat bootstrap, read-only feed catalogue, user-scoped keyword/tag/alert management, personal notifications, admin-managed template/feed policy endpoints, and feed health route groups
 - RedSecReporter bootstrap, project/design/template/comment/PDF routes, target-scoped comments, versioned PDF deletion, and member-scoped project access rules
+- RedSecEngage bootstrap, client/contact/opportunity/engagement/team/QA/note/activity/linking routes, role-aware dashboard statistics, and RedSecCal/Reporter integration endpoints
 - RedSecAI status, chat, and confirmation-gated action confirm/reject routes
 - RedSecShare upload/download routes plus live upload-config endpoints used by the app and extension
 
@@ -40,7 +41,7 @@ Every API route requires authentication except public survey response endpoints 
 
 - Signed cookie: `redsec_session`
 - Created by `POST /api/auth/login` (and optionally `POST /api/auth/login/mfa`)
-- Required for all authenticated user routes under `/api` (calendar, wiki, threat, reporter, vault, chat, homepage, survey management, AI, avatars)
+- Required for all authenticated user routes under `/api` (calendar, engage, wiki, threat, reporter, vault, chat, homepage, survey management, AI, avatars)
 - The session encodes the user ID and is verified against server-side session storage
 - Sessions expire based on server configuration (default 24h; extended sessions up to 30 days with "keep me signed in")
 - MFA-protected accounts require completing `POST /api/auth/login/mfa` before the session is promoted to fully authenticated
@@ -71,12 +72,12 @@ Every API route requires authentication except public survey response endpoints 
 
 ## RedSecAI route details
 
-RedSecAI routes (`/api/ai/*`) are **not publicly accessible**. They require an authenticated `UserSessionCookie` and are rate-limited (60 requests per 15 minutes per user). RedSecAI also does not bypass RBAC — it calls the same scoped API routes (calendar, wiki, threat, reporter, homepage) using an internal origin and the user's session context, so all permission checks still apply.
+RedSecAI routes (`/api/ai/*`) are **not publicly accessible**. They require an authenticated `UserSessionCookie` and are rate-limited (60 requests per 15 minutes per user). RedSecAI also does not bypass RBAC — it calls the same scoped API routes (calendar, engage, wiki, threat, reporter, homepage) using an internal origin and the user's session context, so all permission checks still apply.
 
 | Route | Method | Auth | Description |
 |---|---|---|---|
 | `/api/ai/status` | GET | UserSessionCookie | Returns model health, config, and user's pending actions |
-| `/api/ai/chat` | POST | UserSessionCookie + rate limit | Sends a message to the local Ollama model with scoped tool access. The model can read permitted data (calendar, wiki, threat, reporter) and prepare confirmation-gated write actions |
+| `/api/ai/chat` | POST | UserSessionCookie + rate limit | Sends a message to the local Ollama model with scoped tool access. The model can read permitted data (calendar, engage, wiki, threat, reporter) and prepare confirmation-gated write actions |
 | `/api/ai/actions/{id}/confirm` | POST | UserSessionCookie + rate limit | Confirms and executes a previously prepared action against the RBAC-protected API |
 | `/api/ai/actions/{id}/reject` | POST | UserSessionCookie + rate limit | Cancels a pending action without applying it |
 
@@ -91,6 +92,7 @@ Many routes are further restricted by role-based permissions beyond just having 
 - **Wiki**: `wiki.view`, `wiki.create_personal`, `wiki.create_team`, `wiki.edit_team`, `wiki.manage`
 - **Threat**: `threat.view` (personal workspace), `threat.manage` (manage feeds, keywords)
 - **Reporter**: `reporter.view` (tool access), `reporter.create`, `reporter.edit_own`, `reporter.edit_assigned`, `reporter.review`, `reporter.approve`, `reporter.manage_templates`, `reporter.manage_all`
+- **Engage**: `engage.view_own`, `engage.view_team`, `engage.view_all`, `engage.create_client`, `engage.edit_client`, `engage.create_opportunity`, `engage.edit_opportunity`, `engage.create_engagement`, `engage.edit_engagement`, `engage.assign_team`, `engage.manage_qa`, `engage.perform_qa`, `engage.manage_commercials`, `engage.manage_all`
 - **Homepage bulletins**: `bulletin.view`, `bulletin.create`, `bulletin.edit_any`, `bulletin.pin`, `bulletin.manage`
 
 Permission enforcement is server-side on the API routes regardless of UI visibility. The `/api/auth/me` endpoint returns the user's effective permission set so the frontend can adapt accordingly.
@@ -103,3 +105,4 @@ Permission enforcement is server-side on the API routes regardless of UI visibil
 - RedSecSurvey and RedSecWiki are now first-class documented tool surfaces rather than placeholder route groups.
 - RedSecThreat user routes are permission-gated with `threat.view` for the personal threat workspace (dashboard, feeds, personal keywords/tags/alerts, health, user notifications). Global feed sources, API templates, and notification policy are managed from the admin panel and documented separately under `/admin/api/threat/*`.
 - RedSecReporter uses two layers of access control: `reporter.view` grants access to the tool shell, while project APIs require the user to be an assigned project member unless they hold `reporter.manage_all`.
+- RedSecEngage exposes role-aware operations data. Users with own-view access only see engagement detail when they created, manage, lead, or belong to that engagement; team/all permissions can see the broader workspace. Commercial values remain hidden unless the user has `engage.manage_commercials` or `engage.manage_all`.

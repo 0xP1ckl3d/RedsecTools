@@ -24,6 +24,11 @@ const REPORTER_REVIEW_PERMISSIONS = ["reporter.review", "reporter.approve", "rep
 const REPORTER_TEMPLATE_PERMISSIONS = ["reporter.manage_templates", "reporter.manage_all"];
 const SURVEY_PERMISSIONS = ["survey.create", "survey.manage_any", "survey.view_results_any"];
 const SURVEY_WRITE_PERMISSIONS = ["survey.create", "survey.manage_any"];
+const ENGAGE_READ_PERMISSIONS = ["engage.view_own", "engage.view_team", "engage.view_all", "engage.manage_all"];
+const ENGAGE_OPPORTUNITY_WRITE_PERMISSIONS = ["engage.edit_opportunity", "engage.manage_all"];
+const ENGAGE_ENGAGEMENT_WRITE_PERMISSIONS = ["engage.edit_engagement", "engage.manage_all"];
+const ENGAGE_QA_MANAGE_PERMISSIONS = ["engage.manage_qa", "engage.manage_all"];
+const ENGAGE_QA_WRITE_PERMISSIONS = ["engage.perform_qa", "engage.manage_qa", "engage.manage_all"];
 
 const EMPTY_OBJECT_SCHEMA = { type: "object", properties: {} };
 const ID_PATH_SCHEMA = { type: "object", properties: { pathParams: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } }, required: ["pathParams"] };
@@ -827,6 +832,131 @@ const EXTRA_TOOL_INPUT_SCHEMAS = Object.freeze({
     },
     required: ["pathParams"],
   },
+
+  "engage.clients.search": {
+    type: "object",
+    properties: { query: { type: "string" }, limit: { type: "integer" } },
+  },
+  "engage.client.get": ID_PATH_SCHEMA,
+  "engage.opportunities.search": {
+    type: "object",
+    properties: { query: { type: "string" }, clientId: { type: "string" }, limit: { type: "integer" } },
+  },
+  "engage.opportunity.get": ID_PATH_SCHEMA,
+  "engage.engagements.search": {
+    type: "object",
+    properties: { query: { type: "string" }, clientId: { type: "string" }, limit: { type: "integer" } },
+  },
+  "engage.engagement.get": ID_PATH_SCHEMA,
+  "engage.dashboard.summary": EMPTY_OBJECT_SCHEMA,
+  "engage.qa.queue": {
+    type: "object",
+    properties: {
+      status: { enum: ["all", "ready_for_qa", "assigned", "reviewing", "requires_more_work", "ready_for_delivery", "delivered", "cancelled"] },
+      assignee: { type: "string" },
+    },
+  },
+  "engage.utilisation.summary": {
+    type: "object",
+    properties: { days: { type: "integer" } },
+  },
+  "engage.note.create": {
+    type: "object",
+    properties: {
+      entityType: { enum: ["client", "opportunity", "engagement"] },
+      entityId: { type: "string" },
+      body: { type: "object", properties: { content: { type: "string" } }, required: ["content"] },
+    },
+    required: ["entityType", "entityId", "body"],
+  },
+  "engage.opportunity.update_stage": {
+    type: "object",
+    properties: {
+      pathParams: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+      body: { type: "object", properties: { stage: { enum: ["lead", "qualified", "scoping", "proposal_drafting", "proposal_sent", "negotiation"] } }, required: ["stage"] },
+    },
+    required: ["pathParams", "body"],
+  },
+  "engage.engagement.update_status": {
+    type: "object",
+    properties: {
+      pathParams: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+      body: { type: "object", properties: { status: { enum: ["draft", "contract_signed", "scheduled", "testing_not_started", "testing_in_progress", "testing_blocked", "testing_complete", "reporting_in_progress", "ready_for_qa", "qa_assigned", "qa_in_progress", "qa_changes_required", "qa_ready_for_delivery", "delivered", "retest_pending", "post_engagement_followup", "closed", "cancelled"] } }, required: ["status"] },
+    },
+    required: ["pathParams", "body"],
+  },
+  "engage.qa.request": {
+    type: "object",
+    properties: {
+      pathParams: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+      body: {
+        type: "object",
+        properties: {
+          reporterProjectId: { type: "string" },
+          reportLink: { type: "string" },
+          shareLink: { type: "string" },
+          qaNotes: { type: "string" },
+        },
+      },
+    },
+    required: ["pathParams", "body"],
+  },
+  "engage.qa.assign": {
+    type: "object",
+    properties: {
+      pathParams: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+      body: { type: "object", properties: { assignedToUserId: { type: "string" }, qaReviewId: { type: "string" } }, required: ["assignedToUserId"] },
+    },
+    required: ["pathParams", "body"],
+  },
+  "engage.qa.update_status": {
+    type: "object",
+    properties: {
+      pathParams: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+      body: {
+        type: "object",
+        properties: {
+          status: { enum: ["assigned", "reviewing", "requires_more_work", "ready_for_delivery", "delivered", "cancelled"] },
+          qaNotes: { type: "string" },
+          reportLink: { type: "string" },
+          shareLink: { type: "string" },
+        },
+        required: ["status"],
+      },
+    },
+    required: ["pathParams", "body"],
+  },
+  "engage.link.reporter_document": {
+    type: "object",
+    properties: {
+      pathParams: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+      body: { type: "object", properties: { proposalReporterDocId: { type: "string" }, proposalPdfGenerationId: { type: "string" } } },
+    },
+    required: ["pathParams", "body"],
+  },
+  "engage.link.reporter_project": {
+    type: "object",
+    properties: {
+      pathParams: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+      body: {
+        type: "object",
+        properties: {
+          redsecReporterProjectId: { type: "string" },
+          proposalReporterDocId: { type: "string" },
+          deliveryReporterProjectId: { type: "string" },
+        },
+      },
+    },
+    required: ["pathParams", "body"],
+  },
+  "engage.link.calendar_project": {
+    type: "object",
+    properties: {
+      pathParams: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+      body: { type: "object", properties: { redseccalProjectId: { type: "string" } }, required: ["redseccalProjectId"] },
+    },
+    required: ["pathParams", "body"],
+  },
 });
 
 const EXTRA_TOOL_ALLOWLIST = Object.freeze({
@@ -960,6 +1090,25 @@ const EXTRA_TOOL_ALLOWLIST = Object.freeze({
   "survey.stats": { method: "GET", path: "/api/survey/:id/stats", permissionsAny: SURVEY_PERMISSIONS, capability: "survey.read", description: "Read survey aggregate stats when results access is allowed." },
   "survey.results": { method: "GET", path: "/api/survey/:id/results", permissionsAny: SURVEY_PERMISSIONS, capability: "survey.read", description: "Read survey questions and submitted results when results access is allowed." },
   "survey.response.get": { method: "GET", path: "/api/survey/:id/responses/:responseId", permissionsAny: SURVEY_PERMISSIONS, capability: "survey.read", description: "Read a single survey response detail when results access is allowed." },
+
+  "engage.clients.search": { method: "VIRTUAL", path: "/api/engage/clients", permissionsAny: ENGAGE_READ_PERMISSIONS, capability: "engage.search", description: "Search Engage clients visible to the logged-in user by client name, display name, industry, website, or ID." },
+  "engage.client.get": { method: "GET", path: "/api/engage/clients/:id/detail", permissionsAny: ENGAGE_READ_PERMISSIONS, capability: "engage.read", description: "Read one visible Engage client with contacts, opportunities, engagements, notes, and activity." },
+  "engage.opportunities.search": { method: "VIRTUAL", path: "/api/engage/opportunities", permissionsAny: ENGAGE_READ_PERMISSIONS, capability: "engage.search", description: "Search visible Engage opportunities. Commercial fields remain hidden unless the user has Engage commercial permission." },
+  "engage.opportunity.get": { method: "GET", path: "/api/engage/opportunities/:id", permissionsAny: ENGAGE_READ_PERMISSIONS, capability: "engage.read", description: "Read one visible Engage opportunity. Commercial fields remain hidden unless permitted." },
+  "engage.engagements.search": { method: "VIRTUAL", path: "/api/engage/engagements", permissionsAny: ENGAGE_READ_PERMISSIONS, capability: "engage.search", description: "Search visible Engage engagements by title, client, status, type, priority, or high-level summary." },
+  "engage.engagement.get": { method: "GET", path: "/api/engage/engagements/:id/detail", permissionsAny: ENGAGE_READ_PERMISSIONS, capability: "engage.read", description: "Read one visible Engage engagement with team, QA reviews, notes, and activity." },
+  "engage.dashboard.summary": { method: "GET", path: "/api/engage/bootstrap", permissionsAny: ENGAGE_READ_PERMISSIONS, capability: "engage.read", description: "Read the role-aware Engage dashboard summary, my work, activity, and statistics." },
+  "engage.qa.queue": { method: "GET", path: "/api/engage/qa", permissionsAny: ENGAGE_READ_PERMISSIONS, capability: "engage.read", description: "Read the Engage QA queue visible to the logged-in user." },
+  "engage.utilisation.summary": { method: "GET", path: "/api/engage/utilisation", permissionsAny: ENGAGE_READ_PERMISSIONS, capability: "engage.read", description: "Read basic Engage utilisation from RedSecCal-derived data." },
+  "engage.note.create": { method: "VIRTUAL", path: "/api/engage/:entityType/:entityId/notes", permissionsAny: ENGAGE_READ_PERMISSIONS, capability: "engage.write", confirmRequired: true, description: "Create a client, opportunity, or engagement note after confirmation. The note is stored in Engage activity context only." },
+  "engage.opportunity.update_stage": { method: "POST", path: "/api/engage/opportunities/:id/stage", permissionsAny: ENGAGE_OPPORTUNITY_WRITE_PERMISSIONS, capability: "engage.write", confirmRequired: true, description: "Update a low-risk opportunity stage after confirmation. V1 excludes won/lost/rejected from AI writes." },
+  "engage.engagement.update_status": { method: "POST", path: "/api/engage/engagements/:id/status", permissionsAny: ENGAGE_ENGAGEMENT_WRITE_PERMISSIONS, capability: "engage.write", confirmRequired: true, description: "Update engagement delivery status after confirmation." },
+  "engage.qa.request": { method: "POST", path: "/api/engage/engagements/:id/qa/request", permissionsAny: ENGAGE_READ_PERMISSIONS, capability: "engage.write", confirmRequired: true, description: "Request QA for an engagement after confirmation using existing Engage QA workflow." },
+  "engage.qa.assign": { method: "POST", path: "/api/engage/engagements/:id/qa/assign", permissionsAny: ENGAGE_QA_MANAGE_PERMISSIONS, capability: "engage.write", confirmRequired: true, description: "Assign an Engage QA reviewer after confirmation." },
+  "engage.qa.update_status": { method: "POST", path: "/api/engage/qa/:id/status", permissionsAny: ENGAGE_QA_WRITE_PERMISSIONS, capability: "engage.write", confirmRequired: true, description: "Update an Engage QA review status after confirmation." },
+  "engage.link.reporter_document": { method: "POST", path: "/api/engage/opportunities/:id/link-proposal", permissionsAny: ENGAGE_OPPORTUNITY_WRITE_PERMISSIONS, capability: "engage.write", confirmRequired: true, description: "Link an existing RedSecReporter proposal document or PDF generation to an opportunity after confirmation." },
+  "engage.link.reporter_project": { method: "POST", path: "/api/engage/engagements/:id/link-reporter", permissionsAny: ENGAGE_ENGAGEMENT_WRITE_PERMISSIONS, capability: "engage.write", confirmRequired: true, description: "Link existing RedSecReporter project/document identifiers to an engagement after confirmation. Does not render PDFs." },
+  "engage.link.calendar_project": { method: "POST", path: "/api/engage/engagements/:id/link-calendar", permissionsAny: ENGAGE_ENGAGEMENT_WRITE_PERMISSIONS, capability: "engage.write", confirmRequired: true, description: "Link an existing RedSecCal project to an engagement after confirmation. Does not create schedule allocations." },
 });
 
 const EXTRA_TOOL_DISCOVERY = Object.freeze(Object.fromEntries(Object.entries(EXTRA_TOOL_ALLOWLIST).map(([name, tool]) => {
@@ -1050,6 +1199,17 @@ const EXTRA_TOOL_PATH_PARAM_ALIASES = Object.freeze({
   "survey.stats": { id: ["surveyId"] },
   "survey.results": { id: ["surveyId"] },
   "survey.response.get": { id: ["surveyId"], responseId: ["surveyResponseId"] },
+  "engage.client.get": { id: ["clientId"] },
+  "engage.opportunity.get": { id: ["opportunityId"] },
+  "engage.engagement.get": { id: ["engagementId"] },
+  "engage.opportunity.update_stage": { id: ["opportunityId"] },
+  "engage.engagement.update_status": { id: ["engagementId"] },
+  "engage.qa.request": { id: ["engagementId"] },
+  "engage.qa.assign": { id: ["engagementId"] },
+  "engage.qa.update_status": { id: ["qaReviewId", "reviewId"] },
+  "engage.link.reporter_document": { id: ["opportunityId"] },
+  "engage.link.reporter_project": { id: ["engagementId"] },
+  "engage.link.calendar_project": { id: ["engagementId"] },
 });
 
 module.exports = {

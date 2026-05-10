@@ -29,3 +29,11 @@ test("RedSecAI HTTP routes handle status, chat, confirm/reject, cross-user, stal
 test("Reporter route access control protects project membership, member management, readonly edits, and related records", async () => {
   await runFixture("reporter-route-integration.js");
 });
+
+test("Notification routes handle creation, listing, read status, cross-user isolation, and expiry", async () => {
+  await runFixture("notifications-route-integration.js");
+});
+
+test("Engage routes enforce RBAC, CRUD, commercial field gating, team management, QA workflow, and activity logging", async () => {
+  await runFixture("engage-route-integration.js");
+});

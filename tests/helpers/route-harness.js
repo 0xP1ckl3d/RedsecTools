@@ -79,6 +79,7 @@ async function createRouteHarness(options = {}) {
     redsecai: () => require("../../server/routes/redsecai"),
     homepage: () => require("../../server/routes/homepage").router,
     reporter: () => require("../../server/routes/reporter"),
+    engage: () => require("../../server/routes/engage"),
   };
   for (const routeName of options.routes || []) {
     const routerFactory = routers[routeName];

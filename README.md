@@ -1,6 +1,6 @@
 # RedSecTools
 
-A multi-tool security platform by [RedSec Offensive Security](https://github.com/0xP1ckl3d). All encryption and decryption happens entirely in the browser — the server never sees plaintext content.
+A multi-tool security platform by [RedSec Offensive Security](https://github.com/0xP1ckl3d). RedSecTools is designed so plaintext content is encrypted in the browser before being submitted to the server. During normal operation, the server stores opaque ciphertext and does not receive paste, file, chat, or vault plaintext. This does not protect against a malicious or compromised server that serves modified JavaScript to clients.
 
 <img width="1094" height="782" alt="image" src="https://github.com/user-attachments/assets/be47f756-4744-439a-817d-80beed8b0cb2" />
 
@@ -18,12 +18,13 @@ A multi-tool security platform by [RedSec Offensive Security](https://github.com
 | **RedSecThreat** | Threat intelligence monitor with RSS/website/API/onion feed ingestion, keyword and regex matching, automatic IOC extraction, alert triage with criticality levels, and webhook/email/Discord notifications |
 | **RedSecWiki** | Team and personal Markdown wiki with page trees, subpages, live preview, published rendering, revision history, and search |
 | **RedSecReporter** | SysReptor-style pentest report builder with assigned-member projects, custom report designs, finding templates, CVSS scoring, comments, evidence, and versioned PDF generation |
-| **RedSecAI** | Local Ollama-powered assistant (Qwen, Gemma, or any compatible model) for scoped calendar reasoning, wiki drafting, threat-intel summaries, and confirmation-gated actions without access to encrypted paste/share/chat/vault plaintext |
+| **RedSecEngage** | Engagement workspace for clients, opportunities, proposal tracking, delivery lifecycle, QA workflow, RedSecCal/Reporter links, utilisation summary, notifications, and RedSecAI-assisted operations |
+| **RedSecAI** | Local Ollama-powered assistant (Qwen, Gemma, or any compatible model) for scoped calendar, Engage, wiki, reporter, and threat-intel reasoning plus confirmation-gated actions without access to encrypted paste/share/chat/vault plaintext |
 | **RedSecTools Chrome Extension** | Chrome Manifest V3 extension for Vault access, autofill, Paste creation, and Share creation using the same server and encryption model |
 
 **Key security properties:**
 - AES-256-GCM encryption via the Web Crypto API (zero server-side crypto)
-- Server stores only opaque ciphertext — it cannot read your pastes, files, messages, or vault entries
+- During normal operation, the server stores opaque ciphertext for encrypted tools and does not receive paste, file, chat, or vault plaintext
 - Optional password protection adds a second layer (PBKDF2, 600K iterations)
 - TOTP-based multi-factor authentication with recovery codes and trusted device support
 - Invite-only user registration, bcrypt password hashing, server-side sessions
@@ -100,6 +101,7 @@ Users are now assigned one primary role. Roles are managed in Admin and map to a
 - `threat.view`, `threat.manage`
 - `wiki.view`, `wiki.create_personal`, `wiki.create_team`, `wiki.edit_team`, `wiki.manage`
 - `reporter.view`, `reporter.create`, `reporter.edit_own`, `reporter.edit_assigned`, `reporter.review`, `reporter.approve`, `reporter.manage_templates`, `reporter.manage_all`
+- `engage.view_own`, `engage.view_team`, `engage.view_all`, `engage.create_client`, `engage.edit_client`, `engage.create_opportunity`, `engage.edit_opportunity`, `engage.create_engagement`, `engage.edit_engagement`, `engage.assign_team`, `engage.manage_qa`, `engage.perform_qa`, `engage.manage_commercials`, `engage.manage_all`
 
 UI visibility follows the user's granted permissions, but enforcement is server-side on the protected APIs and the new tool pages.
 
@@ -115,13 +117,26 @@ RedSecReporter is the report-building workspace for pentest projects. It provide
 
 Admin > Tools > RedSecReporter shows global report stats, recent projects, project creators, status/archive state, and an expandable list of assigned users who can access each project.
 
+### RedSecEngage
+
+RedSecEngage (`/engage`) is the operational workspace for offensive security engagements. It tracks clients, contacts, opportunities, high-level engagement records, team assignment, status, QA reviews, delivery readiness, post-engagement follow-up, and role-aware dashboard statistics.
+
+Engage deliberately links to existing tools instead of duplicating them:
+
+- RedSecReporter owns proposal/report templates, editing, reviewable documents, generated PDFs, evidence, and exports. Engage stores Reporter identifiers and links.
+- RedSecCal owns scheduling, project allocation, availability, and calendar entries. Engage stores the linked RedSecCal project ID and reads basic utilisation summaries.
+- RedSecAI can summarize Engage dashboard, pipeline, QA, and utilisation data visible to the logged-in user, and can prepare small confirmed actions such as notes, status changes, QA assignment, and Reporter/Calendar linking.
+- The shared notification system handles assignment, status, and QA alerts with persisted unread counts and live WebSocket updates.
+
+Commercial fields are hidden unless the user has `engage.manage_commercials` or `engage.manage_all`. Detailed scope and asset inventory are intentionally out of v1; use the high-level scope summary field and keep detailed assets in future scope modules or supporting Reporter/Wiki content.
+
 ### RedSecAI
 
 RedSecAI is the built-in local assistant backed by a configurable Ollama model (defaults to `qwen3.5:4b`). In Docker Compose it runs against a separate Ollama sidecar; local npm installs use a local Ollama service on `127.0.0.1:11434`. Cloud models (e.g. `gemma4:31b-cloud`) are also supported when the Ollama environment is signed in.
 
-RedSecAI provides an expandable chat bubble on authenticated pages. It can use a server-side allowlist of scoped application APIs for the logged-in user to help summarize permitted calendar, wiki, reporter, and threat-intel context. It does not have admin scope, does not read the database directly, and does not access decrypted RedSecPaste, RedSecShare, RedSecTeam, or RedSecVault content.
+RedSecAI provides an expandable chat bubble on authenticated pages. It can use a server-side allowlist of scoped application APIs for the logged-in user to help summarize permitted calendar, Engage, wiki, reporter, and threat-intel context. It does not have admin scope, does not read the database directly, and does not access decrypted RedSecPaste, RedSecShare, RedSecTeam, or RedSecVault content.
 
-Phase 2 adds confirmation-gated actions. RedSecAI can draft scoped calendar entries/updates, wiki page changes, Reporter records, bulletins, shortcuts, threat metadata, and survey changes, but the browser shows an action card and the logged-in user must explicitly confirm before the server calls the existing RBAC-protected API. Pending action cards are persisted server-side until confirmed, rejected, or expired. The model never receives direct database access and cannot silently mutate records.
+Phase 2 adds confirmation-gated actions. RedSecAI can draft scoped calendar entries/updates, Engage notes/status/QA/link changes, wiki page changes, Reporter records, bulletins, shortcuts, threat metadata, and survey changes, but the browser shows an action card and the logged-in user must explicitly confirm before the server calls the existing RBAC-protected API. Pending action cards are persisted server-side until confirmed, rejected, or expired. The model never receives direct database access and cannot silently mutate records.
 
 Admins control RedSecAI globally from **Admin > Tool Settings > RedSecAI** after installation. The `.env` values are bootstrap defaults and emergency overrides; database-backed Admin settings determine the live global enable flag, Ollama base URL, model name, timeout, action-card expiry, autostart, and auto-pull behavior. The same Admin panel shows endpoint processing mode, cloud/external warnings, pending confirmed-action counts, and recent RedSecAI action activity.
 

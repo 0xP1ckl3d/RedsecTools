@@ -390,6 +390,11 @@ router.post("/reporter/markdown-preview", requireUser, attachUserAccess, canView
 // --- Designs ---
 
 router.get("/reporter/designs", requireUser, attachUserAccess, canViewReporter, (req, res) => {
+  const type = req.query.type;
+  if (type) {
+    const { listReporterDesignsByType } = require("../database");
+    return res.json(listReporterDesignsByType(type));
+  }
   res.json(listReporterDesigns());
 });
 
@@ -562,7 +567,12 @@ router.delete("/reporter/designs/:id", writeLimiter, requireUser, attachUserAcce
 
 router.get("/reporter/projects", requireUser, attachUserAccess, canViewReporter, (req, res) => {
   const caps = getCapabilities(req);
-  res.json(listReporterProjects(req.access.userId, caps.canManageAll));
+  const projects = listReporterProjects(req.access.userId, caps.canManageAll);
+  const type = req.query.type;
+  if (type) {
+    return res.json(projects.filter((p) => p.projectType === type));
+  }
+  res.json(projects);
 });
 
 router.post("/reporter/projects", writeLimiter, requireUser, attachUserAccess, canCreateReporter, (req, res) => {
@@ -588,6 +598,7 @@ router.post("/reporter/projects", writeLimiter, requireUser, attachUserAccess, c
       dueDate: dueDate ? parseInt(dueDate, 10) || null : null,
       members: memberList,
       createdBy: req.access.userId,
+      projectType: design.projectType || "report",
     });
     for (const section of normalizeSectionDefinitions(design.sectionDefinitions)) {
       createReporterSectionRow({

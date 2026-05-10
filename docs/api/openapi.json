@@ -53,6 +53,10 @@
       "description": "RedSecReporter project, design, finding, comment, template, and PDF generation endpoints"
     },
     {
+      "name": "Engage",
+      "description": "RedSecEngage client, opportunity, engagement, QA, activity, and cross-tool linking endpoints"
+    },
+    {
       "name": "Vault",
       "description": "Vaults, vault entries, sharing, and audit"
     },
@@ -6063,6 +6067,235 @@
           },
           "401": {
             "description": "Not authenticated"
+          }
+        }
+      }
+    },
+    "/api/engage/bootstrap": {
+      "get": {
+        "tags": [
+          "Engage"
+        ],
+        "summary": "Get role-aware RedSecEngage dashboard bootstrap data",
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Capabilities, dashboard statistics, my work, recent activity, and notification summary"
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "403": {
+            "description": "Missing Engage view permission"
+          }
+        }
+      }
+    },
+    "/api/engage/clients": {
+      "get": {
+        "tags": [
+          "Engage"
+        ],
+        "summary": "List RedSecEngage clients visible to the user",
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Client list"
+          },
+          "403": {
+            "description": "Missing Engage view permission"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Engage"
+        ],
+        "summary": "Create a RedSecEngage client",
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Client created"
+          },
+          "400": {
+            "description": "Invalid client payload"
+          },
+          "403": {
+            "description": "Missing Engage client creation permission"
+          }
+        }
+      }
+    },
+    "/api/engage/opportunities": {
+      "get": {
+        "tags": [
+          "Engage"
+        ],
+        "summary": "List RedSecEngage opportunities",
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Opportunity list with commercial fields hidden unless permitted"
+          },
+          "403": {
+            "description": "Missing Engage view permission"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Engage"
+        ],
+        "summary": "Create a RedSecEngage opportunity",
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Opportunity created"
+          },
+          "400": {
+            "description": "Invalid opportunity payload"
+          },
+          "403": {
+            "description": "Missing Engage opportunity creation permission"
+          }
+        }
+      }
+    },
+    "/api/engage/engagements": {
+      "get": {
+        "tags": [
+          "Engage"
+        ],
+        "summary": "List RedSecEngage engagements according to own/team/all permissions",
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Engagement list"
+          },
+          "403": {
+            "description": "Missing Engage view permission"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Engage"
+        ],
+        "summary": "Create a RedSecEngage engagement",
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Engagement created"
+          },
+          "400": {
+            "description": "Invalid engagement payload"
+          },
+          "403": {
+            "description": "Missing Engage engagement creation permission"
+          }
+        }
+      }
+    },
+    "/api/engage/engagements/{id}/qa/request": {
+      "post": {
+        "tags": [
+          "Engage"
+        ],
+        "summary": "Request QA for an engagement",
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "QA review requested and notifications created"
+          },
+          "403": {
+            "description": "Missing Engage access"
+          },
+          "404": {
+            "description": "Engagement not found"
+          }
+        }
+      }
+    },
+    "/api/engage/qa": {
+      "get": {
+        "tags": [
+          "Engage"
+        ],
+        "summary": "List RedSecEngage QA reviews",
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "QA review queue"
+          },
+          "403": {
+            "description": "Missing Engage view permission"
+          }
+        }
+      }
+    },
+    "/api/engage/utilisation": {
+      "get": {
+        "tags": [
+          "Engage"
+        ],
+        "summary": "Get basic RedSecEngage utilisation from RedSecCal-derived data",
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Utilisation summary, overallocated users, available capacity, and scheduling gaps"
+          },
+          "403": {
+            "description": "Missing Engage view permission"
           }
         }
       }

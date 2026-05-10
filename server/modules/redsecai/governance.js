@@ -10,6 +10,7 @@ const DATA_CLASS_BY_DOMAIN = Object.freeze({
   wiki: "team_and_personal_wiki_metadata",
   threat: "threat_intelligence",
   reporter: "reporting_project_data",
+  engage: "engagement_operations",
   survey: "survey_metadata_and_results",
 });
 

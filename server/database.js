@@ -1023,6 +1023,11 @@ const stmts = {
     ORDER BY rp.permission
   `),
   countUsersByRoleId: db.prepare("SELECT COUNT(*) as total FROM users WHERE role_id = ?"),
+  listUsersByPermission: db.prepare(`
+    SELECT u.id, u.username FROM users u
+    JOIN role_permissions rp ON rp.role_id = u.role_id
+    WHERE rp.permission = ? AND u.suspended IS NULL
+  `),
 
   // --- Session statements ---
   createSession: db.prepare(`
@@ -2238,8 +2243,8 @@ const stmts = {
 
   // --- Reporter: Projects ---
   createReporterProject: db.prepare(`
-    INSERT INTO reporter_projects (id, design_id, title, report_type, status, client_name, project_metadata, due_date, source_project_id, created_by)
-    VALUES (@id, @designId, @title, @reportType, @status, @clientName, @projectMetadata, @dueDate, @sourceProjectId, @createdBy)
+    INSERT INTO reporter_projects (id, design_id, title, report_type, status, client_name, project_metadata, due_date, source_project_id, created_by, project_type)
+    VALUES (@id, @designId, @title, @reportType, @status, @clientName, @projectMetadata, @dueDate, @sourceProjectId, @createdBy, @projectType)
   `),
   getReporterProjectById: db.prepare(`
     SELECT rp.*, d.name AS design_name, creator.username AS creator_username
@@ -2491,6 +2496,351 @@ const stmts = {
   deleteReporterImportJobsByProject: db.prepare("DELETE FROM reporter_import_jobs WHERE project_id = ?"),
   deleteReporterFindingsByProject: db.prepare("DELETE FROM reporter_findings WHERE project_id = ?"),
   deleteReporterSectionsByProject: db.prepare("DELETE FROM reporter_sections WHERE project_id = ?"),
+
+  // --- Notification statements ---
+  createNotification: db.prepare(`
+    INSERT INTO notifications (id, user_id, category, action, title, body, link_url, entity_type, entity_id, severity, expires_at)
+    VALUES (@id, @userId, @category, @action, @title, @body, @linkUrl, @entityType, @entityId, @severity, @expiresAt)
+  `),
+  getNotificationsByUserId: db.prepare(`
+    SELECT * FROM notifications
+    WHERE user_id = ? AND (expires_at IS NULL OR expires_at > unixepoch())
+    ORDER BY created_at DESC LIMIT ? OFFSET ?
+  `),
+  getUnreadCountByUserId: db.prepare(`
+    SELECT COUNT(*) as count FROM notifications
+    WHERE user_id = ? AND read_at IS NULL AND (expires_at IS NULL OR expires_at > unixepoch())
+  `),
+  markNotificationRead: db.prepare(`
+    UPDATE notifications SET read_at = unixepoch() WHERE id = ? AND user_id = ?
+  `),
+  markAllNotificationsReadByUserId: db.prepare(`
+    UPDATE notifications SET read_at = unixepoch() WHERE user_id = ? AND read_at IS NULL
+  `),
+  getNotificationById: db.prepare("SELECT * FROM notifications WHERE id = ?"),
+  deleteExpiredNotifications: db.prepare(`
+    DELETE FROM notifications WHERE expires_at IS NOT NULL AND expires_at < unixepoch()
+  `),
+
+  // --- Engage client statements ---
+  createEngageClient: db.prepare(`
+    INSERT INTO engage_clients (id, name, display_name, industry, website, account_owner_user_id, status, notes, created_by)
+    VALUES (@id, @name, @displayName, @industry, @website, @accountOwnerUserId, @status, @notes, @createdBy)
+  `),
+  getEngageClientById: db.prepare("SELECT * FROM engage_clients WHERE id = ?"),
+  listEngageClients: db.prepare(`
+    SELECT * FROM engage_clients WHERE archived_at IS NULL ORDER BY name ASC LIMIT ? OFFSET ?
+  `),
+  updateEngageClient: db.prepare(`
+    UPDATE engage_clients SET name = @name, display_name = @displayName, industry = @industry,
+      website = @website, account_owner_user_id = @accountOwnerUserId, status = @status,
+      notes = @notes, default_billing_contact_id = @defaultBillingContactId,
+      default_technical_contact_id = @defaultTechnicalContactId, updated_at = unixepoch()
+    WHERE id = @id
+  `),
+  archiveEngageClient: db.prepare("UPDATE engage_clients SET archived_at = unixepoch(), updated_at = unixepoch() WHERE id = ?"),
+  countEngageClients: db.prepare("SELECT COUNT(*) as total FROM engage_clients WHERE archived_at IS NULL"),
+
+  // --- Engage contact statements ---
+  createEngageContact: db.prepare(`
+    INSERT INTO engage_client_contacts (id, client_id, name, title, email, phone, contact_type, is_primary, notes)
+    VALUES (@id, @clientId, @name, @title, @email, @phone, @contactType, @isPrimary, @notes)
+  `),
+  getEngageContactById: db.prepare("SELECT * FROM engage_client_contacts WHERE id = ?"),
+  listEngageContactsByClient: db.prepare(`
+    SELECT * FROM engage_client_contacts WHERE client_id = ? AND archived_at IS NULL ORDER BY is_primary DESC, name ASC
+  `),
+  updateEngageContact: db.prepare(`
+    UPDATE engage_client_contacts SET name = @name, title = @title, email = @email,
+      phone = @phone, contact_type = @contactType, is_primary = @isPrimary,
+      notes = @notes, updated_at = unixepoch()
+    WHERE id = @id
+  `),
+  archiveEngageContact: db.prepare("UPDATE engage_client_contacts SET archived_at = unixepoch(), updated_at = unixepoch() WHERE id = ?"),
+
+  // --- Engage opportunity statements ---
+  createEngageOpportunity: db.prepare(`
+    INSERT INTO engage_opportunities (id, client_id, title, opportunity_type, stage, estimated_value, quoted_value,
+      estimated_days, probability_percent, expected_start_date, expected_decision_date,
+      proposal_reporter_doc_id, proposal_pdf_generation_id, owner_user_id, created_by, notes)
+    VALUES (@id, @clientId, @title, @opportunityType, @stage, @estimatedValue, @quotedValue,
+      @estimatedDays, @probabilityPercent, @expectedStartDate, @expectedDecisionDate,
+      @proposalReporterDocId, @proposalPdfGenerationId, @ownerUserId, @createdBy, @notes)
+  `),
+  getEngageOpportunityById: db.prepare(`
+    SELECT o.*, c.name AS client_name, c.display_name AS client_display_name
+    FROM engage_opportunities o
+    LEFT JOIN engage_clients c ON c.id = o.client_id
+    WHERE o.id = ?
+  `),
+  listEngageOpportunities: db.prepare(`
+    SELECT o.*, c.name AS client_name, c.display_name AS client_display_name
+    FROM engage_opportunities o
+    LEFT JOIN engage_clients c ON c.id = o.client_id
+    ORDER BY o.created_at DESC LIMIT ? OFFSET ?
+  `),
+  listEngageOpportunitiesByClient: db.prepare(`
+    SELECT o.*, c.name AS client_name, c.display_name AS client_display_name
+    FROM engage_opportunities o
+    LEFT JOIN engage_clients c ON c.id = o.client_id
+    WHERE o.client_id = ? ORDER BY o.created_at DESC
+  `),
+  listEngageOpportunitiesByOwner: db.prepare(`
+    SELECT * FROM engage_opportunities WHERE owner_user_id = ? ORDER BY created_at DESC
+  `),
+  updateEngageOpportunity: db.prepare(`
+    UPDATE engage_opportunities SET title = @title, opportunity_type = @opportunityType, stage = @stage,
+      estimated_value = @estimatedValue, quoted_value = @quotedValue, estimated_days = @estimatedDays,
+      probability_percent = @probabilityPercent, expected_start_date = @expectedStartDate,
+      expected_decision_date = @expectedDecisionDate, proposal_reporter_doc_id = @proposalReporterDocId,
+      proposal_pdf_generation_id = @proposalPdfGenerationId, owner_user_id = @ownerUserId,
+      lost_reason = @lostReason, rejected_reason = @rejectedReason, notes = @notes,
+      updated_at = unixepoch()
+    WHERE id = @id
+  `),
+  updateEngageOpportunityStage: db.prepare(`
+    UPDATE engage_opportunities SET stage = @stage, closed_at = @closedAt, updated_at = unixepoch() WHERE id = @id
+  `),
+
+  // --- Engage engagement statements ---
+  createEngageEngagement: db.prepare(`
+    INSERT INTO engage_engagements (id, client_id, opportunity_id, title, engagement_type, status, priority,
+      commercial_value, estimated_days, scheduled_start_date, scheduled_end_date,
+      engagement_manager_user_id, technical_lead_user_id, high_level_scope_summary, notes, created_by)
+    VALUES (@id, @clientId, @opportunityId, @title, @engagementType, @status, @priority,
+      @commercialValue, @estimatedDays, @scheduledStartDate, @scheduledEndDate,
+      @engagementManagerUserId, @technicalLeadUserId, @highLevelScopeSummary, @notes, @createdBy)
+  `),
+  getEngageEngagementById: db.prepare(`
+    SELECT e.*, c.name AS client_name, c.display_name AS client_display_name
+    FROM engage_engagements e
+    LEFT JOIN engage_clients c ON c.id = e.client_id
+    WHERE e.id = ?
+  `),
+  listEngageEngagements: db.prepare(`
+    SELECT e.*, c.name AS client_name, c.display_name AS client_display_name
+    FROM engage_engagements e
+    LEFT JOIN engage_clients c ON c.id = e.client_id
+    WHERE e.archived_at IS NULL ORDER BY e.created_at DESC LIMIT ? OFFSET ?
+  `),
+  listEngageEngagementsByUser: db.prepare(`
+    SELECT e.*, c.name AS client_name, c.display_name AS client_display_name
+    FROM engage_engagements e
+    JOIN engage_engagement_members m ON e.id = m.engagement_id
+    LEFT JOIN engage_clients c ON c.id = e.client_id
+    WHERE m.user_id = ? AND e.archived_at IS NULL
+    ORDER BY e.created_at DESC
+  `),
+  listEngageEngagementsByClient: db.prepare(`
+    SELECT e.*, c.name AS client_name, c.display_name AS client_display_name
+    FROM engage_engagements e
+    LEFT JOIN engage_clients c ON c.id = e.client_id
+    WHERE e.client_id = ? AND e.archived_at IS NULL ORDER BY e.created_at DESC
+  `),
+  listEngageEngagementsByClient: db.prepare(`
+    SELECT * FROM engage_engagements WHERE client_id = ? AND archived_at IS NULL ORDER BY created_at DESC
+  `),
+  updateEngageEngagement: db.prepare(`
+    UPDATE engage_engagements SET title = @title, engagement_type = @engagementType, status = @status,
+      priority = @priority, commercial_value = @commercialValue, estimated_days = @estimatedDays,
+      scheduled_start_date = @scheduledStartDate, scheduled_end_date = @scheduledEndDate,
+      actual_start_date = @actualStartDate, actual_end_date = @actualEndDate,
+      engagement_manager_user_id = @engagementManagerUserId, technical_lead_user_id = @technicalLeadUserId,
+      redseccal_project_id = @redseccalProjectId, redsec_reporter_project_id = @redsecReporterProjectId,
+      proposal_reporter_doc_id = @proposalReporterDocId, delivery_reporter_project_id = @deliveryReporterProjectId,
+      high_level_scope_summary = @highLevelScopeSummary, notes = @notes,
+      updated_at = unixepoch()
+    WHERE id = @id
+  `),
+  updateEngageEngagementStatus: db.prepare(`
+    UPDATE engage_engagements SET status = @status, closed_at = @closedAt, updated_at = unixepoch() WHERE id = @id
+  `),
+  archiveEngageEngagement: db.prepare("UPDATE engage_engagements SET archived_at = unixepoch(), updated_at = unixepoch() WHERE id = ?"),
+
+  // --- Engage team member statements ---
+  createEngageMember: db.prepare(`
+    INSERT INTO engage_engagement_members (id, engagement_id, user_id, role, is_primary)
+    VALUES (@id, @engagementId, @userId, @role, @isPrimary)
+  `),
+  listEngageMembersByEngagement: db.prepare(`
+    SELECT * FROM engage_engagement_members WHERE engagement_id = ?
+  `),
+  updateEngageMember: db.prepare(`
+    UPDATE engage_engagement_members SET role = @role, is_primary = @isPrimary, updated_at = unixepoch()
+    WHERE id = @id
+  `),
+  deleteEngageMember: db.prepare("DELETE FROM engage_engagement_members WHERE id = ?"),
+
+  // --- Engage QA review statements ---
+  createEngageQaReview: db.prepare(`
+    INSERT INTO engage_qa_reviews (id, engagement_id, reporter_project_id, assigned_by_user_id, assigned_to_user_id,
+      status, qa_notes, report_link, share_link)
+    VALUES (@id, @engagementId, @reporterProjectId, @assignedByUserId, @assignedToUserId,
+      @status, @qaNotes, @reportLink, @shareLink)
+  `),
+  getEngageQaReviewById: db.prepare("SELECT * FROM engage_qa_reviews WHERE id = ?"),
+  listEngageQaReviewsByEngagement: db.prepare(`
+    SELECT * FROM engage_qa_reviews WHERE engagement_id = ? ORDER BY created_at DESC
+  `),
+  listEngageQaReviewsByAssignee: db.prepare(`
+    SELECT * FROM engage_qa_reviews WHERE assigned_to_user_id = ? ORDER BY created_at DESC
+  `),
+  listEngageQaReviewsByStatus: db.prepare(`
+    SELECT * FROM engage_qa_reviews WHERE status = ? ORDER BY created_at DESC
+  `),
+  updateEngageQaReview: db.prepare(`
+    UPDATE engage_qa_reviews SET status = @status, qa_notes = @qaNotes, report_link = @reportLink,
+      share_link = @shareLink, assigned_to_user_id = @assignedToUserId, completed_at = @completedAt,
+      updated_at = unixepoch()
+    WHERE id = @id
+  `),
+  listEngageQaReviewsByStatusEnriched: db.prepare(`
+    SELECT q.*, e.title AS engagement_title, c.display_name AS client_display_name, c.name AS client_name,
+      u.username AS assigned_to_username, a.username AS assigned_by_username
+    FROM engage_qa_reviews q
+    LEFT JOIN engage_engagements e ON q.engagement_id = e.id
+    LEFT JOIN engage_clients c ON e.client_id = c.id
+    LEFT JOIN users u ON q.assigned_to_user_id = u.id
+    LEFT JOIN users a ON q.assigned_by_user_id = a.id
+    WHERE q.status = ?
+    ORDER BY q.created_at DESC
+  `),
+  listEngageQaReviewsByAssigneeEnriched: db.prepare(`
+    SELECT q.*, e.title AS engagement_title, c.display_name AS client_display_name, c.name AS client_name,
+      u.username AS assigned_to_username, a.username AS assigned_by_username
+    FROM engage_qa_reviews q
+    LEFT JOIN engage_engagements e ON q.engagement_id = e.id
+    LEFT JOIN engage_clients c ON e.client_id = c.id
+    LEFT JOIN users u ON q.assigned_to_user_id = u.id
+    LEFT JOIN users a ON q.assigned_by_user_id = a.id
+    WHERE q.assigned_to_user_id = ?
+    ORDER BY q.created_at DESC
+  `),
+  listAllEngageQaReviewsEnriched: db.prepare(`
+    SELECT q.*, e.title AS engagement_title, c.display_name AS client_display_name, c.name AS client_name,
+      u.username AS assigned_to_username, a.username AS assigned_by_username
+    FROM engage_qa_reviews q
+    LEFT JOIN engage_engagements e ON q.engagement_id = e.id
+    LEFT JOIN engage_clients c ON e.client_id = c.id
+    LEFT JOIN users u ON q.assigned_to_user_id = u.id
+    LEFT JOIN users a ON q.assigned_by_user_id = a.id
+    ORDER BY q.created_at DESC
+  `),
+  listEngageQaReviewsByEngagementEnriched: db.prepare(`
+    SELECT q.*, u.username AS assigned_to_username, a.username AS assigned_by_username
+    FROM engage_qa_reviews q
+    LEFT JOIN users u ON q.assigned_to_user_id = u.id
+    LEFT JOIN users a ON q.assigned_by_user_id = a.id
+    WHERE q.engagement_id = ?
+    ORDER BY q.created_at DESC
+  `),
+
+  // --- Engage notes statements ---
+  createEngageNote: db.prepare(`
+    INSERT INTO engage_notes (id, entity_type, entity_id, user_id, content)
+    VALUES (@id, @entityType, @entityId, @userId, @content)
+  `),
+  listEngageNotesByEntity: db.prepare(`
+    SELECT * FROM engage_notes WHERE entity_type = ? AND entity_id = ? ORDER BY created_at DESC
+  `),
+
+  // --- Engage activity log statements ---
+  createEngageActivity: db.prepare(`
+    INSERT INTO engage_activity (id, entity_type, entity_id, action, user_id, username, details)
+    VALUES (@id, @entityType, @entityId, @action, @userId, @username, @details)
+  `),
+  listEngageActivityByEntity: db.prepare(`
+    SELECT * FROM engage_activity WHERE entity_type = ? AND entity_id = ? ORDER BY created_at DESC LIMIT ?
+  `),
+
+  // --- Engage dashboard stats statements ---
+  engagePipelineValue: db.prepare(`
+    SELECT COALESCE(SUM(estimated_value), 0) as total,
+           COALESCE(SUM(CASE WHEN probability_percent > 0 THEN estimated_value * probability_percent / 100.0 ELSE estimated_value * 0.2 END), 0) as weighted
+    FROM engage_opportunities WHERE stage NOT IN ('won', 'lost', 'rejected', 'archived')
+  `),
+  engageOppStageCounts: db.prepare(`
+    SELECT stage, COUNT(*) as count FROM engage_opportunities GROUP BY stage
+  `),
+  engageOppThisMonth: db.prepare(`
+    SELECT stage, COUNT(*) as count FROM engage_opportunities
+    WHERE closed_at IS NOT NULL AND closed_at >= ? AND closed_at < ?
+    GROUP BY stage
+  `),
+  engageEngStatusCounts: db.prepare(`
+    SELECT status, COUNT(*) as count FROM engage_engagements WHERE archived_at IS NULL GROUP BY status
+  `),
+  engageEngActiveCount: db.prepare(`
+    SELECT COUNT(*) as count FROM engage_engagements
+    WHERE archived_at IS NULL AND status IN ('testing_in_progress', 'reporting_in_progress', 'qa_in_progress', 'scheduled', 'testing_not_started')
+  `),
+  engageEngScheduledCount: db.prepare(`
+    SELECT COUNT(*) as count FROM engage_engagements
+    WHERE archived_at IS NULL AND status = 'scheduled'
+  `),
+  engageQaQueueCounts: db.prepare(`
+    SELECT status, COUNT(*) as count FROM engage_qa_reviews GROUP BY status
+  `),
+  engageQaAssignedToUser: db.prepare(`
+    SELECT q.* FROM engage_qa_reviews q
+    JOIN engage_engagements e ON q.engagement_id = e.id
+    WHERE q.assigned_to_user_id = ? AND q.status IN ('assigned', 'reviewing') AND e.archived_at IS NULL
+  `),
+  engageBlockedEngagements: db.prepare(`
+    SELECT id, title, status FROM engage_engagements
+    WHERE archived_at IS NULL AND status IN ('testing_blocked', 'qa_changes_required')
+    ORDER BY updated_at DESC
+  `),
+  engageOverdueEngagements: db.prepare(`
+    SELECT id, title, status, scheduled_end_date FROM engage_engagements
+    WHERE archived_at IS NULL AND status NOT IN ('delivered', 'closed', 'cancelled', 'archived')
+      AND scheduled_end_date IS NOT NULL AND date(scheduled_end_date) < date('now')
+    ORDER BY scheduled_end_date ASC
+  `),
+  engageMyEngagements: db.prepare(`
+    SELECT e.* FROM engage_engagements e
+    JOIN engage_engagement_members m ON e.id = m.engagement_id
+    WHERE m.user_id = ? AND e.archived_at IS NULL
+    ORDER BY e.updated_at DESC LIMIT 20
+  `),
+  engageRecentlyUpdated: db.prepare(`
+    SELECT * FROM engage_engagements WHERE archived_at IS NULL ORDER BY updated_at DESC LIMIT 10
+  `),
+  engageRecentActivity: db.prepare(`
+    SELECT * FROM engage_activity ORDER BY created_at DESC LIMIT 20
+  `),
+  engageUtilisationSummary: db.prepare(`
+    SELECT ce.assignee_user_id, u.username,
+      SUM(ce.scheduled_hours) as booked_hours,
+      COUNT(DISTINCT ce.id) as entry_count
+    FROM calendar_entries ce
+    LEFT JOIN users u ON ce.assignee_user_id = u.id
+    WHERE ce.assignee_user_id IS NOT NULL
+      AND ce.type = 'project_time'
+      AND ce.starts_at >= ? AND ce.ends_at <= ?
+    GROUP BY ce.assignee_user_id
+    ORDER BY booked_hours DESC
+  `),
+  engageEngagementsWithoutTesters: db.prepare(`
+    SELECT e.id, e.title FROM engage_engagements e
+    WHERE e.archived_at IS NULL AND e.status NOT IN ('draft', 'closed', 'cancelled', 'archived')
+      AND NOT EXISTS (SELECT 1 FROM engage_engagement_members m WHERE m.engagement_id = e.id AND m.role IN ('tester', 'technical_lead'))
+  `),
+
+  // --- Engage extra dashboard stats ---
+  engageDeliveredThisMonth: db.prepare(`
+    SELECT COUNT(*) as count FROM engage_engagements
+    WHERE status IN ('delivered', 'qa_ready_for_delivery') AND updated_at >= ? AND updated_at < ?
+  `),
+  engageClosedThisMonth: db.prepare(`
+    SELECT COUNT(*) as count FROM engage_engagements
+    WHERE status IN ('closed', 'cancelled') AND closed_at >= ? AND closed_at < ?
+  `),
+  engageAvgDaysInQA: db.prepare(`
+    SELECT AVG(q.completed_at - q.created_at) as avg_days
+    FROM engage_qa_reviews q
+    WHERE q.completed_at IS NOT NULL AND q.status IN ('ready_for_delivery', 'delivered')
+  `),
 };
 
 // Default security settings (must be after stmts initialization)
@@ -2994,6 +3344,10 @@ function listUsers(page = 1, limit = 50) {
     page,
     totalPages: Math.ceil(total / limit),
   };
+}
+
+function listUsersByPermission(permission) {
+  return stmts.listUsersByPermission.all(permission);
 }
 
 function countAllUsers() {
@@ -5955,6 +6309,7 @@ function createReporterProjectRow(payload) {
     dueDate: payload.dueDate || null,
     sourceProjectId: payload.sourceProjectId || null,
     createdBy: payload.createdBy,
+    projectType: payload.projectType || "report",
   });
   if (Array.isArray(payload.members)) {
     for (const m of payload.members) {
@@ -6593,6 +6948,7 @@ function mapReporterDesignRow(row) {
     createdBy: row.created_by,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    projectType: row.project_type || "report",
   };
 }
 
@@ -6618,6 +6974,7 @@ function mapReporterProjectRow(row) {
     creatorUsername: row.creator_username || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    projectType: row.project_type || "report",
   };
 }
 
@@ -6774,6 +7131,536 @@ function safeParseJSON(str, fallback = []) {
   try { return JSON.parse(str || JSON.stringify(fallback)); } catch { return fallback; }
 }
 
+// ============================================================
+// Notification functions
+// ============================================================
+
+function createNotification({ userId, category, action, title, body, linkUrl, entityType, entityId, severity, expiresAt }) {
+  const id = crypto.randomBytes(16).toString("base64url");
+  stmts.createNotification.run({
+    id,
+    userId,
+    category: category || "system",
+    action: action || "",
+    title,
+    body: body || "",
+    linkUrl: linkUrl || null,
+    entityType: entityType || null,
+    entityId: entityId || null,
+    severity: severity || "info",
+    expiresAt: expiresAt || null,
+  });
+  return stmts.getNotificationById.get(id);
+}
+
+function getNotificationsByUserId(userId, limit = 50, offset = 0) {
+  return stmts.getNotificationsByUserId.all(userId, limit, offset);
+}
+
+function getUnreadNotificationCount(userId) {
+  const row = stmts.getUnreadCountByUserId.get(userId);
+  return row ? row.count : 0;
+}
+
+function markNotificationRead(notificationId, userId) {
+  const result = stmts.markNotificationRead.run(notificationId, userId);
+  return result.changes > 0;
+}
+
+function markAllNotificationsRead(userId) {
+  const result = stmts.markAllNotificationsReadByUserId.run(userId);
+  return result.changes;
+}
+
+function getNotificationById(id) {
+  return stmts.getNotificationById.get(id);
+}
+
+function deleteExpiredNotifications() {
+  return stmts.deleteExpiredNotifications.run().changes;
+}
+
+// ============================================================
+// Engage functions
+// ============================================================
+
+const VALID_CLIENT_STATUSES = new Set(["active", "inactive", "prospect", "archived"]);
+const VALID_CONTACT_TYPES = new Set(["commercial", "technical", "security", "procurement", "executive", "other"]);
+const VALID_OPP_STAGES = new Set(["lead", "qualified", "scoping", "proposal_drafting", "proposal_sent", "negotiation", "won", "lost", "rejected", "archived"]);
+const VALID_OPP_TYPES = new Set(["internal", "external", "webapp", "cloud", "build_review", "red_team", "wireless", "configuration_review", "assumed_breach", "custom"]);
+const VALID_ENG_STATUSES = new Set(["draft", "contract_signed", "scheduled", "testing_not_started", "testing_in_progress", "testing_blocked", "testing_complete", "reporting_in_progress", "ready_for_qa", "qa_assigned", "qa_in_progress", "qa_changes_required", "qa_ready_for_delivery", "delivered", "retest_pending", "post_engagement_followup", "closed", "cancelled", "archived"]);
+const VALID_ENG_TYPES = VALID_OPP_TYPES;
+const VALID_ENG_PRIORITIES = new Set(["low", "normal", "high", "critical"]);
+
+function normaliseOppTypes(raw) {
+  if (!raw) return "[]";
+  if (Array.isArray(raw)) {
+    const valid = raw.filter((t) => VALID_OPP_TYPES.has(t));
+    return JSON.stringify(valid.length > 0 ? valid : ["custom"]);
+  }
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return normaliseOppTypes(parsed);
+    } catch { /* not JSON — treat as single value */ }
+    return JSON.stringify(VALID_OPP_TYPES.has(raw) ? [raw] : ["custom"]);
+  }
+  return "[]";
+}
+const VALID_TEAM_ROLES = new Set(["manager", "technical_lead", "tester", "qa_reviewer", "observer"]);
+const VALID_QA_STATUSES = new Set(["not_requested", "ready_for_qa", "assigned", "reviewing", "requires_more_work", "ready_for_delivery", "delivered", "cancelled"]);
+
+function createEngageClient(payload) {
+  const id = payload.id || generateId();
+  stmts.createEngageClient.run({
+    id,
+    name: payload.name,
+    displayName: payload.displayName || null,
+    industry: payload.industry || null,
+    website: payload.website || null,
+    accountOwnerUserId: payload.accountOwnerUserId || null,
+    status: VALID_CLIENT_STATUSES.has(payload.status) ? payload.status : "prospect",
+    notes: payload.notes || "",
+    createdBy: payload.createdBy || null,
+  });
+  return stmts.getEngageClientById.get(id);
+}
+
+function getEngageClientById(id) {
+  return stmts.getEngageClientById.get(id);
+}
+
+function listEngageClients(limit = 50, offset = 0) {
+  return stmts.listEngageClients.all(limit, offset);
+}
+
+function updateEngageClient(payload) {
+  stmts.updateEngageClient.run({
+    id: payload.id,
+    name: payload.name,
+    displayName: payload.displayName || null,
+    industry: payload.industry || null,
+    website: payload.website || null,
+    accountOwnerUserId: payload.accountOwnerUserId || null,
+    status: VALID_CLIENT_STATUSES.has(payload.status) ? payload.status : "prospect",
+    notes: payload.notes || "",
+    defaultBillingContactId: payload.defaultBillingContactId || null,
+    defaultTechnicalContactId: payload.defaultTechnicalContactId || null,
+  });
+  return stmts.getEngageClientById.get(payload.id);
+}
+
+function archiveEngageClient(id) {
+  return stmts.archiveEngageClient.run(id).changes > 0;
+}
+
+function createEngageContact(payload) {
+  const id = payload.id || generateId();
+  stmts.createEngageContact.run({
+    id,
+    clientId: payload.clientId,
+    name: payload.name,
+    title: payload.title || null,
+    email: payload.email || null,
+    phone: payload.phone || null,
+    contactType: VALID_CONTACT_TYPES.has(payload.contactType) ? payload.contactType : "other",
+    isPrimary: payload.isPrimary ? 1 : 0,
+    notes: payload.notes || "",
+  });
+  return stmts.getEngageContactById.get(id);
+}
+
+function getEngageContactById(id) {
+  return stmts.getEngageContactById.get(id);
+}
+
+function updateEngageContact(payload) {
+  stmts.updateEngageContact.run({
+    id: payload.id,
+    name: payload.name,
+    title: payload.title || null,
+    email: payload.email || null,
+    phone: payload.phone || null,
+    contactType: VALID_CONTACT_TYPES.has(payload.contactType) ? payload.contactType : "other",
+    isPrimary: payload.isPrimary ? 1 : 0,
+    notes: payload.notes || "",
+  });
+  return stmts.getEngageContactById.get(payload.id);
+}
+
+function archiveEngageContact(id) {
+  return stmts.archiveEngageContact.run(id).changes > 0;
+}
+
+function createEngageOpportunity(payload) {
+  const id = payload.id || generateId();
+  stmts.createEngageOpportunity.run({
+    id,
+    clientId: payload.clientId,
+    title: payload.title,
+    opportunityType: normaliseOppTypes(payload.opportunityType),
+    stage: VALID_OPP_STAGES.has(payload.stage) ? payload.stage : "lead",
+    estimatedValue: payload.estimatedValue ?? null,
+    quotedValue: payload.quotedValue ?? null,
+    estimatedDays: payload.estimatedDays ?? null,
+    probabilityPercent: payload.probabilityPercent ?? null,
+    expectedStartDate: payload.expectedStartDate || null,
+    expectedDecisionDate: payload.expectedDecisionDate || null,
+    proposalReporterDocId: payload.proposalReporterDocId || null,
+    proposalPdfGenerationId: payload.proposalPdfGenerationId || null,
+    ownerUserId: payload.ownerUserId || null,
+    createdBy: payload.createdBy || null,
+    notes: payload.notes || "",
+  });
+  return stmts.getEngageOpportunityById.get(id);
+}
+
+function getEngageOpportunityById(id) {
+  return stmts.getEngageOpportunityById.get(id);
+}
+
+function listEngageOpportunities(limit = 50, offset = 0) {
+  return stmts.listEngageOpportunities.all(limit, offset);
+}
+
+function updateEngageOpportunity(payload) {
+  stmts.updateEngageOpportunity.run({
+    id: payload.id,
+    title: payload.title,
+    opportunityType: normaliseOppTypes(payload.opportunityType),
+    stage: VALID_OPP_STAGES.has(payload.stage) ? payload.stage : "lead",
+    estimatedValue: payload.estimatedValue ?? null,
+    quotedValue: payload.quotedValue ?? null,
+    estimatedDays: payload.estimatedDays ?? null,
+    probabilityPercent: payload.probabilityPercent ?? null,
+    expectedStartDate: payload.expectedStartDate || null,
+    expectedDecisionDate: payload.expectedDecisionDate || null,
+    proposalReporterDocId: payload.proposalReporterDocId || null,
+    proposalPdfGenerationId: payload.proposalPdfGenerationId || null,
+    ownerUserId: payload.ownerUserId || null,
+    lostReason: payload.lostReason || null,
+    rejectedReason: payload.rejectedReason || null,
+    notes: payload.notes || "",
+  });
+  return stmts.getEngageOpportunityById.get(payload.id);
+}
+
+function updateEngageOpportunityStage(id, stage) {
+  const closedStages = new Set(["won", "lost", "rejected", "archived"]);
+  const closedAt = closedStages.has(stage) ? Math.floor(Date.now() / 1000) : null;
+  stmts.updateEngageOpportunityStage.run({ id, stage, closedAt });
+  return stmts.getEngageOpportunityById.get(id);
+}
+
+function createEngageEngagement(payload) {
+  const id = payload.id || generateId();
+  stmts.createEngageEngagement.run({
+    id,
+    clientId: payload.clientId,
+    opportunityId: payload.opportunityId || null,
+    title: payload.title,
+    engagementType: normaliseOppTypes(payload.engagementType),
+    status: VALID_ENG_STATUSES.has(payload.status) ? payload.status : "draft",
+    priority: VALID_ENG_PRIORITIES.has(payload.priority) ? payload.priority : "normal",
+    commercialValue: payload.commercialValue ?? null,
+    estimatedDays: payload.estimatedDays ?? null,
+    scheduledStartDate: payload.scheduledStartDate || null,
+    scheduledEndDate: payload.scheduledEndDate || null,
+    engagementManagerUserId: payload.engagementManagerUserId || null,
+    technicalLeadUserId: payload.technicalLeadUserId || null,
+    highLevelScopeSummary: payload.highLevelScopeSummary || "",
+    notes: payload.notes || "",
+    createdBy: payload.createdBy || null,
+  });
+  return stmts.getEngageEngagementById.get(id);
+}
+
+function getEngageEngagementById(id) {
+  return stmts.getEngageEngagementById.get(id);
+}
+
+function listEngageEngagements(limit = 50, offset = 0) {
+  return stmts.listEngageEngagements.all(limit, offset);
+}
+
+function listEngageEngagementsByUser(userId) {
+  return stmts.listEngageEngagementsByUser.all(userId);
+}
+
+function listEngageEngagementsByClient(clientId) {
+  return stmts.listEngageEngagementsByClient.all(clientId);
+}
+
+function listEngageOpportunitiesByClient(clientId) {
+  return stmts.listEngageOpportunitiesByClient.all(clientId);
+}
+
+function listReporterDesignsByType(projectType) {
+  return stmts.listReporterDesigns.all()
+    .filter((d) => d.project_type === projectType)
+    .map(mapReporterDesignRow);
+}
+
+function updateEngageEngagement(payload) {
+  stmts.updateEngageEngagement.run({
+    id: payload.id,
+    title: payload.title,
+    engagementType: normaliseOppTypes(payload.engagementType),
+    status: VALID_ENG_STATUSES.has(payload.status) ? payload.status : "draft",
+    priority: VALID_ENG_PRIORITIES.has(payload.priority) ? payload.priority : "normal",
+    commercialValue: payload.commercialValue ?? null,
+    estimatedDays: payload.estimatedDays ?? null,
+    scheduledStartDate: payload.scheduledStartDate || null,
+    scheduledEndDate: payload.scheduledEndDate || null,
+    actualStartDate: payload.actualStartDate || null,
+    actualEndDate: payload.actualEndDate || null,
+    engagementManagerUserId: payload.engagementManagerUserId || null,
+    technicalLeadUserId: payload.technicalLeadUserId || null,
+    redseccalProjectId: payload.redseccalProjectId || null,
+    redsecReporterProjectId: payload.redsecReporterProjectId || null,
+    proposalReporterDocId: payload.proposalReporterDocId || null,
+    deliveryReporterProjectId: payload.deliveryReporterProjectId || null,
+    highLevelScopeSummary: payload.highLevelScopeSummary || "",
+    notes: payload.notes || "",
+  });
+  return stmts.getEngageEngagementById.get(payload.id);
+}
+
+function updateEngageEngagementStatus(id, status) {
+  const closingStates = new Set(["closed", "cancelled", "archived"]);
+  const closedAt = closingStates.has(status) ? Math.floor(Date.now() / 1000) : null;
+  stmts.updateEngageEngagementStatus.run({ id, status, closedAt });
+  return stmts.getEngageEngagementById.get(id);
+}
+
+function archiveEngageEngagement(id) {
+  return stmts.archiveEngageEngagement.run(id).changes > 0;
+}
+
+function createEngageMember(payload) {
+  const id = payload.id || generateId();
+  stmts.createEngageMember.run({
+    id,
+    engagementId: payload.engagementId,
+    userId: payload.userId,
+    role: VALID_TEAM_ROLES.has(payload.role) ? payload.role : "tester",
+    isPrimary: payload.isPrimary ? 1 : 0,
+  });
+  return stmts.listEngageMembersByEngagement.all(payload.engagementId).find((m) => m.id === id);
+}
+
+function listEngageMembersByEngagement(engagementId) {
+  return stmts.listEngageMembersByEngagement.all(engagementId);
+}
+
+function updateEngageMember(payload) {
+  stmts.updateEngageMember.run({
+    id: payload.id,
+    role: VALID_TEAM_ROLES.has(payload.role) ? payload.role : "tester",
+    isPrimary: payload.isPrimary ? 1 : 0,
+  });
+  return stmts.listEngageMembersByEngagement.all(payload.engagementId).find((m) => m.id === payload.id);
+}
+
+function deleteEngageMember(id) {
+  return stmts.deleteEngageMember.run(id).changes > 0;
+}
+
+function createEngageQaReview(payload) {
+  const id = payload.id || generateId();
+  stmts.createEngageQaReview.run({
+    id,
+    engagementId: payload.engagementId,
+    reporterProjectId: payload.reporterProjectId || null,
+    assignedByUserId: payload.assignedByUserId || null,
+    assignedToUserId: payload.assignedToUserId || null,
+    status: VALID_QA_STATUSES.has(payload.status) ? payload.status : "not_requested",
+    qaNotes: payload.qaNotes || "",
+    reportLink: payload.reportLink || null,
+    shareLink: payload.shareLink || null,
+  });
+  return stmts.getEngageQaReviewById.get(id);
+}
+
+function getEngageQaReviewById(id) {
+  return stmts.getEngageQaReviewById.get(id);
+}
+
+function updateEngageQaReview(payload) {
+  stmts.updateEngageQaReview.run({
+    id: payload.id,
+    status: payload.status,
+    qaNotes: payload.qaNotes || "",
+    reportLink: payload.reportLink || null,
+    shareLink: payload.shareLink || null,
+    assignedToUserId: payload.assignedToUserId || null,
+    completedAt: payload.completedAt || null,
+  });
+  return stmts.getEngageQaReviewById.get(payload.id);
+}
+
+function listEngageQaReviewsByStatus(status) {
+  return stmts.listEngageQaReviewsByStatus.all(status);
+}
+
+function listEngageQaReviewsByAssignee(userId) {
+  return stmts.listEngageQaReviewsByAssignee.all(userId);
+}
+
+function listEngageQaReviewsByStatusEnriched(status) {
+  return stmts.listEngageQaReviewsByStatusEnriched.all(status);
+}
+
+function listEngageQaReviewsByAssigneeEnriched(userId) {
+  return stmts.listEngageQaReviewsByAssigneeEnriched.all(userId);
+}
+
+function listAllEngageQaReviewsEnriched() {
+  return stmts.listAllEngageQaReviewsEnriched.all();
+}
+
+function listEngageQaReviewsByEngagementEnriched(engagementId) {
+  return stmts.listEngageQaReviewsByEngagementEnriched.all(engagementId);
+}
+
+function createEngageNote(payload) {
+  const id = payload.id || generateId();
+  stmts.createEngageNote.run({
+    id,
+    entityType: payload.entityType,
+    entityId: payload.entityId,
+    userId: payload.userId,
+    content: payload.content,
+  });
+  return stmts.listEngageNotesByEntity.all(payload.entityType, payload.entityId).find((n) => n.id === id);
+}
+
+function listEngageNotesByEntity(entityType, entityId) {
+  return stmts.listEngageNotesByEntity.all(entityType, entityId);
+}
+
+function createEngageActivity(payload) {
+  const id = payload.id || generateId();
+  stmts.createEngageActivity.run({
+    id,
+    entityType: payload.entityType,
+    entityId: payload.entityId,
+    action: payload.action,
+    userId: payload.userId || null,
+    username: payload.username || null,
+    details: typeof payload.details === "string" ? payload.details : JSON.stringify(payload.details || {}),
+  });
+}
+
+function listEngageActivityByEntity(entityType, entityId, limit = 50) {
+  return stmts.listEngageActivityByEntity.all(entityType, entityId, limit);
+}
+
+// ============================================================
+// Engage dashboard functions
+// ============================================================
+
+function getEngageDashboardStats() {
+  const pipeline = stmts.engagePipelineValue.get();
+  const oppStages = stmts.engageOppStageCounts.all();
+  const engStatuses = stmts.engageEngStatusCounts.all();
+  const qaQueue = stmts.engageQaQueueCounts.all();
+  const active = stmts.engageEngActiveCount.get();
+  const scheduled = stmts.engageEngScheduledCount.get();
+  const blocked = stmts.engageBlockedEngagements.all();
+  const overdue = stmts.engageOverdueEngagements.all();
+
+  const now = new Date();
+  const monthStart = Math.floor(new Date(now.getFullYear(), now.getMonth(), 1).getTime() / 1000);
+  const monthEnd = Math.floor(new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime() / 1000);
+  const oppThisMonth = stmts.engageOppThisMonth.all(monthStart, monthEnd);
+
+  const oppCounts = {};
+  for (const row of oppStages) oppCounts[row.stage] = row.count;
+  const engCounts = {};
+  for (const row of engStatuses) engCounts[row.status] = row.count;
+  const qaCounts = {};
+  for (const row of qaQueue) qaCounts[row.status] = row.count;
+  const monthCounts = {};
+  for (const row of oppThisMonth) monthCounts[row.stage] = row.count;
+
+  const deliveredThisMonth = stmts.engageDeliveredThisMonth.get(monthStart, monthEnd);
+  const closedThisMonth = stmts.engageClosedThisMonth.get(monthStart, monthEnd);
+  const avgQA = stmts.engageAvgDaysInQA.get();
+
+  // Utilisation aggregates
+  const nowTs = Math.floor(Date.now() / 1000);
+  const endTs = nowTs + (30 * 86400);
+  const utilRows = stmts.engageUtilisationSummary.all(nowTs, endTs);
+  const workingHoursPerMonth = 160;
+  let totalUtilisation = 0;
+  let userCount = 0;
+  let overallocated = 0;
+  const availableSoon = [];
+  for (const row of utilRows) {
+    const pct = workingHoursPerMonth > 0 ? Math.round((row.booked_hours / workingHoursPerMonth) * 100) : 0;
+    totalUtilisation += pct;
+    userCount++;
+    if (pct > 100) overallocated++;
+    if (pct < 50) availableSoon.push({ userId: row.assignee_user_id, username: row.username, bookedHours: row.booked_hours });
+  }
+  const teamUtilisationPercent = userCount > 0 ? Math.round(totalUtilisation / userCount) : 0;
+
+  return {
+    pipelineValue: pipeline.total,
+    weightedPipelineValue: pipeline.weighted,
+    openOpportunities: (oppCounts.lead || 0) + (oppCounts.qualified || 0) + (oppCounts.scoping || 0) +
+      (oppCounts.proposal_drafting || 0) + (oppCounts.proposal_sent || 0) + (oppCounts.negotiation || 0),
+    wonThisMonth: monthCounts.won || 0,
+    lostThisMonth: monthCounts.lost || 0,
+    activeEngagements: active.count,
+    scheduledEngagements: scheduled.count,
+    testingInProgress: engCounts.testing_in_progress || 0,
+    reportingInProgress: engCounts.reporting_in_progress || 0,
+    waitingForQA: (qaCounts.ready_for_qa || 0) + (qaCounts.assigned || 0),
+    qaInProgress: qaCounts.reviewing || 0,
+    qaChangesRequired: engCounts.qa_changes_required || 0,
+    readyForDelivery: engCounts.qa_ready_for_delivery || 0,
+    deliveredThisMonth: deliveredThisMonth.count,
+    closedThisMonth: closedThisMonth.count,
+    blockedEngagements: blocked.length,
+    overdueEngagements: overdue.length,
+    averageDaysInQA: avgQA.avg_days ? Math.round(avgQA.avg_days / 86400) : null,
+    teamUtilisationPercent,
+    usersOverallocated: overallocated,
+    usersAvailableSoon: availableSoon,
+    blockedList: blocked,
+    overdueList: overdue,
+    oppStageDistribution: oppCounts,
+    engStatusDistribution: engCounts,
+    qaStatusDistribution: qaCounts,
+  };
+}
+
+function getEngageMyWork(userId) {
+  const myEngagements = stmts.engageMyEngagements.all(userId);
+  const myQa = stmts.engageQaAssignedToUser.all(userId);
+  return { myEngagements, myQa };
+}
+
+function getEngageRecentActivity() {
+  return stmts.engageRecentActivity.all();
+}
+
+function getEngageRecentlyUpdated() {
+  return stmts.engageRecentlyUpdated.all();
+}
+
+function getEngageUtilisationSummary(daysAhead = 30) {
+  const now = Math.floor(Date.now() / 1000);
+  const end = now + (daysAhead * 86400);
+  return stmts.engageUtilisationSummary.all(now, end);
+}
+
+function getEngageEngagementsWithoutTesters() {
+  return stmts.engageEngagementsWithoutTesters.all();
+}
+
 module.exports = {
   db,
   DB_PATH,
@@ -6809,6 +7696,7 @@ module.exports = {
   unsuspendUserById,
   deleteUserById,
   listUsers,
+  listUsersByPermission,
   countAllUsers,
   getUsernamesMap,
   getDefaultRoleId,
@@ -7129,6 +8017,7 @@ module.exports = {
   createReporterDesignRow,
   getReporterDesignById,
   listReporterDesigns,
+  listReporterDesignsByType,
   updateReporterDesignRow,
   deleteReporterDesignById,
   createReporterProjectRow,
@@ -7194,4 +8083,63 @@ module.exports = {
   updateReporterImportJobRow,
   listReporterImportJobsByProject,
   incrementReporterTemplateUsage: (id) => stmts.incrementReporterTemplateUsage.run(id),
+
+  // --- Notification functions ---
+  createNotification,
+  getNotificationsByUserId,
+  getUnreadNotificationCount,
+  markNotificationRead,
+  markAllNotificationsRead,
+  getNotificationById,
+  deleteExpiredNotifications,
+
+  // --- Engage functions ---
+  createEngageClient,
+  getEngageClientById,
+  listEngageClients,
+  updateEngageClient,
+  archiveEngageClient,
+  createEngageContact,
+  getEngageContactById,
+  listEngageContactsByClient: (clientId) => stmts.listEngageContactsByClient.all(clientId),
+  updateEngageContact,
+  archiveEngageContact,
+  createEngageOpportunity,
+  getEngageOpportunityById,
+  listEngageOpportunities,
+  listEngageOpportunitiesByClient,
+  updateEngageOpportunity,
+  updateEngageOpportunityStage,
+  createEngageEngagement,
+  getEngageEngagementById,
+  listEngageEngagements,
+  listEngageEngagementsByUser,
+  listEngageEngagementsByClient,
+  updateEngageEngagement,
+  updateEngageEngagementStatus,
+  archiveEngageEngagement,
+  createEngageMember,
+  listEngageMembersByEngagement,
+  updateEngageMember,
+  deleteEngageMember,
+  createEngageQaReview,
+  getEngageQaReviewById,
+  updateEngageQaReview,
+  listEngageQaReviewsByStatus,
+  listEngageQaReviewsByAssignee,
+  listEngageQaReviewsByEngagement: (engagementId) => stmts.listEngageQaReviewsByEngagement.all(engagementId),
+  listEngageQaReviewsByStatusEnriched,
+  listEngageQaReviewsByAssigneeEnriched,
+  listAllEngageQaReviewsEnriched,
+  listEngageQaReviewsByEngagementEnriched,
+  createEngageNote,
+  listEngageNotesByEntity,
+  createEngageActivity,
+  listEngageActivityByEntity,
+  getEngageDashboardStats,
+  getEngageMyWork,
+  getEngageRecentActivity,
+  getEngageRecentlyUpdated,
+  getEngageUtilisationSummary,
+  getEngageEngagementsWithoutTesters,
 };

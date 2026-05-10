@@ -55,6 +55,8 @@ test("RedSecAI exposes a clear scoped tool manifest", () => {
   assert.equal(TOOL_ALLOWLIST["threat.alerts"].capability, "threat.read");
   assert.equal(TOOL_ALLOWLIST["reporter.projects"].capability, "reporter.read");
   assert.equal(TOOL_ALLOWLIST["reporter.note.create"].confirmRequired, true);
+  assert.equal(TOOL_ALLOWLIST["engage.dashboard.summary"].capability, "engage.read");
+  assert.equal(TOOL_ALLOWLIST["engage.engagement.update_status"].confirmRequired, true);
   assert.equal(TOOL_ALLOWLIST["wiki.bootstrap"].capability, "wiki.read");
   assert.equal(TOOL_ALLOWLIST["wiki.page.get"].capability, "wiki.read");
   assert.equal(TOOL_ALLOWLIST["wiki.page.create"].confirmRequired, true);
@@ -245,6 +247,20 @@ test("RedSecAI targeted tools require RBAC", () => {
   assert.equal(calls.some((call) => call.tool === "threat.searchAlerts"), false);
 });
 
+test("RedSecAI exposes Engage tools with engagement governance and confirmation requirements", () => {
+  const { getRedSecAiToolManifest, getRedSecAiToolGovernanceMatrix } = require("../server/modules/redsecai/context");
+  const manifest = getRedSecAiToolManifest({
+    userId: "u1",
+    permissionSet: new Set(["engage.view_team", "engage.edit_engagement", "engage.manage_qa"]),
+  });
+  const names = new Set(manifest.map((tool) => tool.name));
+  assert.ok(names.has("engage.dashboard.summary"));
+  assert.ok(names.has("engage.engagement.update_status"));
+  assert.ok(names.has("engage.qa.assign"));
+  assert.equal(manifest.find((tool) => tool.name === "engage.engagement.update_status").confirmRequired, true);
+  assert.equal(getRedSecAiToolGovernanceMatrix()["engage.dashboard.summary"].dataClass, "engagement_operations");
+});
+
 test("RedSecAI exposes broad non-encrypted tool coverage without encrypted product tools", () => {
   const { getRedSecAiToolManifest } = require("../server/modules/redsecai/context");
   const manifest = getRedSecAiToolManifest({
@@ -269,6 +285,9 @@ test("RedSecAI exposes broad non-encrypted tool coverage without encrypted produ
       "reporter.edit_assigned",
       "reporter.manage_templates",
       "reporter.manage_all",
+      "engage.view_team",
+      "engage.edit_engagement",
+      "engage.manage_qa",
     ]),
   });
   const names = new Set(manifest.map((tool) => tool.name));
@@ -281,6 +300,9 @@ test("RedSecAI exposes broad non-encrypted tool coverage without encrypted produ
     "threat.keyword.create",
     "reporter.finding.create",
     "reporter.member.add",
+    "engage.dashboard.summary",
+    "engage.engagement.update_status",
+    "engage.qa.assign",
     "survey.create",
   ]) {
     assert.ok(names.has(expected), `${expected} should be available`);

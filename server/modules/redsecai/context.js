@@ -879,6 +879,23 @@ function getRedSecAiActionValidationError(toolName, args = {}) {
       }
     }
   }
+  if (toolName === "engage.note.create") {
+    if (!["client", "opportunity", "engagement"].includes(String(normalized.entityType || ""))) {
+      return "Engage note creation requires entityType client, opportunity, or engagement";
+    }
+    if (!String(normalized.entityId || "").trim()) return "Engage note creation requires entityId";
+    if (!String(body.content || "").trim()) return "Engage note creation requires note content";
+  }
+  if (toolName === "engage.link.reporter_document") {
+    if (!String(body.proposalReporterDocId || "").trim() && !String(body.proposalPdfGenerationId || "").trim()) {
+      return "Linking a Reporter proposal requires proposalReporterDocId or proposalPdfGenerationId";
+    }
+  }
+  if (toolName === "engage.link.reporter_project") {
+    if (!String(body.redsecReporterProjectId || "").trim() && !String(body.proposalReporterDocId || "").trim() && !String(body.deliveryReporterProjectId || "").trim()) {
+      return "Linking a Reporter project requires at least one Reporter identifier";
+    }
+  }
   if (["calendar.project.create", "calendar.project.update"].includes(toolName)) {
     if (toolName === "calendar.project.create" && !String(body.name || "").trim()) return "Calendar project creation requires a name";
     const startsAt = Number(body.startsAt);
@@ -1207,6 +1224,66 @@ async function getCalendarEntry(req, args = {}) {
     : { tool: "calendar.entry.get", ok: false, status: 404, error: "Calendar entry not found" };
 }
 
+async function searchEngageCollection(req, toolName, args = {}, path, arrayKey, fields) {
+  const query = String(args.query || "").trim().slice(0, 200);
+  const limit = Math.min(50, Math.max(1, parseInt(args.limit, 10) || 10));
+  const params = new URLSearchParams();
+  if (args.clientId) params.set("clientId", String(args.clientId));
+  const res = await fetch(`${getInternalOrigin(req)}${path}${params.toString() ? `?${params.toString()}` : ""}`, {
+    method: "GET",
+    headers: {
+      cookie: req.headers.cookie || "",
+      accept: "application/json",
+      "user-agent": "RedSecAI scoped internal tool",
+    },
+  });
+  const result = {
+    ok: res.ok,
+    status: res.status,
+    body: await res.json().catch(() => null),
+  };
+  if (!result.ok) return summarizeResult(toolName, result, args);
+  const rows = getArrayFromBody(result.body, [arrayKey]);
+  const matches = rows
+    .filter((row) => textMatchesQuery(objectSearchCorpus(row, fields), query))
+    .slice(0, limit);
+  return {
+    tool: toolName,
+    ok: true,
+    status: 200,
+    query: { query, limit, clientId: args.clientId || null },
+    data: { count: matches.length, [arrayKey]: matches },
+  };
+}
+
+async function executeEngageNoteCreate(req, args = {}) {
+  const entityType = String(args.entityType || "").trim();
+  const entityId = String(args.entityId || "").trim();
+  const pathByType = {
+    client: `/api/engage/clients/${encodeURIComponent(entityId)}/notes`,
+    opportunity: `/api/engage/opportunities/${encodeURIComponent(entityId)}/notes`,
+    engagement: `/api/engage/engagements/${encodeURIComponent(entityId)}/notes`,
+  };
+  const path = pathByType[entityType];
+  if (!path) return { tool: "engage.note.create", ok: false, status: 400, error: "Unsupported Engage note entity type" };
+  const res = await fetch(`${getInternalOrigin(req)}${path}`, {
+    method: "POST",
+    headers: {
+      cookie: req.headers.cookie || "",
+      accept: "application/json",
+      "content-type": "application/json",
+      "user-agent": "RedSecAI scoped internal tool",
+    },
+    body: JSON.stringify(args.body || {}),
+  });
+  const result = {
+    ok: res.ok,
+    status: res.status,
+    body: await res.json().catch(() => null),
+  };
+  return summarizeResult("engage.note.create", result, args);
+}
+
 async function getCalendarSettingsForAi(req, args = {}) {
   const result = await scopedApiGet(req, "calendar.bootstrap", {
     viewMode: "week",
@@ -1454,9 +1531,13 @@ async function executeRedSecAiTool(req, toolName, args = {}, options = {}) {
   if (toolName === "calendar.project.get") return getCalendarProject(req, normalizedArgs);
   if (toolName === "calendar.entry.search") return searchCalendarEntries(req, normalizedArgs);
   if (toolName === "calendar.entry.get") return getCalendarEntry(req, normalizedArgs);
+  if (toolName === "engage.clients.search") return searchEngageCollection(req, toolName, normalizedArgs, "/api/engage/clients", "clients", ["id", "name", "display_name", "industry", "website", "status"]);
+  if (toolName === "engage.opportunities.search") return searchEngageCollection(req, toolName, normalizedArgs, "/api/engage/opportunities", "opportunities", ["id", "title", "client_name", "client_display_name", "opportunity_type", "stage", "notes"]);
+  if (toolName === "engage.engagements.search") return searchEngageCollection(req, toolName, normalizedArgs, "/api/engage/engagements", "engagements", ["id", "title", "client_name", "client_display_name", "engagement_type", "status", "priority", "high_level_scope_summary", "notes"]);
   if (toolName === "calendar.entry.create" && options.confirmed) return executeCalendarEntryCreate(req, normalizedArgs);
   if (toolName === "calendar.project.schedule" && options.confirmed) return executeCalendarProjectSchedule(req, normalizedArgs);
   if (toolName === "wiki.page.update" && options.confirmed) return executeWikiPageUpdate(req, normalizedArgs);
+  if (toolName === "engage.note.create" && options.confirmed) return executeEngageNoteCreate(req, normalizedArgs);
   const result = await scopedApiRequest(req, toolName, normalizedArgs);
   return summarizeResult(toolName, result, normalizedArgs);
 }
@@ -1497,6 +1578,19 @@ function deriveRedSecAiToolCalls(message, access) {
     /\b(bulletin|announcement)\b/i.test(lower)
   )) {
     calls.push({ tool: "homepage.bulletins", args: { limit: 10 } });
+  }
+  if (hasAny(access, ["engage.view_own", "engage.view_team", "engage.view_all", "engage.manage_all"]) && (
+    /\b(engage|engagement|engagements|client|clients|opportunit(?:y|ies)|pipeline|proposal|qa|utili[sz]ation|blocked|delivery|workload)\b/i.test(lower)
+  )) {
+    if (/\b(qa|review|ready for delivery|requires more work)\b/i.test(lower)) {
+      calls.push({ tool: "engage.qa.queue", args: { status: "all" } });
+    } else if (/\b(utili[sz]ation|capacity|workload|available|overallocated)\b/i.test(lower)) {
+      calls.push({ tool: "engage.utilisation.summary", args: { days: 30 } });
+    } else if (/\b(opportunit(?:y|ies)|pipeline|proposal|quote|lead|negotiation)\b/i.test(lower)) {
+      calls.push({ tool: "engage.opportunities.search", args: { query: text, limit: 8 } });
+    } else {
+      calls.push({ tool: "engage.dashboard.summary", args: {} });
+    }
   }
   return calls.slice(0, 4);
 }

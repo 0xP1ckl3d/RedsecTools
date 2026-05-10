@@ -12,6 +12,7 @@ const TOOL_LINKS = [
   { href: "/wiki", label: "RedSecWiki", key: "wiki" },
   { href: "/threat", label: "RedSecThreat", key: "threat" },
   { href: "/reporter", label: "RedSecReporter", key: "reporter" },
+  { href: "/engage", label: "RedSecEngage", key: "engage" },
   { href: "/ai", label: "RedSecAI", aiOnly: true },
 ];
 

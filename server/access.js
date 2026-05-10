@@ -176,6 +176,90 @@ const PERMISSION_DEFINITIONS = [
     label: "Manage All",
     description: "View and manage every report project regardless of project membership, including global Reporter stats.",
   },
+  {
+    key: "engage.view_own",
+    category: "Engage",
+    label: "View Own",
+    description: "View engagements and opportunities where you are a team member or owner.",
+  },
+  {
+    key: "engage.view_team",
+    category: "Engage",
+    label: "View Team",
+    description: "View all team engagements, opportunities, and clients.",
+  },
+  {
+    key: "engage.view_all",
+    category: "Engage",
+    label: "View All",
+    description: "View all engagements, opportunities, clients, and commercial data across the organisation.",
+  },
+  {
+    key: "engage.create_client",
+    category: "Engage",
+    label: "Create Client",
+    description: "Create new clients and client contacts.",
+  },
+  {
+    key: "engage.edit_client",
+    category: "Engage",
+    label: "Edit Client",
+    description: "Edit existing clients and client contacts.",
+  },
+  {
+    key: "engage.create_opportunity",
+    category: "Engage",
+    label: "Create Opportunity",
+    description: "Create new opportunities in the pipeline.",
+  },
+  {
+    key: "engage.edit_opportunity",
+    category: "Engage",
+    label: "Edit Opportunity",
+    description: "Edit existing opportunities and change stages.",
+  },
+  {
+    key: "engage.manage_commercials",
+    category: "Engage",
+    label: "Manage Commercials",
+    description: "View and edit commercial values, quoted amounts, and pipeline financials.",
+  },
+  {
+    key: "engage.create_engagement",
+    category: "Engage",
+    label: "Create Engagement",
+    description: "Create new engagements from won opportunities or directly.",
+  },
+  {
+    key: "engage.edit_engagement",
+    category: "Engage",
+    label: "Edit Engagement",
+    description: "Edit existing engagements, update statuses, and manage engagement details.",
+  },
+  {
+    key: "engage.assign_team",
+    category: "Engage",
+    label: "Assign Team",
+    description: "Assign and manage team members on engagements.",
+  },
+  {
+    key: "engage.manage_qa",
+    category: "Engage",
+    label: "Manage QA",
+    description: "Assign QA reviewers and manage QA workflow.",
+  },
+  {
+    key: "engage.perform_qa",
+    category: "Engage",
+    label: "Perform QA",
+    description: "Perform QA reviews on engagements assigned to you.",
+  },
+  {
+    key: "engage.manage_all",
+    category: "Engage",
+    label: "Manage All",
+    description: "Full administrative access to all Engage features including archiving and deletion.",
+  },
 ];
 
 const ALL_PERMISSIONS = PERMISSION_DEFINITIONS.map((permission) => permission.key);
@@ -190,6 +274,7 @@ const SYSTEM_ROLE_DEFINITIONS = [
       "calendar.view",
       "wiki.view",
       "reporter.view",
+      "engage.view_own",
     ],
   },
   {
@@ -210,6 +295,8 @@ const SYSTEM_ROLE_DEFINITIONS = [
       "reporter.view",
       "reporter.create",
       "reporter.edit_own",
+      "engage.view_own",
+      "engage.perform_qa",
     ],
   },
   {
@@ -245,6 +332,16 @@ const SYSTEM_ROLE_DEFINITIONS = [
       "reporter.approve",
       "reporter.manage_templates",
       "reporter.manage_all",
+      "engage.view_team",
+      "engage.create_client",
+      "engage.edit_client",
+      "engage.create_opportunity",
+      "engage.edit_opportunity",
+      "engage.create_engagement",
+      "engage.edit_engagement",
+      "engage.assign_team",
+      "engage.manage_qa",
+      "engage.perform_qa",
     ],
   },
 ];
@@ -259,6 +356,7 @@ const TOOL_DEFINITIONS = [
   { key: "wiki", name: "RedSecWiki", href: "/wiki", permissionsAny: ["wiki.view", "wiki.create_personal", "wiki.create_team", "wiki.edit_team", "wiki.manage"] },
   { key: "threat", name: "RedSecThreat", href: "/threat", permissionsAny: ["threat.view", "threat.manage"] },
   { key: "reporter", name: "RedSecReporter", href: "/reporter", permissionsAny: ["reporter.view", "reporter.create", "reporter.edit_own", "reporter.edit_assigned", "reporter.review", "reporter.approve", "reporter.manage_templates", "reporter.manage_all"] },
+  { key: "engage", name: "RedSecEngage", href: "/engage", permissionsAny: ["engage.view_own", "engage.view_team", "engage.view_all"] },
 ];
 
 function canonicalizePermission(permission) {

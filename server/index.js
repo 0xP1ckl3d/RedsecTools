@@ -22,10 +22,13 @@ const threatRouter = require("./routes/threat");
 const reporterRouter = require("./routes/reporter");
 const adminCollabRouter = require("./routes/admin-collab");
 const redsecAiRouter = require("./routes/redsecai");
+const notificationRouter = require("./routes/notifications");
+const engageRouter = require("./routes/engage");
 const { runBulletinAutoPurge } = require("./bulletin-service");
 const { startFeedFetchInterval, seedDefaults: seedThreatDefaults } = require("./threat-feed-service");
 const { initWebSocket } = require("./chat-ws");
 const { initRedSecAiWebSocket } = require("./redsecai-ws");
+const { initNotificationWebSocket } = require("./notification-ws");
 const {
   deleteExpired, deleteExpiredFiles,
   deleteExpiredSessions, deleteExpiredInvites,
@@ -33,6 +36,7 @@ const {
   deleteExpiredMessages, deleteExpiredVaultShares,
   deleteExpiredPendingLogins, deleteExpiredTrustedDevices, deleteExpiredAdminSessions, deleteExpiredExtensionSessions,
   closeExpiredSurveys, cleanupOldThreatAlerts, cleanupOldThreatArticles, getSetting,
+  deleteExpiredNotifications,
 } = require("./database");
 const { pageRequireUser, pageRequireGuestOrUser } = require("./middleware/auth");
 const { pageRequirePermission, pageRequireAnyPermission } = require("./middleware/permissions");
@@ -135,6 +139,8 @@ app.use("/api", wikiRouter);
 app.use("/api", threatRouter);
 app.use("/api", reporterRouter);
 app.use("/api", redsecAiRouter);
+app.use("/api", notificationRouter);
+app.use("/api", engageRouter);
 app.use("/api/ext", extensionRouter);
 app.use("/api/homepage", homepageRouter);
 app.use("/api/homepage", homepageDashboardRouter);
@@ -167,6 +173,7 @@ app.get("/wiki", pageRequireUser, pageRequireAnyPermission(["wiki.view", "wiki.c
 app.get("/threat", pageRequireUser, pageRequireAnyPermission(["threat.view", "threat.manage"]), (req, res) => res.sendFile(page("threat/index.html")));
 app.get("/reporter", pageRequireUser, pageRequireAnyPermission(["reporter.view", "reporter.create", "reporter.edit_own", "reporter.edit_assigned", "reporter.review", "reporter.approve", "reporter.manage_templates", "reporter.manage_all"]), (req, res) => res.sendFile(page("reporter/index.html")));
 app.get(["/ai", "/ai/"], pageRequireUser, pageRequireRedSecAiEnabled, (req, res) => res.sendFile(page("ai/index.html")));
+app.get("/engage", pageRequireUser, pageRequireAnyPermission(["engage.view_own", "engage.view_team", "engage.view_all", "engage.manage_all"]), (req, res) => res.sendFile(page("engage/index.html")));
 app.get("/admin", (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   res.sendFile(page("admin.html"));
@@ -207,8 +214,9 @@ setInterval(() => {
     : 14;
   const threatAlerts = cleanupOldThreatAlerts(threatRetentionDays);
   const threatArticles = cleanupOldThreatArticles(threatRetentionDays);
+  const expiredNotifications = deleteExpiredNotifications();
   if (shareRouter.cleanupTmp) shareRouter.cleanupTmp();
-  const total = pastes + files + sessions + invites + guestLinks + passwordResets + messages + vaultShares + pendingLogins + trustedDevices + adminSessions + extensionSessions + expiredSurveys + bulletinPurge.deletedBulletins + bulletinPurge.deletedAssets + threatAlerts + threatArticles;
+  const total = pastes + files + sessions + invites + guestLinks + passwordResets + messages + vaultShares + pendingLogins + trustedDevices + adminSessions + extensionSessions + expiredSurveys + bulletinPurge.deletedBulletins + bulletinPurge.deletedAssets + threatAlerts + threatArticles + expiredNotifications;
   if (total > 0) {
     console.log(JSON.stringify({
       ts: new Date().toISOString(),
@@ -229,6 +237,7 @@ setInterval(() => {
       threatRetentionDays,
       threatAlerts,
       threatArticles,
+      expiredNotifications,
       bulletinPurge,
     }));
   }
@@ -238,6 +247,7 @@ setInterval(() => {
 const server = http.createServer(app);
 initWebSocket(server);
 initRedSecAiWebSocket(server);
+initNotificationWebSocket(server);
 server.listen(PORT, HOST, () => {
   console.log(JSON.stringify({ ts: new Date().toISOString(), action: "start", host: HOST, port: PORT, name: "RedSecTools" }));
   for (const warning of buildDeploymentWarnings({ host: HOST })) {
