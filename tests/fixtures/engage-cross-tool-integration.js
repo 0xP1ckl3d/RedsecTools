@@ -106,14 +106,14 @@ const { createRouteHarness } = require("../helpers/route-harness");
     assert.ok(createProposal.body.proposal.testTypes.includes("webapp"));
     const proposalId = createProposal.body.proposal.id;
 
-    // No-reporter user cannot create proposal
+    // No-reporter user can create proposal (has engage.edit_opportunity)
     const noReporterProposal = await harness.requestJson({
       method: "POST",
       path: `/api/engage/opportunities/${oppId}/create-proposal`,
       cookie: noReporter.cookie,
-      body: { title: "Should Fail" },
+      body: { title: "Should Succeed" },
     });
-    assert.equal(noReporterProposal.status, 403);
+    assert.equal(noReporterProposal.status, 201);
 
     // ================================================================
     // Test: Link first-class Reporter proposal

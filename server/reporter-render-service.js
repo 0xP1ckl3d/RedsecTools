@@ -994,14 +994,422 @@ async function renderPdfBuffer(html, options = {}) {
       printBackground: true,
       preferCSSPageSize: true,
       displayHeaderFooter: true,
-      headerTemplate: '<div class="reporter-pdf-header">RedSec Penetration Test Report</div>',
-      footerTemplate: '<div class="reporter-pdf-footer">Page <span class="pageNumber"></span></div>',
+      headerTemplate: options.headerTemplate || '<div class="reporter-pdf-header">RedSec Penetration Test Report</div>',
+      footerTemplate: options.footerTemplate || '<div class="reporter-pdf-footer">Page <span class="pageNumber"></span></div>',
       margin: { top: "25mm", right: "20mm", bottom: "25mm", left: "20mm" },
       timeout: timeoutMs,
     });
   } finally {
     await browser.close();
   }
+}
+
+// --- Proposal Rendering ---
+
+function buildProposalContext({ proposal, template, sections, testTypes }) {
+  const includedSections = (sections || []).filter((s) => s.isIncluded !== false && s.isIncluded !== 0);
+
+  const processedSections = includedSections.map((s, i) => {
+    let contentHtml = "";
+    try { contentHtml = renderMarkdownToHtml(s.content || ""); } catch { contentHtml = escapeHtml(s.content || ""); }
+    return { title: s.title, contentHtml, sectionType: s.sectionType || s.section_type || "markdown", orderIndex: i };
+  });
+
+  const tocItems = processedSections.map((s) => ({ title: s.title, level: 1 }));
+
+  const processedTestTypes = (testTypes || []).map((tt) => {
+    const render = (md) => { try { return renderMarkdownToHtml(md || ""); } catch { return escapeHtml(md || ""); } };
+    return {
+      type: tt.test_type || tt.testType || tt.type || "",
+      name: tt.name || "",
+      methodologyHtml: render(tt.methodology_writeup || tt.methodology || ""),
+      scopeHtml: render(tt.scope_guidance || tt.scope || ""),
+      deliverablesHtml: render(tt.deliverables || ""),
+      clientRequirementsHtml: render(tt.client_requirements || tt.clientRequirements || ""),
+      consultantRequirementsHtml: render(tt.consultant_requirements || tt.consultantRequirements || ""),
+      assumptionsHtml: render(tt.assumptions || ""),
+      restrictionsHtml: render(tt.restrictions || ""),
+    };
+  });
+
+  return {
+    proposal,
+    meta: {
+      title: proposal.title || "",
+      clientName: proposal.clientName || proposal.client_name || "",
+      primaryContactName: proposal.primaryContactName || proposal.primary_contact_name || "",
+      primaryContactEmail: proposal.primaryContactEmail || proposal.primary_contact_email || "",
+      preparedForName: proposal.preparedForName || proposal.prepared_for_name || "",
+      preparedForEmail: proposal.preparedForEmail || proposal.prepared_for_email || "",
+      preparedByUsername: proposal.preparedByUsername || proposal.prepared_by_username || "",
+      proposalType: proposal.proposalType || proposal.proposal_type || "security_assessment",
+      quotedValue: proposal.quotedValue || proposal.quoted_value,
+      estimatedDays: proposal.estimatedDays || proposal.estimated_days,
+      validUntil: proposal.validUntil || proposal.valid_until ? formatDate(proposal.validUntil || proposal.valid_until, "long") : "",
+      status: proposal.status || "draft",
+      createdAt: formatDate(proposal.createdAt || proposal.created_at, "long"),
+    },
+    sections: processedSections,
+    toc_items: tocItems,
+    test_types: processedTestTypes,
+    generated_at: new Date().toISOString(),
+    escapeHtml,
+  };
+}
+
+function renderProposalDocumentHtml(input, options = {}) {
+  const template = input.template || {};
+  const css = template.css_template || template.cssTemplate || defaultProposalCssTemplate();
+  let html = template.html_template || template.htmlTemplate || defaultProposalHtmlTemplate();
+  if (options.cssHref) {
+    html = html.replace(/<style>\s*\{\{\s*css\s*\|\s*safe\s*\}\}\s*<\/style>/g, '<link rel="stylesheet" href="{{ cssHref }}">');
+  }
+  const env = new nunjucks.Environment(null, {
+    autoescape: true,
+    throwOnUndefined: false,
+    trimBlocks: true,
+    lstripBlocks: true,
+  });
+  const context = buildProposalContext(input);
+  return env.renderString(html, { ...context, css, cssHref: options.cssHref || "", escapeHtml });
+}
+
+function defaultProposalHtmlTemplate() {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>{{ meta.title }}</title>
+  {% if cssHref %}
+  <link rel="stylesheet" href="{{ cssHref }}">
+  {% else %}
+  <style>{{ css | safe }}</style>
+  {% endif %}
+</head>
+<body>
+
+  <!-- COVER PAGE -->
+  <section class="page-cover">
+    <div class="cover-header">
+      <div class="company-logo-text">RedSec</div>
+    </div>
+    <div class="cover-content">
+      <h1 class="cover-title">Security Assessment Proposal</h1>
+      <div class="cover-subtitle">{{ meta.title }}</div>
+      <div class="cover-details">
+        {% if meta.clientName %}
+        <div class="detail-group detail-group-customer">
+          <div class="detail-row">
+            <span class="detail-label">Client:</span>
+            <span class="detail-value">{{ meta.clientName }}</span>
+          </div>
+        </div>
+        {% endif %}
+
+        {% if meta.preparedByUsername %}
+        <div class="detail-group detail-group-author">
+          <div class="detail-row">
+            <span class="detail-label">Prepared By:</span>
+            <span class="detail-value">{{ meta.preparedByUsername }}</span>
+          </div>
+        </div>
+        {% endif %}
+
+        <div class="detail-group detail-group-meta">
+          <div class="detail-row">
+            <span class="detail-label">Date:</span>
+            <span class="detail-value">{{ meta.createdAt }}</span>
+          </div>
+          {% if meta.validUntil %}
+          <div class="detail-row">
+            <span class="detail-label">Valid Until:</span>
+            <span class="detail-value">{{ meta.validUntil }}</span>
+          </div>
+          {% endif %}
+          {% if meta.estimatedDays %}
+          <div class="detail-row">
+            <span class="detail-label">Estimated Days:</span>
+            <span class="detail-value">{{ meta.estimatedDays }}</span>
+          </div>
+          {% endif %}
+          {% if meta.quotedValue %}
+          <div class="detail-row">
+            <span class="detail-label">Quoted Value:</span>
+            <span class="detail-value">{{ meta.quotedValue }}</span>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="page-break"></div>
+
+  <!-- TABLE OF CONTENTS -->
+  <section id="page-toc">
+    <h1>Table of Contents</h1>
+    <ul class="toc-list">
+      {% for item in toc_items %}
+      <li class="toc-level{{ item.level }}">{{ item.title }}</li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <div class="page-break"></div>
+
+  <!-- SECTIONS -->
+  {% for section in sections %}
+  <section>
+    <h1 class="in-toc numbered">{{ section.title }}</h1>
+    {{ section.contentHtml | safe }}
+  </section>
+  {% if not loop.last %}<div class="page-break"></div>{% endif %}
+  {% endfor %}
+
+</body>
+</html>`;
+}
+
+function defaultProposalCssTemplate() {
+  return `:root {
+  --red-primary: #dc2626;
+  --red-dark: #991b1b;
+  --charcoal: #1a1a1a;
+  --gray-700: #374151;
+  --gray-500: #6b7280;
+  --gray-300: #d1d5db;
+  --gray-100: #f3f4f6;
+  --white: #ffffff;
+}
+
+@page {
+  size: A4;
+  margin: 25mm 20mm;
+}
+
+@page cover {
+  margin: 0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  color: var(--charcoal);
+  line-height: 1.6;
+  margin: 0;
+  padding: 0;
+  font-size: 11pt;
+}
+
+.page-break {
+  page-break-after: always;
+  break-after: page;
+}
+
+/* Cover Page */
+.page-cover {
+  page: cover;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(135deg, var(--red-primary) 0%, var(--red-dark) 100%);
+  color: var(--white);
+  padding: 60px;
+}
+
+.cover-header {
+  margin-bottom: 40px;
+}
+
+.company-logo-text {
+  font-size: 48pt;
+  font-weight: 800;
+  letter-spacing: -2px;
+  text-transform: uppercase;
+}
+
+.cover-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.cover-title {
+  font-size: 28pt;
+  font-weight: 300;
+  margin: 0 0 8px 0;
+  border: none;
+  padding: 0;
+}
+
+.cover-subtitle {
+  font-size: 16pt;
+  font-weight: 600;
+  margin-bottom: 40px;
+  opacity: 0.9;
+}
+
+.cover-details {
+  background: rgba(255,255,255,0.1);
+  border-radius: 8px;
+  padding: 24px;
+}
+
+.detail-group {
+  margin-bottom: 12px;
+}
+
+.detail-group:last-child {
+  margin-bottom: 0;
+}
+
+.detail-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.detail-label {
+  font-weight: 600;
+  min-width: 140px;
+  opacity: 0.85;
+}
+
+.detail-value {
+  flex: 1;
+}
+
+/* Table of Contents */
+#page-toc h1 {
+  border-bottom: 2px solid var(--red-primary);
+  padding-bottom: 8px;
+}
+
+.toc-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.toc-list li {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--gray-100);
+}
+
+.toc-level1 {
+  font-weight: 600;
+  font-size: 12pt;
+}
+
+.toc-level2 {
+  font-weight: 400;
+  padding-left: 24px;
+  font-size: 11pt;
+}
+
+/* Headings */
+h1 {
+  font-size: 18pt;
+  color: var(--charcoal);
+  border-bottom: 2px solid var(--red-primary);
+  padding-bottom: 6px;
+  margin-top: 24px;
+}
+
+h2 {
+  font-size: 14pt;
+  color: var(--gray-700);
+  margin-top: 20px;
+}
+
+h3 {
+  font-size: 12pt;
+  color: var(--gray-500);
+  margin-top: 16px;
+}
+
+h1.numbered { counter-increment: report-section; }
+h2.numbered { counter-increment: report-subsection; }
+
+/* Tables */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 12px 0;
+  font-size: 10pt;
+}
+
+th, td {
+  border: 1px solid var(--gray-300);
+  padding: 8px 12px;
+  text-align: left;
+}
+
+th {
+  background: var(--gray-100);
+  font-weight: 600;
+}
+
+/* Code */
+code {
+  background: var(--gray-100);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10pt;
+}
+
+pre {
+  background: var(--gray-100);
+  padding: 12px;
+  border-radius: 4px;
+  overflow-x: auto;
+  font-size: 9pt;
+}
+
+pre code {
+  background: none;
+  padding: 0;
+}
+
+/* Blockquotes */
+blockquote {
+  border-left: 3px solid var(--red-primary);
+  padding-left: 12px;
+  color: var(--gray-500);
+  margin-left: 0;
+}
+
+/* Lists */
+ul, ol {
+  padding-left: 24px;
+}
+
+/* Links */
+a {
+  color: var(--red-primary);
+  text-decoration: none;
+}
+
+/* PDF Header/Footer */
+.reporter-pdf-header {
+  font-size: 8pt;
+  color: var(--gray-500);
+  text-align: center;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--gray-300);
+}
+
+.reporter-pdf-footer {
+  font-size: 8pt;
+  color: var(--gray-500);
+  text-align: center;
+  padding: 4px 0;
+}
+`;
 }
 
 module.exports = {
@@ -1012,5 +1420,9 @@ module.exports = {
   defaultHtmlTemplate,
   defaultCssTemplate,
   buildReportContext,
+  renderProposalDocumentHtml,
+  defaultProposalHtmlTemplate,
+  defaultProposalCssTemplate,
+  buildProposalContext,
   formatDate,
 };

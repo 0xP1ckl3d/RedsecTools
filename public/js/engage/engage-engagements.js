@@ -626,7 +626,7 @@ const EngageEngagements = (() => {
   }
 
   async function openReporterProjectPicker(e) {
-    const data = await EngageApi.get("/engage/reporter/projects");
+    const data = await EngageApi.listReporterProjects();
     const projects = data.projects || [];
     if (!projects.length) {
       await EngageModal.alert({ title: "No Projects", message: "No active Reporter projects found." });
@@ -650,7 +650,7 @@ const EngageEngagements = (() => {
   }
 
   async function openCalendarProjectPicker(e) {
-    const data = await EngageApi.get("/engage/calendar/projects");
+    const data = await EngageApi.listCalendarProjects();
     const projects = data.projects || [];
     if (!projects.length) {
       await EngageModal.alert({ title: "No Calendar Projects", message: "No Calendar projects found." });

@@ -282,7 +282,7 @@ const EngageOpportunities = (() => {
     html += '</div>';
 
     if (opp.reporter_proposal_id) {
-      html += `<div class="mt-3"><span class="text-xs font-semibold uppercase tracking-wide text-muted">Proposal</span> <a href="/reporter/?view=proposals" class="engage-link-badge" target="_blank" title="Open in Reporter">Open Proposal in Reporter</a></div>`;
+      html += '<div class="mt-3" id="opp-proposal-card"><span class="text-xs font-semibold uppercase tracking-wide text-muted">Proposal</span> <span class="text-sm text-muted">Loading...</span></div>';
     } else if (opp.proposal_reporter_doc_id) {
       html += `<div class="mt-3"><span class="text-xs font-semibold uppercase tracking-wide text-muted">Proposal Document</span> <span class="engage-link-badge">${esc(opp.proposal_reporter_doc_id)}</span></div>`;
     }
@@ -331,6 +331,40 @@ const EngageOpportunities = (() => {
     });
 
     section.querySelector(".opp-convert-btn")?.addEventListener("click", () => openConvertModal(opp));
+
+    // Load linked proposal metadata
+    if (opp.reporter_proposal_id) {
+      loadProposalCard(opp.reporter_proposal_id);
+    }
+  }
+
+  async function loadProposalCard(proposalId) {
+    const card = document.getElementById("opp-proposal-card");
+    if (!card) return;
+    try {
+      const data = await EngageApi.listReporterProposals();
+      const proposals = data.proposals || data || [];
+      const p = proposals.find((x) => x.id === proposalId);
+      if (!p) { card.innerHTML = '<span class="text-xs font-semibold uppercase tracking-wide text-muted">Proposal</span> <span class="text-sm text-muted">Not found</span>'; return; }
+      const typeTags = (p.testTypes || []).map((t) => '<span class="badge badge-gray">' + esc(t) + '</span>').join(" ");
+      card.innerHTML = `
+        <div class="card mt-2">
+          <div class="card-header flex justify-between items-center">
+            <strong>${esc(p.title)}</strong>
+            <span class="badge badge-${p.status === "draft" ? "gray" : "green"}">${esc(p.status || "draft")}</span>
+          </div>
+          ${p.clientName ? '<div class="text-sm text-muted">' + esc(p.clientName) + '</div>' : ""}
+          ${typeTags ? '<div class="flex flex-wrap gap-1 mt-1">' + typeTags + '</div>' : ""}
+          <div class="flex gap-4 mt-2 text-sm">
+            ${p.estimatedDays != null ? '<span>Days: ' + esc(String(p.estimatedDays)) + '</span>' : ""}
+            ${p.quotedValue != null ? '<span>Value: ' + esc(String(p.quotedValue)) + '</span>' : ""}
+          </div>
+          <a href="/reporter/?view=proposals" class="btn-secondary text-sm mt-2 inline-block" target="_blank">Open in Reporter</a>
+        </div>
+      `;
+    } catch {
+      card.innerHTML = '<span class="text-xs font-semibold uppercase tracking-wide text-muted">Proposal</span> <span class="text-sm text-muted">Failed to load</span>';
+    }
   }
 
   function openOutcomeModal(opp, outcome) {
@@ -453,7 +487,7 @@ const EngageOpportunities = (() => {
   }
 
   async function openProposalPicker(opp) {
-    const data = await EngageApi.get("/reporter/proposals");
+    const data = await EngageApi.listReporterProposals();
     const proposals = (data.proposals || []).filter((p) => !p.archivedAt);
     if (!proposals.length) {
       await EngageModal.alert({ title: "No Proposals", message: "No active proposals found. Create one first." });
@@ -469,8 +503,8 @@ const EngageOpportunities = (() => {
     const selectedId = document.getElementById("opp-proposal-pick")?.value;
     if (!selectedId) { await EngageModal.alert({ title: "Error", message: "Select a proposal." }); return; }
     try {
-      await EngageApi.post(`/engage/opportunities/${opp.id}/link-proposal`, { reporterProposalId: selectedId });
-      await refresh();
+      await EngageApi.linkProposal(opp.id, { reporterProposalId: selectedId });
+      await openOpp(opp.id);
     } catch (err) {
       await EngageModal.alert({ title: "Error", message: "Failed to link: " + err.message });
     }
@@ -486,7 +520,7 @@ const EngageOpportunities = (() => {
       <label class="block text-sm text-muted mb-1">Proposal Title</label>
       <input type="text" id="opp-create-proposal-title" class="input-field w-full" value="${esc(opp.title + " - Proposal")}">
       <label class="block text-sm text-muted mb-1 mt-3">Test Types</label>
-      <div id="opp-create-proposal-types" style="display:flex;flex-wrap:wrap;gap:0.5rem">${typeChecks}</div>
+      <div id="opp-create-proposal-types" class="engage-type-checkboxes">${typeChecks}</div>
     </div>`;
     const confirmed = await EngageModal.confirm({ title: "Create Proposal", message: html, confirmLabel: "Create" });
     if (!confirmed) return;
@@ -494,9 +528,9 @@ const EngageOpportunities = (() => {
     const types = Array.from(document.getElementById("opp-create-proposal-types")?.querySelectorAll("input:checked") || []).map((cb) => cb.value);
     if (!title?.trim()) { await EngageModal.alert({ title: "Error", message: "Title is required." }); return; }
     try {
-      const result = await EngageApi.post(`/engage/opportunities/${opp.id}/create-proposal`, { title: title.trim(), testTypes: types });
+      const result = await EngageApi.createProposalFromOpportunity(opp.id, { title: title.trim(), testTypes: types });
       await EngageModal.alert({ title: "Proposal Created", message: `Created "${result.proposal.title}" with ${result.proposal.testTypes?.length || 0} test types.` });
-      await refresh();
+      await openOpp(opp.id);
     } catch (err) {
       await EngageModal.alert({ title: "Error", message: "Failed to create: " + err.message });
     }

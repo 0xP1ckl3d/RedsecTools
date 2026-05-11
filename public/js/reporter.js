@@ -212,6 +212,14 @@ const state = {
   previewVisible: false,
   treeSearch: "",
   editingNoteId: null,
+  // Proposal templates state
+  ptTab: "templates",
+  proposalTemplates: [],
+  testTypeWriteups: [],
+  selectedPtId: null,
+  selectedPt: null,
+  selectedWriteupId: null,
+  selectedWriteup: null,
 };
 
 function canDeleteReporterItem(item) {
@@ -255,6 +263,8 @@ function showCapableButtons() {
   toggleClass("reporter-import-project-btn", "hidden", !(c.canCreate || c.canManageAll));
   toggleClass("reporter-new-design-btn", "hidden", !(c.canManageTemplates || c.canManageAll));
   toggleClass("reporter-new-template-btn", "hidden", !(c.canManageTemplates || c.canManageAll));
+  toggleClass("reporter-new-pt-btn", "hidden", !(c.canManageTemplates || c.canManageAll));
+  toggleClass("reporter-new-writeup-btn", "hidden", !(c.canManageTemplates || c.canManageAll));
 }
 
 function toggleClass(id, cls, add) {
@@ -298,6 +308,22 @@ function bindNavigation() {
     state.templateSearch = e.target.value;
     renderTemplatesList();
   });
+
+  // Proposal Templates tab switching
+  document.querySelectorAll("[data-pt-tab]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.ptTab = btn.dataset.ptTab;
+      updatePtTabs();
+    });
+  });
+  document.getElementById("reporter-new-pt-btn")?.addEventListener("click", () => openCreateProposalTemplateModal());
+  document.getElementById("reporter-new-writeup-btn")?.addEventListener("click", () => openCreateWriteupModal());
+  document.getElementById("reporter-pt-back-btn")?.addEventListener("click", () => setCurrentView("proposal-templates"));
+  document.getElementById("reporter-pt-save-btn")?.addEventListener("click", () => saveProposalTemplateFull());
+  document.getElementById("reporter-pt-preview-btn")?.addEventListener("click", () => previewProposalTemplate());
+  document.getElementById("reporter-pt-add-section-btn")?.addEventListener("click", () => addProposalTemplateSection());
+  document.getElementById("reporter-writeup-back-btn")?.addEventListener("click", () => setCurrentView("proposal-templates"));
+  document.getElementById("reporter-writeup-save-btn")?.addEventListener("click", () => saveWriteupDetail());
 }
 
 function initSidebarCollapse() {
@@ -321,6 +347,8 @@ function setCurrentView(view) {
   if (view === "designs") renderDesignsList();
   if (view === "templates") renderTemplatesList();
   if (view === "proposals") window.ReporterProposals?.showListView();
+  if (view === "proposal-templates") renderProposalTemplatesView();
+  if (view === "engagement-templates") { /* static empty state, no render needed */ }
 }
 
 // --- Dashboard ---
@@ -328,16 +356,13 @@ function setCurrentView(view) {
 function renderDashboard() {
   const s = state.stats;
   setText("reporter-dash-projects", s.totalProjects || 0);
-  setText("reporter-dash-findings", s.totalFindings || 0);
   setText("reporter-dash-critical", s.criticalFindings || 0);
-  setText("reporter-dash-templates", s.totalTemplates || 0);
 
   const container = document.getElementById("reporter-dash-recent-projects");
   const active = state.projects.filter((p) => !p.isArchived).slice(0, 5);
   if (!active.length) {
-    container.innerHTML = `<p class="text-sm text-muted">No projects yet. Create one to get started.</p>`;
-    return;
-  }
+    container.innerHTML = `<p class="text-sm text-muted">No reports yet. Create one to get started.</p>`;
+  } else {
   container.innerHTML = active.map((p) => `
     <div class="reporter-list-item" data-reporter-action="open-project" data-project-id="${escapeHtml(p.id)}">
       <div class="reporter-list-item-main">
@@ -354,6 +379,9 @@ function renderDashboard() {
   container.querySelectorAll("[data-reporter-action='open-project']").forEach((el) => {
     el.addEventListener("click", () => openProject(el.dataset.projectId));
   });
+  }
+
+  renderDashboardProposals();
 }
 
 // --- Projects List ---
@@ -371,7 +399,7 @@ function renderProjectsList() {
   }
 
   if (!list.length) {
-    container.innerHTML = `<p class="text-sm text-muted">No projects found.</p>`;
+    container.innerHTML = `<p class="text-sm text-muted">No reports found.</p>`;
     return;
   }
 
@@ -2550,6 +2578,512 @@ function defaultSectionDefinitions() {
 
 async function refreshProjects() {
   try { state.projects = await api("/projects"); } catch { /* keep existing */ }
+}
+
+// --- Dashboard Proposals ---
+
+async function renderDashboardProposals() {
+  try {
+    const data = await api("/proposals?filter=active");
+    const proposals = data.proposals || data || [];
+    setText("reporter-dash-proposals", proposals.length);
+
+    const inReview = state.projects.filter((p) => p.status === "in_review" && !p.isArchived).length;
+    setText("reporter-dash-in-review", inReview);
+
+    const propContainer = document.getElementById("reporter-dash-recent-proposals");
+    if (!propContainer) return;
+    if (!proposals.length) {
+      propContainer.innerHTML = `<p class="text-sm text-muted">No proposals yet.</p>`;
+      return;
+    }
+    propContainer.innerHTML = proposals.slice(0, 5).map((p) => `
+      <div class="reporter-list-item" data-reporter-action="open-proposal" data-proposal-id="${escapeHtml(p.id)}">
+        <div class="reporter-list-item-main">
+          <strong>${escapeHtml(p.title)}</strong>
+          <span class="text-sm text-muted ml-2">${escapeHtml(p.clientName || "")}</span>
+        </div>
+        <div class="flex items-center gap-2">
+          ${statusBadge(p.status)}
+          <span class="text-sm text-muted">${formatDateTime(p.updatedAt)}</span>
+        </div>
+      </div>
+    `).join("");
+    propContainer.querySelectorAll("[data-reporter-action='open-proposal']").forEach((el) => {
+      el.addEventListener("click", () => window.ReporterProposals?.openProposal(el.dataset.proposalId));
+    });
+  } catch {
+    setText("reporter-dash-proposals", 0);
+  }
+}
+
+// --- Proposal Templates ---
+
+function updatePtTabs() {
+  document.querySelectorAll("[data-pt-tab]").forEach((btn) => {
+    const isActive = btn.dataset.ptTab === state.ptTab;
+    btn.className = `btn-${isActive ? "primary" : "secondary"} text-sm`;
+  });
+  const templatesPanel = document.getElementById("reporter-pt-templates-panel");
+  const writeupsPanel = document.getElementById("reporter-pt-writeups-panel");
+  const newPtBtn = document.getElementById("reporter-new-pt-btn");
+  const newWriteupBtn = document.getElementById("reporter-new-writeup-btn");
+  if (templatesPanel) templatesPanel.classList.toggle("hidden", state.ptTab !== "templates");
+  if (writeupsPanel) writeupsPanel.classList.toggle("hidden", state.ptTab !== "writeups");
+  if (newPtBtn) newPtBtn.classList.toggle("hidden", state.ptTab !== "templates" || !(state.capabilities.canManageTemplates || state.capabilities.canManageAll));
+  if (newWriteupBtn) newWriteupBtn.classList.toggle("hidden", state.ptTab !== "writeups" || !(state.capabilities.canManageTemplates || state.capabilities.canManageAll));
+}
+
+async function renderProposalTemplatesView() {
+  updatePtTabs();
+  if (state.ptTab === "templates") renderProposalTemplatesList();
+  else renderWriteupsList();
+}
+
+async function renderProposalTemplatesList() {
+  const container = document.getElementById("reporter-pt-list");
+  if (!container) return;
+  try {
+    const data = await api("/proposal-templates");
+    state.proposalTemplates = data.templates || data || [];
+  } catch {
+    state.proposalTemplates = [];
+  }
+  if (!state.proposalTemplates.length) {
+    container.innerHTML = `<p class="text-sm text-muted">No proposal templates yet.</p>`;
+    return;
+  }
+  container.innerHTML = state.proposalTemplates.map((t) => `
+    <div class="reporter-list-item" data-pt-action="open" data-pt-id="${escapeHtml(t.id)}">
+      <div class="reporter-list-item-main">
+        <strong>${escapeHtml(t.name)}</strong>
+        <span class="badge ${t.is_builtin ? "badge-blue" : "badge-gray"} ml-2">${t.is_builtin ? "Built-in" : "Custom"}</span>
+        ${t.description ? `<span class="text-sm text-muted ml-2">${escapeHtml(t.description)}</span>` : ""}
+      </div>
+      <span class="text-sm text-muted">${formatDateTime(t.updatedAt || t.createdAt)}</span>
+    </div>
+  `).join("");
+  container.querySelectorAll("[data-pt-action='open']").forEach((el) => {
+    el.addEventListener("click", () => openProposalTemplateDetail(el.dataset.ptId));
+  });
+}
+
+async function renderWriteupsList() {
+  const container = document.getElementById("reporter-writeups-list");
+  if (!container) return;
+  try {
+    const data = await api("/test-type-writeups");
+    state.testTypeWriteups = data.writeups || data || [];
+  } catch {
+    state.testTypeWriteups = [];
+  }
+  if (!state.testTypeWriteups.length) {
+    container.innerHTML = `<p class="text-sm text-muted">No test type write-ups yet.</p>`;
+    return;
+  }
+  container.innerHTML = state.testTypeWriteups.map((w) => `
+    <div class="reporter-list-item" data-writeup-action="open" data-writeup-id="${escapeHtml(w.id)}">
+      <div class="reporter-list-item-main">
+        <strong>${escapeHtml(w.name)}</strong>
+        <span class="badge badge-blue ml-2">${escapeHtml(w.testType)}</span>
+        <span class="badge ${w.is_builtin ? "badge-blue" : "badge-gray"} ml-1">${w.is_builtin ? "Built-in" : "Custom"}</span>
+      </div>
+      <span class="text-sm text-muted">${formatDateTime(w.updatedAt || w.createdAt)}</span>
+    </div>
+  `).join("");
+  container.querySelectorAll("[data-writeup-action='open']").forEach((el) => {
+    el.addEventListener("click", () => openWriteupDetail(el.dataset.writeupId));
+  });
+}
+
+async function openProposalTemplateDetail(id) {
+  try {
+    const data = await api("/proposal-templates/" + id);
+    state.selectedPt = data.template || data;
+    state.selectedPtId = id;
+  } catch (err) {
+    showAlertModal({ title: "Error", message: "Failed to load template: " + err.message });
+    return;
+  }
+  const t = state.selectedPt;
+  setText("reporter-pt-detail-title", t.name);
+  const typeBadge = document.getElementById("reporter-pt-detail-type-badge");
+  if (typeBadge) {
+    typeBadge.textContent = t.is_builtin ? "Built-in" : "Custom";
+    typeBadge.className = `badge ${t.is_builtin ? "badge-blue" : "badge-gray"}`;
+  }
+  const meta = document.getElementById("reporter-pt-detail-meta");
+  if (meta) meta.textContent = t.description || "No description";
+
+  const actionsEl = document.getElementById("reporter-pt-detail-actions");
+  if (actionsEl) {
+    let html = "";
+    if (t.is_builtin) {
+      html = `<button type="button" class="btn-secondary text-sm" id="reporter-pt-duplicate-btn">Duplicate</button>`;
+    } else {
+      html = `<button type="button" class="btn-secondary text-sm" id="reporter-pt-archive-btn">Archive</button>`;
+    }
+    actionsEl.innerHTML = html;
+    document.getElementById("reporter-pt-duplicate-btn")?.addEventListener("click", () => duplicateProposalTemplate(id));
+    document.getElementById("reporter-pt-archive-btn")?.addEventListener("click", () => archiveProposalTemplate(id));
+  }
+
+  const nameInput = document.getElementById("reporter-pt-edit-name");
+  const descInput = document.getElementById("reporter-pt-edit-description");
+  const htmlInput = document.getElementById("reporter-pt-edit-html");
+  const cssInput = document.getElementById("reporter-pt-edit-css");
+  if (nameInput) { nameInput.value = t.name || ""; nameInput.disabled = t.is_builtin; }
+  if (descInput) { descInput.value = t.description || ""; descInput.disabled = t.is_builtin; }
+  if (htmlInput) { htmlInput.value = t.html_template || ""; htmlInput.disabled = t.is_builtin; }
+  if (cssInput) { cssInput.value = t.css_template || ""; cssInput.disabled = t.is_builtin; }
+
+  const saveBtn = document.getElementById("reporter-pt-save-btn");
+  if (saveBtn) saveBtn.disabled = !!t.is_builtin;
+
+  renderPtSections(t.sections || []);
+  setCurrentView("proposal-template-detail");
+  updateProposalTemplatePreviewIframe();
+}
+
+function renderPtSections(sections) {
+  const container = document.getElementById("reporter-pt-sections-list");
+  if (!container) return;
+  if (!sections.length) {
+    container.innerHTML = `<p class="text-sm text-muted">No sections. Click Add Section to create one.</p>`;
+    return;
+  }
+  container.innerHTML = sections.map((s, i) => `
+    <div class="reporter-list-item">
+      <div class="reporter-list-item-main">
+        <span class="text-sm text-muted mr-2">${i + 1}.</span>
+        <strong>${escapeHtml(s.title)}</strong>
+        ${s.type ? `<span class="badge badge-gray ml-2">${escapeHtml(s.type)}</span>` : ""}
+      </div>
+      <div class="flex gap-1">
+        <button type="button" class="btn-secondary text-sm" data-pt-section-action="edit" data-pt-section-id="${escapeHtml(s.id)}">Edit</button>
+        <button type="button" class="btn-danger text-sm" data-pt-section-action="delete" data-pt-section-id="${escapeHtml(s.id)}">Delete</button>
+      </div>
+    </div>
+  `).join("");
+  container.querySelectorAll("[data-pt-section-action='edit']").forEach((btn) => {
+    btn.addEventListener("click", () => editPtSection(btn.dataset.ptSectionId));
+  });
+  container.querySelectorAll("[data-pt-section-action='delete']").forEach((btn) => {
+    btn.addEventListener("click", () => deletePtSection(btn.dataset.ptSectionId));
+  });
+}
+
+function editPtSection(sectionId) {
+  const section = (state.selectedPt?.sections || []).find((s) => s.id === sectionId);
+  if (!section) return;
+  const bodyHtml = `
+      <div class="space-y-3">
+        <div>
+          <label class="block text-sm text-muted mb-1">Title</label>
+          <input type="text" id="reporter-pt-modal-section-title" class="input-field w-full" value="${safeAttr(section.title)}">
+        </div>
+        <div>
+          <label class="block text-sm text-muted mb-1">Type</label>
+          <select id="reporter-pt-modal-section-type" class="input-field w-full">
+            <option value="custom" ${section.type === "custom" ? "selected" : ""}>Custom</option>
+            <option value="executive_summary" ${section.type === "executive_summary" ? "selected" : ""}>Executive Summary</option>
+            <option value="scope" ${section.type === "scope" ? "selected" : ""}>Scope</option>
+            <option value="methodology" ${section.type === "methodology" ? "selected" : ""}>Methodology</option>
+            <option value="findings_overview" ${section.type === "findings_overview" ? "selected" : ""}>Findings Overview</option>
+            <option value="recommendations" ${section.type === "recommendations" ? "selected" : ""}>Recommendations</option>
+            <option value="appendix" ${section.type === "appendix" ? "selected" : ""}>Appendix</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm text-muted mb-1">Content (markdown)</label>
+          <textarea id="reporter-pt-modal-section-content" class="input-field w-full" rows="10">${escapeHtml(section.content || "")}</textarea>
+        </div>
+      </div>
+    `;
+  window.ReporterModal?.open("Edit Section", bodyHtml, async () => {
+    const title = document.getElementById("reporter-pt-modal-section-title")?.value?.trim();
+    const type = document.getElementById("reporter-pt-modal-section-type")?.value;
+    const content = document.getElementById("reporter-pt-modal-section-content")?.value || "";
+    if (!title) { showAlertModal({ title: "Validation", message: "Title is required." }); return; }
+    try {
+      await api("/proposal-template-sections/" + sectionId, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, type, content }),
+      });
+      document.getElementById("reporter-modal")?.classList.add("hidden");
+      await openProposalTemplateDetail(state.selectedPtId);
+    } catch (err) {
+      showAlertModal({ title: "Error", message: err.message });
+    }
+  }, "Save");
+}
+
+async function deletePtSection(sectionId) {
+  const confirmed = await showConfirmModal({ title: "Delete Section", message: "This cannot be undone.", danger: true });
+  if (!confirmed) return;
+  try {
+    await api("/proposal-template-sections/" + sectionId, { method: "DELETE" });
+    await openProposalTemplateDetail(state.selectedPtId);
+  } catch (err) {
+    showAlertModal({ title: "Error", message: "Failed to delete section: " + err.message });
+  }
+}
+
+async function addProposalTemplateSection() {
+  const bodyHtml = `
+      <div class="space-y-3">
+        <div>
+          <label class="block text-sm text-muted mb-1">Title</label>
+          <input type="text" id="reporter-pt-modal-section-title" class="input-field w-full">
+        </div>
+        <div>
+          <label class="block text-sm text-muted mb-1">Type</label>
+          <select id="reporter-pt-modal-section-type" class="input-field w-full">
+            <option value="custom">Custom</option>
+            <option value="executive_summary">Executive Summary</option>
+            <option value="scope">Scope</option>
+            <option value="methodology">Methodology</option>
+            <option value="findings_overview">Findings Overview</option>
+            <option value="recommendations">Recommendations</option>
+            <option value="appendix">Appendix</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm text-muted mb-1">Content (markdown)</label>
+          <textarea id="reporter-pt-modal-section-content" class="input-field w-full" rows="10"></textarea>
+        </div>
+      </div>
+    `;
+  window.ReporterModal?.open("Add Section", bodyHtml, async () => {
+    const title = document.getElementById("reporter-pt-modal-section-title")?.value?.trim();
+    const type = document.getElementById("reporter-pt-modal-section-type")?.value;
+    const content = document.getElementById("reporter-pt-modal-section-content")?.value || "";
+    if (!title) { showAlertModal({ title: "Validation", message: "Title is required." }); return; }
+    try {
+      await api("/proposal-templates/" + state.selectedPtId + "/sections", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, type, content }),
+      });
+      document.getElementById("reporter-modal")?.classList.add("hidden");
+      await openProposalTemplateDetail(state.selectedPtId);
+    } catch (err) {
+      showAlertModal({ title: "Error", message: err.message });
+    }
+  }, "Add");
+}
+
+async function saveProposalTemplateFull(options = {}) {
+  const name = document.getElementById("reporter-pt-edit-name")?.value?.trim();
+  const description = document.getElementById("reporter-pt-edit-description")?.value?.trim();
+  const htmlTemplate = document.getElementById("reporter-pt-edit-html")?.value;
+  const cssTemplate = document.getElementById("reporter-pt-edit-css")?.value;
+  if (!name) { showAlertModal({ title: "Validation", message: "Name is required." }); return false; }
+  try {
+    await api("/proposal-templates/" + state.selectedPtId, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, description, htmlTemplate, cssTemplate }),
+    });
+    await openProposalTemplateDetail(state.selectedPtId);
+    return true;
+  } catch (err) {
+    showAlertModal({ title: "Error", message: "Failed to save: " + err.message });
+    return false;
+  }
+}
+
+async function previewProposalTemplate() {
+  const t = state.selectedPt;
+  if (!t) return;
+  if (!t.is_builtin && (state.capabilities.canManageTemplates || state.capabilities.canManageAll)) {
+    const saved = await saveProposalTemplateFull({ quiet: true });
+    if (!saved) return;
+  }
+  updateProposalTemplatePreviewIframe();
+}
+
+function updateProposalTemplatePreviewIframe() {
+  const iframe = document.getElementById("reporter-pt-preview-iframe");
+  const t = state.selectedPt;
+  if (!iframe || !t) return;
+  iframe.src = `/api/reporter/proposal-templates/${encodeURIComponent(t.id)}/preview.pdf?t=${Date.now()}`;
+}
+
+async function duplicateProposalTemplate(id) {
+  try {
+    await api("/proposal-templates/" + id + "/duplicate", { method: "POST" });
+    setCurrentView("proposal-templates");
+  } catch (err) {
+    showAlertModal({ title: "Error", message: "Failed to duplicate: " + err.message });
+  }
+}
+
+async function archiveProposalTemplate(id) {
+  const confirmed = await showConfirmModal({ title: "Archive Template", message: "It will no longer appear in the active list." });
+  if (!confirmed) return;
+  try {
+    await api("/proposal-templates/" + id + "/archive", { method: "POST" });
+    setCurrentView("proposal-templates");
+  } catch (err) {
+    showAlertModal({ title: "Error", message: "Failed to archive: " + err.message });
+  }
+}
+
+function openCreateProposalTemplateModal() {
+  const bodyHtml = `
+      <div class="space-y-3">
+        <div>
+          <label class="block text-sm text-muted mb-1">Name</label>
+          <input type="text" id="reporter-pt-modal-name" class="input-field w-full">
+        </div>
+        <div>
+          <label class="block text-sm text-muted mb-1">Description</label>
+          <textarea id="reporter-pt-modal-description" class="input-field w-full" rows="3"></textarea>
+        </div>
+      </div>
+    `;
+  window.ReporterModal?.open("New Proposal Template", bodyHtml, async () => {
+    const name = document.getElementById("reporter-pt-modal-name")?.value?.trim();
+    const description = document.getElementById("reporter-pt-modal-description")?.value?.trim();
+    if (!name) { showAlertModal({ title: "Validation", message: "Name is required." }); return; }
+    try {
+      const result = await api("/proposal-templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, description }),
+      });
+      document.getElementById("reporter-modal")?.classList.add("hidden");
+      const newId = result.template?.id || result.id;
+      if (newId) openProposalTemplateDetail(newId);
+      else setCurrentView("proposal-templates");
+    } catch (err) {
+      showAlertModal({ title: "Error", message: err.message });
+    }
+  }, "Create");
+}
+
+// --- Test Type Write-ups Detail ---
+
+async function openWriteupDetail(id) {
+  try {
+    const data = await api("/test-type-writeups/" + id);
+    state.selectedWriteup = data.writeup || data;
+    state.selectedWriteupId = id;
+  } catch (err) {
+    showAlertModal({ title: "Error", message: "Failed to load write-up: " + err.message });
+    return;
+  }
+  const w = state.selectedWriteup;
+  setText("reporter-writeup-detail-title", w.name);
+  const typeBadge = document.getElementById("reporter-writeup-detail-type-badge");
+  if (typeBadge) {
+    typeBadge.textContent = w.is_builtin ? "Built-in" : "Custom";
+    typeBadge.className = `badge ${w.is_builtin ? "badge-blue" : "badge-gray"}`;
+  }
+  const meta = document.getElementById("reporter-writeup-detail-meta");
+  if (meta) meta.textContent = `Test Type: ${w.testType || "-"}`;
+
+  const actionsEl = document.getElementById("reporter-writeup-detail-actions");
+  if (actionsEl) {
+    let html = "";
+    if (w.is_builtin) {
+      html = `<button type="button" class="btn-secondary text-sm" id="reporter-writeup-duplicate-btn">Duplicate</button>`;
+    } else {
+      html = `<button type="button" class="btn-secondary text-sm" id="reporter-writeup-archive-btn">Archive</button>`;
+    }
+    actionsEl.innerHTML = html;
+    document.getElementById("reporter-writeup-duplicate-btn")?.addEventListener("click", () => duplicateWriteup(id));
+    document.getElementById("reporter-writeup-archive-btn")?.addEventListener("click", () => archiveWriteup(id));
+  }
+
+  const typeInput = document.getElementById("reporter-writeup-edit-type");
+  const nameInput = document.getElementById("reporter-writeup-edit-name");
+  const methodInput = document.getElementById("reporter-writeup-edit-methodology");
+  const scopeInput = document.getElementById("reporter-writeup-edit-scope");
+  const delivInput = document.getElementById("reporter-writeup-edit-deliverables");
+  if (typeInput) { typeInput.value = w.testType || ""; typeInput.disabled = w.is_builtin; }
+  if (nameInput) { nameInput.value = w.name || ""; nameInput.disabled = w.is_builtin; }
+  if (methodInput) { methodInput.value = w.methodology || ""; methodInput.disabled = w.is_builtin; }
+  if (scopeInput) { scopeInput.value = w.scope || ""; scopeInput.disabled = w.is_builtin; }
+  if (delivInput) { delivInput.value = w.deliverables || ""; delivInput.disabled = w.is_builtin; }
+
+  setCurrentView("writeup-detail");
+}
+
+async function saveWriteupDetail() {
+  const w = state.selectedWriteup;
+  if (w?.is_builtin) { showAlertModal({ title: "Not Allowed", message: "Built-in write-ups cannot be edited." }); return; }
+  const testType = document.getElementById("reporter-writeup-edit-type")?.value?.trim();
+  const name = document.getElementById("reporter-writeup-edit-name")?.value?.trim();
+  const methodology = document.getElementById("reporter-writeup-edit-methodology")?.value || "";
+  const scope = document.getElementById("reporter-writeup-edit-scope")?.value || "";
+  const deliverables = document.getElementById("reporter-writeup-edit-deliverables")?.value || "";
+  if (!testType || !name) { showAlertModal({ title: "Validation", message: "Test type and name are required." }); return; }
+  try {
+    await api("/test-type-writeups/" + state.selectedWriteupId, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ testType, name, methodology, scope, deliverables }),
+    });
+    await openWriteupDetail(state.selectedWriteupId);
+  } catch (err) {
+    showAlertModal({ title: "Error", message: "Failed to save: " + err.message });
+  }
+}
+
+async function duplicateWriteup(id) {
+  try {
+    await api("/test-type-writeups/" + id + "/duplicate", { method: "POST" });
+    setCurrentView("proposal-templates");
+  } catch (err) {
+    showAlertModal({ title: "Error", message: "Failed to duplicate: " + err.message });
+  }
+}
+
+async function archiveWriteup(id) {
+  const confirmed = await showConfirmModal({ title: "Archive Write-up", message: "It will no longer appear in the active list." });
+  if (!confirmed) return;
+  try {
+    await api("/test-type-writeups/" + id + "/archive", { method: "POST" });
+    setCurrentView("proposal-templates");
+  } catch (err) {
+    showAlertModal({ title: "Error", message: "Failed to archive: " + err.message });
+  }
+}
+
+function openCreateWriteupModal() {
+  const bodyHtml = `
+      <div class="space-y-3">
+        <div>
+          <label class="block text-sm text-muted mb-1">Test Type</label>
+          <input type="text" id="reporter-writeup-modal-type" class="input-field w-full" placeholder="e.g. webapp, internal, external">
+        </div>
+        <div>
+          <label class="block text-sm text-muted mb-1">Name</label>
+          <input type="text" id="reporter-writeup-modal-name" class="input-field w-full">
+        </div>
+      </div>
+    `;
+  window.ReporterModal?.open("New Test Type Write-up", bodyHtml, async () => {
+    const testType = document.getElementById("reporter-writeup-modal-type")?.value?.trim();
+    const name = document.getElementById("reporter-writeup-modal-name")?.value?.trim();
+    if (!testType || !name) { showAlertModal({ title: "Validation", message: "Test type and name are required." }); return; }
+    try {
+      const result = await api("/test-type-writeups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ testType, name }),
+      });
+      document.getElementById("reporter-modal")?.classList.add("hidden");
+      const newId = result.writeup?.id || result.id;
+      if (newId) openWriteupDetail(newId);
+      else setCurrentView("proposal-templates");
+    } catch (err) {
+      showAlertModal({ title: "Error", message: err.message });
+    }
+  }, "Create");
 }
 
 // --- Boot ---

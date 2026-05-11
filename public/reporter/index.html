@@ -24,7 +24,7 @@
         </button>
         <button type="button" class="sidebar-nav-item" data-reporter-view="projects">
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
-          <span class="sidebar-nav-text">Projects</span>
+          <span class="sidebar-nav-text">Reports</span>
         </button>
         <button type="button" class="sidebar-nav-item" data-reporter-view="proposals">
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
@@ -32,11 +32,19 @@
         </button>
         <button type="button" class="sidebar-nav-item" data-reporter-view="designs">
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm0 8a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zm10 0a1 1 0 011-1h4a1 1 0 011 1v6a1 1 0 01-1 1h-4a1 1 0 01-1-1v-6z"/></svg>
-          <span class="sidebar-nav-text">Designs</span>
+          <span class="sidebar-nav-text">Design Templates</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-reporter-view="proposal-templates">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+          <span class="sidebar-nav-text">Proposal Templates</span>
         </button>
         <button type="button" class="sidebar-nav-item" data-reporter-view="templates">
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-          <span class="sidebar-nav-text">Templates</span>
+          <span class="sidebar-nav-text">Finding Templates</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-reporter-view="engagement-templates">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>
+          <span class="sidebar-nav-text">Engagement Templates</span>
         </button>
       </nav>
 
@@ -75,9 +83,10 @@
 
       <div class="mobile-tabs">
         <button type="button" class="mobile-tab active" data-reporter-view="dashboard">Dashboard</button>
-        <button type="button" class="mobile-tab" data-reporter-view="projects">Projects</button>
+        <button type="button" class="mobile-tab" data-reporter-view="projects">Reports</button>
         <button type="button" class="mobile-tab" data-reporter-view="proposals">Proposals</button>
         <button type="button" class="mobile-tab" data-reporter-view="designs">Designs</button>
+        <button type="button" class="mobile-tab" data-reporter-view="proposal-templates">Prop. Templates</button>
         <button type="button" class="mobile-tab" data-reporter-view="templates">Templates</button>
         <button type="button" class="mobile-tab" data-reporter-view="about">About</button>
       </div>
@@ -89,46 +98,56 @@
           <div class="reporter-stat-grid reporter-stat-grid-4">
             <div class="stat-card">
               <div class="stat-value" id="reporter-dash-projects">0</div>
-              <div class="stat-label">Active Projects</div>
+              <div class="stat-label">Active Reports</div>
             </div>
             <div class="stat-card">
-              <div class="stat-value" id="reporter-dash-findings">0</div>
-              <div class="stat-label">Total Findings</div>
+              <div class="stat-value" id="reporter-dash-proposals">0</div>
+              <div class="stat-label">Active Proposals</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="reporter-dash-in-review">0</div>
+              <div class="stat-label">Reports In Review</div>
             </div>
             <div class="stat-card">
               <div class="stat-value" id="reporter-dash-critical">0</div>
               <div class="stat-label">Critical Findings</div>
             </div>
-            <div class="stat-card">
-              <div class="stat-value" id="reporter-dash-templates">0</div>
-              <div class="stat-label">Finding Templates</div>
-            </div>
           </div>
-          <div class="card mt-4">
-            <div class="card-header flex justify-between items-center">
-              <h2 class="text-lg font-semibold">Recent Projects</h2>
-              <button type="button" id="reporter-dash-new-project-btn" class="btn-primary text-sm hidden">New Project</button>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+            <div class="card">
+              <div class="card-header flex justify-between items-center">
+                <h2 class="text-lg font-semibold">Recent Reports</h2>
+                <button type="button" id="reporter-dash-new-project-btn" class="btn-primary text-sm hidden">New Report</button>
+              </div>
+              <div id="reporter-dash-recent-projects">
+                <p class="text-sm text-muted">Loading...</p>
+              </div>
             </div>
-            <div id="reporter-dash-recent-projects">
-              <p class="text-sm text-muted">Loading...</p>
+            <div class="card">
+              <div class="card-header">
+                <h2 class="text-lg font-semibold">Recent Proposals</h2>
+              </div>
+              <div id="reporter-dash-recent-proposals">
+                <p class="text-sm text-muted">Loading...</p>
+              </div>
             </div>
           </div>
         </section>
 
-        <!-- ===== PROJECTS VIEW ===== -->
+        <!-- ===== REPORTS VIEW ===== -->
         <section id="reporter-view-projects" class="reporter-view hidden">
           <div class="card">
             <div class="card-header flex justify-between items-center flex-wrap gap-3">
-              <h2 class="text-lg font-semibold">Projects</h2>
+              <h2 class="text-lg font-semibold">Reports</h2>
               <div class="flex gap-2 flex-wrap">
-                <input type="text" id="reporter-projects-search" class="input-field reporter-search-input" placeholder="Search projects...">
+                <input type="text" id="reporter-projects-search" class="input-field reporter-search-input" placeholder="Search reports...">
                 <select id="reporter-projects-filter" class="input-field">
                   <option value="active">Active</option>
                   <option value="archived">Archived</option>
                   <option value="all">All</option>
                 </select>
                 <button type="button" id="reporter-import-project-btn" class="btn-secondary text-sm hidden">Import</button>
-                <button type="button" id="reporter-new-project-btn" class="btn-primary text-sm hidden">New Project</button>
+                <button type="button" id="reporter-new-project-btn" class="btn-primary text-sm hidden">New Report</button>
               </div>
             </div>
             <div id="reporter-projects-list">
@@ -137,15 +156,15 @@
           </div>
         </section>
 
-        <!-- ===== PROJECT DETAIL VIEW ===== -->
+        <!-- ===== REPORT DETAIL VIEW ===== -->
         <section id="reporter-view-project-detail" class="reporter-view hidden">
-          <!-- Project Header -->
+          <!-- Report Header -->
           <div id="reporter-project-detail-header" class="card mb-3">
             <div class="flex justify-between items-center flex-wrap gap-3">
               <div>
                 <div class="flex items-center gap-3 mb-1">
                   <button type="button" id="reporter-project-back-btn" class="btn-secondary text-sm">Back</button>
-                  <h2 class="text-lg font-semibold" id="reporter-project-title">Project</h2>
+                  <h2 class="text-lg font-semibold" id="reporter-project-title">Report</h2>
                   <span id="reporter-project-status-badge" class="badge badge-gray">draft</span>
                 </div>
                 <p class="text-sm text-muted" id="reporter-project-meta"></p>
@@ -187,7 +206,7 @@
               <!-- Empty state / project overview -->
               <div id="reporter-editor-overview" class="reporter-editor-panel">
                 <div class="card">
-                  <div class="card-header"><h3 class="font-semibold">Project Overview</h3></div>
+                  <div class="card-header"><h3 class="font-semibold">Report Overview</h3></div>
                   <div id="reporter-editor-overview-stats" class="reporter-stat-grid reporter-stat-grid-4"></div>
                 </div>
               </div>
@@ -411,6 +430,18 @@
                   <div class="reporter-finding-field-split">
                     <div class="reporter-finding-field-edit">
                       <div class="reporter-finding-field-label">Content (markdown)</div>
+                      <div class="reporter-md-toolbar" data-md-toolbar="reporter-proposal-section-content">
+                        <button type="button" class="reporter-md-tool" data-md-tool="bold" data-md-target="reporter-proposal-section-content" title="Bold">B</button>
+                        <button type="button" class="reporter-md-tool" data-md-tool="italic" data-md-target="reporter-proposal-section-content" title="Italic">I</button>
+                        <button type="button" class="reporter-md-tool" data-md-tool="heading" data-md-target="reporter-proposal-section-content" title="Heading">H</button>
+                        <button type="button" class="reporter-md-tool" data-md-tool="ul" data-md-target="reporter-proposal-section-content" title="Bullet list">UL</button>
+                        <button type="button" class="reporter-md-tool" data-md-tool="ol" data-md-target="reporter-proposal-section-content" title="Numbered list">OL</button>
+                        <button type="button" class="reporter-md-tool" data-md-tool="quote" data-md-target="reporter-proposal-section-content" title="Quote">Quote</button>
+                        <button type="button" class="reporter-md-tool" data-md-tool="inline-code" data-md-target="reporter-proposal-section-content" title="Inline code">Code</button>
+                        <button type="button" class="reporter-md-tool" data-md-tool="code-block" data-md-target="reporter-proposal-section-content" title="Preformatted block">Pre</button>
+                        <button type="button" class="reporter-md-tool" data-md-tool="table" data-md-target="reporter-proposal-section-content" title="Table">Table</button>
+                        <button type="button" class="reporter-md-tool" data-md-tool="link" data-md-target="reporter-proposal-section-content" title="Link">Link</button>
+                      </div>
                       <textarea id="reporter-proposal-section-content" class="input-field reporter-inline-content" rows="20" placeholder="Section content (markdown)..."></textarea>
                     </div>
                     <div class="reporter-finding-field-preview" id="reporter-proposal-section-preview"></div>
@@ -497,10 +528,10 @@
         <section id="reporter-view-designs" class="reporter-view hidden">
           <div class="card">
             <div class="card-header flex justify-between items-center">
-              <h2 class="text-lg font-semibold">Report Designs</h2>
+              <h2 class="text-lg font-semibold">Design Templates</h2>
               <button type="button" id="reporter-new-design-btn" class="btn-primary text-sm hidden">New Design</button>
             </div>
-            <p class="text-sm text-muted mb-4">Designs define the report structure, finding fields, and output layout for projects.</p>
+            <p class="text-sm text-muted mb-4">Design templates define the report structure, finding fields, and output layout for reports.</p>
             <div id="reporter-designs-list">
               <p class="text-sm text-muted">Loading...</p>
             </div>
@@ -572,6 +603,10 @@
                 <input type="text" id="reporter-templates-search" class="input-field reporter-search-input" placeholder="Search templates...">
                 <button type="button" id="reporter-new-template-btn" class="btn-primary text-sm hidden">New Template</button>
               </div>
+              <div class="flex gap-2">
+                <input type="text" id="reporter-templates-search" class="input-field reporter-search-input" placeholder="Search templates...">
+                <button type="button" id="reporter-new-template-btn" class="btn-primary text-sm hidden">New Template</button>
+              </div>
             </div>
             <div id="reporter-templates-list">
               <p class="text-sm text-muted">Loading...</p>
@@ -624,6 +659,144 @@
           </div>
         </section>
 
+        <!-- ===== PROPOSAL TEMPLATES VIEW ===== -->
+        <section id="reporter-view-proposal-templates" class="reporter-view hidden">
+          <div class="card">
+            <div class="card-header flex justify-between items-center flex-wrap gap-3">
+              <h2 class="text-lg font-semibold">Proposal Templates</h2>
+              <div class="flex gap-2 flex-wrap">
+                <div class="flex gap-1" id="reporter-pt-tabs">
+                  <button type="button" class="btn-primary text-sm" data-pt-tab="templates">Templates</button>
+                  <button type="button" class="btn-secondary text-sm" data-pt-tab="writeups">Test Type Write-ups</button>
+                </div>
+                <button type="button" id="reporter-new-pt-btn" class="btn-primary text-sm hidden">New Template</button>
+                <button type="button" id="reporter-new-writeup-btn" class="btn-primary text-sm hidden">New Write-up</button>
+              </div>
+            </div>
+            <div id="reporter-pt-templates-panel">
+              <p class="text-sm text-muted mb-4">Proposal templates define the sections and structure for engagement proposals.</p>
+              <div id="reporter-pt-list"><p class="text-sm text-muted">Loading...</p></div>
+            </div>
+            <div id="reporter-pt-writeups-panel" class="hidden">
+              <p class="text-sm text-muted mb-4">Test type write-ups are reusable content blocks for methodology, scope, and deliverables per test type.</p>
+              <div id="reporter-writeups-list"><p class="text-sm text-muted">Loading...</p></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ===== PROPOSAL TEMPLATE DETAIL VIEW ===== -->
+        <section id="reporter-view-proposal-template-detail" class="reporter-view hidden">
+          <div class="card mb-4">
+            <div class="card-header flex justify-between items-center flex-wrap gap-3">
+              <div>
+                <div class="flex items-center gap-3 mb-1">
+                  <button type="button" id="reporter-pt-back-btn" class="btn-secondary text-sm">Back</button>
+                  <h2 class="text-lg font-semibold" id="reporter-pt-detail-title">Template</h2>
+                  <span id="reporter-pt-detail-type-badge" class="badge badge-gray">custom</span>
+                </div>
+                <p class="text-sm text-muted" id="reporter-pt-detail-meta"></p>
+              </div>
+              <div class="flex gap-2 flex-wrap">
+                <div class="flex gap-2" id="reporter-pt-detail-actions"></div>
+                <button type="button" id="reporter-pt-preview-btn" class="btn-secondary text-sm">Preview</button>
+                <button type="button" id="reporter-pt-save-btn" class="btn-primary text-sm">Save Template</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="reporter-editor-grid reporter-design-editor-grid">
+            <div class="card">
+              <div class="card-header flex justify-between items-center">
+                <h3 class="font-semibold">Sections</h3>
+                <button type="button" id="reporter-pt-add-section-btn" class="btn-primary text-sm">Add Section</button>
+              </div>
+              <div id="reporter-pt-sections-list"></div>
+              <hr class="my-3">
+              <div class="card-header">
+                <h3 class="font-semibold">Template Settings</h3>
+              </div>
+              <div class="space-y-3">
+                <div>
+                  <label class="block text-sm text-muted mb-1">Name</label>
+                  <input type="text" id="reporter-pt-edit-name" class="input-field w-full">
+                </div>
+                <div>
+                  <label class="block text-sm text-muted mb-1">Description</label>
+                  <textarea id="reporter-pt-edit-description" class="input-field w-full" rows="3"></textarea>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <h3 class="font-semibold">Proposal Template</h3>
+              </div>
+              <label class="block text-sm text-muted mb-1">HTML Template</label>
+              <textarea id="reporter-pt-edit-html" class="input-field w-full reporter-template-editor reporter-template-editor-large" rows="22" spellcheck="false"></textarea>
+              <label class="block text-sm text-muted mb-1 mt-3">CSS Template</label>
+              <textarea id="reporter-pt-edit-css" class="input-field w-full reporter-template-editor reporter-template-editor-large" rows="18" spellcheck="false"></textarea>
+            </div>
+            <div class="card reporter-design-preview-card">
+              <div class="card-header">
+                <h3 class="font-semibold">PDF Preview</h3>
+              </div>
+              <iframe id="reporter-pt-preview-iframe" class="reporter-preview-iframe reporter-design-preview-iframe"></iframe>
+            </div>
+          </div>
+        </section>
+
+        <!-- ===== TEST TYPE WRITE-UP DETAIL VIEW ===== -->
+        <section id="reporter-view-writeup-detail" class="reporter-view hidden">
+          <div class="card mb-4">
+            <div class="card-header flex justify-between items-center flex-wrap gap-3">
+              <div>
+                <div class="flex items-center gap-3 mb-1">
+                  <button type="button" id="reporter-writeup-back-btn" class="btn-secondary text-sm">Back</button>
+                  <h2 class="text-lg font-semibold" id="reporter-writeup-detail-title">Write-up</h2>
+                  <span id="reporter-writeup-detail-type-badge" class="badge badge-gray">custom</span>
+                </div>
+                <p class="text-sm text-muted" id="reporter-writeup-detail-meta"></p>
+              </div>
+              <div class="flex gap-2 flex-wrap" id="reporter-writeup-detail-actions"></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="space-y-4">
+              <div>
+                <label class="block text-sm text-muted mb-1">Test Type</label>
+                <input type="text" id="reporter-writeup-edit-type" class="input-field w-full">
+              </div>
+              <div>
+                <label class="block text-sm text-muted mb-1">Name</label>
+                <input type="text" id="reporter-writeup-edit-name" class="input-field w-full">
+              </div>
+              <div>
+                <label class="block text-sm text-muted mb-1">Methodology (markdown)</label>
+                <textarea id="reporter-writeup-edit-methodology" class="input-field w-full" rows="8"></textarea>
+              </div>
+              <div>
+                <label class="block text-sm text-muted mb-1">Scope (markdown)</label>
+                <textarea id="reporter-writeup-edit-scope" class="input-field w-full" rows="6"></textarea>
+              </div>
+              <div>
+                <label class="block text-sm text-muted mb-1">Deliverables (markdown)</label>
+                <textarea id="reporter-writeup-edit-deliverables" class="input-field w-full" rows="6"></textarea>
+              </div>
+              <div class="flex justify-end gap-2">
+                <button type="button" id="reporter-writeup-save-btn" class="btn-primary text-sm">Save Write-up</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ===== ENGAGEMENT TEMPLATES VIEW ===== -->
+        <section id="reporter-view-engagement-templates" class="reporter-view hidden">
+          <div class="card max-w-3xl mx-auto text-center py-12">
+            <svg class="w-16 h-16 mx-auto mb-4 text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>
+            <h2 class="text-xl font-semibold mb-2">Engagement Templates</h2>
+            <p class="text-sm text-muted">Engagement templates are not configured yet. This feature will provide reusable engagement workflows in a future update.</p>
+          </div>
+        </section>
+
         <section id="reporter-view-about" class="reporter-view hidden">
           <div class="card max-w-3xl mx-auto space-y-4 text-sm">
             <p>RedSecReporter is the pentest reporting and findings management tool for RedSecTools. It provides a structured workflow for creating penetration test reports, managing security findings, and generating professional deliverables.</p>
@@ -636,13 +809,13 @@
               <span class="badge badge-red">PDF Generation</span>
               <span class="badge badge-gray">Team Collaboration</span>
               <span class="badge badge-gray">Template Library</span>
-              <span class="badge badge-gray">Report Designs</span>
+              <span class="badge badge-gray">Design Templates</span>
             </div>
-            <h2 class="text-lg font-semibold mt-6">Projects</h2>
-            <p>Create pentest projects from report designs. Assign team members with defined roles, set due dates, and track project status through draft, review, approval, and delivery stages. Duplicate completed projects to reuse structure for similar engagements.</p>
+            <h2 class="text-lg font-semibold mt-6">Reports</h2>
+            <p>Create pentest reports from design templates. Assign team members with defined roles, set due dates, and track report status through draft, review, approval, and delivery stages. Duplicate completed reports to reuse structure for similar engagements.</p>
             <h2 class="text-lg font-semibold mt-6">Findings</h2>
             <p>Document security findings with structured fields including description, attack scenario, remediation guidance, and references. Each finding is classified by severity with optional CVSS vector scoring. Findings flow through a review pipeline from draft to approved, supporting retest tracking and client-ready status.</p>
-            <h2 class="text-lg font-semibold">Report Designs</h2>
+            <h2 class="text-lg font-semibold">Design Templates</h2>
             <p>Define report templates with custom section layouts, finding field schemas, and output formatting. Designs control which fields are available, how findings are ordered and grouped, and the overall report structure. Multiple designs support different engagement types such as external, internal, web application, and red team assessments.</p>
             <h2 class="text-lg font-semibold">Finding Templates</h2>
             <p>Build a shared library of common findings with pre-written descriptions, severity defaults, and remediation guidance. Templates speed up finding creation and ensure consistency across engagements and team members.</p>

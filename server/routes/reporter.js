@@ -101,9 +101,22 @@ const {
   deleteReporterProposalGenerationById,
   listReporterProposalTemplates,
   getReporterProposalTemplateById,
+  createReporterProposalTemplate,
+  updateReporterProposalTemplate,
+  archiveReporterProposalTemplate,
+  duplicateReporterProposalTemplate,
   listReporterProposalTemplateSections,
+  createReporterProposalTemplateSection,
+  updateReporterProposalTemplateSection,
+  deleteReporterProposalTemplateSection,
   listReporterTestTypeTemplates,
+  listAllReporterTestTypeTemplates,
+  getReporterTestTypeTemplateById,
   getReporterTestTypeTemplateByType,
+  createReporterTestTypeTemplate,
+  updateReporterTestTypeTemplate,
+  archiveReporterTestTypeTemplate,
+  duplicateReporterTestTypeTemplate,
 } = require("../database");
 const {
   REPORTER_PDF_DIR,
@@ -112,6 +125,9 @@ const {
   renderPdfBuffer,
   defaultHtmlTemplate,
   defaultCssTemplate,
+  renderProposalDocumentHtml,
+  defaultProposalHtmlTemplate,
+  defaultProposalCssTemplate,
 } = require("../reporter-render-service");
 const { renderMarkdownToHtml } = require("../wiki-render");
 const { logEvent, redactObject } = require("../core/logger");
@@ -1836,8 +1852,8 @@ function ensureProposalPdfDir() {
 function getProposalCapabilities(req) {
   const caps = getCapabilities(req);
   return {
-    canView: caps.canViewReporter,
-    canCreate: caps.canCreateReporter,
+    canView: caps.canView,
+    canCreate: caps.canCreate,
     canManage: caps.canManageTemplates,
   };
 }
@@ -2099,13 +2115,13 @@ router.post("/reporter/proposals/:id/render-pdf", writeLimiter, requireUser, att
 
   // Async PDF generation
   try {
-    const sectionHtml = sections
-      .filter((s) => s.isIncluded)
-      .map((s) => `<h2>${escapeHtmlSimple(s.title)}</h2>${renderMarkdownToHtmlSync(s.content || "")}`)
-      .join("\n");
+    const template = proposal.templateId ? getReporterProposalTemplateById(proposal.templateId) : null;
+    const testTypes = (proposal.testTypes || []).map((tt) => getReporterTestTypeTemplateByType(tt) || { test_type: tt, name: tt });
 
-    const html = buildProposalHtml(proposal, sectionHtml);
-    const pdfBuffer = await renderPdfBuffer(html);
+    const html = renderProposalDocumentHtml({ proposal, template, sections, testTypes });
+    const pdfBuffer = await renderPdfBuffer(html, {
+      headerTemplate: '<div class="reporter-pdf-header">RedSec Proposal</div>',
+    });
 
     fs.writeFileSync(filePath, pdfBuffer);
     updateReporterProposalGenerationRow(generation.id, {
@@ -2130,36 +2146,6 @@ router.post("/reporter/proposals/:id/render-pdf", writeLimiter, requireUser, att
     });
   }
 });
-
-function escapeHtmlSimple(str) {
-  return String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-
-function renderMarkdownToSync(md) {
-  try { return renderMarkdownToHtml(md); } catch { return escapeHtmlSimple(md); }
-}
-
-function buildProposalHtml(proposal, bodyHtml) {
-  return `<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><style>
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 800px; margin: 0 auto; padding: 40px 20px; color: #1a1a1a; line-height: 1.6; }
-  h1 { color: #dc2626; border-bottom: 2px solid #dc2626; padding-bottom: 8px; }
-  h2 { color: #374151; margin-top: 32px; }
-  h3 { color: #6b7280; }
-  table { border-collapse: collapse; width: 100%; margin: 12px 0; }
-  th, td { border: 1px solid #d1d5db; padding: 8px 12px; text-align: left; }
-  th { background: #f3f4f6; }
-  blockquote { border-left: 3px solid #dc2626; padding-left: 12px; color: #6b7280; }
-  .meta { color: #6b7280; font-size: 14px; }
-</style></head><body>
-<h1>${escapeHtmlSimple(proposal.title)}</h1>
-<p class="meta">Prepared for <strong>${escapeHtmlSimple(proposal.clientName)}</strong> &middot; ${proposal.testTypes.map((t) => escapeHtmlSimple(t)).join(", ")}</p>
-${proposal.quotedValue ? `<p class="meta"><strong>Fee:</strong> ${escapeHtmlSimple(String(proposal.quotedValue))}</p>` : ""}
-${proposal.estimatedDays ? `<p class="meta"><strong>Estimated Days:</strong> ${proposal.estimatedDays}</p>` : ""}
-<hr>
-${bodyHtml}
-</body></html>`;
-}
 
 // Download proposal PDF
 router.get("/reporter/proposals/generations/:generationId/download", requireUser, attachUserAccess, canViewProposals, (req, res) => {
@@ -2188,14 +2174,20 @@ router.get("/reporter/proposals/:id/preview", requireUser, attachUserAccess, can
   if (!proposal) return res.status(404).json({ error: "Proposal not found" });
 
   const sections = listReporterProposalSections(proposal.id);
-  const sectionHtml = sections
-    .filter((s) => s.isIncluded)
-    .map((s) => `<h2>${escapeHtmlSimple(s.title)}</h2>${renderMarkdownToSync(s.content || "")}`)
-    .join("\n");
+  const template = proposal.templateId ? getReporterProposalTemplateById(proposal.templateId) : null;
+  const testTypes = (proposal.testTypes || []).map((tt) => getReporterTestTypeTemplateByType(tt) || { test_type: tt, name: tt });
 
-  const html = buildProposalHtml(proposal, sectionHtml);
-  res.setHeader("Content-Type", "text/html");
-  res.send(html);
+  try {
+    const html = renderProposalDocumentHtml(
+      { proposal, template, sections, testTypes },
+      { cssHref: `/api/reporter/proposal-templates/${encodeURIComponent(template?.id || "default")}/preview.css` },
+    );
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Cache-Control", "no-store");
+    res.send(html);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to render proposal preview" });
+  }
 });
 
 // --- Stats ---
@@ -2204,6 +2196,281 @@ router.get("/reporter/stats", requireUser, attachUserAccess, (req, res) => {
   const caps = getCapabilities(req);
   if (!caps.canManageAll) return res.status(403).json({ error: "Admin access required" });
   res.json(getReporterGlobalStats());
+});
+
+// ============================================================
+// Proposal Template Management
+// ============================================================
+
+router.get("/reporter/proposal-templates", requireUser, attachUserAccess, canViewProposals, (req, res) => {
+  const templates = listReporterProposalTemplates();
+  res.json({ templates });
+});
+
+router.get("/reporter/proposal-templates/:id", requireUser, attachUserAccess, canViewProposals, (req, res) => {
+  const template = getReporterProposalTemplateById(req.params.id);
+  if (!template) return res.status(404).json({ error: "Template not found" });
+  const sections = listReporterProposalTemplateSections(req.params.id);
+  res.json({ template, sections });
+});
+
+router.post("/reporter/proposal-templates", writeLimiter, requireUser, attachUserAccess, canManageTemplates, (req, res) => {
+  const { name, description, templateType } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: "Name is required" });
+  const id = crypto.randomBytes(16).toString("base64url");
+  const template = createReporterProposalTemplate({
+    id,
+    name: name.trim(),
+    description: description || "",
+    templateType: templateType || "security_assessment",
+    htmlTemplate: "",
+    cssTemplate: "",
+    metadataSchema: "{}",
+    sortOrder: 100,
+    createdBy: req.user.id,
+  });
+  res.status(201).json({ template });
+});
+
+router.put("/reporter/proposal-templates/:id", writeLimiter, requireUser, attachUserAccess, canManageTemplates, (req, res) => {
+  const existing = getReporterProposalTemplateById(req.params.id);
+  if (!existing) return res.status(404).json({ error: "Template not found" });
+  if (existing.is_builtin) return res.status(403).json({ error: "Built-in templates cannot be edited" });
+  const { name, description, templateType, htmlTemplate, cssTemplate } = req.body;
+  const template = updateReporterProposalTemplate({
+    id: req.params.id,
+    name: name || existing.name,
+    description: description ?? existing.description,
+    templateType: templateType || existing.template_type,
+    htmlTemplate: htmlTemplate ?? existing.html_template,
+    cssTemplate: cssTemplate ?? existing.css_template,
+    metadataSchema: existing.metadata_schema,
+  });
+  res.json({ template });
+});
+
+router.post("/reporter/proposal-templates/:id/duplicate", writeLimiter, requireUser, attachUserAccess, canManageTemplates, (req, res) => {
+  const newId = crypto.randomBytes(16).toString("base64url");
+  const template = duplicateReporterProposalTemplate(req.params.id, newId, req.user.id);
+  if (!template) return res.status(404).json({ error: "Source template not found" });
+  res.status(201).json({ template });
+});
+
+router.post("/reporter/proposal-templates/:id/archive", writeLimiter, requireUser, attachUserAccess, canManageTemplates, (req, res) => {
+  const existing = getReporterProposalTemplateById(req.params.id);
+  if (!existing) return res.status(404).json({ error: "Template not found" });
+  if (existing.is_builtin) return res.status(403).json({ error: "Built-in templates cannot be archived" });
+  archiveReporterProposalTemplate(req.params.id);
+  res.json({ success: true });
+});
+
+// Proposal template sections
+router.get("/reporter/proposal-templates/:id/sections", requireUser, attachUserAccess, canViewProposals, (req, res) => {
+  const sections = listReporterProposalTemplateSections(req.params.id);
+  res.json({ sections });
+});
+
+router.post("/reporter/proposal-templates/:id/sections", writeLimiter, requireUser, attachUserAccess, canManageTemplates, (req, res) => {
+  const { title, sectionType, content, isRequired } = req.body;
+  if (!title || !title.trim()) return res.status(400).json({ error: "Section title is required" });
+  const existing = listReporterProposalTemplateSections(req.params.id);
+  const id = crypto.randomBytes(16).toString("base64url");
+  const section = createReporterProposalTemplateSection({
+    id,
+    templateId: req.params.id,
+    title: title.trim(),
+    sectionType: sectionType || "markdown",
+    content: content || "",
+    orderIndex: existing.length,
+    isRequired: isRequired ? 1 : 0,
+  });
+  res.status(201).json({ section });
+});
+
+router.put("/reporter/proposal-template-sections/:id", writeLimiter, requireUser, attachUserAccess, canManageTemplates, (req, res) => {
+  const { title, sectionType, content, orderIndex, isRequired } = req.body;
+  const section = updateReporterProposalTemplateSection({
+    id: req.params.id,
+    title,
+    sectionType,
+    content,
+    orderIndex,
+    isRequired: isRequired ? 1 : 0,
+  });
+  if (!section) return res.status(404).json({ error: "Section not found" });
+  res.json({ section });
+});
+
+router.delete("/reporter/proposal-template-sections/:id", writeLimiter, requireUser, attachUserAccess, canManageTemplates, (req, res) => {
+  deleteReporterProposalTemplateSection(req.params.id);
+  res.json({ success: true });
+});
+
+router.post("/reporter/proposal-templates/:id/sections/reorder", writeLimiter, requireUser, attachUserAccess, canManageTemplates, (req, res) => {
+  const { orderedIds } = req.body;
+  if (!Array.isArray(orderedIds)) return res.status(400).json({ error: "orderedIds array required" });
+  const sections = listReporterProposalTemplateSections(req.params.id);
+  for (let i = 0; i < orderedIds.length; i++) {
+    const s = sections.find((s) => s.id === orderedIds[i]);
+    if (s) {
+      updateReporterProposalTemplateSection({
+        id: s.id,
+        title: s.title,
+        sectionType: s.section_type,
+        content: s.content,
+        orderIndex: i,
+        isRequired: s.is_required,
+      });
+    }
+  }
+  res.json({ success: true });
+});
+
+// ============================================================
+// Test Type Write-up Management
+// ============================================================
+
+router.get("/reporter/test-type-writeups", requireUser, attachUserAccess, canViewProposals, (req, res) => {
+  const writeups = listReporterTestTypeTemplates();
+  res.json({ writeups });
+});
+
+router.get("/reporter/test-type-writeups/:id", requireUser, attachUserAccess, canViewProposals, (req, res) => {
+  const writeup = getReporterTestTypeTemplateById(req.params.id);
+  if (!writeup) return res.status(404).json({ error: "Write-up not found" });
+  res.json({ writeup });
+});
+
+router.post("/reporter/test-type-writeups", writeLimiter, requireUser, attachUserAccess, canManageTemplates, (req, res) => {
+  const { testType, name, description, methodologyWriteup, scopeGuidance, deliverables, clientRequirements, consultantRequirements, assumptions, restrictions } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: "Name is required" });
+  if (!testType || !testType.trim()) return res.status(400).json({ error: "Test type is required" });
+  const id = crypto.randomBytes(16).toString("base64url");
+  const allWriteups = listAllReporterTestTypeTemplates();
+  const writeup = createReporterTestTypeTemplate({
+    id,
+    testType: testType.trim(),
+    name: name.trim(),
+    description: description || "",
+    methodologyWriteup: methodologyWriteup || "",
+    scopeGuidance: scopeGuidance || "",
+    deliverables: deliverables || "",
+    clientRequirements: clientRequirements || "",
+    consultantRequirements: consultantRequirements || "",
+    assumptions: assumptions || "",
+    restrictions: restrictions || "",
+    sortOrder: allWriteups.length,
+  });
+  res.status(201).json({ writeup });
+});
+
+router.put("/reporter/test-type-writeups/:id", writeLimiter, requireUser, attachUserAccess, canManageTemplates, (req, res) => {
+  const existing = getReporterTestTypeTemplateById(req.params.id);
+  if (!existing) return res.status(404).json({ error: "Write-up not found" });
+  if (existing.is_builtin) return res.status(403).json({ error: "Built-in write-ups cannot be edited" });
+  const { name, description, methodologyWriteup, scopeGuidance, deliverables, clientRequirements, consultantRequirements, assumptions, restrictions } = req.body;
+  const writeup = updateReporterTestTypeTemplate({
+    id: req.params.id,
+    name: name || existing.name,
+    description: description ?? existing.description,
+    methodologyWriteup: methodologyWriteup ?? existing.methodology_writeup,
+    scopeGuidance: scopeGuidance ?? existing.scope_guidance,
+    deliverables: deliverables ?? existing.deliverables,
+    clientRequirements: clientRequirements ?? existing.client_requirements,
+    consultantRequirements: consultantRequirements ?? existing.consultant_requirements,
+    assumptions: assumptions ?? existing.assumptions,
+    restrictions: restrictions ?? existing.restrictions,
+  });
+  res.json({ writeup });
+});
+
+router.post("/reporter/test-type-writeups/:id/duplicate", writeLimiter, requireUser, attachUserAccess, canManageTemplates, (req, res) => {
+  const newId = crypto.randomBytes(16).toString("base64url");
+  const writeup = duplicateReporterTestTypeTemplate(req.params.id, newId);
+  if (!writeup) return res.status(404).json({ error: "Source write-up not found" });
+  res.status(201).json({ writeup });
+});
+
+router.post("/reporter/test-type-writeups/:id/archive", writeLimiter, requireUser, attachUserAccess, canManageTemplates, (req, res) => {
+  const existing = getReporterTestTypeTemplateById(req.params.id);
+  if (!existing) return res.status(404).json({ error: "Write-up not found" });
+  if (existing.is_builtin) return res.status(403).json({ error: "Built-in write-ups cannot be archived" });
+  archiveReporterTestTypeTemplate(req.params.id);
+  res.json({ success: true });
+});
+
+// --- Proposal Template Preview ---
+
+function buildProposalTemplatePreviewInput(template) {
+  const templateSections = listReporterProposalTemplateSections(template.id);
+  return {
+    proposal: {
+      id: "preview-proposal",
+      title: (template.name || "Proposal") + " — Preview",
+      clientName: "Preview Client Pty Ltd",
+      primaryContactName: "Jane Smith",
+      primaryContactEmail: "jane@preview.client",
+      preparedForName: "Preview Client",
+      preparedForEmail: "info@preview.client",
+      preparedByUsername: "Consultant",
+      proposalType: template.template_type || "security_assessment",
+      testTypes: ["external", "webapp"],
+      quotedValue: 25000,
+      estimatedDays: 10,
+      validUntil: null,
+      status: "draft",
+      createdAt: Math.floor(Date.now() / 1000),
+    },
+    template,
+    sections: templateSections.map((s, i) => ({
+      title: s.title,
+      content: s.content || "Sample content for " + s.title + ".",
+      isIncluded: true,
+      sectionType: s.section_type || "markdown",
+      orderIndex: i,
+    })),
+    testTypes: [
+      { test_type: "external", name: "External Penetration Testing", methodology_writeup: "External penetration testing simulates an attack from outside the network perimeter.", scope_guidance: "All externally accessible IP ranges and domains.", deliverables: "Vulnerability report with evidence and remediation guidance." },
+      { test_type: "webapp", name: "Web Application Penetration Testing", methodology_writeup: "OWASP Testing Guide methodology for web application security.", scope_guidance: "All in-scope web applications and APIs.", deliverables: "OWASP-mapped findings with proof-of-concept and remediation." },
+    ],
+  };
+}
+
+router.get("/reporter/proposal-templates/:id/preview", requireUser, attachUserAccess, canViewProposals, (req, res) => {
+  const template = getReporterProposalTemplateById(req.params.id);
+  if (!template) return res.status(404).json({ error: "Template not found" });
+  try {
+    const html = renderProposalDocumentHtml(buildProposalTemplatePreviewInput(template), {
+      cssHref: `/api/reporter/proposal-templates/${encodeURIComponent(template.id)}/preview.css`,
+    });
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Cache-Control", "no-store");
+    res.send(html);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to render proposal template preview" });
+  }
+});
+
+router.get("/reporter/proposal-templates/:id/preview.pdf", requireUser, attachUserAccess, canViewProposals, async (req, res) => {
+  const template = getReporterProposalTemplateById(req.params.id);
+  if (!template) return res.status(404).json({ error: "Template not found" });
+  try {
+    const html = renderProposalDocumentHtml(buildProposalTemplatePreviewInput(template));
+    const pdf = await renderPdfBuffer(html, {
+      headerTemplate: '<div class="reporter-pdf-header">RedSec Proposal</div>',
+    });
+    sendTempPdfPreview(req, res, pdf, template.name || "proposal-template");
+  } catch (err) {
+    res.status(500).json({ error: "Failed to render proposal template PDF preview" });
+  }
+});
+
+router.get("/reporter/proposal-templates/:id/preview.css", requireUser, attachUserAccess, canViewProposals, (req, res) => {
+  const template = getReporterProposalTemplateById(req.params.id);
+  if (!template) return res.status(404).type("text/plain").send("Template not found");
+  res.setHeader("Content-Type", "text/css; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store");
+  res.send(template.css_template || defaultProposalCssTemplate());
 });
 
 module.exports = router;

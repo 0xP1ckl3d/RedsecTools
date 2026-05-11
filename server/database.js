@@ -2588,11 +2588,46 @@ const stmts = {
     SELECT * FROM reporter_proposal_template_sections WHERE template_id = ? ORDER BY order_index ASC
   `),
 
-  // --- Reporter: Test Type Templates (read-only for now) ---
+  // --- Reporter: Test Type Templates ---
   listReporterTestTypeTemplates: db.prepare(`
+    SELECT * FROM reporter_test_type_templates WHERE archived_at IS NULL ORDER BY sort_order ASC
+  `),
+  listAllReporterTestTypeTemplates: db.prepare(`
     SELECT * FROM reporter_test_type_templates ORDER BY sort_order ASC
   `),
+  getReporterTestTypeTemplateById: db.prepare("SELECT * FROM reporter_test_type_templates WHERE id = ?"),
   getReporterTestTypeTemplateByType: db.prepare("SELECT * FROM reporter_test_type_templates WHERE test_type = ?"),
+  createReporterTestTypeTemplate: db.prepare(`
+    INSERT INTO reporter_test_type_templates (id, test_type, name, description, methodology_writeup, scope_guidance, deliverables, client_requirements, consultant_requirements, assumptions, restrictions, is_builtin, sort_order, created_at, updated_at)
+    VALUES (@id, @testType, @name, @description, @methodologyWriteup, @scopeGuidance, @deliverables, @clientRequirements, @consultantRequirements, @assumptions, @restrictions, 0, @sortOrder, unixepoch(), unixepoch())
+  `),
+  updateReporterTestTypeTemplate: db.prepare(`
+    UPDATE reporter_test_type_templates SET name = @name, description = @description, methodology_writeup = @methodologyWriteup, scope_guidance = @scopeGuidance, deliverables = @deliverables, client_requirements = @clientRequirements, consultant_requirements = @consultantRequirements, assumptions = @assumptions, restrictions = @restrictions, updated_at = unixepoch() WHERE id = @id AND is_builtin = 0
+  `),
+  archiveReporterTestTypeTemplate: db.prepare(`
+    UPDATE reporter_test_type_templates SET archived_at = unixepoch() WHERE id = ? AND is_builtin = 0
+  `),
+
+  // --- Reporter: Proposal Template CRUD ---
+  createReporterProposalTemplate: db.prepare(`
+    INSERT INTO reporter_proposal_templates (id, name, description, template_type, html_template, css_template, metadata_schema, is_builtin, sort_order, created_by, created_at, updated_at)
+    VALUES (@id, @name, @description, @templateType, @htmlTemplate, @cssTemplate, @metadataSchema, 0, @sortOrder, @createdBy, unixepoch(), unixepoch())
+  `),
+  updateReporterProposalTemplate: db.prepare(`
+    UPDATE reporter_proposal_templates SET name = @name, description = @description, template_type = @templateType, html_template = @htmlTemplate, css_template = @cssTemplate, metadata_schema = @metadataSchema, updated_at = unixepoch() WHERE id = @id AND is_builtin = 0
+  `),
+  archiveReporterProposalTemplate: db.prepare(`
+    UPDATE reporter_proposal_templates SET archived_at = unixepoch() WHERE id = ? AND is_builtin = 0
+  `),
+  createReporterProposalTemplateSection: db.prepare(`
+    INSERT INTO reporter_proposal_template_sections (id, template_id, title, section_type, content, order_index, is_required, is_builtin, created_at, updated_at)
+    VALUES (@id, @templateId, @title, @sectionType, @content, @orderIndex, @isRequired, 0, unixepoch(), unixepoch())
+  `),
+  updateReporterProposalTemplateSection: db.prepare(`
+    UPDATE reporter_proposal_template_sections SET title = @title, section_type = @sectionType, content = @content, order_index = @orderIndex, is_required = @isRequired, updated_at = unixepoch() WHERE id = @id
+  `),
+  deleteReporterProposalTemplateSection: db.prepare("DELETE FROM reporter_proposal_template_sections WHERE id = ?"),
+  getReporterProposalTemplateSectionById: db.prepare("SELECT * FROM reporter_proposal_template_sections WHERE id = ?"),
 
   // --- Notification statements ---
   createNotification: db.prepare(`
@@ -4565,8 +4600,9 @@ function deleteBulletinAssetById(id) {
 }
 
 function createCalendarProject(payload) {
+  const id = payload.id || generateId();
   stmts.createCalendarProject.run({
-    id: payload.id,
+    id,
     code: payload.code || "",
     name: payload.name,
     clientName: payload.clientName || "",
@@ -4583,6 +4619,7 @@ function createCalendarProject(payload) {
     notes: payload.notes || "",
     createdBy: payload.createdBy,
   });
+  return stmts.getCalendarProjectById.get(id);
 }
 
 function updateCalendarProject(payload) {
@@ -7498,13 +7535,116 @@ function listReporterProposalTemplateSections(templateId) {
   return stmts.listReporterProposalTemplateSections.all(templateId);
 }
 
-// Test type templates (read-only)
+function createReporterProposalTemplate(payload) {
+  stmts.createReporterProposalTemplate.run(payload);
+  return stmts.getReporterProposalTemplateById.get(payload.id);
+}
+
+function updateReporterProposalTemplate(payload) {
+  const result = stmts.updateReporterProposalTemplate.run(payload);
+  if (!result.changes) return null;
+  return stmts.getReporterProposalTemplateById.get(payload.id);
+}
+
+function archiveReporterProposalTemplate(id) {
+  return stmts.archiveReporterProposalTemplate.run(id);
+}
+
+function createReporterProposalTemplateSection(payload) {
+  stmts.createReporterProposalTemplateSection.run(payload);
+  return stmts.getReporterProposalTemplateSectionById.get(payload.id);
+}
+
+function updateReporterProposalTemplateSection(payload) {
+  const result = stmts.updateReporterProposalTemplateSection.run(payload);
+  if (!result.changes) return null;
+  return stmts.getReporterProposalTemplateSectionById.get(payload.id);
+}
+
+function deleteReporterProposalTemplateSection(id) {
+  return stmts.deleteReporterProposalTemplateSection.run(id);
+}
+
+function duplicateReporterProposalTemplate(templateId, newId, createdBy) {
+  const source = stmts.getReporterProposalTemplateById.get(templateId);
+  if (!source) return null;
+  stmts.createReporterProposalTemplate.run({
+    id: newId,
+    name: source.name + " (Copy)",
+    description: source.description,
+    templateType: source.template_type,
+    htmlTemplate: source.html_template,
+    cssTemplate: source.css_template,
+    metadataSchema: source.metadata_schema,
+    sortOrder: source.sort_order + 1,
+    createdBy,
+  });
+  const sections = stmts.listReporterProposalTemplateSections.all(templateId);
+  const crypto = require("crypto");
+  for (const s of sections) {
+    stmts.createReporterProposalTemplateSection.run({
+      id: crypto.randomBytes(16).toString("base64url"),
+      templateId: newId,
+      title: s.title,
+      sectionType: s.section_type,
+      content: s.content,
+      orderIndex: s.order_index,
+      isRequired: s.is_required,
+    });
+  }
+  return stmts.getReporterProposalTemplateById.get(newId);
+}
+
+// Test type templates
 function listReporterTestTypeTemplates() {
   return stmts.listReporterTestTypeTemplates.all();
 }
 
+function listAllReporterTestTypeTemplates() {
+  return stmts.listAllReporterTestTypeTemplates.all();
+}
+
+function getReporterTestTypeTemplateById(id) {
+  return stmts.getReporterTestTypeTemplateById.get(id);
+}
+
 function getReporterTestTypeTemplateByType(testType) {
   return stmts.getReporterTestTypeTemplateByType.get(testType);
+}
+
+function createReporterTestTypeTemplate(payload) {
+  stmts.createReporterTestTypeTemplate.run(payload);
+  return stmts.getReporterTestTypeTemplateById.get(payload.id);
+}
+
+function updateReporterTestTypeTemplate(payload) {
+  const result = stmts.updateReporterTestTypeTemplate.run(payload);
+  if (!result.changes) return null;
+  return stmts.getReporterTestTypeTemplateById.get(payload.id);
+}
+
+function archiveReporterTestTypeTemplate(id) {
+  return stmts.archiveReporterTestTypeTemplate.run(id);
+}
+
+function duplicateReporterTestTypeTemplate(sourceId, newId) {
+  const source = stmts.getReporterTestTypeTemplateById.get(sourceId);
+  if (!source) return null;
+  stmts.createReporterTestTypeTemplate.run({
+    id: newId,
+    testType: source.test_type,
+    name: source.name + " (Copy)",
+    description: source.description,
+    methodologyWriteup: source.methodology_writeup,
+    scopeGuidance: source.scope_guidance,
+    deliverables: source.deliverables,
+    clientRequirements: source.client_requirements,
+    consultantRequirements: source.consultant_requirements,
+    assumptions: source.assumptions,
+    restrictions: source.restrictions,
+    sortOrder: source.sort_order + 1,
+  });
+  return stmts.getReporterTestTypeTemplateById.get(newId);
 }
 
 // ============================================================
@@ -8498,9 +8638,22 @@ module.exports = {
   deleteReporterProposalGenerationById,
   listReporterProposalTemplates,
   getReporterProposalTemplateById,
+  createReporterProposalTemplate,
+  updateReporterProposalTemplate,
+  archiveReporterProposalTemplate,
+  duplicateReporterProposalTemplate,
   listReporterProposalTemplateSections,
+  createReporterProposalTemplateSection,
+  updateReporterProposalTemplateSection,
+  deleteReporterProposalTemplateSection,
   listReporterTestTypeTemplates,
+  listAllReporterTestTypeTemplates,
+  getReporterTestTypeTemplateById,
   getReporterTestTypeTemplateByType,
+  createReporterTestTypeTemplate,
+  updateReporterTestTypeTemplate,
+  archiveReporterTestTypeTemplate,
+  duplicateReporterTestTypeTemplate,
 
   // --- Notification functions ---
   createNotification,

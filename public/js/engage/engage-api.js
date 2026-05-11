@@ -77,6 +77,8 @@ const EngageApi = (() => {
     listReporterProjects: (query) => api(`/engage/reporter/projects${query ? "?query=" + encodeURIComponent(query) : ""}`),
     listCalendarProjects: (query) => api(`/engage/calendar/projects${query ? "?query=" + encodeURIComponent(query) : ""}`),
     listReporterProposals: (query) => api(`/engage/reporter/proposals${query ? "?query=" + encodeURIComponent(query) : ""}`),
+    createProposalFromOpportunity: (id, data) => api(`/engage/opportunities/${id}/create-proposal`, json("POST", data)),
+    generateProposalPdf: (id) => api(`/engage/opportunities/${id}/generate-proposal-pdf`, json("POST", {})),
 
     // Users
     listUsers: () => api("/engage/users"),
