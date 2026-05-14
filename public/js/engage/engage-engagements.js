@@ -3,17 +3,16 @@ const EngageEngagements = (() => {
 
   const ENG_STATUSES = [
     "draft", "contract_signed", "scheduled", "testing_not_started", "testing_in_progress",
-    "testing_blocked", "testing_complete", "reporting_in_progress", "ready_for_qa",
-    "qa_assigned", "qa_in_progress", "qa_changes_required", "qa_ready_for_delivery",
+    "testing_blocked", "testing_complete", "reporting_in_progress", "ready_for_delivery",
     "delivered", "retest_pending", "post_engagement_followup", "closed", "cancelled"
   ];
   const ENG_STATUS_LABELS = {
     draft: "Draft", contract_signed: "Contract Signed", scheduled: "Scheduled",
     testing_not_started: "Testing Not Started", testing_in_progress: "Testing In Progress",
     testing_blocked: "Blocked", testing_complete: "Testing Complete",
-    reporting_in_progress: "Reporting", ready_for_qa: "Ready for QA",
-    qa_assigned: "QA Assigned", qa_in_progress: "QA In Progress",
-    qa_changes_required: "QA Changes Required", qa_ready_for_delivery: "Ready for Delivery",
+    reporting_in_progress: "Reporting", ready_for_delivery: "Ready for Delivery",
+    ready_for_qa: "In QA", qa_assigned: "In QA", qa_in_progress: "In QA",
+    qa_changes_required: "Changes Required", qa_ready_for_delivery: "Ready for Delivery",
     delivered: "Delivered", retest_pending: "Retest Pending",
     post_engagement_followup: "Follow-up", closed: "Closed", cancelled: "Cancelled"
   };
@@ -21,8 +20,8 @@ const EngageEngagements = (() => {
     draft: "draft", contract_signed: "active", scheduled: "active",
     testing_not_started: "active", testing_in_progress: "testing",
     testing_blocked: "blocked", testing_complete: "testing",
-    reporting_in_progress: "reporting", ready_for_qa: "qa",
-    qa_assigned: "qa", qa_in_progress: "qa",
+    reporting_in_progress: "reporting", ready_for_delivery: "delivered",
+    ready_for_qa: "qa", qa_assigned: "qa", qa_in_progress: "qa",
     qa_changes_required: "blocked", qa_ready_for_delivery: "delivered",
     delivered: "delivered", retest_pending: "testing",
     post_engagement_followup: "active", closed: "closed", cancelled: "closed"
@@ -44,28 +43,6 @@ const EngageEngagements = (() => {
   }
   const TEAM_ROLES = ["manager", "technical_lead", "tester", "qa_reviewer", "observer"];
   const TEAM_ROLE_LABELS = { manager: "Manager", technical_lead: "Technical Lead", tester: "Tester", qa_reviewer: "QA Reviewer", observer: "Observer" };
-
-  // Status workflow: what statuses can transition to what
-  const STATUS_WORKFLOW = {
-    draft: ["contract_signed", "scheduled", "cancelled"],
-    contract_signed: ["scheduled", "cancelled"],
-    scheduled: ["testing_not_started", "cancelled"],
-    testing_not_started: ["testing_in_progress", "cancelled"],
-    testing_in_progress: ["testing_blocked", "testing_complete", "cancelled"],
-    testing_blocked: ["testing_in_progress", "cancelled"],
-    testing_complete: ["reporting_in_progress", "cancelled"],
-    reporting_in_progress: ["ready_for_qa", "cancelled"],
-    ready_for_qa: ["qa_assigned", "cancelled"],
-    qa_assigned: ["qa_in_progress", "cancelled"],
-    qa_in_progress: ["qa_changes_required", "qa_ready_for_delivery", "cancelled"],
-    qa_changes_required: ["qa_in_progress", "cancelled"],
-    qa_ready_for_delivery: ["delivered", "cancelled"],
-    delivered: ["retest_pending", "post_engagement_followup", "closed"],
-    retest_pending: ["testing_in_progress", "closed"],
-    post_engagement_followup: ["closed"],
-    closed: [],
-    cancelled: []
-  };
 
   function esc(str) {
     const d = document.createElement("div");
@@ -92,6 +69,26 @@ const EngageEngagements = (() => {
   function priorityLabel(p) {
     const colors = { low: "draft", normal: "active", high: "qa", critical: "blocked" };
     return `<span class="engage-status-pill ${colors[p] || "draft"}"><span class="pill-dot"></span>${esc(p || "normal")}</span>`;
+  }
+
+  function userOptionLabel(user) {
+    if (!user) return "";
+    const isMe = user.id === window._engageUser?.id ? " (you)" : "";
+    return `${user.username || user.id}${isMe}`;
+  }
+
+  function getLatestQaReview() {
+    const reviews = state.detail?.qaReviews || [];
+    return reviews[0] || null;
+  }
+
+  function canRequestQaAgain() {
+    const latest = getLatestQaReview();
+    return !latest || ["requires_more_work", "ready_for_delivery", "cancelled"].includes(latest.status);
+  }
+
+  function isActiveQa(review) {
+    return review && ["ready_for_qa", "assigned", "reviewing"].includes(review.status);
   }
 
   function renderList() {
@@ -195,6 +192,14 @@ const EngageEngagements = (() => {
         </div>
         <label class="block text-sm text-muted mb-1 mt-3">Scope Summary</label>
         <textarea id="eng-scope" class="input-field w-full" rows="3" placeholder="High-level scope summary"></textarea>
+        <div class="engage-team-picker mt-3">
+          <div class="engage-section-title-row">
+            <span class="text-sm text-muted font-semibold">Team Members *</span>
+            <button type="button" class="btn-secondary text-sm" id="eng-create-add-member-btn">Add Team Member</button>
+          </div>
+          <div id="eng-create-team-list" class="engage-team-list mt-2"></div>
+          <p class="text-xs text-muted mt-1">The current user is included automatically.</p>
+        </div>
         <label class="block text-sm text-muted mb-1 mt-3">Notes</label>
         <textarea id="eng-notes" class="input-field w-full" rows="2"></textarea>
       </div>
@@ -207,6 +212,32 @@ const EngageEngagements = (() => {
     document.body.appendChild(overlay);
     overlay.querySelector(".modal-cancel-btn").addEventListener("click", () => overlay.remove());
     overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
+    const selectedMembers = new Map();
+    if (window._engageUser?.id) {
+      selectedMembers.set(window._engageUser.id, { userId: window._engageUser.id, username: window._engageUser.username, role: "manager", isPrimary: true });
+    }
+    const allUsers = [];
+
+    function renderCreateTeamList() {
+      const list = overlay.querySelector("#eng-create-team-list");
+      if (!list) return;
+      const members = Array.from(selectedMembers.values());
+      list.innerHTML = members.map((m) => `<div class="engage-team-item">
+        <div>
+          <strong>${esc(m.username || m.userId)}</strong>
+          <span class="engage-type-tag">${esc(TEAM_ROLE_LABELS[m.role] || m.role)}</span>
+          ${m.isPrimary ? '<span class="engage-type-tag">Primary</span>' : ""}
+        </div>
+        ${m.userId === window._engageUser?.id ? "" : `<button type="button" class="btn-secondary text-sm eng-create-remove-member" data-user-id="${esc(m.userId)}">Remove</button>`}
+      </div>`).join("");
+      list.querySelectorAll(".eng-create-remove-member").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          selectedMembers.delete(btn.dataset.userId);
+          renderCreateTeamList();
+        });
+      });
+    }
+    renderCreateTeamList();
 
     EngageApi.listClients().then((result) => {
       const select = overlay.querySelector("#eng-client");
@@ -215,6 +246,42 @@ const EngageEngagements = (() => {
         clients.map((c) => `<option value="${c.id}">${esc(c.display_name || c.name)}</option>`).join("");
     }).catch(() => {
       overlay.querySelector("#eng-client").innerHTML = '<option value="">Failed to load</option>';
+    });
+
+    EngageApi.listUsers().then((result) => {
+      allUsers.splice(0, allUsers.length, ...(result.users || []));
+    }).catch(() => {});
+
+    overlay.querySelector("#eng-create-add-member-btn")?.addEventListener("click", async () => {
+      if (!allUsers.length) {
+        await EngageModal.alert({ title: "Users Unavailable", message: "User list has not loaded yet." });
+        return;
+      }
+      const options = allUsers
+        .filter((u) => !selectedMembers.has(u.id))
+        .map((u) => `<option value="${esc(u.id)}">${esc(userOptionLabel(u))}</option>`)
+        .join("");
+      if (!options) {
+        await EngageModal.alert({ title: "Team Complete", message: "All available users are already assigned." });
+        return;
+      }
+      const html = `<div class="space-y-3">
+        <label class="block text-sm text-muted mb-1">User</label>
+        <select id="eng-create-member-user" class="input-field w-full">${options}</select>
+        <label class="block text-sm text-muted mb-1">Role</label>
+        <select id="eng-create-member-role" class="input-field w-full">
+          ${TEAM_ROLES.map((r) => `<option value="${r}">${esc(TEAM_ROLE_LABELS[r])}</option>`).join("")}
+        </select>
+      </div>`;
+      const confirmed = await EngageModal.confirm({ title: "Add Team Member", message: html, htmlMessage: true, confirmLabel: "Add" });
+      if (!confirmed) return;
+      const userId = document.getElementById("eng-create-member-user")?.value;
+      const role = document.getElementById("eng-create-member-role")?.value || "tester";
+      const user = allUsers.find((u) => u.id === userId);
+      if (userId) {
+        selectedMembers.set(userId, { userId, username: user?.username, role, isPrimary: false });
+        renderCreateTeamList();
+      }
     });
 
     overlay.querySelector(".modal-confirm-btn").addEventListener("click", async () => {
@@ -227,6 +294,9 @@ const EngageEngagements = (() => {
       if (startDate && endDate && startDate > endDate) {
         await EngageModal.alert({ title: "Validation Error", message: "End date must be after start date." }); return;
       }
+      if (selectedMembers.size < 1) {
+        await EngageModal.alert({ title: "Validation Error", message: "Add at least one team member." }); return;
+      }
       try {
         await EngageApi.createEngagement({
           clientId, title,
@@ -234,6 +304,7 @@ const EngageEngagements = (() => {
           priority: overlay.querySelector("#eng-priority").value,
           scheduledStartDate: startDate || null,
           scheduledEndDate: endDate || null,
+          teamMembers: Array.from(selectedMembers.values()).map((m) => ({ userId: m.userId, role: m.role, isPrimary: m.isPrimary })),
           highLevelScopeSummary: overlay.querySelector("#eng-scope").value.trim(),
           notes: overlay.querySelector("#eng-notes").value.trim(),
         });
@@ -266,7 +337,8 @@ const EngageEngagements = (() => {
     const activity = data.activity || [];
     const notes = data.notes || [];
     const caps = window._engageCapabilities || {};
-    const nextStatuses = STATUS_WORKFLOW[e.status] || [];
+    const latestQa = getLatestQaReview();
+    const activeQa = data.activeQaReview || (isActiveQa(latestQa) ? latestQa : null);
 
     let html = '<div class="engage-eng-detail">';
 
@@ -274,49 +346,57 @@ const EngageEngagements = (() => {
     html += '<div class="engage-eng-detail-header">';
     html += '<button type="button" class="btn-secondary text-sm eng-back-btn">Back to Engagements</button>';
     html += `<h2 class="engage-opp-detail-title">${esc(e.title)}</h2>`;
-    html += `<div class="engage-opp-detail-meta">${esc(e.client_display_name || e.client_name || "")} &middot; ${renderTypeTags(e.engagement_type)} &middot; ${engStatusPill(e.status)} ${priorityLabel(e.priority)}</div>`;
+    html += `<div class="engage-opp-detail-meta">${esc(e.client_display_name || e.client_name || "")} &middot; ${renderTypeTags(e.engagement_type)} &middot; ${engStatusPill(e.status)} ${activeQa ? qaStatusPill(activeQa.status) : ""} ${priorityLabel(e.priority)}</div>`;
     html += '<div class="engage-opp-detail-actions">';
 
-    // Status workflow buttons
-    if (caps.canCreateEngagement || caps.canManageAll) {
-      if (nextStatuses.length > 0) {
-        html += '<div class="engage-eng-status-actions">';
-        for (const ns of nextStatuses) {
-          const isCancel = ns === "cancelled";
-          html += `<button type="button" class="${isCancel ? "btn-danger" : "btn-primary"} text-sm eng-status-btn" data-next-status="${ns}">${esc(ENG_STATUS_LABELS[ns])}</button>`;
-        }
-        html += '</div>';
-      }
+    if ((caps.canEditEngagement || caps.canManageAll) && !activeQa) {
+      html += `<select class="input-field text-sm eng-status-select" title="Change status">
+        ${ENG_STATUSES.map((status) => `<option value="${status}" ${status === e.status ? "selected" : ""}>${esc(ENG_STATUS_LABELS[status] || status)}</option>`).join("")}
+      </select>`;
+    } else if (activeQa) {
+      html += '<span class="engage-static-display engage-status-lock text-sm">Status locked by active QA</span>';
     }
 
     // Link buttons
-    if (caps.canCreateEngagement || caps.canManageAll) {
+    if (caps.canEditEngagement || caps.canManageAll) {
       html += '<button type="button" class="btn-secondary text-sm eng-link-cal-btn">Link Calendar</button>';
       html += '<button type="button" class="btn-secondary text-sm eng-link-reporter-btn">Link Reporter</button>';
       html += '<button type="button" class="btn-primary text-sm eng-create-report-btn">Create Report</button>';
       html += '<button type="button" class="btn-secondary text-sm eng-create-cal-btn">Create Calendar Project</button>';
     }
-    html += '<button type="button" class="btn-primary text-sm eng-request-qa-btn">Request QA</button>';
+    const canQaRequest = canRequestQaAgain();
+    html += `<button type="button" class="btn-primary text-sm eng-request-qa-btn" ${canQaRequest ? "" : "disabled"}>${activeQa ? "QA In Progress" : latestQa?.status === "requires_more_work" ? "Resubmit QA" : "Request QA"}</button>`;
     html += '<button type="button" class="btn-secondary text-sm eng-note-btn">Add Note</button>';
-
-    // Add team member
-    if (caps.canAssignTeam || caps.canManageAll) {
-      html += '<button type="button" class="btn-primary text-sm eng-add-member-btn">Add Team Member</button>';
-    }
-
     html += '</div></div>';
+
+    if (activeQa) {
+      html += `<div class="engage-control-banner">
+        <div>
+          <strong>QA controls this engagement right now.</strong>
+          <div class="engage-list-item-meta">Delivery status returns here when QA approves delivery, requests changes, or cancels the review.</div>
+        </div>
+        ${qaStatusPill(activeQa.status)}
+      </div>`;
+    }
 
     // Details panel
     html += '<div class="engage-panel engage-eng-fields">';
     html += '<div class="engage-grid-2">';
+    const cal = data.linkedCalendarProject || null;
+    const calendarEstimate = cal
+      ? `${Number(cal.estimatedValue || 0).toFixed(1)} ${cal.estimatedMode === "days" ? "days" : "hours"} (${Number(cal.estimatedHours || 0).toFixed(1)}h)`
+      : "---";
     const fields = [
       ["Client", esc(e.client_display_name || e.client_name || "---")],
       ["Types", renderTypeTags(e.engagement_type) || "---"],
       ["Priority", priorityLabel(e.priority)],
       ["Commercial Value", e.commercial_value != null ? formatCurrency(e.commercial_value) : "---"],
-      ["Estimated Days", e.estimated_days != null ? e.estimated_days : "---"],
-      ["Scheduled Start", e.scheduled_start_date || "---"],
-      ["Scheduled End", e.scheduled_end_date || "---"],
+      ["Engage Estimate", e.estimated_days != null ? `${e.estimated_days} days` : "---"],
+      ["Engage Target Start", e.scheduled_start_date || "---"],
+      ["Engage Target End", e.scheduled_end_date || "---"],
+      ["Calendar Start", cal?.startsAt ? formatDate(cal.startsAt) : "---"],
+      ["Calendar End", cal?.endsAt ? formatDate(cal.endsAt) : "---"],
+      ["Calendar Estimate", calendarEstimate],
       ["Actual Start", e.actual_start_date || "---"],
       ["Actual End", e.actual_end_date || "---"],
     ];
@@ -329,13 +409,13 @@ const EngageEngagements = (() => {
     const links = [];
     if (data.linkedCalendarProject) {
       const lp = data.linkedCalendarProject;
-      links.push(`Calendar: <a href="/calendar/" class="engage-link-badge" target="_blank">${esc(lp.name || "Calendar Project")}</a> <span class="text-muted text-xs">${esc(lp.status || "")}</span>`);
+      links.push(`Calendar: <a href="/calendar/?view=projects&projectId=${encodeURIComponent(lp.id)}" class="engage-link-badge" target="_blank">${esc(lp.code ? `${lp.code} · ${lp.name}` : (lp.name || "Calendar Project"))}</a> <span class="text-muted text-xs">${esc(lp.status || "")}</span>`);
     } else if (e.redseccal_project_id) {
       links.push(`Calendar: <span class="engage-link-badge">${esc(e.redseccal_project_id)}</span>`);
     }
     if (data.linkedReporterProject) {
       const lr = data.linkedReporterProject;
-      links.push(`Reporter: <a href="/reporter/" class="engage-link-badge" target="_blank">${esc(lr.title || "Report Project")}</a> <span class="text-muted text-xs">${esc(lr.status || "")}</span>`);
+      links.push(`Reporter: <a href="/reporter/?projectId=${encodeURIComponent(lr.id)}" class="engage-link-badge" target="_blank">${esc(lr.title || "Report Project")}</a> <span class="text-muted text-xs">${esc(lr.status || "")}</span>`);
     } else if (e.redsec_reporter_project_id) {
       links.push(`Reporter: <span class="engage-link-badge">${esc(e.redsec_reporter_project_id)}</span>`);
     }
@@ -352,7 +432,11 @@ const EngageEngagements = (() => {
     html += '</div>';
 
     // Team section
-    html += '<div class="engage-section"><div class="engage-section-title">Team</div><div class="engage-panel">';
+    html += '<div class="engage-section"><div class="engage-section-title-row"><div class="engage-section-title">Team</div>';
+    if (caps.canAssignTeam || caps.canManageAll) {
+      html += '<button type="button" class="btn-primary text-sm eng-add-member-btn">Add Team Member</button>';
+    }
+    html += '</div><div class="engage-panel">';
     if (team.length === 0) {
       html += '<div class="engage-empty">No team members assigned.</div>';
     } else {
@@ -412,14 +496,20 @@ const EngageEngagements = (() => {
   }
 
   const QA_STATUS_LABELS = {
-    not_requested: "Not Requested", ready_for_qa: "Ready for QA", assigned: "Assigned",
-    reviewing: "Reviewing", requires_more_work: "Requires More Work",
-    ready_for_delivery: "Ready for Delivery", delivered: "Delivered", cancelled: "Cancelled",
+    not_requested: "Not Requested", ready_for_qa: "QA Requested", assigned: "Assigned",
+    reviewing: "Reviewing", requires_more_work: "Changes Required",
+    ready_for_delivery: "Approved for Delivery", cancelled: "Cancelled",
   };
   const QA_STATUS_CLASSES = {
     not_requested: "draft", ready_for_qa: "qa", assigned: "qa", reviewing: "testing",
     requires_more_work: "blocked", ready_for_delivery: "delivered", delivered: "delivered", cancelled: "closed",
   };
+
+  function qaStatusPill(status) {
+    const cls = QA_STATUS_CLASSES[status] || "draft";
+    const label = QA_STATUS_LABELS[status] || status;
+    return `<span class="engage-status-pill ${cls}"><span class="pill-dot"></span>${esc(label)}</span>`;
+  }
 
   function renderQaReviews(reviews) {
     if (!reviews || reviews.length === 0) return '<div class="engage-panel"><div class="engage-empty">No QA reviews requested.</div></div>';
@@ -429,6 +519,7 @@ const EngageEngagements = (() => {
       let details = "";
       if (r.report_link) details += `<span class="engage-link-badge">Report</span> `;
       if (r.share_link) details += `<span class="engage-link-badge">Share</span> `;
+      if (r.assigned_by_username) details += `Submitted by: ${esc(r.assigned_by_username)} `;
       if (r.assigned_to_username) details += `Reviewer: ${esc(r.assigned_to_username)}`;
       if (r.qa_notes) {
         const truncated = r.qa_notes.length > 120 ? r.qa_notes.substring(0, 120) + "..." : r.qa_notes;
@@ -468,6 +559,10 @@ const EngageEngagements = (() => {
     document.body.appendChild(overlay);
     overlay.querySelector(".modal-cancel-btn").addEventListener("click", () => overlay.remove());
     overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
+    const linkedReporterId = state.detail?.linkedReporterProject?.id || state.selectedEng?.redsec_reporter_project_id || "";
+    const latestReportLink = state.detail?.latestReporterPdf?.downloadUrl || "";
+    overlay.querySelector("#qa-reporter-id").value = linkedReporterId;
+    overlay.querySelector("#qa-report-link").value = latestReportLink;
 
     overlay.querySelector(".modal-confirm-btn").addEventListener("click", async () => {
       try {
@@ -501,23 +596,26 @@ const EngageEngagements = (() => {
       });
     });
 
-    // Status workflow
-    section.querySelectorAll(".eng-status-btn").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const next = btn.dataset.nextStatus;
+    section.querySelector(".eng-status-select")?.addEventListener("change", async (event) => {
+        const next = event.target.value;
+        if (next === e.status) return;
         const confirmed = await EngageModal.confirm({
           title: "Update Status",
           message: `Change status to "${ENG_STATUS_LABELS[next]}"?`,
           confirmLabel: "Update",
+          danger: next === "cancelled",
         });
-        if (!confirmed) return;
+        if (!confirmed) {
+          event.target.value = e.status;
+          return;
+        }
         try {
           await EngageApi.updateStatus(e.id, next);
           await openEngagement(e.id);
         } catch (err) {
+          event.target.value = e.status;
           await EngageModal.alert({ title: "Error", message: "Failed to update status: " + err.message });
         }
-      });
     });
 
     // Link Calendar
@@ -637,7 +735,7 @@ const EngageEngagements = (() => {
       <label class="block text-sm text-muted mb-1">Select Reporter Project</label>
       <select id="eng-reporter-pick" class="input-field w-full"><option value="">Choose...</option>${items}</select>
     </div>`;
-    const confirmed = await EngageModal.confirm({ title: "Link Reporter Project", message: html, confirmLabel: "Link" });
+    const confirmed = await EngageModal.confirm({ title: "Link Reporter Project", message: html, htmlMessage: true, confirmLabel: "Link" });
     if (!confirmed) return;
     const selectedId = document.getElementById("eng-reporter-pick")?.value;
     if (!selectedId) { await EngageModal.alert({ title: "Error", message: "Select a project." }); return; }
@@ -661,7 +759,7 @@ const EngageEngagements = (() => {
       <label class="block text-sm text-muted mb-1">Select Calendar Project</label>
       <select id="eng-cal-pick" class="input-field w-full"><option value="">Choose...</option>${items}</select>
     </div>`;
-    const confirmed = await EngageModal.confirm({ title: "Link Calendar Project", message: html, confirmLabel: "Link" });
+    const confirmed = await EngageModal.confirm({ title: "Link Calendar Project", message: html, htmlMessage: true, confirmLabel: "Link" });
     if (!confirmed) return;
     const selectedId = document.getElementById("eng-cal-pick")?.value;
     if (!selectedId) { await EngageModal.alert({ title: "Error", message: "Select a project." }); return; }
@@ -678,7 +776,7 @@ const EngageEngagements = (() => {
       <label class="block text-sm text-muted mb-1">Report Title</label>
       <input type="text" id="eng-create-report-title" class="input-field w-full" value="${esc(e.title + " - Report")}">
     </div>`;
-    const confirmed = await EngageModal.confirm({ title: "Create Reporter Project", message: html, confirmLabel: "Create" });
+    const confirmed = await EngageModal.confirm({ title: "Create Reporter Project", message: html, htmlMessage: true, confirmLabel: "Create" });
     if (!confirmed) return;
     const title = document.getElementById("eng-create-report-title")?.value;
     if (!title?.trim()) { await EngageModal.alert({ title: "Error", message: "Title is required." }); return; }
@@ -692,16 +790,34 @@ const EngageEngagements = (() => {
   }
 
   async function openCreateCalendarProject(e) {
+    const derivedRate = e.commercial_value && e.estimated_days ? Math.round((Number(e.commercial_value) / Number(e.estimated_days)) * 100) / 100 : 0;
     const html = `<div class="space-y-3">
       <label class="block text-sm text-muted mb-1">Project Name</label>
       <input type="text" id="eng-create-cal-name" class="input-field w-full" value="${esc(e.title)}">
+      <label class="block text-sm text-muted mb-1">Project Code</label>
+      <input type="text" id="eng-create-cal-code" class="input-field w-full" value="${esc((e.title || "").toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 24))}">
+      <div class="engage-grid-2">
+        <div>
+          <label class="block text-sm text-muted mb-1">Estimated Days</label>
+          <input type="number" min="0" step="0.1" id="eng-create-cal-days" class="input-field w-full" value="${esc(e.estimated_days || "")}">
+        </div>
+        <div>
+          <label class="block text-sm text-muted mb-1">Daily Rate</label>
+          <input type="number" min="0" step="0.01" id="eng-create-cal-rate" class="input-field w-full" value="${esc(derivedRate || "")}">
+        </div>
+      </div>
     </div>`;
-    const confirmed = await EngageModal.confirm({ title: "Create Calendar Project", message: html, confirmLabel: "Create" });
+    const confirmed = await EngageModal.confirm({ title: "Create Calendar Project", message: html, htmlMessage: true, confirmLabel: "Create" });
     if (!confirmed) return;
     const name = document.getElementById("eng-create-cal-name")?.value;
     if (!name?.trim()) { await EngageModal.alert({ title: "Error", message: "Name is required." }); return; }
     try {
-      const result = await EngageApi.createCalendarProject(e.id, { name: name.trim() });
+      const result = await EngageApi.createCalendarProject(e.id, {
+        name: name.trim(),
+        code: document.getElementById("eng-create-cal-code")?.value.trim(),
+        estimatedDays: Number.parseFloat(document.getElementById("eng-create-cal-days")?.value) || undefined,
+        billableRate: Number.parseFloat(document.getElementById("eng-create-cal-rate")?.value) || undefined,
+      });
       await EngageModal.alert({ title: "Calendar Project Created", message: `Created "${result.project.name}" in Calendar.` });
       await openEngagement(e.id);
     } catch (err) {
@@ -713,5 +829,5 @@ const EngageEngagements = (() => {
     await refresh();
   }
 
-  return { init, refresh };
+  return { init, refresh, openEng: openEngagement };
 })();

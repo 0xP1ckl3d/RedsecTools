@@ -50,6 +50,7 @@ function showDashboard() {
   loadFiles();
   loadInvites();
   loadSmtpSettings();
+  loadThemeSettings();
   loadCalendarSettings();
   loadRoles().then(() => loadUsers()).catch(() => loadUsers());
   loadBulletinsAdmin();
@@ -152,14 +153,15 @@ logoutBtn.addEventListener("click", async () => {
 // --- Tabs ---
 
 const tabBtns = document.querySelectorAll(".admin-tab[data-tab]");
-const childTabs = ["settings", "security", "deployment", "roles", "bulletins", "weather", "team-shortcuts", "invites", "users", "chat", "pastes", "files", "survey-tool-settings", "vaults", "calendar-tool-settings", "wiki-tool-settings", "redsecai-tool-settings", "threat-tool-settings", "reporter-tool-settings"];
+const childTabs = ["theme", "settings", "security", "deployment", "roles", "bulletins", "weather", "team-shortcuts", "invites", "users", "chat", "pastes", "files", "survey-tool-settings", "vaults", "calendar-tool-settings", "wiki-tool-settings", "redsecai-tool-settings", "threat-tool-settings", "reporter-tool-settings", "engage-tool-settings"];
 const adminTabGroups = {
-  server: ["settings", "security", "deployment", "roles"],
+  server: ["theme", "settings", "security", "deployment", "roles"],
   homepage: ["weather", "bulletins", "team-shortcuts"],
   "users-admin": ["users", "invites"],
-  tools: ["calendar-tool-settings", "wiki-tool-settings", "redsecai-tool-settings", "chat", "pastes", "files", "survey-tool-settings", "vaults", "threat-tool-settings", "reporter-tool-settings"],
+  tools: ["calendar-tool-settings", "wiki-tool-settings", "redsecai-tool-settings", "chat", "pastes", "files", "survey-tool-settings", "vaults", "threat-tool-settings", "reporter-tool-settings", "engage-tool-settings"],
 };
 const adminSubtabLabels = {
+  theme: "Branding",
   settings: "SMTP",
   security: "Session Security",
   deployment: "Deployment",
@@ -179,6 +181,7 @@ const adminSubtabLabels = {
   vaults: "RedSecVault",
   "threat-tool-settings": "RedSecThreat",
   "reporter-tool-settings": "RedSecReporter",
+  "engage-tool-settings": "RedSecEngage",
 };
 let activeAdminParentTab = "server";
 let activeAdminChildTab = "settings";
@@ -232,6 +235,9 @@ function updateAdminVisibleTabs() {
   if (visibleTabs.has("settings")) {
     loadSmtpSettings();
   }
+  if (visibleTabs.has("theme")) {
+    loadThemeSettings();
+  }
   if (visibleTabs.has("files")) {
     loadShareSettings();
     loadFileStats();
@@ -270,6 +276,9 @@ function updateAdminVisibleTabs() {
   }
   if (visibleTabs.has("reporter-tool-settings")) {
     loadReporterAdminStats();
+  }
+  if (visibleTabs.has("engage-tool-settings")) {
+    loadEngageActivity();
   }
 }
 
@@ -930,6 +939,9 @@ const calendarWorkdayEnd = document.getElementById("calendar-workday-end");
 const calendarWorkdayCheckboxes = [...document.querySelectorAll(".calendar-workday-checkbox")];
 const saveCalendarSettingsBtn = document.getElementById("save-calendar-settings-btn");
 const calendarSettingsResult = document.getElementById("calendar-settings-result");
+const siteThemeInputs = [...document.querySelectorAll("input[name='site-primary-theme']")];
+const saveThemeSettingsBtn = document.getElementById("save-theme-settings-btn");
+const themeSettingsResult = document.getElementById("theme-settings-result");
 const wikiPersonalSpacesEnabled = document.getElementById("wiki-personal-spaces-enabled");
 const wikiSearchResultLimit = document.getElementById("wiki-search-result-limit");
 const wikiTeamHomePage = document.getElementById("wiki-team-home-page");
@@ -961,6 +973,18 @@ async function loadCalendarSettings() {
     calendarWorkdayCheckboxes.forEach((checkbox) => {
       checkbox.checked = workdays.has(String(checkbox.value));
     });
+  } catch {}
+}
+
+async function loadThemeSettings() {
+  if (!siteThemeInputs.length) return;
+  try {
+    const res = await api("/api/settings/theme");
+    const config = await res.json();
+    const theme = config.primaryTheme || "red";
+    siteThemeInputs.forEach((input) => { input.checked = input.value === theme; });
+    document.documentElement.setAttribute("data-primary-theme", theme);
+    localStorage.setItem("site-primary-theme", theme);
   } catch {}
 }
 
@@ -1104,6 +1128,34 @@ saveCalendarSettingsBtn?.addEventListener("click", async () => {
   } finally {
     calendarSettingsResult.classList.remove("hidden");
     saveCalendarSettingsBtn.disabled = false;
+  }
+});
+
+saveThemeSettingsBtn?.addEventListener("click", async () => {
+  saveThemeSettingsBtn.disabled = true;
+  themeSettingsResult.classList.add("hidden");
+  const primaryTheme = siteThemeInputs.find((input) => input.checked)?.value || "red";
+  try {
+    const res = await api("/api/settings/theme", {
+      method: "POST",
+      body: JSON.stringify({ primaryTheme }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      document.documentElement.setAttribute("data-primary-theme", data.primaryTheme || primaryTheme);
+      localStorage.setItem("site-primary-theme", data.primaryTheme || primaryTheme);
+      themeSettingsResult.textContent = "Theme saved.";
+      themeSettingsResult.className = "text-sm text-accent";
+    } else {
+      themeSettingsResult.textContent = data.error || "Failed to save theme.";
+      themeSettingsResult.className = "text-sm text-error";
+    }
+  } catch {
+    themeSettingsResult.textContent = "Network error";
+    themeSettingsResult.className = "text-sm text-error";
+  } finally {
+    themeSettingsResult.classList.remove("hidden");
+    saveThemeSettingsBtn.disabled = false;
   }
 });
 
@@ -3158,6 +3210,57 @@ document.getElementById("threat-force-refresh-btn")?.addEventListener("click", a
     btn.disabled = false;
   }
 });
+
+// ============================================================
+// RedSecEngage Activity Log
+// ============================================================
+
+let engageActivityPage = 1;
+let engageActivityTotal = 0;
+
+async function loadEngageActivity() {
+  const body = document.getElementById("engage-activity-body");
+  const countEl = document.getElementById("engage-activity-count");
+  const pageInfo = document.getElementById("engage-activity-page-info");
+  const prevBtn = document.getElementById("engage-activity-prev-btn");
+  const nextBtn = document.getElementById("engage-activity-next-btn");
+  const pageSize = Number(document.getElementById("engage-activity-page-size")?.value) || 50;
+  if (!body) return;
+  body.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-8">Loading...</td></tr>';
+  try {
+    const res = await fetch(`/admin/api/engage-activity?page=${engageActivityPage}&limit=${pageSize}`);
+    if (!res.ok) throw new Error("Failed to load");
+    const data = await res.json();
+    engageActivityTotal = data.total;
+    if (countEl) countEl.textContent = data.total;
+    if (pageInfo) pageInfo.textContent = `Page ${data.page} of ${Math.max(1, Math.ceil(data.total / pageSize))}`;
+    if (prevBtn) prevBtn.disabled = engageActivityPage <= 1;
+    if (nextBtn) nextBtn.disabled = engageActivityPage * pageSize >= data.total;
+    if (!data.rows.length) {
+      body.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-8">No activity recorded</td></tr>';
+      return;
+    }
+    body.innerHTML = data.rows.map((r) => {
+      const ts = r.created_at ? new Date(r.created_at * 1000).toLocaleString() : "-";
+      let details = "";
+      try { details = JSON.parse(r.details || "{}"); details = Object.entries(details).map(([k, v]) => `${k}: ${v}`).join(", "); } catch { details = r.details || ""; }
+      return `<tr>
+        <td class="text-sm">${ts}</td>
+        <td class="text-sm">${r.username || r.user_id || "-"}</td>
+        <td class="text-sm">${r.entity_type || "-"}${r.entity_id ? " <span class=\"text-xs text-muted\">" + r.entity_id.substring(0, 8) + "...</span>" : ""}</td>
+        <td class="text-sm">${r.action || "-"}</td>
+        <td class="text-sm text-muted admin-engage-details-col">${details}</td>
+      </tr>`;
+    }).join("");
+  } catch {
+    body.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-8">Failed to load activity</td></tr>';
+  }
+}
+
+document.getElementById("engage-activity-refresh-btn")?.addEventListener("click", loadEngageActivity);
+document.getElementById("engage-activity-prev-btn")?.addEventListener("click", () => { engageActivityPage = Math.max(1, engageActivityPage - 1); loadEngageActivity(); });
+document.getElementById("engage-activity-next-btn")?.addEventListener("click", () => { engageActivityPage++; loadEngageActivity(); });
+document.getElementById("engage-activity-page-size")?.addEventListener("change", () => { engageActivityPage = 1; loadEngageActivity(); });
 
 // --- Init ---
 checkAuth();

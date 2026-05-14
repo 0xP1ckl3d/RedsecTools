@@ -298,7 +298,8 @@ const { createRouteHarness } = require("../helpers/route-harness");
       cookie: viewer.cookie,
     });
     assert.equal(teamList.status, 200);
-    assert.equal(teamList.body.members.length, 1);
+    assert.equal(teamList.body.members.length, 2);
+    assert.ok(teamList.body.members.some((member) => member.user_id === manager.id && member.username === manager.username));
 
     // Now viewer should see the engagement (view_own + team member)
     const viewerEngList = await harness.requestJson({
@@ -406,6 +407,14 @@ const { createRouteHarness } = require("../helpers/route-harness");
     assert.equal(qaStatus.status, 200);
     assert.equal(qaStatus.body.review.status, "reviewing");
 
+    const blockedDuringQa = await harness.requestJson({
+      method: "POST",
+      path: `/api/engage/engagements/${engId}/status`,
+      cookie: manager.cookie,
+      body: { status: "delivered" },
+    });
+    assert.equal(blockedDuringQa.status, 409);
+
     // QA complete
     const qaComplete = await harness.requestJson({
       method: "POST",
@@ -416,6 +425,32 @@ const { createRouteHarness } = require("../helpers/route-harness");
     assert.equal(qaComplete.status, 200);
     assert.equal(qaComplete.body.review.status, "ready_for_delivery");
     assert.ok(qaComplete.body.review.completed_at);
+
+    const managerBootstrap = await harness.requestJson({
+      path: "/api/engage/bootstrap",
+      cookie: manager.cookie,
+    });
+    assert.equal(managerBootstrap.status, 200);
+    assert.ok(!managerBootstrap.body.dashboardQaReviews.some((review) => review.id === qaId));
+    assert.equal(managerBootstrap.body.stats.deliveredThisMonth, 0);
+    assert.equal(managerBootstrap.body.stats.readyForDelivery, 1);
+
+    const qaDeliveredRejected = await harness.requestJson({
+      method: "POST",
+      path: `/api/engage/qa/${qaId}/status`,
+      cookie: manager.cookie,
+      body: { status: "delivered" },
+    });
+    assert.equal(qaDeliveredRejected.status, 400);
+
+    const deliveredByEngagement = await harness.requestJson({
+      method: "POST",
+      path: `/api/engage/engagements/${engId}/status`,
+      cookie: manager.cookie,
+      body: { status: "delivered" },
+    });
+    assert.equal(deliveredByEngagement.status, 200);
+    assert.equal(deliveredByEngagement.body.engagement.status, "delivered");
 
     const memberNotifications = harness.database.getNotificationsByUserId(member.id, 20, 0);
     assert.ok(memberNotifications.some((n) => n.action === "qa_assigned"));

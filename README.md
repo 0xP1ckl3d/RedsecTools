@@ -13,12 +13,12 @@ A multi-tool security platform by [RedSec Offensive Security](https://github.com
 | **RedSecChat** | End-to-end encrypted real-time messaging with rich text formatting, emoji, and file sharing |
 | **RedSecVault** | Encrypted credential manager for passwords, API keys, SSH keys, TOTP 2FA codes, and secure notes |
 | **BulletinBoard** | Workspace bulletin feed on the homepage with rich-text notices, scheduling, pinning, preset styling, and WebP image support |
-| **RedSecCal** | Team and individual scheduling for assignments, tasks, reminders, utilisation tracking, and project-linked calendar entries |
+| **RedSecCal** | Team and individual scheduling for assignments, tasks, reminders, utilisation tracking, project-linked calendar entries, multi-day series with weekdays-only fan-out, and series-level edit/delete |
 | **RedSecSurvey** | Role-aware survey builder with public or internal response modes, live results, CSV export, expiry windows, and admin oversight |
 | **RedSecThreat** | Threat intelligence monitor with RSS/website/API/onion feed ingestion, keyword and regex matching, automatic IOC extraction, alert triage with criticality levels, and webhook/email/Discord notifications |
 | **RedSecWiki** | Team and personal Markdown wiki with page trees, subpages, live preview, published rendering, revision history, and search |
-| **RedSecReporter** | SysReptor-style pentest report builder with assigned-member projects, custom report designs, finding templates, CVSS scoring, comments, evidence, and versioned PDF generation |
-| **RedSecEngage** | Engagement workspace for clients, opportunities, proposal tracking, delivery lifecycle, QA workflow, RedSecCal/Reporter links, utilisation summary, notifications, and RedSecAI-assisted operations |
+| **RedSecReporter** | SysReptor-style pentest report builder with assigned-member projects, custom report designs, finding templates, CVSS scoring, comments, evidence, versioned PDF generation, first-class proposals with section editing and PDF rendering, proposal templates, and reusable test-type write-ups |
+| **RedSecEngage** | Engagement workspace for clients, contacts, opportunities (with stage pipeline, proposal linking, and conversion to engagements), engagement lifecycle with team assignment and status management, QA workflow (request/assign/complete), cross-tool linking to RedSecCal and RedSecReporter, activity logging, notes, utilisation summary, notifications, and RedSecAI-assisted operations |
 | **RedSecAI** | Local Ollama-powered assistant (Qwen, Gemma, or any compatible model) for scoped calendar, Engage, wiki, reporter, and threat-intel reasoning plus confirmation-gated actions without access to encrypted paste/share/chat/vault plaintext |
 | **RedSecTools Chrome Extension** | Chrome Manifest V3 extension for Vault access, autofill, Paste creation, and Share creation using the same server and encryption model |
 
@@ -113,13 +113,25 @@ RedSecReporter is the report-building workspace for pentest projects. It provide
 - Project leads and managers can control project membership, roles, status, archive state, readonly state, evidence, comments, notes, generated PDF versions, and imports/exports.
 - Custom report designs with editable HTML/CSS, section definitions, design duplication, and live PDF previews.
 - Finding templates with searchable insertion, markdown split preview, evidence insertion, scope component selection, and CVSS 3.1/4.0 builder support.
+- First-class proposals with section-based editing, status lifecycle, PDF generation and preview, archive/restore, and integration with RedSecEngage opportunities.
+- Proposal templates for reusable proposal structures with their own sections, preview, PDF generation, duplication, and archiving.
+- Test-type write-ups as reusable content blocks for proposals, with duplication and archiving support.
 - Versioned PDF generation and temporary PDF previews rendered through Chromium/Puppeteer. The setup scripts include the PDF timeout and Chromium executable variables used by Docker and npm deployments.
 
 Admin > Tools > RedSecReporter shows global report stats, recent projects, project creators, status/archive state, and an expandable list of assigned users who can access each project.
 
 ### RedSecEngage
 
-RedSecEngage (`/engage`) is the operational workspace for offensive security engagements. It tracks clients, contacts, opportunities, high-level engagement records, team assignment, status, QA reviews, delivery readiness, post-engagement follow-up, and role-aware dashboard statistics.
+RedSecEngage (`/engage`) is the operational workspace for offensive security engagements. It tracks:
+
+- **Clients** — CRUD with contacts, notes, archive/restore, and detailed views showing linked opportunities, engagements, and activity
+- **Contacts** — Per-client contacts with archive support
+- **Opportunities** — Stage-based pipeline (identified/qualified/proposal_sent/won/lost), notes, proposal linking, proposal creation from opportunity, PDF generation, and conversion of won opportunities to engagements
+- **Engagements** — Full lifecycle (planning/active/on_hold/completed/cancelled) with team membership, role assignment, status transitions, archive, and detailed views including activity log, notes, QA reviews, and linked RedSecCal/Reporter projects
+- **QA Workflow** — Request reviews, assign reviewers, manage status (requested/in_progress/passed/failed/needs_rework), with terminal QA states managing engagement status transitions
+- **Cross-tool linking** — Link RedSecCal projects and RedSecReporter projects to engagements; create calendar projects, reporter projects, and allocations directly from an engagement
+- **Dashboard** — Role-aware bootstrap with stats, my-work summary, QA queue, recent activity, pipeline value, status distribution, and utilisation summary
+- **Activity logging** — Automatic audit trail for status changes, team changes, links, and cross-tool actions
 
 Engage deliberately links to existing tools instead of duplicating them:
 
@@ -436,13 +448,13 @@ Log in with the admin password from your `.env` file. After the first user is cr
 
 **Current admin grouping:**
 - **Server Settings**
-  SMTP configuration, session security, and access controls / role management
+  SMTP configuration, session security, site theme, and access controls / role management
 - **Homepage Settings**
   Weather locations, bulletin retention/purge administration, and team shortcuts
 - **User Settings**
   Users and invite management, including invite role assignment
 - **Tool Settings**
-  RedSecCal workweek/capacity settings plus RedSecTeam, RedSecPaste, RedSecShare, and RedSecVault administration
+  RedSecCal workweek/capacity settings, RedSecAI configuration, RedSecEngage activity log with CSV export, and RedSecPaste, RedSecShare, and RedSecVault administration
 
 ### Creating Pastes (`/paste`)
 
@@ -475,8 +487,11 @@ RedSecCal provides a dashboard-style operations planner with:
 
 - Sidebar views for personal schedule, project management, team project schedule, and statistics
 - Individual calendars for each user with weekly planning, all-day events, multi-day spans, and timed entries
+- All-day multi-day entries with a "Weekdays Only" option that fans out into separate per-day entries linked as a series
+- Series-level management: deleting or editing any day in a series prompts to apply the change to the single day or the entire series
 - Role-aware visibility so some users see only their own calendar while elevated roles can review team schedules
 - Manager-controlled project planning with consultant allocation, delivery windows, and project-linked calendar entries
+- Project management view with search, hide-completed filter (on by default), and pagination for large project lists
 - Weekly, monthly, and yearly utilisation reporting across users and projects
 
 Projects support estimates in either hours or days, a global default daily-hours setting for manager allocations, daily-rate billing, estimated full-project cost, and dual progress tracking for scheduled time versus completed time. Linked project calendar items can autofill project details, and scheduled project effort is rolled up directly from the calendar entries created against that project.
@@ -598,7 +613,8 @@ All encryption uses the Web Crypto API. The server performs zero cryptographic o
 | `server/routes/calendar.js` | RedSecCal API |
 | `server/routes/survey.js` | RedSecSurvey API |
 | `server/routes/threat.js` | RedSecThreat user API (read-only feed catalogue, personal keywords/tags/alerts, personal notifications, health) |
-| `server/routes/reporter.js` | RedSecReporter API (projects, findings, sections, designs, templates, evidence, comments, notes, PDFs) |
+| `server/routes/reporter.js` | RedSecReporter API (projects, findings, sections, designs, templates, evidence, comments, notes, PDFs, proposals, proposal templates, test-type write-ups) |
+| `server/routes/engage.js` | RedSecEngage API (clients, contacts, opportunities, engagements, QA, team, activity, cross-tool linking) |
 | `server/routes/redsecai.js` | RedSecAI HTTP API (status, chat, action confirm/reject) |
 | `server/threat-feed-service.js` | Feed fetch engine (RSS, website, API, onion), keyword matching, IOC extraction |
 | `server/threat-notify-service.js` | Notification dispatch (webhook, email, Discord) |
@@ -622,8 +638,9 @@ The SQLite database now includes the original encrypted content/auth/chat/vault 
 - `calendar_projects`, `calendar_entries` — RedSecCal projects and events/assignments
 - `surveys`, `survey_questions`, `survey_question_options`, `survey_responses`, `survey_answers` — RedSecSurvey
 - `wiki_pages`, `wiki_page_revisions` — RedSecWiki team/personal page tree, published markdown render, and revision history
-- `reporter_projects`, `reporter_findings`, `reporter_sections`, `reporter_designs`, `reporter_finding_templates`, `reporter_project_members`, `reporter_comments`, `reporter_evidence`, `reporter_notes`, `reporter_project_pdfs`, `reporter_import_jobs` — RedSecReporter projects, findings, designs, templates, membership, comments, evidence, and PDF versioning
+- `reporter_projects`, `reporter_findings`, `reporter_sections`, `reporter_designs`, `reporter_finding_templates`, `reporter_project_members`, `reporter_comments`, `reporter_evidence`, `reporter_notes`, `reporter_project_pdfs`, `reporter_import_jobs`, `reporter_proposals`, `reporter_proposal_sections`, `reporter_proposal_templates`, `reporter_proposal_template_sections`, `reporter_test_type_writeups` — RedSecReporter projects, findings, designs, templates, membership, comments, evidence, PDF versioning, proposals, proposal templates, and test-type write-ups
 - `redsecai_pending_actions` — RedSecAI confirmation-gated pending write actions
+- `engage_clients`, `engage_contacts`, `engage_opportunities`, `engage_engagements`, `engage_engagement_team`, `engage_qa_reviews`, `engage_notes`, `engage_activity_log`, `engage_opportunity_proposal_links` — RedSecEngage clients, contacts, opportunities, engagements, team membership, QA workflow, notes, activity tracking, and proposal links
 - `homepage_settings` — homepage layout plus built-in tool favourites
 - `threat_feeds`, `threat_keywords`, `threat_tags`, `threat_alerts`, `threat_api_templates`, `threat_notification_configs`, `threat_user_notifications`, `threat_suppressed_alerts` — RedSecThreat shared feed, template, and alert content tables
 - `threat_feed_keywords`, `threat_feed_tags`, `threat_keyword_tags`, `threat_alert_tags` — RedSecThreat shared many-to-many relationship tables

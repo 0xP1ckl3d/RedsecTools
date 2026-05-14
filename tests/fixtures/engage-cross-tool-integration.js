@@ -106,6 +106,40 @@ const { createRouteHarness } = require("../helpers/route-harness");
     assert.ok(createProposal.body.proposal.testTypes.includes("webapp"));
     const proposalId = createProposal.body.proposal.id;
 
+    let proposalSections = await harness.requestJson({
+      path: `/api/reporter/proposals/${proposalId}/sections`,
+      cookie: manager.cookie,
+    });
+    assert.equal(proposalSections.status, 200);
+    let servicesSection = proposalSections.body.sections.find((section) => section.title === "Proposed Services");
+    assert.ok(servicesSection, "Proposal should include a Proposed Services section");
+    assert.match(servicesSection.content, /External Penetration Testing/);
+    assert.match(servicesSection.content, /Web Application Penetration Testing/);
+    assert.doesNotMatch(servicesSection.content, /test_type_inserts/);
+    const timeAllocationSection = proposalSections.body.sections.find((section) => section.title === "Time Allocation");
+    const deliveryScheduleSection = proposalSections.body.sections.find((section) => section.title === "Delivery Schedule");
+    assert.ok(timeAllocationSection, "Proposal should include Time Allocation");
+    assert.ok(deliveryScheduleSection, "Proposal should include Delivery Schedule");
+    assert.doesNotMatch(timeAllocationSection.content, /\\n/);
+    assert.doesNotMatch(deliveryScheduleSection.content, /\\n/);
+    assert.match(timeAllocationSection.content, /\| Phase \| Days \| Notes \|/);
+    assert.match(deliveryScheduleSection.content, /\| Milestone \| Target Date \|/);
+
+    const updateProposalTypes = await harness.requestJson({
+      method: "PUT",
+      path: `/api/reporter/proposals/${proposalId}`,
+      cookie: manager.cookie,
+      body: { testTypes: ["cloud"] },
+    });
+    assert.equal(updateProposalTypes.status, 200);
+    proposalSections = await harness.requestJson({
+      path: `/api/reporter/proposals/${proposalId}/sections`,
+      cookie: manager.cookie,
+    });
+    servicesSection = proposalSections.body.sections.find((section) => section.title === "Proposed Services");
+    assert.match(servicesSection.content, /Cloud Security Review/);
+    assert.doesNotMatch(servicesSection.content, /Web Application Penetration Testing/);
+
     // No-reporter user can create proposal (has engage.edit_opportunity)
     const noReporterProposal = await harness.requestJson({
       method: "POST",
@@ -232,10 +266,31 @@ const { createRouteHarness } = require("../helpers/route-harness");
         endDate: "2026-06-14",
         hoursPerDay: 7.5,
         title: "Cross Tool Testing Phase",
+        tzOffsetMinutes: 600,
       },
     });
     assert.equal(allocate.status, 201);
-    assert.equal(allocate.body.created, 1);
+    assert.equal(allocate.body.created, 10);
+
+    const { listCalendarEntries } = require("../../server/database");
+    const allocationEntries = listCalendarEntries({ startsAfter: 0, endsBefore: 4102444800 })
+      .filter((entry) => entry.projectId === calProjectId && entry.assigneeUserId === viewer.id && entry.title === "Cross Tool Testing Phase");
+    assert.equal(allocationEntries.length, 10);
+    assert.ok(allocationEntries.every((entry) => entry.allDay === false), "Engage allocations should create timed workday entries");
+    assert.ok(allocationEntries.every((entry) => Number(entry.scheduledHours) === 7.5), "Each generated workday should carry the requested daily hours");
+    assert.ok(allocationEntries.every((entry) => {
+      const localStart = new Date((entry.startsAt * 1000) + (600 * 60 * 1000));
+      return localStart.getUTCHours() === 8 && localStart.getUTCMinutes() === 30;
+    }), "Calendar allocations should use the configured workday start in the user's timezone");
+
+    const utilisation = await harness.requestJson({
+      path: "/api/engage/utilisation?days=45",
+      cookie: manager.cookie,
+    });
+    assert.equal(utilisation.status, 200);
+    const viewerUtilisation = utilisation.body.utilisation.find((row) => row.assignee_user_id === viewer.id);
+    assert.ok(viewerUtilisation, "Engage-created Calendar allocations should appear in utilisation");
+    assert.ok(viewerUtilisation.booked_hours > 0);
 
     // Cannot allocate without linked calendar project
     await harness.requestJson({
@@ -304,11 +359,11 @@ const { createRouteHarness } = require("../helpers/route-harness");
       cookie: manager.cookie,
       body: { userId: viewer.id, role: "pentester" },
     });
-    assert.equal(addMember.status, 201);
+    assert.equal(addMember.status, 200);
 
     // Viewer should have a notification about being added
     const viewerNotifs = harness.database.getNotificationsByUserId(viewer.id, 20, 0);
-    assert.ok(viewerNotifs.some((n) => n.action === "member_added"), "Viewer should be notified about member add");
+    assert.ok(viewerNotifs.some((n) => n.action === "project_member_added"), "Viewer should be notified about member add");
 
     // ================================================================
     // Test: Calendar notifications fire on allocation

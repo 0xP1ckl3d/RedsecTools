@@ -236,8 +236,12 @@ function buildVisibleReporterStats(projects) {
     totalDesigns: listReporterDesigns().length,
   };
   for (const project of projects) {
-    if (project.isArchived) stats.archivedProjects++;
-    else stats.totalProjects++;
+    const archived = project.isArchived || project.status === "archived";
+    if (archived) {
+      stats.archivedProjects++;
+      continue;
+    }
+    stats.totalProjects++;
     const projectStats = getReporterProjectStats(project.id);
     stats.totalFindings += projectStats.findings || 0;
     stats.criticalFindings += projectStats.bySeverity?.critical || 0;
@@ -297,10 +301,23 @@ function setEmbeddablePdfPreviewHeaders(res, filename = "preview.pdf") {
   res.setHeader("Content-Security-Policy", "frame-ancestors 'self'");
 }
 
+function setEmbeddableHtmlPreviewHeaders(res) {
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store");
+  res.removeHeader("X-Frame-Options");
+  res.setHeader("Content-Security-Policy", "default-src 'self'; script-src 'none'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'self'");
+}
+
 function applyRenderOptions(input, options = {}) {
   if (!input?.project) return input;
   const versionNumber = String(options.versionNumber || "").trim();
-  if (versionNumber) input.project = { ...input.project, version: versionNumber };
+  if (versionNumber) {
+    input.project = {
+      ...input.project,
+      version: versionNumber,
+      projectMetadata: { ...(input.project.projectMetadata || {}), report_version: versionNumber },
+    };
+  }
   return input;
 }
 
@@ -422,6 +439,15 @@ router.get("/reporter/bootstrap", requireUser, attachUserAccess, canViewReporter
     projects: projects.filter((p) => !p.isArchived || caps.canManageAll),
     designs,
     templates,
+  });
+});
+
+router.get("/reporter/users", requireUser, attachUserAccess, canViewReporter, (req, res) => {
+  const result = listUsers(1, 500);
+  res.json({
+    users: (result.users || [])
+      .filter((user) => !user.suspended)
+      .map((user) => ({ id: user.id, username: user.username, email: user.email })),
   });
 });
 
@@ -1845,6 +1871,88 @@ const PROPOSAL_PDF_DIR = path.join(__dirname, "..", "..", "data", "reporter-prop
 const VALID_PROPOSAL_STATUSES = ["draft", "in_review", "changes_required", "approved", "sent", "accepted", "rejected", "archived"];
 const VALID_TEST_TYPES = ["internal", "external", "webapp", "cloud", "build_review", "red_team", "wireless", "configuration_review", "assumed_breach", "custom"];
 
+function getWriteupField(writeup, camelName, snakeName) {
+  return writeup?.[camelName] || writeup?.[snakeName] || "";
+}
+
+function buildProposalServiceWriteup(writeup) {
+  if (!writeup) return "";
+  const parts = [
+    `### ${writeup.name || writeup.testType || writeup.test_type || "Security Assessment"}`,
+    getWriteupField(writeup, "description", "description"),
+    "#### Methodology",
+    getWriteupField(writeup, "methodologyWriteup", "methodology_writeup") || getWriteupField(writeup, "methodology", "methodology"),
+    "#### Scope Guidance",
+    getWriteupField(writeup, "scopeGuidance", "scope_guidance") || getWriteupField(writeup, "scope", "scope"),
+    "#### Deliverables",
+    getWriteupField(writeup, "deliverables", "deliverables"),
+  ].filter((part) => String(part || "").trim());
+  return parts.join("\n\n");
+}
+
+function buildProposalSectionsFromTemplate(templateSections, selectedTypes) {
+  const sections = [];
+  let orderIdx = 0;
+
+  for (const ts of templateSections) {
+    const content = ts.content || "";
+    if (content.includes("{{test_type_inserts}}")) {
+      let combined = content.replace("{{test_type_inserts}}", "");
+      for (const tt of selectedTypes) {
+        const writeup = getReporterTestTypeTemplateByType(tt);
+        if (writeup) combined += `\n\n${buildProposalServiceWriteup(writeup)}\n`;
+      }
+      sections.push({ title: ts.title, sectionType: ts.section_type, content: combined.trim(), orderIndex: orderIdx++, isIncluded: true, isGenerated: true });
+    } else if (content.includes("{{client_requirements_insert}}")) {
+      const reqs = selectedTypes.map((tt) => {
+        const w = getReporterTestTypeTemplateByType(tt);
+        const requirements = getWriteupField(w, "clientRequirements", "client_requirements");
+        return w && requirements ? `- **${w.name}:** ${requirements}` : null;
+      }).filter(Boolean).join("\n");
+      sections.push({ title: ts.title, sectionType: ts.section_type, content: content.replace("{{client_requirements_insert}}", reqs).trim(), orderIndex: orderIdx++, isIncluded: true, isGenerated: true });
+    } else if (content.includes("{{consultant_requirements_insert}}")) {
+      const reqs = selectedTypes.map((tt) => {
+        const w = getReporterTestTypeTemplateByType(tt);
+        const requirements = getWriteupField(w, "consultantRequirements", "consultant_requirements");
+        return w && requirements ? `- **${w.name}:** ${requirements}` : null;
+      }).filter(Boolean).join("\n");
+      sections.push({ title: ts.title, sectionType: ts.section_type, content: content.replace("{{consultant_requirements_insert}}", reqs).trim(), orderIndex: orderIdx++, isIncluded: true, isGenerated: true });
+    } else {
+      sections.push({ title: ts.title, sectionType: ts.section_type, content, orderIndex: orderIdx++, isIncluded: true, isGenerated: false });
+    }
+  }
+
+  return sections;
+}
+
+function syncProposalGeneratedSections(proposal, selectedTypes, actorUserId) {
+  const template = proposal.templateId ? getReporterProposalTemplateById(proposal.templateId) : getReporterProposalTemplateById("builtin-proposal-default");
+  if (!template) return;
+  const templateSections = listReporterProposalTemplateSections(template.id);
+  const generatedSections = buildProposalSectionsFromTemplate(templateSections, selectedTypes).filter((section) => section.isGenerated);
+  if (!generatedSections.length) return;
+  const existingSections = listReporterProposalSections(proposal.id);
+  for (const generated of generatedSections) {
+    const existing = existingSections.find((section) => section.title === generated.title);
+    if (existing) {
+      updateReporterProposalSectionRow(existing.id, {
+        title: existing.title,
+        content: generated.content,
+        isIncluded: existing.isIncluded,
+      });
+    } else {
+      createReporterProposalSectionRow({
+        proposalId: proposal.id,
+        title: generated.title,
+        sectionType: generated.sectionType || "markdown",
+        content: generated.content,
+        orderIndex: generated.orderIndex,
+        createdBy: actorUserId,
+      });
+    }
+  }
+}
+
 function ensureProposalPdfDir() {
   if (!fs.existsSync(PROPOSAL_PDF_DIR)) fs.mkdirSync(PROPOSAL_PDF_DIR, { recursive: true });
 }
@@ -1872,7 +1980,12 @@ function canCreateProposals(req, res, next) {
 
 // List proposals
 router.get("/reporter/proposals", requireUser, attachUserAccess, canViewProposals, (req, res) => {
-  const proposals = listReporterProposals();
+  let proposals = listReporterProposals();
+  if (req.query.filter === "active") {
+    proposals = proposals.filter((proposal) => !proposal.archivedAt && proposal.status !== "archived");
+  } else if (req.query.filter === "archived") {
+    proposals = proposals.filter((proposal) => proposal.archivedAt || proposal.status === "archived");
+  }
   const caps = getProposalCapabilities(req);
   res.json({ proposals, capabilities: caps });
 });
@@ -1903,54 +2016,20 @@ router.post("/reporter/proposals", writeLimiter, requireUser, attachUserAccess, 
   // Load template sections
   const template = templateId ? getReporterProposalTemplateById(templateId) : getReporterProposalTemplateById("builtin-proposal-default");
   const templateSections = template ? listReporterProposalTemplateSections(template.id) : [];
-
-  // Build sections from template, inserting test-type write-ups
-  const sections = [];
-  let orderIdx = 0;
-
-  for (const ts of templateSections) {
-    if (ts.content && ts.content.includes("{{test_type_inserts}}")) {
-      // Insert each selected test type as separate subsections
-      let combined = ts.content.replace("{{test_type_inserts}}", "");
-      for (const tt of selectedTypes) {
-        const writeup = getReporterTestTypeTemplateByType(tt);
-        if (writeup) {
-          combined += `\n\n### ${writeup.name}\n\n${writeup.methodology_writeup || ""}\n\n**Scope:** ${writeup.scope_guidance || ""}\n\n**Deliverables:** ${writeup.deliverables || ""}\n`;
-        }
-      }
-      sections.push({ title: ts.title, sectionType: ts.section_type, content: combined, orderIndex: orderIdx++, isIncluded: true });
-    } else if (ts.content && ts.content.includes("{{client_requirements_insert}}")) {
-      let combined = ts.content;
-      const reqs = selectedTypes.map((tt) => {
-        const w = getReporterTestTypeTemplateByType(tt);
-        return w ? `- **${w.name}:** ${w.client_requirements || ""}` : null;
-      }).filter(Boolean).join("\n");
-      combined = combined.replace("{{client_requirements_insert}}", reqs);
-      sections.push({ title: ts.title, sectionType: ts.section_type, content: combined, orderIndex: orderIdx++, isIncluded: true });
-    } else if (ts.content && ts.content.includes("{{consultant_requirements_insert}}")) {
-      let combined = ts.content;
-      const reqs = selectedTypes.map((tt) => {
-        const w = getReporterTestTypeTemplateByType(tt);
-        return w ? `- **${w.name}:** ${w.consultant_requirements || ""}` : null;
-      }).filter(Boolean).join("\n");
-      combined = combined.replace("{{consultant_requirements_insert}}", reqs);
-      sections.push({ title: ts.title, sectionType: ts.section_type, content: combined, orderIndex: orderIdx++, isIncluded: true });
-    } else {
-      sections.push({ title: ts.title, sectionType: ts.section_type, content: ts.content || "", orderIndex: orderIdx++, isIncluded: true });
-    }
-  }
+  const sections = buildProposalSectionsFromTemplate(templateSections, selectedTypes);
 
   const proposal = createReporterProposalRow({
     templateId: template ? template.id : null,
     title: title.trim(),
     clientName: clientName || "",
+    preparedByUserId: req.access.userId,
     testTypes: selectedTypes,
-    createdBy: req.session.user.id,
+    createdBy: req.access.userId,
     sections,
   });
 
-  createAuditEvent({ userId: req.session.user.id, action: "reporter:proposal:create", targetType: "reporter_proposal", targetId: proposal.id, details: { title: proposal.title } });
-  res.json({ proposal });
+  auditReporter(req, { action: "proposal_create", targetType: "reporter_proposal", targetId: proposal.id, metadata: { title: proposal.title } });
+  res.status(201).json({ proposal });
 });
 
 // Get proposal detail
@@ -1981,7 +2060,10 @@ router.put("/reporter/proposals/:id", writeLimiter, requireUser, attachUserAcces
   }
 
   const updated = updateReporterProposalRow(proposal.id, payload);
-  createAuditEvent({ userId: req.session.user.id, action: "reporter:proposal:update", targetType: "reporter_proposal", targetId: proposal.id });
+  if (payload.testTypes) {
+    syncProposalGeneratedSections(updated, payload.testTypes, req.access.userId);
+  }
+  auditReporter(req, { action: "proposal_update", targetType: "reporter_proposal", targetId: proposal.id });
   res.json({ proposal: updated });
 });
 
@@ -1994,7 +2076,7 @@ router.put("/reporter/proposals/:id/status", writeLimiter, requireUser, attachUs
   if (!VALID_PROPOSAL_STATUSES.includes(status)) return res.status(400).json({ error: "Invalid status" });
 
   const updated = updateReporterProposalStatus(proposal.id, status);
-  createAuditEvent({ userId: req.session.user.id, action: "reporter:proposal:status", targetType: "reporter_proposal", targetId: proposal.id, details: { status } });
+  auditReporter(req, { action: "proposal_status", targetType: "reporter_proposal", targetId: proposal.id, metadata: { status } });
   res.json({ proposal: updated });
 });
 
@@ -2003,7 +2085,7 @@ router.post("/reporter/proposals/:id/archive", writeLimiter, requireUser, attach
   const proposal = getReporterProposalById(req.params.id);
   if (!proposal) return res.status(404).json({ error: "Proposal not found" });
   const updated = archiveReporterProposalRow(proposal.id);
-  createAuditEvent({ userId: req.session.user.id, action: "reporter:proposal:archive", targetType: "reporter_proposal", targetId: proposal.id });
+  auditReporter(req, { action: "proposal_archive", targetType: "reporter_proposal", targetId: proposal.id });
   res.json({ proposal: updated });
 });
 
@@ -2012,7 +2094,7 @@ router.post("/reporter/proposals/:id/unarchive", writeLimiter, requireUser, atta
   const proposal = getReporterProposalById(req.params.id);
   if (!proposal) return res.status(404).json({ error: "Proposal not found" });
   const updated = unarchiveReporterProposalRow(proposal.id);
-  createAuditEvent({ userId: req.session.user.id, action: "reporter:proposal:unarchive", targetType: "reporter_proposal", targetId: proposal.id });
+  auditReporter(req, { action: "proposal_unarchive", targetType: "reporter_proposal", targetId: proposal.id });
   res.json({ proposal: updated });
 });
 
@@ -2038,9 +2120,9 @@ router.post("/reporter/proposals/:id/sections", writeLimiter, requireUser, attac
     sectionType: sectionType || "markdown",
     content: content || "",
     orderIndex: orderIndex != null ? orderIndex : 999,
-    createdBy: req.session.user.id,
+    createdBy: req.access.userId,
   });
-  res.json({ section });
+  res.status(201).json({ section });
 });
 
 // Update proposal section
@@ -2108,7 +2190,7 @@ router.post("/reporter/proposals/:id/render-pdf", writeLimiter, requireUser, att
     filePath,
     version,
     status: "pending",
-    createdBy: req.session.user.id,
+    createdBy: req.access.userId,
   });
 
   res.json({ generation });
@@ -2135,7 +2217,7 @@ router.post("/reporter/proposals/:id/render-pdf", writeLimiter, requireUser, att
       errorMessage: err.message || "PDF generation failed",
     });
     createNotification({
-      userId: req.session.user.id,
+      userId: req.access.userId,
       category: "reporter",
       action: "proposal_pdf_failed",
       title: "Proposal PDF generation failed",
@@ -2182,11 +2264,30 @@ router.get("/reporter/proposals/:id/preview", requireUser, attachUserAccess, can
       { proposal, template, sections, testTypes },
       { cssHref: `/api/reporter/proposal-templates/${encodeURIComponent(template?.id || "default")}/preview.css` },
     );
-    res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.setHeader("Cache-Control", "no-store");
+    setEmbeddableHtmlPreviewHeaders(res);
     res.send(html);
   } catch (err) {
     res.status(500).json({ error: "Failed to render proposal preview" });
+  }
+});
+
+router.get("/reporter/proposals/:id/preview.pdf", requireUser, attachUserAccess, canViewProposals, async (req, res) => {
+  const proposal = getReporterProposalById(req.params.id);
+  if (!proposal) return res.status(404).json({ error: "Proposal not found" });
+
+  const sections = listReporterProposalSections(proposal.id);
+  const template = proposal.templateId ? getReporterProposalTemplateById(proposal.templateId) : null;
+  const testTypes = (proposal.testTypes || []).map((tt) => getReporterTestTypeTemplateByType(tt) || { test_type: tt, name: tt });
+
+  try {
+    const html = renderProposalDocumentHtml({ proposal, template, sections, testTypes });
+    const pdf = await renderPdfBuffer(html, {
+      headerTemplate: '<div class="reporter-pdf-header">RedSec Proposal</div>',
+      timeoutMs: parseInt(process.env.REPORTER_PDF_TIMEOUT_MS, 10) || undefined,
+    });
+    sendTempPdfPreview(req, res, pdf, `${proposal.title || "proposal"}-preview`);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to render proposal PDF preview" });
   }
 });
 
@@ -2367,7 +2468,6 @@ router.post("/reporter/test-type-writeups", writeLimiter, requireUser, attachUse
 router.put("/reporter/test-type-writeups/:id", writeLimiter, requireUser, attachUserAccess, canManageTemplates, (req, res) => {
   const existing = getReporterTestTypeTemplateById(req.params.id);
   if (!existing) return res.status(404).json({ error: "Write-up not found" });
-  if (existing.is_builtin) return res.status(403).json({ error: "Built-in write-ups cannot be edited" });
   const { name, description, methodologyWriteup, scopeGuidance, deliverables, clientRequirements, consultantRequirements, assumptions, restrictions } = req.body;
   const writeup = updateReporterTestTypeTemplate({
     id: req.params.id,
@@ -2443,8 +2543,7 @@ router.get("/reporter/proposal-templates/:id/preview", requireUser, attachUserAc
     const html = renderProposalDocumentHtml(buildProposalTemplatePreviewInput(template), {
       cssHref: `/api/reporter/proposal-templates/${encodeURIComponent(template.id)}/preview.css`,
     });
-    res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.setHeader("Cache-Control", "no-store");
+    setEmbeddableHtmlPreviewHeaders(res);
     res.send(html);
   } catch (err) {
     res.status(500).json({ error: "Failed to render proposal template preview" });

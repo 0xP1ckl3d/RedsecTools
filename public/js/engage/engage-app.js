@@ -10,6 +10,7 @@ const STATUS_CLASSES = {
   testing_blocked: "blocked",
   testing_complete: "testing",
   reporting_in_progress: "reporting",
+  ready_for_delivery: "delivered",
   ready_for_qa: "qa",
   qa_assigned: "qa",
   qa_in_progress: "qa",
@@ -32,17 +33,104 @@ const STATUS_LABELS = {
   testing_blocked: "Blocked",
   testing_complete: "Testing Complete",
   reporting_in_progress: "Reporting",
-  ready_for_qa: "Ready for QA",
-  qa_assigned: "QA Assigned",
-  qa_in_progress: "QA In Progress",
-  qa_changes_required: "QA Changes Required",
+  ready_for_delivery: "Ready for Delivery",
+  ready_for_qa: "In QA",
+  qa_assigned: "In QA",
+  qa_in_progress: "In QA",
+  qa_changes_required: "Changes Required",
   qa_ready_for_delivery: "Ready for Delivery",
   delivered: "Delivered",
   retest_pending: "Retest Pending",
   post_engagement_followup: "Follow-up",
   closed: "Closed",
   cancelled: "Cancelled",
+  archived: "Archived",
 };
+
+const STATUS_CHART_COLORS = {
+  draft: "#64748b",
+  contract_signed: "#16a34a",
+  scheduled: "#0ea5e9",
+  testing_not_started: "#38bdf8",
+  testing_in_progress: "#2563eb",
+  testing_blocked: "#dc2626",
+  testing_complete: "#14b8a6",
+  reporting_in_progress: "#7c3aed",
+  ready_for_delivery: "#84cc16",
+  ready_for_qa: "#f59e0b",
+  qa_assigned: "#d97706",
+  qa_in_progress: "#ea580c",
+  qa_changes_required: "#be123c",
+  qa_ready_for_delivery: "#84cc16",
+  delivered: "#15803d",
+  retest_pending: "#06b6d4",
+  post_engagement_followup: "#a855f7",
+  closed: "#475569",
+  cancelled: "#71717a",
+  archived: "#334155",
+};
+
+const ENG_STATUS_ORDER = [
+  "draft",
+  "contract_signed",
+  "scheduled",
+  "testing_not_started",
+  "testing_in_progress",
+  "testing_blocked",
+  "testing_complete",
+  "reporting_in_progress",
+  "ready_for_delivery",
+  "ready_for_qa",
+  "qa_assigned",
+  "qa_in_progress",
+  "qa_changes_required",
+  "qa_ready_for_delivery",
+  "retest_pending",
+  "post_engagement_followup",
+  "delivered",
+  "closed",
+  "cancelled",
+  "archived",
+];
+
+const ACTIVE_DELIVERY_STATUSES = [
+  "contract_signed",
+  "scheduled",
+  "testing_not_started",
+  "testing_in_progress",
+  "testing_blocked",
+  "testing_complete",
+  "reporting_in_progress",
+  "ready_for_delivery",
+  "ready_for_qa",
+  "qa_assigned",
+  "qa_in_progress",
+  "qa_changes_required",
+  "qa_ready_for_delivery",
+  "retest_pending",
+  "post_engagement_followup",
+];
+
+const DELIVERY_WORK_STATUSES = [
+  "contract_signed",
+  "scheduled",
+  "testing_not_started",
+  "testing_in_progress",
+  "testing_blocked",
+  "testing_complete",
+  "reporting_in_progress",
+  "retest_pending",
+  "post_engagement_followup",
+];
+
+const QA_WORK_STATUSES = [
+  "ready_for_qa",
+  "qa_assigned",
+  "qa_in_progress",
+  "qa_changes_required",
+];
+
+const TERMINAL_STATUSES = ["delivered", "closed", "cancelled", "archived"];
 
 const OPP_STAGE_LABELS = {
   lead: "Lead",
@@ -58,12 +146,11 @@ const OPP_STAGE_LABELS = {
 
 const QA_STATUS_LABELS = {
   not_requested: "Not Requested",
-  ready_for_qa: "Ready for QA",
+  ready_for_qa: "QA Requested",
   assigned: "Assigned",
   reviewing: "Reviewing",
-  requires_more_work: "Requires More Work",
-  ready_for_delivery: "Ready for Delivery",
-  delivered: "Delivered",
+  requires_more_work: "Changes Required",
+  ready_for_delivery: "Approved for Delivery",
   cancelled: "Cancelled",
 };
 
@@ -88,6 +175,13 @@ function qaStatusPill(status) {
   const cls = status === "reviewing" ? "qa" : status === "requires_more_work" ? "blocked" : status === "ready_for_delivery" ? "delivered" : "draft";
   const label = QA_STATUS_LABELS[status] || status;
   return `<span class="engage-status-pill ${cls}"><span class="pill-dot"></span>${esc(label)}</span>`;
+}
+
+function qaAttentionLabel(status) {
+  if (status === "ready_for_qa") return "Unassigned QA";
+  if (status === "requires_more_work") return "Changes Required";
+  if (status === "ready_for_delivery") return "Approved for Delivery";
+  return QA_STATUS_LABELS[status] || status;
 }
 
 function renderStatCard(label, value, sub, valueClass) {
@@ -121,20 +215,140 @@ function renderTopRow(stats, capabilities) {
   return `<div class="engage-stats-row">${cards.join("")}</div>`;
 }
 
-function renderStatusBar(distribution) {
-  const total = Object.values(distribution).reduce((s, v) => s + v, 0);
-  if (total === 0) return '<div class="engage-status-bar"></div><div class="engage-empty">No engagements</div>';
-  let bar = '<div class="engage-status-bar">';
-  let legend = '<div class="engage-status-legend">';
-  for (const [status, count] of Object.entries(distribution)) {
-    if (count === 0) continue;
-    const pct = (count / total * 100).toFixed(1);
-    bar += `<div class="engage-status-bar-segment color-${status}" data-width="${pct}%"></div>`;
-    legend += `<span class="engage-status-legend-item"><span class="engage-status-legend-dot color-${status}"></span>${STATUS_LABELS[status] || status}: ${count}</span>`;
-  }
-  bar += "</div>";
-  legend += "</div>";
-  return bar + legend;
+function pieSlicePath(cx, cy, radius, startAngle, endAngle) {
+  const toPoint = (angle) => {
+    const rad = (angle - 90) * Math.PI / 180;
+    return {
+      x: cx + radius * Math.cos(rad),
+      y: cy + radius * Math.sin(rad),
+    };
+  };
+  const start = toPoint(startAngle);
+  const end = toPoint(endAngle);
+  const largeArc = endAngle - startAngle > 180 ? 1 : 0;
+  return `M ${cx} ${cy} L ${start.x.toFixed(3)} ${start.y.toFixed(3)} A ${radius} ${radius} 0 ${largeArc} 1 ${end.x.toFixed(3)} ${end.y.toFixed(3)} Z`;
+}
+
+function sumStatuses(distribution, statuses) {
+  return statuses.reduce((sum, status) => sum + Number((distribution || {})[status] || 0), 0);
+}
+
+function pickDistribution(distribution, statuses) {
+  return statuses.reduce((acc, status) => {
+    const count = Number((distribution || {})[status] || 0);
+    if (count > 0) acc[status] = count;
+    return acc;
+  }, {});
+}
+
+function orderedStatusEntries(distribution, statuses) {
+  const source = distribution || {};
+  const order = statuses || ENG_STATUS_ORDER;
+  const known = order
+    .map((status) => [status, Number(source[status] || 0)])
+    .filter(([, count]) => count > 0);
+  const extras = Object.keys(source)
+    .filter((status) => !order.includes(status) && Number(source[status]) > 0)
+    .sort()
+    .map((status) => [status, Number(source[status])]);
+  return known.concat(extras);
+}
+
+function renderStatusChart(distribution, options = {}) {
+  const entries = orderedStatusEntries(distribution, options.statuses);
+  const total = entries.reduce((sum, [, count]) => sum + Number(count), 0);
+  const emptyText = options.emptyText || "No engagements";
+  if (total === 0) return `<div class="engage-status-chart-empty"><div class="engage-empty">${esc(emptyText)}</div></div>`;
+
+  let angle = 0;
+  const slices = entries.map(([status, count]) => {
+    const value = Number(count);
+    const nextAngle = angle + (value / total) * 360;
+    const color = STATUS_CHART_COLORS[status] || "#64748b";
+    const path = entries.length === 1
+      ? `<circle cx="50" cy="50" r="42" fill="${color}"></circle>`
+      : `<path d="${pieSlicePath(50, 50, 42, angle, nextAngle)}" fill="${color}"></path>`;
+    angle = nextAngle;
+    return path;
+  }).join("");
+
+  const legend = entries.map(([status, count]) => {
+    const pct = Math.round((Number(count) / total) * 100);
+    return `<div class="engage-status-chart-legend-item">
+      <span class="engage-status-chart-dot color-${esc(status)}"></span>
+      <span>${esc(STATUS_LABELS[status] || status)}</span>
+      <strong>${count}</strong>
+      <span class="text-muted">${pct}%</span>
+    </div>`;
+  }).join("");
+
+  return `<div class="engage-status-chart">
+    <div class="engage-status-chart-visual">
+      <svg class="engage-status-pie" viewBox="0 0 100 100" role="img" aria-label="${esc(options.ariaLabel || "Engagement status distribution")}">
+        ${slices}
+      </svg>
+      <div class="engage-status-chart-total">
+        <strong>${total}</strong>
+        <span>${esc(options.totalLabel || "Total")}</span>
+      </div>
+    </div>
+    <div class="engage-status-chart-legend">${legend}</div>
+  </div>`;
+}
+
+function renderHealthMetric(label, value, sub, tone) {
+  return `<div class="engage-health-metric ${tone ? `tone-${tone}` : ""}">
+    <div>
+      <div class="engage-health-label">${esc(label)}</div>
+      ${sub ? `<div class="engage-health-sub">${esc(sub)}</div>` : ""}
+    </div>
+    <div class="engage-health-value">${esc(String(value))}</div>
+  </div>`;
+}
+
+function renderOutcomeItem(label, value, sub) {
+  return `<div class="engage-outcome-item">
+    <div class="engage-outcome-value">${esc(String(value))}</div>
+    <div class="engage-outcome-label">${esc(label)}</div>
+    ${sub ? `<div class="engage-outcome-sub">${esc(sub)}</div>` : ""}
+  </div>`;
+}
+
+function renderDeliveryHealth(stats, qaReviews = []) {
+  const distribution = stats.engStatusDistribution || {};
+  const activeDistribution = pickDistribution(distribution, ACTIVE_DELIVERY_STATUSES);
+  const deliveryCount = sumStatuses(distribution, DELIVERY_WORK_STATUSES);
+  const qaCount = Number(stats.waitingForQA || 0) + Number(stats.qaInProgress || 0);
+  const unassignedQaCount = qaReviews.filter((review) =>
+    !review.assigned_to_user_id && !["delivered", "cancelled"].includes(review.status)
+  ).length;
+  const attentionCount = Number(stats.blockedEngagements || 0) + Number(stats.overdueEngagements || 0) + Number(stats.qaChangesRequired || 0) + unassignedQaCount;
+  const readyCount = Number(stats.readyForDelivery || 0);
+  const draftCount = Number(distribution.draft || 0);
+  const terminalTotal = sumStatuses(distribution, TERMINAL_STATUSES);
+
+  return `<div class="engage-delivery-health">
+    <div class="engage-delivery-chart-block">
+      ${renderStatusChart(activeDistribution, {
+        emptyText: "No active delivery work",
+        totalLabel: "Active",
+        ariaLabel: "Active engagement delivery distribution",
+        statuses: ACTIVE_DELIVERY_STATUSES,
+      })}
+    </div>
+    <div class="engage-health-stack">
+      ${renderHealthMetric("Delivery Work", deliveryCount, "Scheduled, testing, reporting, retest, follow-up", deliveryCount > 0 ? "info" : "")}
+      ${renderHealthMetric("QA Pressure", qaCount, `${stats.waitingForQA || 0} waiting, ${stats.qaInProgress || 0} in progress`, qaCount > 0 ? "qa" : "")}
+      ${renderHealthMetric("Needs Action", attentionCount, `${stats.blockedEngagements || 0} blocked, ${stats.overdueEngagements || 0} overdue, ${stats.qaChangesRequired || 0} QA changes, ${unassignedQaCount} unassigned QA`, attentionCount > 0 ? "warning" : "")}
+      ${renderHealthMetric("Ready to Ship", readyCount, "Passed QA and awaiting delivery", readyCount > 0 ? "success" : "")}
+    </div>
+    <div class="engage-outcome-strip">
+      ${renderOutcomeItem("Delivered This Month", stats.deliveredThisMonth || 0)}
+      ${renderOutcomeItem("Closed This Month", stats.closedThisMonth || 0)}
+      ${renderOutcomeItem("Draft / Intake", draftCount, "Not active delivery")}
+      ${renderOutcomeItem("Lifetime Outcomes", terminalTotal, "Delivered, closed, cancelled, archived")}
+    </div>
+  </div>`;
 }
 
 function renderFunnel(distribution) {
@@ -156,21 +370,32 @@ function renderFunnel(distribution) {
 
 function renderEngagementList(engagements) {
   if (!engagements || engagements.length === 0) return '<div class="engage-empty">No engagements</div>';
-  return engagements.map((e) => `<div class="engage-list-item">
-    <div>
-      <a href="/engage">${esc(e.title)}</a>
-      <div class="engage-list-item-meta">${esc(e.engagement_type || "")}</div>
-    </div>
-    ${statusPill(e.status)}
-  </div>`).join("");
+  return engagements.map((e) => renderWorkCard({
+    title: e.title,
+    meta: e.engagement_type || "",
+    badge: statusPill(e.status),
+    attrs: `data-dashboard-eng-id="${esc(e.id)}"`,
+  })).join("");
 }
 
 function renderQaCards(reviews) {
   if (!reviews || reviews.length === 0) return '<div class="engage-empty">No QA reviews</div>';
-  return reviews.map((r) => `<div class="engage-qa-card">
-    <div class="engage-qa-card-title">${esc(r.report_link || "QA Review")}</div>
-    <div class="engage-qa-card-meta">${qaStatusPill(r.status)}</div>
-  </div>`).join("");
+  return reviews.map((r) => renderWorkCard({
+    title: r.engagement_title || r.report_link || "QA Review",
+    meta: `${r.assigned_by_username ? `Submitted by ${r.assigned_by_username}` : "Submitted by unknown"} · ${r.assigned_to_username ? `Reviewer: ${r.assigned_to_username}` : "Unassigned"}`,
+    badge: qaStatusPill(r.status),
+    attrs: `data-dashboard-qa-id="${esc(r.id || "")}"`,
+  })).join("");
+}
+
+function renderWorkCard({ title, meta, badge, attrs }) {
+  return `<div class="engage-work-card engage-clickable-item" ${attrs || ""}>
+    <div class="engage-work-card-main">
+      <strong>${esc(title)}</strong>
+      <div class="engage-list-item-meta">${esc(meta || "")}</div>
+    </div>
+    <div class="engage-work-card-status">${badge || ""}</div>
+  </div>`;
 }
 
 function renderUtilisation(utilisation) {
@@ -187,16 +412,26 @@ function renderUtilisation(utilisation) {
   }).join("");
 }
 
-function renderBlockedOverdue(blocked, overdue) {
+function renderNeedsAttention(blocked, overdue, qaReviews) {
   const items = [...(blocked || []), ...(overdue || [])];
-  if (items.length === 0) return '<div class="engage-empty">Nothing requires attention</div>';
-  return items.map((e) => `<div class="engage-list-item">
-    <div>
-      <a href="/engage">${esc(e.title)}</a>
-      <div class="engage-list-item-meta">${e.scheduled_end_date ? `Due: ${e.scheduled_end_date}` : ""}</div>
-    </div>
-    ${statusPill(e.status)}
-  </div>`).join("");
+  const qaItems = (qaReviews || []).filter((review) =>
+    !review.assigned_to_user_id || review.status === "requires_more_work"
+  );
+  if (items.length === 0 && qaItems.length === 0) return '<div class="engage-empty">Nothing requires attention</div>';
+  const engagementHtml = items.map((e) => renderWorkCard({
+    title: e.title,
+    meta: e.scheduled_end_date ? `Overdue: ${e.scheduled_end_date}` : "Blocked",
+    badge: statusPill(e.status),
+    attrs: `data-dashboard-eng-id="${esc(e.id)}"`,
+  })).join("");
+  const qaHtml = qaItems.map((review) => renderWorkCard({
+    title: review.engagement_title || "QA Review",
+    meta: qaAttentionLabel(review.status),
+    badge: qaStatusPill(review.status),
+    attrs: `data-dashboard-qa-id="${esc(review.id || "")}"`,
+  })).join("");
+  if (!engagementHtml && !qaHtml) return '<div class="engage-empty">Nothing requires attention</div>';
+  return engagementHtml + qaHtml;
 }
 
 function renderRecentActivity(activity) {
@@ -220,27 +455,28 @@ function renderRecentActivity(activity) {
 
   const initializedViews = new Set(["dashboard"]);
 
-  document.addEventListener("click", (e) => {
-    const btn = e.target.closest("[data-engage-view]");
-    if (!btn) return;
-    const view = btn.dataset.engageView;
-    // Update sidebar active state
+  async function switchToView(view) {
     document.querySelectorAll("[data-engage-view]").forEach((el) => {
       el.classList.toggle("active", el.dataset.engageView === view);
     });
-    // Show/hide content sections
     document.querySelectorAll("[data-engage-section]").forEach((el) => {
       el.classList.toggle("hidden", el.dataset.engageSection !== view);
     });
-    // Lazy-initialize views on first switch
     if (!initializedViews.has(view)) {
       initializedViews.add(view);
-      if (view === "clients" && typeof EngageClients !== "undefined") EngageClients.init();
-      if (view === "pipeline" && typeof EngageOpportunities !== "undefined") EngageOpportunities.init();
-      if (view === "engagements" && typeof EngageEngagements !== "undefined") EngageEngagements.init();
-      if (view === "qa" && typeof EngageQa !== "undefined") EngageQa.init();
-      if (view === "utilisation" && typeof EngageUtilisation !== "undefined") EngageUtilisation.init();
+      if (view === "clients" && typeof EngageClients !== "undefined") await EngageClients.init();
+      if (view === "pipeline" && typeof EngageOpportunities !== "undefined") await EngageOpportunities.init();
+      if (view === "engagements" && typeof EngageEngagements !== "undefined") await EngageEngagements.init();
+      if (view === "qa" && typeof EngageQa !== "undefined") await EngageQa.init();
+      if (view === "utilisation" && typeof EngageUtilisation !== "undefined") await EngageUtilisation.init();
     }
+  }
+  window.switchEngageView = switchToView;
+
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-engage-view]");
+    if (!btn) return;
+    switchToView(btn.dataset.engageView);
   });
 })();
 
@@ -262,6 +498,8 @@ async function initEngageApp() {
     const data = await res.json();
 
     const { stats, capabilities, myWork, recentActivity } = data;
+    const dashboardQaReviews = data.dashboardQaReviews || myWork.qaReviews || [];
+    const dashboardAttentionQaReviews = data.dashboardAttentionQaReviews || dashboardQaReviews;
     window._engageCapabilities = capabilities;
     window._engageUser = data.user || null;
 
@@ -281,9 +519,9 @@ async function initEngageApp() {
       renderFunnel(stats.oppStageDistribution) +
       "</div></div>";
 
-    // Engagement status distribution
-    html += '<div class="engage-section"><div class="engage-section-title">Engagement Status</div><div class="engage-panel">' +
-      renderStatusBar(stats.engStatusDistribution) +
+    // Active delivery health
+    html += '<div class="engage-section"><div class="engage-section-title">Active Delivery Health</div><div class="engage-panel engage-delivery-health-panel">' +
+      renderDeliveryHealth(stats, dashboardQaReviews) +
       "</div></div>";
 
     html += "</div>";
@@ -299,14 +537,14 @@ async function initEngageApp() {
     // Blocked / overdue
     if (capabilities.canViewAll) {
       html += '<div class="engage-section"><div class="engage-section-title">Needs Attention</div><div class="engage-panel">' +
-        renderBlockedOverdue(stats.blockedList, stats.overdueList) +
+        renderNeedsAttention(stats.blockedList, stats.overdueList, dashboardAttentionQaReviews) +
         "</div></div>";
     }
 
     // QA Queue
     if (capabilities.canManageQa || capabilities.canPerformQa) {
       html += '<div class="engage-section"><div class="engage-section-title">QA Queue</div><div class="engage-panel">' +
-        renderQaCards(myWork.qaReviews) +
+        renderQaCards(dashboardQaReviews) +
         "</div></div>";
     }
 
@@ -338,6 +576,24 @@ async function initEngageApp() {
     // Apply dynamic widths from data-width attributes (CSP-safe: no inline styles)
     content.querySelectorAll("[data-width]").forEach((el) => {
       el.style.width = el.dataset.width;
+    });
+
+    // Bind dashboard engagement links to switch to engagement view
+    content.querySelectorAll("[data-dashboard-eng-id]").forEach((el) => {
+      el.addEventListener("click", async (event) => {
+        event.preventDefault();
+        await switchEngageView("engagements");
+        if (typeof EngageEngagements !== "undefined" && EngageEngagements.openEng) {
+          EngageEngagements.openEng(el.dataset.dashboardEngId);
+        }
+      });
+    });
+
+    content.querySelectorAll("[data-dashboard-qa-id]").forEach((el) => {
+      el.addEventListener("click", async (event) => {
+        event.preventDefault();
+        await switchEngageView("qa");
+      });
     });
 
     // Load utilisation separately (manager/admin only)

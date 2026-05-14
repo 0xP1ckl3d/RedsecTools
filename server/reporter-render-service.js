@@ -3,6 +3,12 @@ const path = require("path");
 const nunjucks = require("nunjucks");
 const puppeteer = require("puppeteer-core");
 const { renderMarkdownToHtml } = require("./wiki-render");
+const {
+  defaultProposalCss,
+  defaultProposalHtml,
+  defaultReportCss,
+  defaultReportHtml,
+} = require("./reporter-default-templates");
 
 const REPORTER_PDF_DIR = path.join(__dirname, "..", "data", "reporter-pdfs");
 const DEFAULT_TIMEOUT_MS = parseInt(process.env.REPORTER_PDF_TIMEOUT_MS, 10) || 120000;
@@ -783,8 +789,8 @@ function buildReportContext({ project, design, findings, sections, members, evid
     position_title: metadata.position_title || "",
     author: metadata.author || project.creatorUsername || "",
     author_title: metadata.author_title || "",
-    version: project.version || "1.0",
-    report_date: formatDate(project.updatedAt || project.createdAt, "long"),
+    version: metadata.report_version || project.version || "1.0",
+    report_date: metadata.report_date ? formatDate(metadata.report_date, "long") : formatDate(project.updatedAt || project.createdAt, "long"),
     start_date: metadata.start_date ? formatDate(metadata.start_date, "long") : "",
     end_date: metadata.end_date ? formatDate(metadata.end_date, "long") : "",
     duration: metadata.duration || "",
@@ -934,8 +940,8 @@ function buildReportContext({ project, design, findings, sections, members, evid
 
 function renderReportHtml(input, options = {}) {
   const design = input.design || {};
-  const css = design.cssTemplate || defaultCssTemplate();
-  let template = design.htmlTemplate || defaultHtmlTemplate();
+  const css = design.cssTemplate || defaultReportCss;
+  let template = design.htmlTemplate || defaultReportHtml;
   if (options.cssHref) {
     template = template.replace(/<style>\s*\{\{\s*css\s*\|\s*safe\s*\}\}\s*<\/style>/g, '<link rel="stylesheet" href="{{ cssHref }}">');
   }
@@ -1059,8 +1065,8 @@ function buildProposalContext({ proposal, template, sections, testTypes }) {
 
 function renderProposalDocumentHtml(input, options = {}) {
   const template = input.template || {};
-  const css = template.css_template || template.cssTemplate || defaultProposalCssTemplate();
-  let html = template.html_template || template.htmlTemplate || defaultProposalHtmlTemplate();
+  const css = template.css_template || template.cssTemplate || defaultProposalCss;
+  let html = template.html_template || template.htmlTemplate || defaultProposalHtml;
   if (options.cssHref) {
     html = html.replace(/<style>\s*\{\{\s*css\s*\|\s*safe\s*\}\}\s*<\/style>/g, '<link rel="stylesheet" href="{{ cssHref }}">');
   }
@@ -1417,12 +1423,12 @@ module.exports = {
   ensureReporterPdfDir,
   renderReportHtml,
   renderPdfBuffer,
-  defaultHtmlTemplate,
-  defaultCssTemplate,
+  defaultHtmlTemplate: () => defaultReportHtml,
+  defaultCssTemplate: () => defaultReportCss,
   buildReportContext,
   renderProposalDocumentHtml,
-  defaultProposalHtmlTemplate,
-  defaultProposalCssTemplate,
+  defaultProposalHtmlTemplate: () => defaultProposalHtml,
+  defaultProposalCssTemplate: () => defaultProposalCss,
   buildProposalContext,
   formatDate,
 };

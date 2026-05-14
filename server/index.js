@@ -87,6 +87,7 @@ app.use(
         styleSrc: ["'self'"],
         imgSrc: ["'self'", "data:"],
         connectSrc: ["'self'", "https://api.open-meteo.com", "https://geocoding-api.open-meteo.com"],
+        frameSrc: ["'self'", "blob:"],
         fontSrc: ["'none'"],
         objectSrc: ["'none'"],
         frameAncestors: ["'none'"],
@@ -125,6 +126,12 @@ app.use(express.static(path.join(__dirname, "..", "public"), {
     }
   },
 }));
+
+const SITE_PRIMARY_THEMES = new Set(["red", "green", "blue", "orange", "purple"]);
+app.get("/api/site-theme", (req, res) => {
+  const primaryTheme = String(getSetting("site_primary_theme") || "red").trim().toLowerCase();
+  res.json({ primaryTheme: SITE_PRIMARY_THEMES.has(primaryTheme) ? primaryTheme : "red" });
+});
 
 // --- API routes ---
 app.use("/api", pasteRouter);

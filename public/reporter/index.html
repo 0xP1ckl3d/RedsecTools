@@ -6,8 +6,8 @@
   <meta name="referrer" content="no-referrer">
   <title>RedSecReporter</title>
   <link rel="icon" href="/assets/favicon.ico" type="image/x-icon">
-  <script src="/js/theme-init.js?v=20260507-ai-calendar"></script>
-  <link rel="stylesheet" href="/css/style.css?v=20260507-ai-calendar">
+  <script src="/js/theme-init.js?v=20260514-reporter-preview"></script>
+  <link rel="stylesheet" href="/css/style.css?v=20260514-reporter-preview">
   <link rel="stylesheet" href="/css/notifications.css">
 </head>
 <body>
@@ -41,10 +41,6 @@
         <button type="button" class="sidebar-nav-item" data-reporter-view="templates">
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
           <span class="sidebar-nav-text">Finding Templates</span>
-        </button>
-        <button type="button" class="sidebar-nav-item" data-reporter-view="engagement-templates">
-          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>
-          <span class="sidebar-nav-text">Engagement Templates</span>
         </button>
       </nav>
 
@@ -192,6 +188,7 @@
                 </div>
               </nav>
               <div class="reporter-tree-meta">
+                <button type="button" class="reporter-tree-meta-btn" data-reporter-meta="details">Details</button>
                 <button type="button" class="reporter-tree-meta-btn" data-reporter-meta="members">Members</button>
                 <button type="button" class="reporter-tree-meta-btn" data-reporter-meta="evidence">Evidence</button>
                 <button type="button" class="reporter-tree-meta-btn" data-reporter-meta="notes">Notes</button>
@@ -279,6 +276,74 @@
 
               <!-- Meta panels (members, evidence, notes, comments, history, pdfs) -->
               <div id="reporter-editor-meta" class="reporter-editor-panel hidden">
+                <div id="reporter-meta-details" class="hidden">
+                  <div class="card">
+                    <div class="card-header"><h3 class="font-semibold">Report Details</h3></div>
+                    <div class="space-y-3">
+                      <div class="grid grid-cols-2 gap-3">
+                        <div>
+                          <label class="block text-sm text-muted mb-1">Report Title</label>
+                          <input type="text" id="reporter-detail-title" class="input-field w-full">
+                        </div>
+                        <div>
+                          <label class="block text-sm text-muted mb-1">Client Organisation</label>
+                          <input type="text" id="reporter-detail-client" class="input-field w-full">
+                        </div>
+                      </div>
+                      <div class="grid grid-cols-2 gap-3">
+                        <div>
+                          <label class="block text-sm text-muted mb-1">Client Contact Name</label>
+                          <input type="text" id="reporter-detail-customer-name" class="input-field w-full">
+                        </div>
+                        <div>
+                          <label class="block text-sm text-muted mb-1">Client Contact Title</label>
+                          <input type="text" id="reporter-detail-position-title" class="input-field w-full">
+                        </div>
+                      </div>
+                      <div class="grid grid-cols-2 gap-3">
+                        <div>
+                          <label class="block text-sm text-muted mb-1">Prepared By</label>
+                          <input type="text" id="reporter-detail-author" class="input-field w-full">
+                        </div>
+                        <div>
+                          <label class="block text-sm text-muted mb-1">Prepared By Title</label>
+                          <input type="text" id="reporter-detail-author-title" class="input-field w-full">
+                        </div>
+                      </div>
+                      <div class="grid grid-cols-2 gap-3">
+                        <div>
+                          <label class="block text-sm text-muted mb-1">Report Version</label>
+                          <input type="text" id="reporter-detail-version" class="input-field w-full" placeholder="1.0">
+                        </div>
+                        <div>
+                          <label class="block text-sm text-muted mb-1">Report Date</label>
+                          <input type="date" id="reporter-detail-report-date" class="input-field w-full">
+                        </div>
+                      </div>
+                      <div class="grid grid-cols-3 gap-3">
+                        <div>
+                          <label class="block text-sm text-muted mb-1">Assessment Start</label>
+                          <input type="date" id="reporter-detail-start-date" class="input-field w-full">
+                        </div>
+                        <div>
+                          <label class="block text-sm text-muted mb-1">Assessment End</label>
+                          <input type="date" id="reporter-detail-end-date" class="input-field w-full">
+                        </div>
+                        <div>
+                          <label class="block text-sm text-muted mb-1">Duration Days</label>
+                          <input type="text" inputmode="numeric" id="reporter-detail-duration" class="input-field w-full">
+                        </div>
+                      </div>
+                      <div>
+                        <label class="block text-sm text-muted mb-1">Due Date</label>
+                        <input type="date" id="reporter-detail-due-date" class="input-field w-full">
+                      </div>
+                      <div class="flex justify-end">
+                        <button type="button" id="reporter-save-details-btn" class="btn-primary text-sm">Save Details</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
                 <div id="reporter-meta-members" class="hidden">
                   <div class="card">
                     <div class="card-header flex justify-between items-center">
@@ -391,7 +456,7 @@
             </div>
           </div>
 
-          <div class="reporter-builder">
+          <div class="reporter-builder reporter-proposal-builder">
             <div id="reporter-proposal-builder-sidebar" class="reporter-builder-sidebar">
               <div class="reporter-builder-sidebar-header">
                 <span class="text-sm font-semibold">Sections</span>
@@ -463,12 +528,32 @@
                     </div>
                     <div class="grid grid-cols-2 gap-3">
                       <div>
+                        <label class="block text-sm text-muted mb-1">Prepared For Name</label>
+                        <input type="text" id="reporter-proposal-edit-prepared-for-name" class="input-field w-full">
+                      </div>
+                      <div>
+                        <label class="block text-sm text-muted mb-1">Prepared For Email</label>
+                        <input type="email" id="reporter-proposal-edit-prepared-for-email" class="input-field w-full">
+                      </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                      <div>
                         <label class="block text-sm text-muted mb-1">Primary Contact Name</label>
                         <input type="text" id="reporter-proposal-edit-contact-name" class="input-field w-full">
                       </div>
                       <div>
                         <label class="block text-sm text-muted mb-1">Primary Contact Email</label>
                         <input type="text" id="reporter-proposal-edit-contact-email" class="input-field w-full">
+                      </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                      <div>
+                        <label class="block text-sm text-muted mb-1">Prepared By</label>
+                        <select id="reporter-proposal-edit-prepared-by" class="input-field w-full"></select>
+                      </div>
+                      <div>
+                        <label class="block text-sm text-muted mb-1">Proposal Type</label>
+                        <input type="text" id="reporter-proposal-edit-type" class="input-field w-full" placeholder="security_assessment">
                       </div>
                     </div>
                     <div>
@@ -771,29 +856,135 @@
               </div>
               <div>
                 <label class="block text-sm text-muted mb-1">Methodology (markdown)</label>
-                <textarea id="reporter-writeup-edit-methodology" class="input-field w-full" rows="8"></textarea>
+                <div class="reporter-md-toolbar" data-md-toolbar="reporter-writeup-edit-methodology">
+                  <button type="button" class="reporter-md-tool" data-md-tool="bold" data-md-target="reporter-writeup-edit-methodology" title="Bold">B</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="italic" data-md-target="reporter-writeup-edit-methodology" title="Italic">I</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="heading" data-md-target="reporter-writeup-edit-methodology" title="Heading">H</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="ul" data-md-target="reporter-writeup-edit-methodology" title="Bullet list">UL</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="ol" data-md-target="reporter-writeup-edit-methodology" title="Numbered list">OL</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="quote" data-md-target="reporter-writeup-edit-methodology" title="Quote">Quote</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="code-block" data-md-target="reporter-writeup-edit-methodology" title="Code block">Pre</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="link" data-md-target="reporter-writeup-edit-methodology" title="Link">Link</button>
+                </div>
+                <div class="reporter-finding-field-split">
+                  <div class="reporter-finding-field-edit">
+                    <textarea id="reporter-writeup-edit-methodology" class="input-field w-full" rows="8"></textarea>
+                  </div>
+                  <div class="reporter-finding-field-preview" id="reporter-writeup-methodology-preview"></div>
+                </div>
               </div>
               <div>
                 <label class="block text-sm text-muted mb-1">Scope (markdown)</label>
-                <textarea id="reporter-writeup-edit-scope" class="input-field w-full" rows="6"></textarea>
+                <div class="reporter-md-toolbar" data-md-toolbar="reporter-writeup-edit-scope">
+                  <button type="button" class="reporter-md-tool" data-md-tool="bold" data-md-target="reporter-writeup-edit-scope" title="Bold">B</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="italic" data-md-target="reporter-writeup-edit-scope" title="Italic">I</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="heading" data-md-target="reporter-writeup-edit-scope" title="Heading">H</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="ul" data-md-target="reporter-writeup-edit-scope" title="Bullet list">UL</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="ol" data-md-target="reporter-writeup-edit-scope" title="Numbered list">OL</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="link" data-md-target="reporter-writeup-edit-scope" title="Link">Link</button>
+                </div>
+                <div class="reporter-finding-field-split">
+                  <div class="reporter-finding-field-edit">
+                    <textarea id="reporter-writeup-edit-scope" class="input-field w-full" rows="6"></textarea>
+                  </div>
+                  <div class="reporter-finding-field-preview" id="reporter-writeup-scope-preview"></div>
+                </div>
               </div>
               <div>
                 <label class="block text-sm text-muted mb-1">Deliverables (markdown)</label>
-                <textarea id="reporter-writeup-edit-deliverables" class="input-field w-full" rows="6"></textarea>
+                <div class="reporter-md-toolbar" data-md-toolbar="reporter-writeup-edit-deliverables">
+                  <button type="button" class="reporter-md-tool" data-md-tool="bold" data-md-target="reporter-writeup-edit-deliverables" title="Bold">B</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="italic" data-md-target="reporter-writeup-edit-deliverables" title="Italic">I</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="ul" data-md-target="reporter-writeup-edit-deliverables" title="Bullet list">UL</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="link" data-md-target="reporter-writeup-edit-deliverables" title="Link">Link</button>
+                </div>
+                <div class="reporter-finding-field-split">
+                  <div class="reporter-finding-field-edit">
+                    <textarea id="reporter-writeup-edit-deliverables" class="input-field w-full" rows="6"></textarea>
+                  </div>
+                  <div class="reporter-finding-field-preview" id="reporter-writeup-deliverables-preview"></div>
+                </div>
+              </div>
+              <div>
+                <label class="block text-sm text-muted mb-1">Client Requirements (markdown)</label>
+                <div class="reporter-md-toolbar" data-md-toolbar="reporter-writeup-edit-client-reqs">
+                  <button type="button" class="reporter-md-tool" data-md-tool="bold" data-md-target="reporter-writeup-edit-client-reqs" title="Bold">B</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="italic" data-md-target="reporter-writeup-edit-client-reqs" title="Italic">I</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="heading" data-md-target="reporter-writeup-edit-client-reqs" title="Heading">H</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="ul" data-md-target="reporter-writeup-edit-client-reqs" title="Bullet list">UL</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="ol" data-md-target="reporter-writeup-edit-client-reqs" title="Numbered list">OL</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="quote" data-md-target="reporter-writeup-edit-client-reqs" title="Quote">Quote</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="code-block" data-md-target="reporter-writeup-edit-client-reqs" title="Code block">Pre</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="link" data-md-target="reporter-writeup-edit-client-reqs" title="Link">Link</button>
+                </div>
+                <div class="reporter-finding-field-split">
+                  <div class="reporter-finding-field-edit">
+                    <textarea id="reporter-writeup-edit-client-reqs" class="input-field w-full" rows="6"></textarea>
+                  </div>
+                  <div class="reporter-finding-field-preview" id="reporter-writeup-client-reqs-preview"></div>
+                </div>
+              </div>
+              <div>
+                <label class="block text-sm text-muted mb-1">Consultant Requirements (markdown)</label>
+                <div class="reporter-md-toolbar" data-md-toolbar="reporter-writeup-edit-consultant-reqs">
+                  <button type="button" class="reporter-md-tool" data-md-tool="bold" data-md-target="reporter-writeup-edit-consultant-reqs" title="Bold">B</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="italic" data-md-target="reporter-writeup-edit-consultant-reqs" title="Italic">I</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="heading" data-md-target="reporter-writeup-edit-consultant-reqs" title="Heading">H</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="ul" data-md-target="reporter-writeup-edit-consultant-reqs" title="Bullet list">UL</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="ol" data-md-target="reporter-writeup-edit-consultant-reqs" title="Numbered list">OL</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="quote" data-md-target="reporter-writeup-edit-consultant-reqs" title="Quote">Quote</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="code-block" data-md-target="reporter-writeup-edit-consultant-reqs" title="Code block">Pre</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="link" data-md-target="reporter-writeup-edit-consultant-reqs" title="Link">Link</button>
+                </div>
+                <div class="reporter-finding-field-split">
+                  <div class="reporter-finding-field-edit">
+                    <textarea id="reporter-writeup-edit-consultant-reqs" class="input-field w-full" rows="6"></textarea>
+                  </div>
+                  <div class="reporter-finding-field-preview" id="reporter-writeup-consultant-reqs-preview"></div>
+                </div>
+              </div>
+              <div>
+                <label class="block text-sm text-muted mb-1">Assumptions (markdown)</label>
+                <div class="reporter-md-toolbar" data-md-toolbar="reporter-writeup-edit-assumptions">
+                  <button type="button" class="reporter-md-tool" data-md-tool="bold" data-md-target="reporter-writeup-edit-assumptions" title="Bold">B</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="italic" data-md-target="reporter-writeup-edit-assumptions" title="Italic">I</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="heading" data-md-target="reporter-writeup-edit-assumptions" title="Heading">H</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="ul" data-md-target="reporter-writeup-edit-assumptions" title="Bullet list">UL</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="ol" data-md-target="reporter-writeup-edit-assumptions" title="Numbered list">OL</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="quote" data-md-target="reporter-writeup-edit-assumptions" title="Quote">Quote</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="code-block" data-md-target="reporter-writeup-edit-assumptions" title="Code block">Pre</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="link" data-md-target="reporter-writeup-edit-assumptions" title="Link">Link</button>
+                </div>
+                <div class="reporter-finding-field-split">
+                  <div class="reporter-finding-field-edit">
+                    <textarea id="reporter-writeup-edit-assumptions" class="input-field w-full" rows="4"></textarea>
+                  </div>
+                  <div class="reporter-finding-field-preview" id="reporter-writeup-assumptions-preview"></div>
+                </div>
+              </div>
+              <div>
+                <label class="block text-sm text-muted mb-1">Restrictions (markdown)</label>
+                <div class="reporter-md-toolbar" data-md-toolbar="reporter-writeup-edit-restrictions">
+                  <button type="button" class="reporter-md-tool" data-md-tool="bold" data-md-target="reporter-writeup-edit-restrictions" title="Bold">B</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="italic" data-md-target="reporter-writeup-edit-restrictions" title="Italic">I</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="heading" data-md-target="reporter-writeup-edit-restrictions" title="Heading">H</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="ul" data-md-target="reporter-writeup-edit-restrictions" title="Bullet list">UL</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="ol" data-md-target="reporter-writeup-edit-restrictions" title="Numbered list">OL</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="quote" data-md-target="reporter-writeup-edit-restrictions" title="Quote">Quote</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="code-block" data-md-target="reporter-writeup-edit-restrictions" title="Code block">Pre</button>
+                  <button type="button" class="reporter-md-tool" data-md-tool="link" data-md-target="reporter-writeup-edit-restrictions" title="Link">Link</button>
+                </div>
+                <div class="reporter-finding-field-split">
+                  <div class="reporter-finding-field-edit">
+                    <textarea id="reporter-writeup-edit-restrictions" class="input-field w-full" rows="4"></textarea>
+                  </div>
+                  <div class="reporter-finding-field-preview" id="reporter-writeup-restrictions-preview"></div>
+                </div>
               </div>
               <div class="flex justify-end gap-2">
                 <button type="button" id="reporter-writeup-save-btn" class="btn-primary text-sm">Save Write-up</button>
               </div>
             </div>
-          </div>
-        </section>
-
-        <!-- ===== ENGAGEMENT TEMPLATES VIEW ===== -->
-        <section id="reporter-view-engagement-templates" class="reporter-view hidden">
-          <div class="card max-w-3xl mx-auto text-center py-12">
-            <svg class="w-16 h-16 mx-auto mb-4 text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>
-            <h2 class="text-xl font-semibold mb-2">Engagement Templates</h2>
-            <p class="text-sm text-muted">Engagement templates are not configured yet. This feature will provide reusable engagement workflows in a future update.</p>
           </div>
         </section>
 
@@ -842,7 +1033,7 @@
 
   <script type="module" src="/js/burger-menu.js"></script>
   <script src="/js/notifications.js"></script>
-  <script src="/js/reporter-proposals.js"></script>
-  <script type="module" src="/js/reporter.js"></script>
+  <script src="/js/reporter-proposals.js?v=20260514-reporter-preview"></script>
+  <script type="module" src="/js/reporter.js?v=20260514-reporter-preview"></script>
 </body>
 </html>

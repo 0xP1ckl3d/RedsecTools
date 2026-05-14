@@ -1783,6 +1783,7 @@ async function executeCalendarProjectSchedule(req, args = {}) {
     allocationMode: "daily",
     startDate: body.startDate,
     endDate: body.endDate,
+    timeZone: body.timeZone,
     title: body.title || projectName || undefined,
     description: body.description || body.projectDescription || undefined,
     hoursPerDay: body.hoursPerDay,

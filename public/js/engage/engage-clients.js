@@ -238,6 +238,26 @@ const EngageClients = (() => {
         if (panel) panel.classList.remove("hidden");
       });
     });
+
+    // Click opportunity items to open in pipeline view
+    section.querySelectorAll("[data-opp-id]").forEach((el) => {
+      el.addEventListener("click", () => {
+        if (typeof switchEngageView === "function") switchEngageView("pipeline");
+        if (typeof EngageOpportunities !== "undefined" && EngageOpportunities.openOpp) {
+          setTimeout(() => EngageOpportunities.openOpp(el.dataset.oppId), 100);
+        }
+      });
+    });
+
+    // Click engagement items to open in engagements view
+    section.querySelectorAll("[data-eng-id]").forEach((el) => {
+      el.addEventListener("click", () => {
+        if (typeof switchEngageView === "function") switchEngageView("engagements");
+        if (typeof EngageEngagements !== "undefined" && EngageEngagements.openEng) {
+          setTimeout(() => EngageEngagements.openEng(el.dataset.engId), 100);
+        }
+      });
+    });
   }
 
   function renderContacts(contacts) {
@@ -255,7 +275,7 @@ const EngageClients = (() => {
 
   function renderOpportunities(opportunities) {
     if (!opportunities || opportunities.length === 0) return '<div class="engage-empty">No opportunities</div>';
-    return opportunities.map((o) => `<div class="engage-list-item">
+    return opportunities.map((o) => `<div class="engage-list-item engage-clickable-item" data-opp-id="${esc(o.id)}">
       <div>
         <strong>${esc(o.title)}</strong>
         <div class="engage-list-item-meta">${renderTypeTags(o.opportunity_type)} &middot; Stage: ${esc(o.stage)}</div>
@@ -268,7 +288,7 @@ const EngageClients = (() => {
     if (!engagements || engagements.length === 0) return '<div class="engage-empty">No engagements</div>';
     const STATUS_CLASSES = { draft: "draft", testing_in_progress: "testing", testing_blocked: "blocked",
       ready_for_qa: "qa", delivered: "delivered", closed: "closed" };
-    return engagements.map((e) => `<div class="engage-list-item">
+    return engagements.map((e) => `<div class="engage-list-item engage-clickable-item" data-eng-id="${esc(e.id)}">
       <div>
         <strong>${esc(e.title)}</strong>
         <div class="engage-list-item-meta">${renderTypeTags(e.engagement_type)}</div>
@@ -365,7 +385,17 @@ const EngageClients = (() => {
           await EngageApi.createEngagementNote(entityId, content);
         }
         overlay.remove();
-        await refresh(entityId);
+        if (entityType === "opportunity") {
+          if (typeof EngageOpportunities !== "undefined" && EngageOpportunities.openOpp) {
+            await EngageOpportunities.openOpp(entityId);
+          }
+        } else if (entityType === "engagement") {
+          if (typeof EngageEngagements !== "undefined" && EngageEngagements.openEng) {
+            await EngageEngagements.openEng(entityId);
+          }
+        } else {
+          await refresh(entityId);
+        }
       } catch (err) {
         await EngageModal.alert({ title: "Error", message: "Failed to save note: " + err.message });
       }

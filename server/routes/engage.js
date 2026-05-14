@@ -9,6 +9,7 @@ const {
   createEngageContact, getEngageContactById, updateEngageContact, archiveEngageContact,
   createEngageOpportunity, getEngageOpportunityById, listEngageOpportunities, listEngageOpportunitiesByClient, updateEngageOpportunity, updateEngageOpportunityStage,
   linkEngageOpportunityProposal,
+  listOppProposalLinks,
   createEngageEngagement, getEngageEngagementById, listEngageEngagements, listEngageEngagementsByUser, listEngageEngagementsByClient,
   updateEngageEngagement, updateEngageEngagementStatus, archiveEngageEngagement,
   createEngageMember, listEngageMembersByEngagement, updateEngageMember, deleteEngageMember,
@@ -23,6 +24,7 @@ const {
   listUsers,
   listUsersByPermission,
   createAuditEvent,
+  getSetting,
 } = require("../database");
 const {
   getReporterProposalById,
@@ -35,6 +37,7 @@ const {
   listReporterProjects,
   listCalendarProjects,
   getReporterProjectById,
+  listReporterPdfGenerationsByProject,
   getCalendarProjectById,
   createReporterProjectRow,
   listReporterDesigns,
@@ -49,14 +52,14 @@ const ENG_STATUS_LABELS = {
   draft: "Draft", contract_signed: "Contract Signed", scheduled: "Scheduled",
   testing_not_started: "Testing Not Started", testing_in_progress: "Testing In Progress",
   testing_blocked: "Blocked", testing_complete: "Testing Complete",
-  reporting_in_progress: "Reporting", ready_for_qa: "Ready for QA",
-  qa_assigned: "QA Assigned", qa_in_progress: "QA In Progress",
-  qa_changes_required: "QA Changes Required", qa_ready_for_delivery: "Ready for Delivery",
+  reporting_in_progress: "Reporting", ready_for_delivery: "Ready for Delivery",
   delivered: "Delivered", retest_pending: "Retest Pending",
   post_engagement_followup: "Follow-up", closed: "Closed", cancelled: "Cancelled",
 };
+const ENG_CONTROL_STATUSES = new Set(Object.keys(ENG_STATUS_LABELS));
 
 const router = Router();
+const DAY_SECONDS = 24 * 60 * 60;
 
 const readLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -75,6 +78,140 @@ const writeLimiter = rateLimit({
 });
 
 const COMMERCIAL_FIELDS = new Set(["estimated_value", "quoted_value", "commercial_value", "probability_percent"]);
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function parseClockTimeToMinutes(value, fallback) {
+  const match = String(value || "").match(/^(\d{2}):(\d{2})$/);
+  if (!match) return fallback;
+  const hours = parseInt(match[1], 10);
+  const minutes = parseInt(match[2], 10);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return fallback;
+  return (hours * 60) + minutes;
+}
+
+function getEngageCalendarSettings() {
+  const parsed = Number.parseFloat(getSetting("calendar_daily_hours"));
+  const dailyHours = !Number.isFinite(parsed) ? 7.6 : clamp(Number(parsed.toFixed(2)), 1, 24);
+  const workdayStart = String(getSetting("calendar_workday_start") || "08:30");
+  const workdayEnd = String(getSetting("calendar_workday_end") || "17:30");
+  const workdays = String(getSetting("calendar_workdays") || "1,2,3,4,5")
+    .split(",")
+    .map((value) => parseInt(value.trim(), 10))
+    .filter((value) => Number.isInteger(value) && value >= 0 && value <= 6);
+  const workdayStartMinutes = parseClockTimeToMinutes(workdayStart, 8 * 60 + 30);
+  const workdayEndMinutes = parseClockTimeToMinutes(workdayEnd, 17 * 60 + 30);
+  const workdaySpanHours = Math.max(1, Number((((workdayEndMinutes - workdayStartMinutes) || (9 * 60)) / 60).toFixed(2)));
+  return {
+    dailyHours,
+    workdayStartMinutes,
+    workdaySpanHours,
+    workdays: workdays.length ? workdays : [1, 2, 3, 4, 5],
+  };
+}
+
+function parseDateInputParts(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const year = parseInt(match[1], 10);
+  const month = parseInt(match[2], 10);
+  const day = parseInt(match[3], 10);
+  const check = new Date(Date.UTC(year, month - 1, day));
+  if (check.getUTCFullYear() !== year || check.getUTCMonth() !== month - 1 || check.getUTCDate() !== day) return null;
+  return { year, month, day };
+}
+
+function getClientOffsetMinutes(tzOffsetMinutes) {
+  return Number.isFinite(tzOffsetMinutes) ? Number(tzOffsetMinutes) : -new Date().getTimezoneOffset();
+}
+
+function formatDateInputParts(parts) {
+  return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
+}
+
+function getOffsetMinutesForTimeZone(timeZone, dateValue) {
+  if (!timeZone || typeof timeZone !== "string") return undefined;
+  const parts = parseDateInputParts(dateValue);
+  if (!parts) return undefined;
+  try {
+    const utcNoon = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, 12, 0, 0, 0));
+    const zonedParts = new Intl.DateTimeFormat("en-AU", {
+      timeZone,
+      hour12: false,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }).formatToParts(utcNoon).reduce((acc, part) => {
+      if (part.type !== "literal") acc[part.type] = part.value;
+      return acc;
+    }, {});
+    const zonedAsUtc = Date.UTC(
+      Number(zonedParts.year),
+      Number(zonedParts.month) - 1,
+      Number(zonedParts.day),
+      Number(zonedParts.hour),
+      Number(zonedParts.minute),
+      Number(zonedParts.second),
+      0,
+    );
+    return Math.round((zonedAsUtc - utcNoon.getTime()) / 60000);
+  } catch (_) {
+    return undefined;
+  }
+}
+
+function wallClockUnix(parts, minutesOfDay, tzOffsetMinutes, timeZone) {
+  const safeMinutes = Number.isFinite(minutesOfDay) ? minutesOfDay : 0;
+  const hour = Math.floor(safeMinutes / 60);
+  const minute = safeMinutes % 60;
+  const effectiveOffset = getOffsetMinutesForTimeZone(timeZone, formatDateInputParts(parts));
+  const offsetMs = getClientOffsetMinutes(Number.isFinite(effectiveOffset) ? effectiveOffset : tzOffsetMinutes) * 60 * 1000;
+  return Math.floor((Date.UTC(parts.year, parts.month - 1, parts.day, hour, minute, 0, 0) - offsetMs) / 1000);
+}
+
+function parseDateRangeToUnix(startDate, endDate, tzOffsetMinutes, timeZone) {
+  const startParts = parseDateInputParts(startDate);
+  const endParts = parseDateInputParts(endDate);
+  if (!startParts || !endParts) return null;
+  const startsAt = wallClockUnix(startParts, 0, tzOffsetMinutes, timeZone);
+  const endsAt = wallClockUnix(endParts, (23 * 60) + 59, tzOffsetMinutes, timeZone);
+  if (!Number.isFinite(startsAt) || !Number.isFinite(endsAt) || endsAt < startsAt) return null;
+  return { startsAt, endsAt };
+}
+
+function buildDailyAllocationSegments(startsAt, endsAt, hoursPerDay, workdaysOnly, settings, tzOffsetMinutes, timeZone) {
+  const tzMs = getClientOffsetMinutes(tzOffsetMinutes) * 60 * 1000;
+  const start = new Date((startsAt * 1000) + tzMs);
+  const end = new Date((endsAt * 1000) + tzMs);
+  const segments = [];
+  const clampedHours = clamp(Number(hoursPerDay || 0), 0.5, settings.dailyHours);
+  const segmentSpanHours = clamp(Number(((clampedHours / settings.dailyHours) * settings.workdaySpanHours).toFixed(2)), 0.5, 24);
+  const startDay = Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate());
+  const endDay = Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate());
+
+  for (let cursorMs = startDay; cursorMs <= endDay; cursorMs += DAY_SECONDS * 1000) {
+    const cursor = new Date(cursorMs);
+    if (workdaysOnly && !settings.workdays.includes(cursor.getUTCDay())) continue;
+    const parts = {
+      year: cursor.getUTCFullYear(),
+      month: cursor.getUTCMonth() + 1,
+      day: cursor.getUTCDate(),
+    };
+    const segmentStart = wallClockUnix(parts, settings.workdayStartMinutes, tzOffsetMinutes, timeZone);
+    const segmentEnd = segmentStart + Math.round(segmentSpanHours * 60 * 60);
+    segments.push({
+      startsAt: segmentStart,
+      endsAt: segmentEnd,
+      scheduledHours: clampedHours,
+    });
+  }
+  return segments;
+}
 
 function canSeeCommercials(req) {
   const set = req.access?.permissionSet;
@@ -114,6 +251,75 @@ function canAccessEngagement(req, engagement) {
   return listEngageMembersByEngagement(engagement.id).some((member) => member.user_id === req.user?.id);
 }
 
+function canWriteEngagement(req, engagement) {
+  if (!engagement) return false;
+  if (req.access?.permissionSet?.has("engage.manage_all")) return true;
+  return canAccessEngagement(req, engagement);
+}
+
+function activeQaBlocksRequest(review) {
+  return review && ["ready_for_qa", "assigned", "reviewing"].includes(review.status);
+}
+
+function isQaTerminalStatus(status) {
+  return ["requires_more_work", "ready_for_delivery", "cancelled"].includes(status);
+}
+
+function mapQaTerminalStatusToEngagementStatus(status) {
+  return {
+    requires_more_work: "reporting_in_progress",
+    ready_for_delivery: "ready_for_delivery",
+    cancelled: "reporting_in_progress",
+  }[status] || null;
+}
+
+function getActiveQaReviewForEngagement(engagementId) {
+  return listEngageQaReviewsByEngagementEnriched(engagementId).find((review) => activeQaBlocksRequest(review)) || null;
+}
+
+function filterQaReviewsForUser(req, reviews) {
+  if (req.access?.permissionSet?.has("engage.manage_all") || req.access?.permissionSet?.has("engage.manage_qa") || req.access?.permissionSet?.has("engage.view_all")) {
+    return reviews;
+  }
+  return reviews.filter((review) => {
+    if (review.assigned_to_user_id === req.user?.id) return true;
+    const engagement = getEngageEngagementById(review.engagement_id);
+    return canAccessEngagement(req, engagement);
+  });
+}
+
+function sortQaReviews(reviews) {
+  return reviews.slice().sort((a, b) => {
+    const aUnassigned = a.assigned_to_user_id ? 1 : 0;
+    const bUnassigned = b.assigned_to_user_id ? 1 : 0;
+    if (aUnassigned !== bUnassigned) return aUnassigned - bUnassigned;
+    return (b.created_at || 0) - (a.created_at || 0);
+  });
+}
+
+function listLatestQaReviews() {
+  const latest = [];
+  const seen = new Set();
+  for (const review of listAllEngageQaReviewsEnriched()) {
+    if (seen.has(review.engagement_id)) continue;
+    seen.add(review.engagement_id);
+    latest.push(review);
+  }
+  return latest;
+}
+
+function listVisibleQaQueue(req) {
+  const queue = listLatestQaReviews().filter((review) => activeQaBlocksRequest(review));
+  return sortQaReviews(filterQaReviewsForUser(req, queue));
+}
+
+function listVisibleQaAttention(req) {
+  const attention = listLatestQaReviews().filter((review) =>
+    review.status === "requires_more_work" || (activeQaBlocksRequest(review) && !review.assigned_to_user_id)
+  );
+  return sortQaReviews(filterQaReviewsForUser(req, attention));
+}
+
 function auditEngage(req, { action, targetType, targetId = null, outcome = "success", metadata = {} }) {
   try {
     createAuditEvent({
@@ -147,6 +353,7 @@ router.get("/engage/bootstrap", readLimiter, requireUser, attachUserAccess, (req
       canCreateClient: req.access.permissionSet.has("engage.create_client") || req.access.permissionSet.has("engage.manage_all"),
       canCreateOpportunity: req.access.permissionSet.has("engage.create_opportunity") || req.access.permissionSet.has("engage.manage_all"),
       canCreateEngagement: req.access.permissionSet.has("engage.create_engagement") || req.access.permissionSet.has("engage.manage_all"),
+      canEditEngagement: req.access.permissionSet.has("engage.edit_engagement") || req.access.permissionSet.has("engage.manage_all"),
       canAssignTeam: req.access.permissionSet.has("engage.assign_team") || req.access.permissionSet.has("engage.manage_all"),
       canManageQa: req.access.permissionSet.has("engage.manage_qa") || req.access.permissionSet.has("engage.manage_all"),
       canPerformQa: req.access.permissionSet.has("engage.perform_qa") || req.access.permissionSet.has("engage.manage_all"),
@@ -155,6 +362,8 @@ router.get("/engage/bootstrap", readLimiter, requireUser, attachUserAccess, (req
 
     const myWork = getEngageMyWork(req.user.id);
     const stats = getEngageDashboardStats();
+    const visibleQaQueue = listVisibleQaQueue(req);
+    const visibleQaAttention = listVisibleQaAttention(req);
 
     if (!canSeeCommercials(req)) {
       stats.pipelineValue = null;
@@ -169,6 +378,8 @@ router.get("/engage/bootstrap", readLimiter, requireUser, attachUserAccess, (req
         engagements: myWork.myEngagements.map((e) => maybeStripCommercials(req, e)),
         qaReviews: myWork.myQa,
       },
+      dashboardQaReviews: visibleQaQueue.slice(0, 8),
+      dashboardAttentionQaReviews: visibleQaAttention.slice(0, 8),
       recentActivity: canViewAll(req) ? getEngageRecentActivity() : [],
       notificationsSummary: { unreadCount: getUnreadNotificationCount(req.user.id) },
     });
@@ -358,7 +569,7 @@ router.put("/engage/clients/:id", writeLimiter, requireUser, attachUserAccess, (
     });
     createEngageActivity({
       entityType: "client", entityId: client.id, action: "updated",
-      userId: req.user.id, username: req.user.username,
+      userId: req.user.id, username: req.user.username, details: { name: client.display_name || client.name },
     });
     auditEngage(req, { action: "client_updated", targetType: "engage_client", targetId: client.id, metadata: { changedFields: Object.keys(req.body || {}) } });
     res.status(200).json({ client });
@@ -377,7 +588,7 @@ router.post("/engage/clients/:id/archive", writeLimiter, requireUser, attachUser
     if (!archived) return res.status(404).json({ error: "Client not found." });
     createEngageActivity({
       entityType: "client", entityId: req.params.id, action: "archived",
-      userId: req.user.id, username: req.user.username,
+      userId: req.user.id, username: req.user.username, details: { name: archived.display_name || archived.name },
     });
     auditEngage(req, { action: "client_archived", targetType: "engage_client", targetId: req.params.id });
     res.status(200).json({ success: true });
@@ -491,6 +702,7 @@ router.post("/engage/contacts/:id/archive", writeLimiter, requireUser, attachUse
 
 router.get("/engage/reporter/proposals", readLimiter, requireUser, attachUserAccess, (req, res) => {
   if (!canViewEngage(req)) return res.status(403).json({ error: "Forbidden." });
+  if (!req.access.permissionSet.has("reporter.view") && !req.access.permissionSet.has("reporter.manage_all")) return res.status(403).json({ error: "Forbidden." });
   try {
     const query = (req.query.query || "").toLowerCase();
     let proposals = listReporterProposals();
@@ -518,9 +730,11 @@ router.get("/engage/reporter/proposals", readLimiter, requireUser, attachUserAcc
 
 router.get("/engage/reporter/projects", readLimiter, requireUser, attachUserAccess, (req, res) => {
   if (!canViewEngage(req)) return res.status(403).json({ error: "Forbidden." });
+  if (!req.access.permissionSet.has("reporter.view") && !req.access.permissionSet.has("reporter.manage_all")) return res.status(403).json({ error: "Forbidden." });
   try {
     const query = (req.query.query || "").toLowerCase();
-    let projects = listReporterProjects();
+    const canManageReporter = req.access.permissionSet.has("reporter.manage_all");
+    let projects = listReporterProjects(req.user.id, canManageReporter);
     projects = projects.filter((p) => !p.isArchived);
     if (query) {
       projects = projects.filter(
@@ -547,6 +761,7 @@ router.get("/engage/reporter/projects", readLimiter, requireUser, attachUserAcce
 
 router.get("/engage/calendar/projects", readLimiter, requireUser, attachUserAccess, (req, res) => {
   if (!canViewEngage(req)) return res.status(403).json({ error: "Forbidden." });
+  if (!req.access.permissionSet.has("calendar.view") && !req.access.permissionSet.has("calendar.manage")) return res.status(403).json({ error: "Forbidden." });
   try {
     const query = (req.query.query || "").toLowerCase();
     let projects = listCalendarProjects();
@@ -627,7 +842,9 @@ router.get("/engage/opportunities/:id", readLimiter, requireUser, attachUserAcce
   try {
     const opp = getEngageOpportunityById(req.params.id);
     if (!opp) return res.status(404).json({ error: "Opportunity not found." });
-    res.status(200).json({ opportunity: maybeStripCommercials(req, opp) });
+    const notes = listEngageNotesByEntity("opportunity", req.params.id);
+    const linkedProposalIds = listOppProposalLinks(req.params.id);
+    res.status(200).json({ opportunity: maybeStripCommercials(req, opp), notes, linkedProposalIds });
   } catch {
     res.status(500).json({ error: "Failed to get opportunity." });
   }
@@ -662,7 +879,7 @@ router.put("/engage/opportunities/:id", writeLimiter, requireUser, attachUserAcc
     });
     createEngageActivity({
       entityType: "opportunity", entityId: opportunity.id, action: "updated",
-      userId: req.user.id, username: req.user.username,
+      userId: req.user.id, username: req.user.username, details: { title: opportunity.title, clientId: opportunity.client_id },
     });
     auditEngage(req, { action: "opportunity_updated", targetType: "engage_opportunity", targetId: opportunity.id, metadata: { changedFields: Object.keys(body || {}) } });
     if (body.ownerUserId && body.ownerUserId !== existing.owner_user_id) {
@@ -694,7 +911,7 @@ router.post("/engage/opportunities/:id/stage", writeLimiter, requireUser, attach
     createEngageActivity({
       entityType: "opportunity", entityId: req.params.id, action: "stage_changed",
       userId: req.user.id, username: req.user.username,
-      details: { from: existing.stage, to: stage },
+      details: { title: existing.title, clientId: existing.client_id, from: existing.stage, to: stage },
     });
     auditEngage(req, { action: "opportunity_stage_changed", targetType: "engage_opportunity", targetId: req.params.id, metadata: { from: existing.stage, to: stage } });
     res.status(200).json({ opportunity: maybeStripCommercials(req, opportunity) });
@@ -713,7 +930,8 @@ router.get("/engage/engagements", readLimiter, requireUser, attachUserAccess, (r
     const clientId = req.query.clientId;
     let engagements;
     if (clientId) {
-      engagements = listEngageEngagementsByClient(clientId);
+      const clientEngagements = listEngageEngagementsByClient(clientId);
+      engagements = canViewAll(req) ? clientEngagements : clientEngagements.filter((e) => canAccessEngagement(req, e));
     } else if (canViewAll(req)) {
       const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
       const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
@@ -735,7 +953,7 @@ router.post("/engage/engagements", writeLimiter, requireUser, attachUserAccess, 
   try {
     const { clientId, opportunityId, title, engagementType, status, priority, commercialValue,
       estimatedDays, scheduledStartDate, scheduledEndDate,
-      engagementManagerUserId, technicalLeadUserId, highLevelScopeSummary, notes } = req.body;
+      engagementManagerUserId, technicalLeadUserId, highLevelScopeSummary, notes, teamMembers } = req.body;
     if (!clientId) return res.status(400).json({ error: "clientId is required." });
     if (!title || typeof title !== "string" || title.trim().length < 1) return res.status(400).json({ error: "Title is required." });
     const client = getEngageClientById(clientId);
@@ -746,6 +964,26 @@ router.post("/engage/engagements", writeLimiter, requireUser, attachUserAccess, 
       engagementManagerUserId: engagementManagerUserId || req.user.id,
       technicalLeadUserId, highLevelScopeSummary, notes, createdBy: req.user.id,
     });
+    const requestedMembers = Array.isArray(teamMembers) ? teamMembers : [];
+    const memberMap = new Map();
+    memberMap.set(req.user.id, { userId: req.user.id, role: "manager", isPrimary: true });
+    if (engagementManagerUserId) memberMap.set(engagementManagerUserId, { userId: engagementManagerUserId, role: "manager", isPrimary: true });
+    if (technicalLeadUserId) memberMap.set(technicalLeadUserId, { userId: technicalLeadUserId, role: "technical_lead", isPrimary: false });
+    for (const member of requestedMembers) {
+      if (!member?.userId) continue;
+      memberMap.set(member.userId, {
+        userId: member.userId,
+        role: member.role || "tester",
+        isPrimary: !!member.isPrimary,
+      });
+    }
+    for (const member of memberMap.values()) {
+      try {
+        createEngageMember({ engagementId: engagement.id, ...member });
+      } catch {
+        // Duplicate members are harmless during auto-assignment.
+      }
+    }
     createEngageActivity({
       entityType: "engagement", entityId: engagement.id, action: "created",
       userId: req.user.id, username: req.user.username, details: { title: engagement.title },
@@ -770,7 +1008,19 @@ router.get("/engage/engagements/:id", readLimiter, requireUser, attachUserAccess
     res.status(200).json({
       engagement: maybeStripCommercials(req, engagement),
       linkedReporterProject: linkedReporterProject ? { id: linkedReporterProject.id, title: linkedReporterProject.title, status: linkedReporterProject.status, clientName: linkedReporterProject.clientName, testTypes: linkedReporterProject.testTypes } : null,
-      linkedCalendarProject: linkedCalendarProject ? { id: linkedCalendarProject.id, name: linkedCalendarProject.name, status: linkedCalendarProject.status, clientName: linkedCalendarProject.client_name, startDate: linkedCalendarProject.starts_at, endDate: linkedCalendarProject.ends_at } : null,
+      linkedCalendarProject: linkedCalendarProject ? {
+        id: linkedCalendarProject.id,
+        name: linkedCalendarProject.name,
+        code: linkedCalendarProject.code,
+        status: linkedCalendarProject.status,
+        clientName: linkedCalendarProject.clientName,
+        startsAt: linkedCalendarProject.startsAt,
+        endsAt: linkedCalendarProject.endsAt,
+        estimatedMode: linkedCalendarProject.estimatedMode,
+        estimatedValue: linkedCalendarProject.estimatedValue,
+        estimatedHours: linkedCalendarProject.estimatedHours,
+        billableRate: linkedCalendarProject.billableRate,
+      } : null,
     });
   } catch {
     res.status(500).json({ error: "Failed to get engagement." });
@@ -785,7 +1035,11 @@ router.put("/engage/engagements/:id", writeLimiter, requireUser, attachUserAcces
   try {
     const existing = getEngageEngagementById(req.params.id);
     if (!existing || existing.archived_at) return res.status(404).json({ error: "Engagement not found." });
+    if (!canWriteEngagement(req, existing)) return res.status(403).json({ error: "Forbidden." });
     const body = req.body;
+    if (body.status !== undefined && !ENG_CONTROL_STATUSES.has(body.status)) {
+      return res.status(400).json({ error: "Invalid engagement status." });
+    }
     const engagement = updateEngageEngagement({
       id: req.params.id,
       title: body.title !== undefined ? body.title.trim() : existing.title,
@@ -809,7 +1063,7 @@ router.put("/engage/engagements/:id", writeLimiter, requireUser, attachUserAcces
     });
     createEngageActivity({
       entityType: "engagement", entityId: engagement.id, action: "updated",
-      userId: req.user.id, username: req.user.username,
+      userId: req.user.id, username: req.user.username, details: { title: engagement.title, clientId: engagement.client_id },
     });
     auditEngage(req, { action: "engagement_updated", targetType: "engage_engagement", targetId: engagement.id, metadata: { changedFields: Object.keys(body || {}) } });
     res.status(200).json({ engagement: maybeStripCommercials(req, engagement) });
@@ -826,17 +1080,23 @@ router.post("/engage/engagements/:id/status", writeLimiter, requireUser, attachU
   try {
     const { status } = req.body;
     if (!status) return res.status(400).json({ error: "Status is required." });
+    if (!ENG_CONTROL_STATUSES.has(status)) return res.status(400).json({ error: "Invalid engagement status." });
     const existing = getEngageEngagementById(req.params.id);
     if (!existing || existing.archived_at) return res.status(404).json({ error: "Engagement not found." });
+    if (!canWriteEngagement(req, existing)) return res.status(403).json({ error: "Forbidden." });
+    const activeQa = getActiveQaReviewForEngagement(req.params.id);
+    if (activeQa) {
+      return res.status(409).json({ error: "Engagement status is controlled by the active QA review until QA reaches an outcome." });
+    }
     const engagement = updateEngageEngagementStatus(req.params.id, status);
     createEngageActivity({
       entityType: "engagement", entityId: req.params.id, action: "status_changed",
       userId: req.user.id, username: req.user.username,
-      details: { from: existing.status, to: status },
+      details: { title: existing.title, clientId: existing.client_id, from: existing.status, to: status },
     });
     auditEngage(req, { action: "engagement_status_changed", targetType: "engage_engagement", targetId: req.params.id, metadata: { from: existing.status, to: status } });
     const notifyUserIds = [existing.engagement_manager_user_id, existing.technical_lead_user_id].filter(Boolean);
-    const blockedStatuses = new Set(["testing_blocked", "qa_changes_required"]);
+    const blockedStatuses = new Set(["testing_blocked"]);
     for (const uid of notifyUserIds) {
       createNotification({
         userId: uid, category: "engage", action: "engagement_status_changed",
@@ -862,7 +1122,7 @@ router.post("/engage/engagements/:id/archive", writeLimiter, requireUser, attach
     if (!archived) return res.status(404).json({ error: "Engagement not found." });
     createEngageActivity({
       entityType: "engagement", entityId: req.params.id, action: "archived",
-      userId: req.user.id, username: req.user.username,
+      userId: req.user.id, username: req.user.username, details: { title: archived.title },
     });
     auditEngage(req, { action: "engagement_archived", targetType: "engage_engagement", targetId: req.params.id });
     res.status(200).json({ success: true });
@@ -881,12 +1141,33 @@ router.get("/engage/engagements/:id/detail", readLimiter, requireUser, attachUse
     const activity = listEngageActivityByEntity("engagement", req.params.id, 30);
     const notes = listEngageNotesByEntity("engagement", req.params.id);
     const qaReviews = listEngageQaReviewsByEngagementEnriched(req.params.id);
+    const activeQaReview = qaReviews.find((review) => activeQaBlocksRequest(review)) || null;
+    const linkedReporterProject = engagement.redsec_reporter_project_id ? getReporterProjectById(engagement.redsec_reporter_project_id) : null;
+    const linkedCalendarProject = engagement.redseccal_project_id ? getCalendarProjectById(engagement.redseccal_project_id) : null;
+    const reporterPdfs = linkedReporterProject ? listReporterPdfGenerationsByProject(linkedReporterProject.id).filter((pdf) => pdf.status === "complete") : [];
+    const latestReporterPdf = reporterPdfs[0] || null;
     res.status(200).json({
       engagement: maybeStripCommercials(req, engagement),
       team,
       activity,
       notes,
       qaReviews,
+      activeQaReview,
+      linkedReporterProject: linkedReporterProject ? { id: linkedReporterProject.id, title: linkedReporterProject.title, status: linkedReporterProject.status, clientName: linkedReporterProject.clientName, testTypes: linkedReporterProject.testTypes } : null,
+      linkedCalendarProject: linkedCalendarProject ? {
+        id: linkedCalendarProject.id,
+        name: linkedCalendarProject.name,
+        code: linkedCalendarProject.code,
+        status: linkedCalendarProject.status,
+        clientName: linkedCalendarProject.clientName,
+        startsAt: linkedCalendarProject.startsAt,
+        endsAt: linkedCalendarProject.endsAt,
+        estimatedMode: linkedCalendarProject.estimatedMode,
+        estimatedValue: linkedCalendarProject.estimatedValue,
+        estimatedHours: linkedCalendarProject.estimatedHours,
+        billableRate: linkedCalendarProject.billableRate,
+      } : null,
+      latestReporterPdf: latestReporterPdf ? { id: latestReporterPdf.id, downloadUrl: `/api/reporter/pdfs/${latestReporterPdf.id}/download`, createdAt: latestReporterPdf.createdAt } : null,
     });
   } catch {
     res.status(500).json({ error: "Failed to load engagement detail." });
@@ -928,12 +1209,13 @@ router.post("/engage/engagements/:id/team", writeLimiter, requireUser, attachUse
   try {
     const engagement = getEngageEngagementById(req.params.id);
     if (!engagement || engagement.archived_at) return res.status(404).json({ error: "Engagement not found." });
+    if (!canWriteEngagement(req, engagement)) return res.status(403).json({ error: "Forbidden." });
     const { userId, role, isPrimary } = req.body;
     if (!userId) return res.status(400).json({ error: "userId is required." });
     const member = createEngageMember({ engagementId: req.params.id, userId, role, isPrimary });
     createEngageActivity({
       entityType: "engagement", entityId: req.params.id, action: "member_added",
-      userId: req.user.id, username: req.user.username, details: { memberUserId: userId, role },
+      userId: req.user.id, username: req.user.username, details: { title: engagement.title, memberUserId: userId, role },
     });
     auditEngage(req, { action: "team_member_added", targetType: "engage_engagement", targetId: req.params.id, metadata: { memberUserId: userId, role } });
     createNotification({
@@ -958,6 +1240,9 @@ router.put("/engage/engagements/:id/team/:memberId", writeLimiter, requireUser, 
     return res.status(403).json({ error: "Forbidden." });
   }
   try {
+    const engagement = getEngageEngagementById(req.params.id);
+    if (!engagement || engagement.archived_at) return res.status(404).json({ error: "Engagement not found." });
+    if (!canWriteEngagement(req, engagement)) return res.status(403).json({ error: "Forbidden." });
     const { role, isPrimary } = req.body;
     const member = updateEngageMember({ id: req.params.memberId, engagementId: req.params.id, role, isPrimary });
     if (!member) return res.status(404).json({ error: "Team member not found." });
@@ -974,11 +1259,15 @@ router.delete("/engage/engagements/:id/team/:memberId", writeLimiter, requireUse
     return res.status(403).json({ error: "Forbidden." });
   }
   try {
+    const engagement = getEngageEngagementById(req.params.id);
+    if (!engagement || engagement.archived_at) return res.status(404).json({ error: "Engagement not found." });
+    if (!canWriteEngagement(req, engagement)) return res.status(403).json({ error: "Forbidden." });
     const deleted = deleteEngageMember(req.params.memberId);
     if (!deleted) return res.status(404).json({ error: "Team member not found." });
+    const eng = getEngageEngagementById(req.params.id);
     createEngageActivity({
       entityType: "engagement", entityId: req.params.id, action: "member_removed",
-      userId: req.user.id, username: req.user.username, details: { memberId: req.params.memberId },
+      userId: req.user.id, username: req.user.username, details: { title: eng?.title, memberId: req.params.memberId },
     });
     auditEngage(req, { action: "team_member_removed", targetType: "engage_engagement", targetId: req.params.id, metadata: { memberId: req.params.memberId } });
     res.status(200).json({ success: true });
@@ -996,16 +1285,20 @@ router.get("/engage/qa", readLimiter, requireUser, attachUserAccess, (req, res) 
   try {
     const { status, assignee } = req.query;
     let reviews;
-    if (status === "all") {
+    if (status === "queue") {
+      reviews = listVisibleQaQueue(req);
+    } else if (status === "completed") {
+      reviews = listAllEngageQaReviewsEnriched().filter((r) => isQaTerminalStatus(r.status));
+    } else if (status === "all") {
       reviews = listAllEngageQaReviewsEnriched();
     } else if (status) {
       reviews = listEngageQaReviewsByStatusEnriched(status);
     } else if (assignee) {
       reviews = listEngageQaReviewsByAssigneeEnriched(assignee);
     } else {
-      reviews = listEngageQaReviewsByStatusEnriched("ready_for_qa");
+      reviews = listVisibleQaQueue(req);
     }
-    res.status(200).json({ reviews });
+    res.status(200).json({ reviews: Array.isArray(reviews) && (status === "queue" || (!status && !assignee)) ? reviews : sortQaReviews(filterQaReviewsForUser(req, reviews)) });
   } catch {
     res.status(500).json({ error: "Failed to list QA reviews." });
   }
@@ -1018,13 +1311,19 @@ router.post("/engage/engagements/:id/qa/request", writeLimiter, requireUser, att
     if (!engagement || engagement.archived_at) return res.status(404).json({ error: "Engagement not found." });
     if (!canAccessEngagement(req, engagement)) return res.status(403).json({ error: "Forbidden." });
     const { reporterProjectId, reportLink, shareLink, qaNotes } = req.body;
+    const existingReviews = listEngageQaReviewsByEngagementEnriched(req.params.id);
+    const latestReview = existingReviews[0];
+    if (activeQaBlocksRequest(latestReview)) {
+      return res.status(409).json({ error: "QA has already been requested for this engagement." });
+    }
     const review = createEngageQaReview({
-      engagementId: req.params.id, reporterProjectId, status: "ready_for_qa", reportLink, shareLink,
+      engagementId: req.params.id, reporterProjectId, assignedByUserId: req.user.id,
+      status: "ready_for_qa", reportLink, shareLink,
       qaNotes: qaNotes || "",
     });
     createEngageActivity({
       entityType: "engagement", entityId: req.params.id, action: "qa_requested",
-      userId: req.user.id, username: req.user.username,
+      userId: req.user.id, username: req.user.username, details: { title: engagement.title },
     });
     auditEngage(req, { action: "qa_requested", targetType: "engage_engagement", targetId: req.params.id, metadata: { qaReviewId: review.id, reporterProjectId: reporterProjectId || null } });
     const managers = listUsersByPermission("engage.manage_qa");
@@ -1063,7 +1362,7 @@ router.post("/engage/engagements/:id/qa/assign", writeLimiter, requireUser, atta
       });
       createEngageActivity({
         entityType: "engagement", entityId: req.params.id, action: "qa_assigned",
-        userId: req.user.id, username: req.user.username, details: { assignedToUserId },
+        userId: req.user.id, username: req.user.username, details: { title: engagement.title, assignedToUserId },
       });
       auditEngage(req, { action: "qa_assigned", targetType: "engage_qa_review", targetId: qaReviewId, metadata: { engagementId: req.params.id, assignedToUserId } });
       createNotification({
@@ -1081,7 +1380,7 @@ router.post("/engage/engagements/:id/qa/assign", writeLimiter, requireUser, atta
       });
       createEngageActivity({
         entityType: "engagement", entityId: req.params.id, action: "qa_assigned",
-        userId: req.user.id, username: req.user.username, details: { assignedToUserId },
+        userId: req.user.id, username: req.user.username, details: { title: engagement.title, assignedToUserId },
       });
       auditEngage(req, { action: "qa_assigned", targetType: "engage_qa_review", targetId: review.id, metadata: { engagementId: req.params.id, assignedToUserId } });
       createNotification({
@@ -1108,15 +1407,18 @@ router.post("/engage/qa/:id/status", writeLimiter, requireUser, attachUserAccess
     if (!existing) return res.status(404).json({ error: "QA review not found." });
     const { status, qaNotes, reportLink, shareLink } = req.body;
     if (!status) return res.status(400).json({ error: "Status is required." });
-    const completedStatuses = new Set(["ready_for_delivery", "delivered", "cancelled"]);
-    const completedAt = completedStatuses.has(status) ? Math.floor(Date.now() / 1000) : null;
+    const allowedStatuses = new Set(["ready_for_qa", "assigned", "reviewing", "requires_more_work", "ready_for_delivery", "cancelled"]);
+    if (!allowedStatuses.has(status)) return res.status(400).json({ error: "Invalid QA status." });
+    const completedAt = isQaTerminalStatus(status) ? Math.floor(Date.now() / 1000) : null;
     const review = updateEngageQaReview({
       id: req.params.id, status, qaNotes, reportLink, shareLink, completedAt,
     });
+    const engagementStatus = mapQaTerminalStatusToEngagementStatus(status);
+    if (engagementStatus) updateEngageEngagementStatus(existing.engagement_id, engagementStatus);
     createEngageActivity({
       entityType: "engagement", entityId: existing.engagement_id, action: "qa_status_changed",
       userId: req.user.id, username: req.user.username,
-      details: { from: existing.status, to: status },
+      details: { title: existing.title, from: existing.status, to: status },
     });
     auditEngage(req, { action: "qa_status_changed", targetType: "engage_qa_review", targetId: req.params.id, metadata: { engagementId: existing.engagement_id, from: existing.status, to: status } });
     const eng = getEngageEngagementById(existing.engagement_id);
@@ -1239,7 +1541,7 @@ router.post("/engage/opportunities/:id/link-proposal", writeLimiter, requireUser
       createEngageActivity({
         entityType: "opportunity", entityId: req.params.id, action: "proposal_linked",
         userId: req.user.id, username: req.user.username,
-        details: { reporterProposalId, proposalTitle: proposal.title },
+        details: { title: existing.title, clientId: existing.client_id, reporterProposalId, proposalTitle: proposal.title },
       });
       auditEngage(req, { action: "proposal_linked", targetType: "engage_opportunity", targetId: req.params.id, metadata: { reporterProposalId } });
       return res.status(200).json({ opportunity: maybeStripCommercials(req, opportunity) });
@@ -1259,7 +1561,7 @@ router.post("/engage/opportunities/:id/link-proposal", writeLimiter, requireUser
     createEngageActivity({
       entityType: "opportunity", entityId: req.params.id, action: "proposal_linked",
       userId: req.user.id, username: req.user.username,
-      details: { proposalReporterDocId, proposalPdfGenerationId },
+      details: { title: existing.title, clientId: existing.client_id, proposalReporterDocId, proposalPdfGenerationId },
     });
     auditEngage(req, { action: "proposal_linked", targetType: "engage_opportunity", targetId: req.params.id, metadata: { proposalReporterDocId, proposalPdfGenerationId } });
     res.status(200).json({ opportunity: maybeStripCommercials(req, opportunity) });
@@ -1269,6 +1571,57 @@ router.post("/engage/opportunities/:id/link-proposal", writeLimiter, requireUser
 });
 
 const VALID_TEST_TYPES = ["internal", "external", "webapp", "cloud", "build_review", "red_team", "wireless", "configuration_review", "assumed_breach", "custom"];
+
+function getProposalWriteupField(writeup, camelName, snakeName) {
+  return writeup?.[camelName] || writeup?.[snakeName] || "";
+}
+
+function buildEngageProposalServiceWriteup(writeup) {
+  if (!writeup) return "";
+  return [
+    `### ${writeup.name || writeup.testType || writeup.test_type || "Security Assessment"}`,
+    getProposalWriteupField(writeup, "description", "description"),
+    "#### Methodology",
+    getProposalWriteupField(writeup, "methodologyWriteup", "methodology_writeup") || getProposalWriteupField(writeup, "methodology", "methodology"),
+    "#### Scope Guidance",
+    getProposalWriteupField(writeup, "scopeGuidance", "scope_guidance") || getProposalWriteupField(writeup, "scope", "scope"),
+    "#### Deliverables",
+    getProposalWriteupField(writeup, "deliverables", "deliverables"),
+  ].filter((part) => String(part || "").trim()).join("\n\n");
+}
+
+function buildEngageProposalSections(templateSections, selectedTypes) {
+  const sections = [];
+  let orderIdx = 0;
+  for (const ts of templateSections) {
+    const content = ts.content || "";
+    if (content.includes("{{test_type_inserts}}")) {
+      let combined = content.replace("{{test_type_inserts}}", "");
+      for (const tt of selectedTypes) {
+        const writeup = getReporterTestTypeTemplateByType(tt);
+        if (writeup) combined += `\n\n${buildEngageProposalServiceWriteup(writeup)}\n`;
+      }
+      sections.push({ title: ts.title, sectionType: ts.section_type, content: combined.trim(), orderIndex: orderIdx++, isIncluded: true });
+    } else if (content.includes("{{client_requirements_insert}}")) {
+      const reqs = selectedTypes.map((tt) => {
+        const w = getReporterTestTypeTemplateByType(tt);
+        const requirements = getProposalWriteupField(w, "clientRequirements", "client_requirements");
+        return w && requirements ? `- **${w.name}:** ${requirements}` : null;
+      }).filter(Boolean).join("\n");
+      sections.push({ title: ts.title, sectionType: ts.section_type, content: content.replace("{{client_requirements_insert}}", reqs).trim(), orderIndex: orderIdx++, isIncluded: true });
+    } else if (content.includes("{{consultant_requirements_insert}}")) {
+      const reqs = selectedTypes.map((tt) => {
+        const w = getReporterTestTypeTemplateByType(tt);
+        const requirements = getProposalWriteupField(w, "consultantRequirements", "consultant_requirements");
+        return w && requirements ? `- **${w.name}:** ${requirements}` : null;
+      }).filter(Boolean).join("\n");
+      sections.push({ title: ts.title, sectionType: ts.section_type, content: content.replace("{{consultant_requirements_insert}}", reqs).trim(), orderIndex: orderIdx++, isIncluded: true });
+    } else {
+      sections.push({ title: ts.title, sectionType: ts.section_type, content, orderIndex: orderIdx++, isIncluded: true });
+    }
+  }
+  return sections;
+}
 
 router.post("/engage/opportunities/:id/create-proposal", writeLimiter, requireUser, attachUserAccess, (req, res) => {
   const set = req.access.permissionSet;
@@ -1288,30 +1641,7 @@ router.post("/engage/opportunities/:id/create-proposal", writeLimiter, requireUs
     const template = getReporterProposalTemplateById("builtin-proposal-default");
     const templateSections = template ? listReporterProposalTemplateSections(template.id) : [];
 
-    const sections = [];
-    let orderIdx = 0;
-    for (const ts of templateSections) {
-      if (ts.content && ts.content.includes("{{test_type_inserts}}")) {
-        let combined = ts.content.replace("{{test_type_inserts}}", "");
-        for (const tt of selectedTypes) {
-          const writeup = getReporterTestTypeTemplateByType(tt);
-          if (writeup) combined += `\n\n### ${writeup.name}\n\n${writeup.methodology_writeup || ""}\n\n**Scope:** ${writeup.scope_guidance || ""}\n\n**Deliverables:** ${writeup.deliverables || ""}\n`;
-        }
-        sections.push({ title: ts.title, sectionType: ts.section_type, content: combined, orderIndex: orderIdx++, isIncluded: true });
-      } else if (ts.content && ts.content.includes("{{client_requirements_insert}}")) {
-        let combined = ts.content;
-        const reqs = selectedTypes.map((tt) => { const w = getReporterTestTypeTemplateByType(tt); return w ? `- **${w.name}:** ${w.client_requirements || ""}` : null; }).filter(Boolean).join("\n");
-        combined = combined.replace("{{client_requirements_insert}}", reqs);
-        sections.push({ title: ts.title, sectionType: ts.section_type, content: combined, orderIndex: orderIdx++, isIncluded: true });
-      } else if (ts.content && ts.content.includes("{{consultant_requirements_insert}}")) {
-        let combined = ts.content;
-        const reqs = selectedTypes.map((tt) => { const w = getReporterTestTypeTemplateByType(tt); return w ? `- **${w.name}:** ${w.consultant_requirements || ""}` : null; }).filter(Boolean).join("\n");
-        combined = combined.replace("{{consultant_requirements_insert}}", reqs);
-        sections.push({ title: ts.title, sectionType: ts.section_type, content: combined, orderIndex: orderIdx++, isIncluded: true });
-      } else {
-        sections.push({ title: ts.title, sectionType: ts.section_type, content: ts.content || "", orderIndex: orderIdx++, isIncluded: true });
-      }
-    }
+    const sections = buildEngageProposalSections(templateSections, selectedTypes);
 
     const proposal = createReporterProposalRow({
       templateId: template ? template.id : null,
@@ -1331,7 +1661,7 @@ router.post("/engage/opportunities/:id/create-proposal", writeLimiter, requireUs
     createEngageActivity({
       entityType: "opportunity", entityId: existing.id, action: "proposal_created",
       userId: req.user.id, username: req.user.username,
-      details: { proposalId: proposal.id, proposalTitle: proposal.title },
+      details: { title: existing.title, clientId: existing.client_id, proposalId: proposal.id, proposalTitle: proposal.title },
     });
     auditEngage(req, { action: "proposal_created", targetType: "engage_opportunity", targetId: existing.id, metadata: { proposalId: proposal.id } });
 
@@ -1390,10 +1720,21 @@ router.post("/engage/opportunities/:id/convert-to-engagement", writeLimiter, req
       notes: `Converted from opportunity: ${existing.title}`,
       createdBy: req.user.id,
     });
+    const convertedMembers = new Map();
+    convertedMembers.set(req.user.id, { userId: req.user.id, role: "manager", isPrimary: true });
+    if (engagement.engagement_manager_user_id) convertedMembers.set(engagement.engagement_manager_user_id, { userId: engagement.engagement_manager_user_id, role: "manager", isPrimary: true });
+    if (engagement.technical_lead_user_id) convertedMembers.set(engagement.technical_lead_user_id, { userId: engagement.technical_lead_user_id, role: "technical_lead", isPrimary: false });
+    for (const member of convertedMembers.values()) {
+      try {
+        createEngageMember({ engagementId: engagement.id, ...member });
+      } catch {
+        // Duplicate members are harmless during conversion.
+      }
+    }
     createEngageActivity({
       entityType: "opportunity", entityId: existing.id, action: "converted_to_engagement",
       userId: req.user.id, username: req.user.username,
-      details: { engagementId: engagement.id },
+      details: { title: existing.title, clientId: existing.client_id, engagementId: engagement.id },
     });
     createEngageActivity({
       entityType: "engagement", entityId: engagement.id, action: "created_from_opportunity",
@@ -1415,6 +1756,7 @@ router.post("/engage/engagements/:id/link-calendar", writeLimiter, requireUser, 
   try {
     const existing = getEngageEngagementById(req.params.id);
     if (!existing || existing.archived_at) return res.status(404).json({ error: "Engagement not found." });
+    if (!canWriteEngagement(req, existing)) return res.status(403).json({ error: "Forbidden." });
     const { redseccalProjectId } = req.body;
     if (!redseccalProjectId) return res.status(400).json({ error: "redseccalProjectId is required." });
     const engagement = updateEngageEngagement({
@@ -1434,7 +1776,7 @@ router.post("/engage/engagements/:id/link-calendar", writeLimiter, requireUser, 
     createEngageActivity({
       entityType: "engagement", entityId: req.params.id, action: "calendar_linked",
       userId: req.user.id, username: req.user.username,
-      details: { redseccalProjectId },
+      details: { title: engagement.title, clientId: engagement.client_id, redseccalProjectId },
     });
     auditEngage(req, { action: "calendar_project_linked", targetType: "engage_engagement", targetId: req.params.id, metadata: { redseccalProjectId } });
     res.status(200).json({ engagement: maybeStripCommercials(req, engagement) });
@@ -1451,6 +1793,7 @@ router.post("/engage/engagements/:id/link-reporter", writeLimiter, requireUser, 
   try {
     const existing = getEngageEngagementById(req.params.id);
     if (!existing || existing.archived_at) return res.status(404).json({ error: "Engagement not found." });
+    if (!canWriteEngagement(req, existing)) return res.status(403).json({ error: "Forbidden." });
     const { redsecReporterProjectId, proposalReporterDocId, deliveryReporterProjectId } = req.body;
     if (!redsecReporterProjectId && !proposalReporterDocId && !deliveryReporterProjectId) {
       return res.status(400).json({ error: "At least one Reporter link field is required." });
@@ -1472,7 +1815,7 @@ router.post("/engage/engagements/:id/link-reporter", writeLimiter, requireUser, 
     createEngageActivity({
       entityType: "engagement", entityId: req.params.id, action: "reporter_linked",
       userId: req.user.id, username: req.user.username,
-      details: { redsecReporterProjectId, proposalReporterDocId, deliveryReporterProjectId },
+      details: { title: engagement.title, clientId: engagement.client_id, redsecReporterProjectId, proposalReporterDocId, deliveryReporterProjectId },
     });
     auditEngage(req, { action: "reporter_project_linked", targetType: "engage_engagement", targetId: req.params.id, metadata: { redsecReporterProjectId, proposalReporterDocId, deliveryReporterProjectId } });
     res.status(200).json({ engagement: maybeStripCommercials(req, engagement) });
@@ -1491,6 +1834,7 @@ router.post("/engage/engagements/:id/create-reporter-project", writeLimiter, req
   try {
     const existing = getEngageEngagementById(req.params.id);
     if (!existing || existing.archived_at) return res.status(404).json({ error: "Engagement not found." });
+    if (!canWriteEngagement(req, existing)) return res.status(403).json({ error: "Forbidden." });
 
     const { designId, title } = req.body;
     const designs = listReporterDesigns();
@@ -1505,7 +1849,10 @@ router.post("/engage/engagements/:id/create-reporter-project", writeLimiter, req
       userId: m.user_id,
       role: ROLE_MAP[m.role] || "pentester",
     }));
-    if (!projectMembers.find((m) => m.userId === req.user.id)) {
+    const creatorMember = projectMembers.find((m) => m.userId === req.user.id);
+    if (creatorMember) {
+      creatorMember.role = "lead";
+    } else {
       projectMembers.push({ userId: req.user.id, role: "lead" });
     }
 
@@ -1538,7 +1885,7 @@ router.post("/engage/engagements/:id/create-reporter-project", writeLimiter, req
     createEngageActivity({
       entityType: "engagement", entityId: existing.id, action: "reporter_project_created",
       userId: req.user.id, username: req.user.username,
-      details: { projectId: project.id, projectTitle: project.title },
+      details: { title: existing.title, clientId: existing.client_id, projectId: project.id, projectTitle: project.title },
     });
     auditEngage(req, { action: "reporter_project_created", targetType: "engage_engagement", targetId: existing.id, metadata: { projectId: project.id } });
     res.status(201).json({ project });
@@ -1555,25 +1902,35 @@ router.post("/engage/engagements/:id/create-calendar-project", writeLimiter, req
   try {
     const existing = getEngageEngagementById(req.params.id);
     if (!existing || existing.archived_at) return res.status(404).json({ error: "Engagement not found." });
+    if (!canWriteEngagement(req, existing)) return res.status(403).json({ error: "Forbidden." });
 
-    const { name } = req.body;
+    const { name, code, estimatedDays, billableRate } = req.body;
     const projectName = (name || existing.title).trim();
     if (!projectName) return res.status(400).json({ error: "Name is required." });
 
     const oppTypes = existing.engagement_type ? JSON.parse(existing.engagement_type) : [];
+    const effectiveEstimatedDays = Number.isFinite(Number(estimatedDays)) ? Number(estimatedDays) : Number(existing.estimated_days || 0);
+    const effectiveBillableRate = Number.isFinite(Number(billableRate)) ? Number(billableRate) : (
+      existing.commercial_value && effectiveEstimatedDays > 0 ? Number((Number(existing.commercial_value) / effectiveEstimatedDays).toFixed(2)) : 0
+    );
 
     const project = createCalendarProject({
       id: crypto.randomBytes(16).toString("base64url"),
+      code: (code || projectName).trim().slice(0, 40),
       name: projectName,
       clientName: existing.client_display_name || existing.client_name || "",
+      projectType: oppTypes.join(", "),
+      description: existing.high_level_scope_summary || "",
       status: "active",
       startsAt: existing.scheduled_start_date ? Math.floor(new Date(existing.scheduled_start_date).getTime() / 1000) : null,
       endsAt: existing.scheduled_end_date ? Math.floor(new Date(existing.scheduled_end_date).getTime() / 1000) : null,
-      estimatedHours: existing.estimated_days ? Math.round(existing.estimated_days * 7.5) : 0,
-      notes: `Created from Engage engagement: ${existing.title}`,
+      estimatedMode: "days",
+      estimatedValue: effectiveEstimatedDays,
+      estimatedHours: effectiveEstimatedDays ? Math.round(effectiveEstimatedDays * 7.5) : 0,
+      billableRate: effectiveBillableRate,
+      notes: existing.notes || `Created from Engage engagement: ${existing.title}`,
       createdBy: req.user.id,
     });
-
     updateEngageEngagement({
       id: existing.id, title: existing.title, engagementType: existing.engagement_type,
       status: existing.status, priority: existing.priority, commercialValue: existing.commercial_value,
@@ -1592,11 +1949,12 @@ router.post("/engage/engagements/:id/create-calendar-project", writeLimiter, req
     createEngageActivity({
       entityType: "engagement", entityId: existing.id, action: "calendar_project_created",
       userId: req.user.id, username: req.user.username,
-      details: { calendarProjectId: project.id, name: projectName },
+      details: { title: existing.title, clientId: existing.client_id, calendarProjectId: project.id, name: projectName },
     });
     auditEngage(req, { action: "calendar_project_created", targetType: "engage_engagement", targetId: existing.id, metadata: { calendarProjectId: project.id } });
     res.status(201).json({ project });
   } catch (err) {
+    logEvent("engage:create_calendar_project_failed", req, { error: err.message });
     res.status(500).json({ error: "Failed to create Calendar project." });
   }
 });
@@ -1609,35 +1967,60 @@ router.post("/engage/engagements/:id/calendar-allocations", writeLimiter, requir
   try {
     const existing = getEngageEngagementById(req.params.id);
     if (!existing || existing.archived_at) return res.status(404).json({ error: "Engagement not found." });
+    if (!canWriteEngagement(req, existing)) return res.status(403).json({ error: "Forbidden." });
     if (!existing.redseccal_project_id) return res.status(400).json({ error: "No Calendar project linked." });
 
-    const { assigneeUserIds, startDate, endDate, hoursPerDay, title } = req.body;
+    const { assigneeUserIds, startDate, endDate, hoursPerDay, title, workdaysOnly } = req.body;
     if (!Array.isArray(assigneeUserIds) || !assigneeUserIds.length) return res.status(400).json({ error: "assigneeUserIds array is required." });
     if (!startDate || !endDate) return res.status(400).json({ error: "startDate and endDate are required." });
 
-    const startsAt = Math.floor(new Date(startDate + "T00:00:00").getTime() / 1000);
-    const endsAt = Math.floor(new Date(endDate + "T23:59:59").getTime() / 1000);
-    const hpd = parseFloat(hoursPerDay) || 7.5;
+    const settings = getEngageCalendarSettings();
+    const timeZone = typeof req.body?.timeZone === "string" ? req.body.timeZone.slice(0, 80) : "";
+    const tzOffsetMinutes = typeof req.body?.tzOffsetMinutes === "number"
+      ? req.body.tzOffsetMinutes
+      : getOffsetMinutesForTimeZone(timeZone, startDate);
+    const dateRange = parseDateRangeToUnix(startDate, endDate, tzOffsetMinutes, timeZone);
+    if (!dateRange) return res.status(400).json({ error: "Choose a valid allocation date range." });
+    const hpd = parseFloat(hoursPerDay) || settings.dailyHours;
+    const segments = buildDailyAllocationSegments(dateRange.startsAt, dateRange.endsAt, hpd, workdaysOnly !== false, settings, tzOffsetMinutes, timeZone);
+    if (!segments.length) return res.status(400).json({ error: "No allocation days were generated for that range." });
 
     const entries = [];
     for (const userId of assigneeUserIds) {
-      const entry = createCalendarEntry({
-        id: crypto.randomBytes(16).toString("base64url"),
-        projectId: existing.redseccal_project_id,
-        title: title || existing.title,
-        startsAt,
-        endsAt,
-        assigneeUserId: userId,
-        scheduledHours: hpd * Math.ceil((endsAt - startsAt) / 86400),
-        createdBy: req.user.id,
+      for (const segment of segments) {
+        const entry = createCalendarEntry({
+          id: crypto.randomBytes(16).toString("base64url"),
+          type: "assignment",
+          projectId: existing.redseccal_project_id,
+          title: title || existing.title,
+          description: `Created from Engage engagement: ${existing.title}`,
+          ownerId: req.user.id,
+          startsAt: segment.startsAt,
+          endsAt: segment.endsAt,
+          assigneeUserId: userId,
+          scheduledHours: segment.scheduledHours,
+          allDay: false,
+          status: "scheduled",
+        });
+        entries.push(entry);
+      }
+      createNotification({
+        userId,
+        category: "calendar",
+        action: "engage_allocation_created",
+        title: "Calendar allocation created",
+        body: `${title || existing.title} was scheduled for you`,
+        linkUrl: `/calendar/?view=projects&projectId=${encodeURIComponent(existing.redseccal_project_id)}`,
+        entityType: "calendar_project",
+        entityId: existing.redseccal_project_id,
+        severity: "info",
       });
-      entries.push(entry);
     }
 
     createEngageActivity({
       entityType: "engagement", entityId: existing.id, action: "allocations_created",
       userId: req.user.id, username: req.user.username,
-      details: { assigneeCount: assigneeUserIds.length, startDate, endDate },
+      details: { title: existing.title, clientId: existing.client_id, assigneeCount: assigneeUserIds.length, startDate, endDate },
     });
     auditEngage(req, { action: "calendar_allocations_created", targetType: "engage_engagement", targetId: existing.id, metadata: { count: entries.length } });
     res.status(201).json({ created: entries.length });
@@ -1655,8 +2038,11 @@ router.put("/engage/qa/:id", writeLimiter, requireUser, attachUserAccess, (req, 
     const existing = getEngageQaReviewById(req.params.id);
     if (!existing) return res.status(404).json({ error: "QA review not found." });
     const { status, qaNotes, reportLink, shareLink, assignedToUserId } = req.body;
-    const completedStatuses = new Set(["ready_for_delivery", "delivered", "cancelled"]);
-    const completedAt = status && completedStatuses.has(status) ? Math.floor(Date.now() / 1000) : existing.completed_at;
+    const allowedStatuses = new Set(["ready_for_qa", "assigned", "reviewing", "requires_more_work", "ready_for_delivery", "cancelled"]);
+    if (status && !allowedStatuses.has(status)) return res.status(400).json({ error: "Invalid QA status." });
+    const completedAt = status
+      ? (isQaTerminalStatus(status) ? Math.floor(Date.now() / 1000) : null)
+      : existing.completed_at;
     const review = updateEngageQaReview({
       id: req.params.id,
       status: status || existing.status,
@@ -1666,6 +2052,10 @@ router.put("/engage/qa/:id", writeLimiter, requireUser, attachUserAccess, (req, 
       assignedToUserId: assignedToUserId || existing.assigned_to_user_id,
       completedAt,
     });
+    if (status) {
+      const engagementStatus = mapQaTerminalStatusToEngagementStatus(status);
+      if (engagementStatus) updateEngageEngagementStatus(existing.engagement_id, engagementStatus);
+    }
     createEngageActivity({
       entityType: "engagement", entityId: existing.engagement_id, action: "qa_updated",
       userId: req.user.id, username: req.user.username,

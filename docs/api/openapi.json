@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "RedSecTools API",
-    "version": "2.0.0",
-    "description": "Repository-only OpenAPI documentation for RedSecTools. This file is not served by the live application. It documents the current HTTP API, including auth requirements for main app, guest-link, extension, and admin routes. RedSecThreat now includes user-scoped keyword, tag, and alert ownership on top of shared feed ingestion, plus admin-managed feed, template, and notification policy routes. Survey, Wiki, and Reporter include their active create/manage/respond/results/documentation route groups alongside the existing Paste, Share, Vault, Chat, Calendar, Homepage, Extension, and Admin surfaces."
+    "version": "2.1.0",
+    "description": "Repository-only OpenAPI documentation for RedSecTools. This file is not served by the live application. It documents the current HTTP API, including auth requirements for main app, guest-link, extension, and admin routes. RedSecCal supports multi-day entry series with weekdays-only fan-out and series-level edit/delete. RedSecEngage includes full client, contact, opportunity, engagement, QA, team, activity, and cross-tool linking routes. RedSecReporter includes first-class proposals, proposal templates, and test-type write-ups alongside existing project, finding, design, and PDF generation routes."
   },
   "servers": [
     {
@@ -50,11 +50,11 @@
     },
     {
       "name": "Reporter",
-      "description": "RedSecReporter project, design, finding, comment, template, and PDF generation endpoints"
+      "description": "RedSecReporter project, design, finding, comment, template, PDF generation, proposal, proposal template, and test-type write-up endpoints"
     },
     {
       "name": "Engage",
-      "description": "RedSecEngage client, opportunity, engagement, QA, activity, and cross-tool linking endpoints"
+      "description": "RedSecEngage client, contact, opportunity, engagement, QA, team, activity, cross-tool linking, and dashboard statistic endpoints"
     },
     {
       "name": "Vault",

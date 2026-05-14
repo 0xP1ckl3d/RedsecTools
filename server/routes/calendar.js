@@ -16,6 +16,9 @@ const {
   deleteCalendarEntryById,
   getCalendarEntryById,
   listCalendarEntries,
+  listCalendarEntriesByGroup,
+  deleteCalendarEntriesByGroup,
+  countCalendarEntriesByGroup,
   getSetting,
   getEngageEngagementByCalendarProject,
 } = require("../database");
@@ -328,6 +331,7 @@ function serializeEntry(entry, settings = getCalendarSettings()) {
   return {
     ...entry,
     calendarUserId: entry.assigneeUserId || entry.ownerId,
+    groupId: entry.group_id || null,
     status: deriveEntryStatus(entry),
     plannedStatus: entry.status,
     scheduledHours: Number(entry.scheduledHours || computeEntryScheduledHours(entry, settings) || 0),
@@ -466,34 +470,101 @@ function buildStats(entries, projects, users, settings, startsAt, endsAt) {
   };
 }
 
-function parseDateRangeToUnix(startDate, endDate, tzOffsetMinutes) {
-  if (!startDate || !endDate) return null;
-  const offset = typeof tzOffsetMinutes === "number" ? tzOffsetMinutes * 60 * 1000 : new Date().getTimezoneOffset() * -60 * 1000;
-  const startsAt = Math.floor((new Date(`${startDate}T00:00`).getTime() + offset - (new Date().getTimezoneOffset() * 60 * 1000)) / 1000);
-  const endsAt = Math.floor((new Date(`${endDate}T23:59`).getTime() + offset - (new Date().getTimezoneOffset() * 60 * 1000)) / 1000);
+function parseDateInputParts(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const year = parseInt(match[1], 10);
+  const month = parseInt(match[2], 10);
+  const day = parseInt(match[3], 10);
+  const check = new Date(Date.UTC(year, month - 1, day));
+  if (check.getUTCFullYear() !== year || check.getUTCMonth() !== month - 1 || check.getUTCDate() !== day) return null;
+  return { year, month, day };
+}
+
+function getClientOffsetMinutes(tzOffsetMinutes) {
+  return Number.isFinite(tzOffsetMinutes) ? Number(tzOffsetMinutes) : -new Date().getTimezoneOffset();
+}
+
+function formatDateInputParts(parts) {
+  return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
+}
+
+function getOffsetMinutesForTimeZone(timeZone, dateValue) {
+  if (!timeZone || typeof timeZone !== "string") return undefined;
+  const parts = parseDateInputParts(dateValue);
+  if (!parts) return undefined;
+  try {
+    const utcNoon = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, 12, 0, 0, 0));
+    const zonedParts = new Intl.DateTimeFormat("en-AU", {
+      timeZone,
+      hour12: false,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }).formatToParts(utcNoon).reduce((acc, part) => {
+      if (part.type !== "literal") acc[part.type] = part.value;
+      return acc;
+    }, {});
+    const zonedAsUtc = Date.UTC(
+      Number(zonedParts.year),
+      Number(zonedParts.month) - 1,
+      Number(zonedParts.day),
+      Number(zonedParts.hour),
+      Number(zonedParts.minute),
+      Number(zonedParts.second),
+      0,
+    );
+    return Math.round((zonedAsUtc - utcNoon.getTime()) / 60000);
+  } catch (_) {
+    return undefined;
+  }
+}
+
+function wallClockUnix(parts, minutesOfDay, tzOffsetMinutes, timeZone) {
+  const safeMinutes = Number.isFinite(minutesOfDay) ? minutesOfDay : 0;
+  const hour = Math.floor(safeMinutes / 60);
+  const minute = safeMinutes % 60;
+  const effectiveOffset = getOffsetMinutesForTimeZone(timeZone, formatDateInputParts(parts));
+  const offsetMs = getClientOffsetMinutes(Number.isFinite(effectiveOffset) ? effectiveOffset : tzOffsetMinutes) * 60 * 1000;
+  return Math.floor((Date.UTC(parts.year, parts.month - 1, parts.day, hour, minute, 0, 0) - offsetMs) / 1000);
+}
+
+function parseDateRangeToUnix(startDate, endDate, tzOffsetMinutes, timeZone) {
+  const startParts = parseDateInputParts(startDate);
+  const endParts = parseDateInputParts(endDate);
+  if (!startParts || !endParts) return null;
+  const startsAt = wallClockUnix(startParts, 0, tzOffsetMinutes, timeZone);
+  const endsAt = wallClockUnix(endParts, (23 * 60) + 59, tzOffsetMinutes, timeZone);
   if (!Number.isFinite(startsAt) || !Number.isFinite(endsAt) || endsAt < startsAt) return null;
   return { startsAt, endsAt };
 }
 
-function buildDailyAllocationSegments(startsAt, endsAt, hoursPerDay, workdaysOnly, settings, tzOffsetMinutes) {
-  const tzMs = typeof tzOffsetMinutes === "number" ? tzOffsetMinutes * 60 * 1000 : 0;
-  const start = new Date(startsAt * 1000 + tzMs);
-  const end = new Date(endsAt * 1000 + tzMs);
+function buildDailyAllocationSegments(startsAt, endsAt, hoursPerDay, workdaysOnly, settings, tzOffsetMinutes, timeZone) {
+  const tzMs = getClientOffsetMinutes(tzOffsetMinutes) * 60 * 1000;
+  const start = new Date((startsAt * 1000) + tzMs);
+  const end = new Date((endsAt * 1000) + tzMs);
   const segments = [];
   const clampedHours = clamp(Number(hoursPerDay || 0), 0.5, settings.dailyHours);
   const segmentSpanHours = clamp(Number(((clampedHours / settings.dailyHours) * settings.workdaySpanHours).toFixed(2)), 0.5, 24);
-  const startHour = Math.floor(settings.workdayStartMinutes / 60);
-  const startMinute = settings.workdayStartMinutes % 60;
+  const startDay = Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate());
+  const endDay = Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate());
 
-  for (const cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)) {
-    if (workdaysOnly && !settings.workdays.includes(cursor.getDay())) continue;
-    const segmentStart = new Date(cursor);
-    segmentStart.setHours(startHour, startMinute, 0, 0);
-    const segmentEnd = new Date(segmentStart);
-    segmentEnd.setTime(segmentStart.getTime() + (segmentSpanHours * 60 * 60 * 1000));
+  for (let cursorMs = startDay; cursorMs <= endDay; cursorMs += DAY_SECONDS * 1000) {
+    const cursor = new Date(cursorMs);
+    if (workdaysOnly && !settings.workdays.includes(cursor.getUTCDay())) continue;
+    const parts = {
+      year: cursor.getUTCFullYear(),
+      month: cursor.getUTCMonth() + 1,
+      day: cursor.getUTCDate(),
+    };
+    const segmentStart = wallClockUnix(parts, settings.workdayStartMinutes, tzOffsetMinutes, timeZone);
+    const segmentEnd = segmentStart + Math.round(segmentSpanHours * 60 * 60);
     segments.push({
-      startsAt: Math.floor((segmentStart.getTime() - tzMs) / 1000),
-      endsAt: Math.floor((segmentEnd.getTime() - tzMs) / 1000),
+      startsAt: segmentStart,
+      endsAt: segmentEnd,
       allDay: false,
       scheduledHours: clampedHours,
     });
@@ -719,19 +790,23 @@ router.post("/calendar/allocations", writeLimiter, requireUser, attachUserAccess
   const baseTitle = String(req.body?.title || "").trim() || getProjectEntryTitle(project);
   const description = String(req.body?.description || "").trim() || project.description || "";
   const status = normalizeEntryStatus(String(req.body?.status || "scheduled"));
-  const tzOffsetMinutes = typeof req.body?.tzOffsetMinutes === "number" ? req.body.tzOffsetMinutes : undefined;
+  const tzOffsetMinutes = typeof req.body?.tzOffsetMinutes === "number"
+    ? req.body.tzOffsetMinutes
+    : getOffsetMinutesForTimeZone(req.body?.timeZone, req.body?.startDate);
   const entriesToCreate = [];
 
   if (allocationMode === "daily") {
-    const dateRange = parseDateRangeToUnix(req.body?.startDate, req.body?.endDate, tzOffsetMinutes);
+    const timeZone = typeof req.body?.timeZone === "string" ? req.body.timeZone.slice(0, 80) : "";
+    const dateRange = parseDateRangeToUnix(req.body?.startDate, req.body?.endDate, tzOffsetMinutes, timeZone);
     if (!dateRange) {
       return res.status(400).json({ error: "Choose a valid allocation date range" });
     }
     const hoursPerDay = Number.parseFloat(req.body?.hoursPerDay) || settings.dailyHours;
-    const segments = buildDailyAllocationSegments(dateRange.startsAt, dateRange.endsAt, hoursPerDay, req.body?.workdaysOnly !== false, settings, tzOffsetMinutes);
+    const segments = buildDailyAllocationSegments(dateRange.startsAt, dateRange.endsAt, hoursPerDay, req.body?.workdaysOnly !== false, settings, tzOffsetMinutes, timeZone);
     if (!segments.length) {
       return res.status(400).json({ error: "No allocation days were generated for that range" });
     }
+    const groupId = crypto.randomBytes(16).toString("base64url");
     segments.forEach((segment) => {
       entriesToCreate.push({
         id: crypto.randomBytes(16).toString("base64url"),
@@ -747,6 +822,7 @@ router.post("/calendar/allocations", writeLimiter, requireUser, attachUserAccess
         scheduledHours: segment.scheduledHours,
         utilizationPercent: 100,
         status,
+        groupId,
       });
     });
   } else {
@@ -838,6 +914,74 @@ router.post("/calendar/entries", writeLimiter, requireUser, attachUserAccess, re
     return res.status(400).json({ error: "Entry title is required" });
   }
 
+  const isAllDay = !!req.body?.allDay;
+  const weekdaysOnly = isAllDay && !!req.body?.weekdaysOnly;
+
+  if (weekdaysOnly && endsAt > startsAt) {
+    const groupId = crypto.randomBytes(16).toString("base64url");
+    const DAY_S = 86400;
+    const startDate = new Date(startsAt * 1000);
+    const endDate = new Date(endsAt * 1000);
+    const startDay = Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), startDate.getUTCDate());
+    const endDay = Date.UTC(endDate.getUTCFullYear(), endDate.getUTCMonth(), endDate.getUTCDate());
+    const createdIds = [];
+
+    for (let cursorMs = startDay; cursorMs <= endDay; cursorMs += DAY_S * 1000) {
+      const cursor = new Date(cursorMs);
+      if (!settings.workdays.includes(cursor.getUTCDay())) continue;
+
+      const dayStart = Math.floor(cursorMs / 1000);
+      const dayEnd = dayStart + DAY_S - 1;
+
+      for (const assigneeUserId of validAssigneeUserIds) {
+        const id = crypto.randomBytes(16).toString("base64url");
+        createCalendarEntry({
+          id,
+          type: normalizedType,
+          title: title.slice(0, 160),
+          description: String(req.body?.description || "").trim() || (project?.description || ""),
+          ownerId: req.user.id,
+          assigneeUserId,
+          projectId,
+          startsAt: dayStart,
+          endsAt: dayEnd,
+          allDay: true,
+          scheduledHours: computeEntryScheduledHours({
+            projectId,
+            type: normalizedType,
+            startsAt: dayStart,
+            endsAt: dayEnd,
+            allDay: true,
+          }, settings),
+          utilizationPercent: projectId ? 100 : 0,
+          status: normalizeEntryStatus(String(req.body?.status || "scheduled")),
+          groupId,
+        });
+        createdIds.push(id);
+      }
+    }
+
+    if (!createdIds.length) {
+      return res.status(400).json({ error: "No weekdays found in the selected range" });
+    }
+
+    const entries = listCalendarEntries({ startsAfter: startsAt, endsBefore: endsAt })
+      .map((item) => serializeEntry(item, settings))
+      .filter((item) => createdIds.includes(item.id));
+    for (const uid of validAssigneeUserIds) {
+      if (uid !== req.user.id) {
+        createNotification({
+          userId: uid, category: "calendar", action: "entry_created",
+          title: "Calendar entry created",
+          body: `"${title}" was scheduled for you`,
+          linkUrl: "/calendar", entityType: "calendar_entry", entityId: createdIds[0],
+          dedupeKey: `calendar:entry:${createdIds[0]}:${uid}`,
+        });
+      }
+    }
+    return res.json({ success: true, entry: entries[0] || null, entries, createdCount: entries.length });
+  }
+
   const createdEntries = validAssigneeUserIds.map((assigneeUserId) => {
     const id = crypto.randomBytes(16).toString("base64url");
     createCalendarEntry({
@@ -850,13 +994,13 @@ router.post("/calendar/entries", writeLimiter, requireUser, attachUserAccess, re
       projectId,
       startsAt,
       endsAt,
-      allDay: !!req.body?.allDay,
+      allDay: isAllDay,
       scheduledHours: computeEntryScheduledHours({
         projectId,
         type: normalizedType,
         startsAt,
         endsAt,
-        allDay: !!req.body?.allDay,
+        allDay: isAllDay,
       }, settings),
       utilizationPercent: projectId ? 100 : 0,
       status: normalizeEntryStatus(String(req.body?.status || "scheduled")),
@@ -920,6 +1064,45 @@ router.put("/calendar/entries/:id", writeLimiter, requireUser, attachUserAccess,
     return res.status(400).json({ error: "Entry title is required" });
   }
 
+  const updateScope = String(req.body?.updateScope || "single") === "series" ? "series" : "single";
+
+  if (updateScope === "series" && existing.group_id) {
+    const siblings = listCalendarEntriesByGroup(existing.group_id);
+    for (const sibling of siblings) {
+      updateCalendarEntry({
+        id: sibling.id,
+        type: normalizedType,
+        title: title.slice(0, 160),
+        description: String(req.body?.description ?? sibling.description).trim() || (project?.description || ""),
+        assigneeUserId,
+        projectId,
+        startsAt: sibling.starts_at,
+        endsAt: sibling.ends_at,
+        allDay: !!sibling.all_day,
+        scheduledHours: computeEntryScheduledHours({
+          projectId,
+          type: normalizedType,
+          startsAt: sibling.starts_at,
+          endsAt: sibling.ends_at,
+          allDay: !!sibling.all_day,
+        }, settings),
+        utilizationPercent: projectId ? 100 : 0,
+        status: normalizeEntryStatus(String(req.body?.status || sibling.status)),
+        groupId: sibling.group_id,
+      });
+    }
+    const updatedEntry = getCalendarEntryById(existing.id);
+    if (assigneeUserId !== req.user.id) {
+      createNotification({
+        userId: assigneeUserId, category: "calendar", action: "entry_updated",
+        title: "Calendar allocation updated",
+        body: `"${title}" (${siblings.length} days) was updated`,
+        linkUrl: "/calendar", entityType: "calendar_entry", entityId: existing.id,
+      });
+    }
+    return res.json({ success: true, entry: serializeEntry(updatedEntry, settings), updatedCount: siblings.length });
+  }
+
   updateCalendarEntry({
     id: existing.id,
     type: normalizedType,
@@ -963,6 +1146,29 @@ router.delete("/calendar/entries/:id", writeLimiter, requireUser, attachUserAcce
     || existing.assignee_user_id === req.user.id;
   if (!canDelete) {
     return res.status(403).json({ error: "Calendar edit access denied" });
+  }
+
+  const rawScope = String(req.query?.deleteScope || "");
+  const explicitScope = rawScope === "series" ? "series" : rawScope === "single" ? "single" : null;
+
+  if (explicitScope === "series" && existing.group_id) {
+    const deletedCount = deleteCalendarEntriesByGroup(existing.group_id);
+    if (existing.assignee_user_id && existing.assignee_user_id !== req.user.id) {
+      createNotification({
+        userId: existing.assignee_user_id, category: "calendar", action: "entry_cancelled",
+        title: "Calendar allocation cancelled",
+        body: `"${existing.title || "Allocation"}" (${deletedCount} days) was cancelled`,
+        linkUrl: "/calendar",
+      });
+    }
+    return res.json({ success: true, deletedCount });
+  }
+
+  if (!explicitScope && existing.group_id) {
+    const seriesCount = countCalendarEntriesByGroup(existing.group_id);
+    if (seriesCount > 1) {
+      return res.json({ seriesDetected: true, seriesCount, groupId: existing.group_id });
+    }
   }
 
   deleteCalendarEntryById(existing.id);

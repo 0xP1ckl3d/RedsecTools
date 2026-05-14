@@ -1,3 +1,5 @@
+import { showConfirmModal } from "./confirm-modal.js";
+
 const DAY_SECONDS = 24 * 60 * 60;
 const WEEK_SECONDS = 7 * DAY_SECONDS;
 
@@ -35,6 +37,12 @@ const state = {
   entryModalReadOnly: false,
   entryAutoEnd: true,
   entryLastProjectId: "",
+  editingEntryGroupId: null,
+  editingEntrySeriesCount: 0,
+  projectPage: 0,
+  projectPageSize: 15,
+  projectHideCompleted: true,
+  projectSearch: "",
   activeTimeFieldId: null,
   activeTimeView: "hour",
   pendingTimeValue: null,
@@ -366,8 +374,17 @@ async function loadBootstrap() {
   populateAllocationProjectSelect();
   populateAllocationAssigneeSelect();
   syncActionButtons();
-  setCurrentView(state.currentView);
-  if (new URLSearchParams(window.location.search).get("view") === "about") {
+  const urlParams = new URLSearchParams(window.location.search);
+  const requestedView = urlParams.get("view");
+  const requestedProjectId = urlParams.get("projectId");
+  setCurrentView(requestedView && document.querySelector(`[data-calendar-view="${requestedView}"]`) ? requestedView : state.currentView);
+  if (requestedProjectId) {
+    const project = getProjectById(requestedProjectId);
+    if (project) {
+      setCurrentView("projects");
+      openProjectModal(project);
+    }
+  } else if (requestedView === "about") {
     setCurrentView("about");
   }
 }
@@ -622,7 +639,7 @@ function countWorkdaysInVisibleRange() {
 
 function getEntriesForDay(entries, dayStart, dayEnd) {
   return entries
-    .filter((entry) => entry.startsAt >= dayStart && entry.startsAt <= dayEnd)
+    .filter((entry) => entry.startsAt <= dayEnd && entry.endsAt >= dayStart)
     .sort((left, right) => left.startsAt - right.startsAt);
 }
 
@@ -821,7 +838,7 @@ function renderScheduleGrid(entries, users, options = {}) {
       </div>
       ${days.map((day) => {
         const dayEntries = entries
-          .filter((entry) => entry.calendarUserId === user.id && entry.startsAt >= day.start && entry.startsAt <= day.end)
+          .filter((entry) => entry.calendarUserId === user.id && entry.startsAt <= day.end && entry.endsAt >= day.start)
           .sort((left, right) => left.startsAt - right.startsAt);
         return `
           <div class="calendar-day-cell">
@@ -855,12 +872,39 @@ function renderProjectSummary() {
   ]);
 }
 
+function getFilteredProjects() {
+  let list = state.projects;
+  if (state.projectHideCompleted) {
+    list = list.filter((p) => p.status !== "complete");
+  }
+  if (state.projectSearch) {
+    const q = state.projectSearch.toLowerCase();
+    list = list.filter((p) =>
+      (p.name || "").toLowerCase().includes(q) ||
+      (p.code || "").toLowerCase().includes(q) ||
+      (p.clientName || "").toLowerCase().includes(q) ||
+      (p.projectType || "").toLowerCase().includes(q) ||
+      (p.description || "").toLowerCase().includes(q)
+    );
+  }
+  return list;
+}
+
 function renderProjectTable() {
   const tbody = document.getElementById("calendar-project-table-body");
   if (!tbody) return;
-  tbody.innerHTML = state.projects.length
-    ? state.projects.map((project) => renderProjectRow(project)).join("")
-    : '<tr><td colspan="11" class="text-muted">No projects configured yet.</td></tr>';
+
+  const filtered = getFilteredProjects();
+  const page = state.projectPage;
+  const pageSize = state.projectPageSize;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const clampedPage = Math.min(page, totalPages - 1);
+  const start = clampedPage * pageSize;
+  const pageItems = filtered.slice(start, start + pageSize);
+
+  tbody.innerHTML = pageItems.length
+    ? pageItems.map((project) => renderProjectRow(project)).join("")
+    : `<tr><td colspan="11" class="text-muted">${filtered.length ? "No projects on this page." : "No projects configured yet."}</td></tr>`;
 
   tbody.querySelectorAll(".calendar-project-edit-btn").forEach((button) => {
     button.addEventListener("click", () => {
@@ -874,6 +918,39 @@ function renderProjectTable() {
       openAllocationModal(project);
     });
   });
+
+  renderProjectPagination(filtered.length, clampedPage, pageSize, totalPages);
+}
+
+function renderProjectPagination(totalItems, page, pageSize, totalPages) {
+  const container = document.getElementById("calendar-project-pagination");
+  if (!container) return;
+  container.classList.remove("hidden");
+
+  const start = totalItems > 0 ? page * pageSize + 1 : 0;
+  const end = Math.min((page + 1) * pageSize, totalItems);
+
+  let buttons = "";
+  if (totalPages > 1) {
+    buttons += `<button type="button" class="btn-secondary text-xs calendar-project-page-btn" data-page="prev" ${page === 0 ? "disabled" : ""}>Previous</button>`;
+    for (let i = 0; i < totalPages; i++) {
+      const active = i === page ? 'btn-primary' : 'btn-secondary';
+      buttons += `<button type="button" class="${active} text-xs calendar-project-page-btn" data-page="${i}">${i + 1}</button>`;
+    }
+    buttons += `<button type="button" class="btn-secondary text-xs calendar-project-page-btn" data-page="next" ${page === totalPages - 1 ? "disabled" : ""}>Next</button>`;
+  }
+
+  container.innerHTML = `<span class="text-sm text-muted">${start}-${end} of ${totalItems}</span><div class="calendar-pagination-btns">${buttons}</div>`;
+
+  container.querySelectorAll(".calendar-project-page-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const raw = btn.dataset.page;
+      if (raw === "prev") state.projectPage = Math.max(0, page - 1);
+      else if (raw === "next") state.projectPage = Math.min(totalPages - 1, page + 1);
+      else state.projectPage = Number(raw);
+      renderProjectTable();
+    });
+  });
 }
 
 function renderProjectRow(project) {
@@ -883,9 +960,12 @@ function renderProjectRow(project) {
   const windowLabel = project.startsAt || project.endsAt
     ? `${project.startsAt ? formatShortDate(project.startsAt) : "Open"} - ${project.endsAt ? formatShortDate(project.endsAt) : "Open"}`
     : "No dates";
-  const estimateLabel = project.estimatedMode === "days"
-    ? `${Number(project.estimatedValue || 0).toFixed(1)} days`
-    : `${Number(project.estimatedValue || 0).toFixed(1)} hours`;
+  const dailyHours = Number(state.settings.dailyHours || 7.6);
+  const estimatedHours = Number(project.estimatedHours || 0);
+  const estimatedDays = Number.isFinite(Number(project.estimatedDays))
+    ? Number(project.estimatedDays)
+    : (dailyHours > 0 ? estimatedHours / dailyHours : 0);
+  const estimateLabel = `${estimatedDays.toFixed(1)} days`;
   return `
     <tr class="calendar-project-row">
       <td class="calendar-project-code-cell">${escapeHtml(project.code || "—")}</td>
@@ -898,7 +978,7 @@ function renderProjectRow(project) {
       <td>${consultants}</td>
       <td>
         <div class="calendar-project-title">${escapeHtml(estimateLabel)}</div>
-        <div class="calendar-project-meta">${escapeHtml(formatHoursLabel(project.estimatedHours || 0))}</div>
+        <div class="calendar-project-meta">${escapeHtml(formatHoursLabel(estimatedHours))}</div>
       </td>
       <td>
         <div class="calendar-project-title">${escapeHtml(formatHoursLabel(project.scheduledHours || 0))} / ${escapeHtml(formatHoursLabel(project.completedHours || 0))}</div>
@@ -1057,7 +1137,11 @@ function syncActionButtons() {
 function bindEntryCardClicks(root) {
   root.querySelectorAll("[data-calendar-entry-id]").forEach((button) => {
     button.addEventListener("click", () => {
-      const entry = [...state.scheduleEntries, ...state.teamProjectEntries].find((item) => item.id === button.dataset.calendarEntryId);
+      const allEntries = [...state.scheduleEntries, ...state.teamProjectEntries];
+      const entry = allEntries.find((item) => item.id === button.dataset.calendarEntryId);
+      if (entry && entry.groupId) {
+        entry._seriesCount = allEntries.filter((e) => e.groupId === entry.groupId).length;
+      }
       if (entry) openEntryModal(entry);
     });
   });
@@ -1169,6 +1253,10 @@ function syncEntryFormAllDay() {
   const allDay = !!document.getElementById("calendar-entry-all-day")?.checked;
   document.getElementById("calendar-entry-start-time-wrap")?.classList.toggle("hidden", allDay);
   document.getElementById("calendar-entry-end-time-wrap")?.classList.toggle("hidden", allDay);
+  document.getElementById("calendar-entry-weekdays-only-wrap")?.classList.toggle("hidden", !allDay);
+  if (!allDay) {
+    document.getElementById("calendar-entry-weekdays-only").checked = false;
+  }
   syncEntryEndFromStart();
 }
 
@@ -1315,6 +1403,27 @@ function openEntryModal(entry = null, options = {}) {
     syncEntryEndFromStart(true);
   }
 
+  const seriesInfo = document.getElementById("calendar-entry-series-info");
+  const seriesToggle = document.getElementById("calendar-entry-series-toggle");
+  const deleteSeriesBtn = document.getElementById("calendar-entry-delete-series-btn");
+  if (entry?.groupId) {
+    state.editingEntryGroupId = entry.groupId;
+    state.editingEntrySeriesCount = entry._seriesCount || 0;
+    if (seriesInfo) {
+      seriesInfo.textContent = `Part of a ${state.editingEntrySeriesCount}-day allocation series`;
+      seriesInfo.classList.remove("hidden");
+    }
+    seriesToggle?.classList.remove("hidden");
+    deleteSeriesBtn?.classList.toggle("hidden", state.entryModalReadOnly);
+  } else {
+    state.editingEntryGroupId = null;
+    state.editingEntrySeriesCount = 0;
+    seriesInfo?.classList.add("hidden");
+    seriesToggle?.classList.add("hidden");
+    deleteSeriesBtn?.classList.add("hidden");
+  }
+  document.getElementById("calendar-entry-apply-series").checked = false;
+
   setEntryFormDisabled(state.entryModalReadOnly);
   document.getElementById("calendar-entry-save-btn")?.classList.toggle("hidden", state.entryModalReadOnly);
   document.getElementById("calendar-entry-delete-btn")?.classList.toggle("hidden", !entry || state.entryModalReadOnly);
@@ -1329,6 +1438,8 @@ function closeEntryModal() {
   state.entryModalReadOnly = false;
   state.entryAutoEnd = true;
   state.entryLastProjectId = "";
+  state.editingEntryGroupId = null;
+  state.editingEntrySeriesCount = 0;
 }
 
 async function saveEntry() {
@@ -1341,6 +1452,7 @@ async function saveEntry() {
     projectId: document.getElementById("calendar-entry-project").value || null,
     status: document.getElementById("calendar-entry-status").value,
     allDay,
+    weekdaysOnly: allDay && document.getElementById("calendar-entry-weekdays-only")?.checked,
     description: document.getElementById("calendar-entry-description").value.trim(),
   };
   if (state.editingEntryId) {
@@ -1365,6 +1477,9 @@ async function saveEntry() {
   try {
     const url = state.editingEntryId ? `/api/calendar/entries/${state.editingEntryId}` : "/api/calendar/entries";
     const method = state.editingEntryId ? "PUT" : "POST";
+    if (state.editingEntryId && state.editingEntryGroupId && document.getElementById("calendar-entry-apply-series").checked) {
+      payload.updateScope = "series";
+    }
     await fetchJson(url, {
       method,
       headers: { "Content-Type": "application/json" },
@@ -1379,8 +1494,23 @@ async function saveEntry() {
 
 async function deleteEntry() {
   if (!state.editingEntryId) return;
+
   try {
-    await fetchJson(`/api/calendar/entries/${state.editingEntryId}`, { method: "DELETE" });
+    const result = await fetchJson(`/api/calendar/entries/${state.editingEntryId}`, { method: "DELETE" });
+    if (result.seriesDetected && result.seriesCount > 1) {
+      const deleteAll = await showConfirmModal({
+        title: "Delete Entry",
+        message: `This entry is part of a ${result.seriesCount}-day allocation series. Do you want to delete the entire series?`,
+        confirmLabel: `Delete Entire Series (${result.seriesCount} days)`,
+        cancelLabel: "This Day Only",
+        danger: true,
+      });
+      if (deleteAll) {
+        await fetchJson(`/api/calendar/entries/${state.editingEntryId}?deleteScope=series`, { method: "DELETE" });
+      } else {
+        await fetchJson(`/api/calendar/entries/${state.editingEntryId}?deleteScope=single`, { method: "DELETE" });
+      }
+    }
     closeEntryModal();
     await refreshCalendarData();
   } catch (error) {
@@ -1389,12 +1519,10 @@ async function deleteEntry() {
 }
 
 function updateProjectEstimatePreview() {
-  const estimateMode = document.getElementById("calendar-project-estimate-mode")?.value || "hours";
   const estimateValue = Number.parseFloat(document.getElementById("calendar-project-estimate-value")?.value) || 0;
   const dailyRate = Number.parseFloat(document.getElementById("calendar-project-rate")?.value) || 0;
   const dailyHours = Number(state.settings.dailyHours || 7.6);
-  const estimatedDays = estimateMode === "days" ? estimateValue : (dailyHours > 0 ? estimateValue / dailyHours : 0);
-  document.getElementById("calendar-project-estimated-cost").textContent = formatCurrency(estimatedDays * dailyRate);
+  document.getElementById("calendar-project-estimated-cost").textContent = `${formatCurrency(estimateValue * dailyRate)} · ${formatHoursLabel(estimateValue * dailyHours)}`;
 }
 
 function openProjectModal(project = null) {
@@ -1407,8 +1535,7 @@ function openProjectModal(project = null) {
   document.getElementById("calendar-project-type").value = project?.projectType || "";
   document.getElementById("calendar-project-status").value = project?.status || "active";
   document.getElementById("calendar-project-color").value = project?.color || "slate";
-  document.getElementById("calendar-project-estimate-mode").value = project?.estimatedMode || "hours";
-  document.getElementById("calendar-project-estimate-value").value = project?.estimatedValue || 0;
+  document.getElementById("calendar-project-estimate-value").value = project?.estimatedDays || (project?.estimatedMode === "days" ? project?.estimatedValue : 0) || 0;
   document.getElementById("calendar-project-rate").value = project?.billableRate || 0;
   document.getElementById("calendar-project-start-date").value = project?.startsAt ? toDateInputValue(project.startsAt) : "";
   document.getElementById("calendar-project-end-date").value = project?.endsAt ? toDateInputValue(project.endsAt) : "";
@@ -1432,7 +1559,7 @@ async function saveProject() {
     projectType: document.getElementById("calendar-project-type").value.trim(),
     status: document.getElementById("calendar-project-status").value,
     color: document.getElementById("calendar-project-color").value,
-    estimatedMode: document.getElementById("calendar-project-estimate-mode").value,
+    estimatedMode: "days",
     estimatedValue: Number.parseFloat(document.getElementById("calendar-project-estimate-value").value) || 0,
     billableRate: Number.parseFloat(document.getElementById("calendar-project-rate").value) || 0,
     startsAt: document.getElementById("calendar-project-start-date").value ? Math.floor(new Date(`${document.getElementById("calendar-project-start-date").value}T00:00`).getTime() / 1000) : null,
@@ -1526,8 +1653,10 @@ function openAllocationModal(project = null) {
   document.getElementById("calendar-allocation-end-date").value = toDateInputValue(Math.floor(end.getTime() / 1000));
   document.getElementById("calendar-allocation-custom-start-date").value = toDateInputValue(Math.floor(start.getTime() / 1000));
   document.getElementById("calendar-allocation-custom-end-date").value = toDateInputValue(Math.floor(end.getTime() / 1000));
-  setDateTimePair("", "calendar-allocation-custom-start-time", { hour24: "09", minute: "00" });
-  setDateTimePair("", "calendar-allocation-custom-end-time", { hour24: "17", minute: "00" });
+  const startTime = String(state.settings.workdayStart || "08:30").split(":");
+  const endTime = String(state.settings.workdayEnd || "17:30").split(":");
+  setDateTimePair("", "calendar-allocation-custom-start-time", { hour24: (startTime[0] || "08").padStart(2, "0"), minute: (startTime[1] || "30").padStart(2, "0") });
+  setDateTimePair("", "calendar-allocation-custom-end-time", { hour24: (endTime[0] || "17").padStart(2, "0"), minute: (endTime[1] || "30").padStart(2, "0") });
   syncAllocationMode();
   document.getElementById("calendar-allocation-modal")?.classList.remove("hidden");
 }
@@ -1546,6 +1675,7 @@ async function saveAllocation() {
     description: document.getElementById("calendar-allocation-description").value.trim(),
     status: document.getElementById("calendar-allocation-status").value,
     tzOffsetMinutes: -new Date().getTimezoneOffset(),
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "",
   };
 
   if (!payload.projectId) {
@@ -1757,6 +1887,28 @@ function initEvents() {
   document.getElementById("calendar-add-entry-btn")?.addEventListener("click", () => openEntryModal());
   document.getElementById("calendar-add-project-btn")?.addEventListener("click", () => openProjectModal());
   document.getElementById("calendar-add-allocation-btn")?.addEventListener("click", () => openAllocationModal());
+
+  const hideCompletedCheckbox = document.getElementById("calendar-project-hide-completed");
+  if (hideCompletedCheckbox) {
+    hideCompletedCheckbox.checked = state.projectHideCompleted;
+    hideCompletedCheckbox.addEventListener("change", () => {
+      state.projectHideCompleted = hideCompletedCheckbox.checked;
+      state.projectPage = 0;
+      renderProjectTable();
+    });
+  }
+  const projectSearchInput = document.getElementById("calendar-project-search");
+  if (projectSearchInput) {
+    let searchTimer = null;
+    projectSearchInput.addEventListener("input", () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => {
+        state.projectSearch = projectSearchInput.value.trim();
+        state.projectPage = 0;
+        renderProjectTable();
+      }, 250);
+    });
+  }
 
   document.getElementById("calendar-entry-all-day")?.addEventListener("change", syncEntryFormAllDay);
   document.getElementById("calendar-entry-start-date")?.addEventListener("change", () => syncEntryEndFromStart(true));

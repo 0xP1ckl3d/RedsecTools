@@ -372,6 +372,30 @@
         </div>
       </div>
 
+      <!-- Theme Tab -->
+      <div id="theme-tab" class="hidden admin-page-stack">
+        <div class="card admin-section-card">
+          <div class="admin-card-header">
+            <div>
+              <p class="admin-card-kicker">Branding</p>
+              <h2 class="admin-card-title">Site Primary Colour</h2>
+              <p class="admin-card-copy">Set the primary accent colour used across RedSecTools for all users. Red remains the default.</p>
+            </div>
+          </div>
+          <div class="space-y-4">
+            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5" id="site-theme-picker">
+              <label class="site-theme-choice" data-theme-choice="red"><input type="radio" name="site-primary-theme" value="red"><span class="site-theme-swatch" data-theme-swatch="red"></span><span>Red</span></label>
+              <label class="site-theme-choice" data-theme-choice="green"><input type="radio" name="site-primary-theme" value="green"><span class="site-theme-swatch" data-theme-swatch="green"></span><span>Green</span></label>
+              <label class="site-theme-choice" data-theme-choice="blue"><input type="radio" name="site-primary-theme" value="blue"><span class="site-theme-swatch" data-theme-swatch="blue"></span><span>Blue</span></label>
+              <label class="site-theme-choice" data-theme-choice="orange"><input type="radio" name="site-primary-theme" value="orange"><span class="site-theme-swatch" data-theme-swatch="orange"></span><span>Orange</span></label>
+              <label class="site-theme-choice" data-theme-choice="purple"><input type="radio" name="site-primary-theme" value="purple"><span class="site-theme-swatch" data-theme-swatch="purple"></span><span>Purple / Pink</span></label>
+            </div>
+            <button type="button" id="save-theme-settings-btn" class="btn-primary">Save Theme</button>
+            <p id="theme-settings-result" class="text-sm hidden"></p>
+          </div>
+        </div>
+      </div>
+
       <!-- Settings Tab -->
       <div id="settings-tab" class="hidden admin-page-stack">
         <div class="card admin-section-card">
@@ -1296,6 +1320,56 @@
         </div>
       </div>
 
+      <!-- Engage Tool Settings Tab -->
+      <div id="engage-tool-settings-tab" class="hidden admin-page-stack">
+        <div class="card admin-section-card">
+          <div class="admin-card-header">
+            <div>
+              <p class="admin-card-kicker">Tool Settings</p>
+              <h2 class="admin-card-title">RedSecEngage Activity Log</h2>
+              <p class="admin-card-copy">Full audit trail of all RedSecEngage actions across clients, opportunities, engagements, and QA.</p>
+            </div>
+            <div class="admin-card-actions">
+              <button type="button" id="engage-activity-refresh-btn" class="btn-secondary text-sm">Refresh</button>
+              <a href="/admin/api/engage-activity.csv" class="btn-secondary text-sm" id="engage-activity-export-btn">Export CSV</a>
+            </div>
+          </div>
+          <div class="flex items-center gap-3 mb-4">
+            <span class="text-sm text-muted" id="engage-activity-count">-</span>
+            <span class="text-sm text-muted">entries</span>
+            <div class="flex-1"></div>
+            <label class="text-sm text-muted" for="engage-activity-page-size">Per page:</label>
+            <select id="engage-activity-page-size" class="input-field engage-stage-select">
+              <option value="50">50</option>
+              <option value="100">100</option>
+              <option value="200">200</option>
+              <option value="500">500</option>
+            </select>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>User</th>
+                  <th>Entity</th>
+                  <th>Action</th>
+                  <th>Details</th>
+                </tr>
+              </thead>
+              <tbody id="engage-activity-body">
+                <tr><td colspan="5" class="text-center text-muted py-8">Loading activity log...</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="flex items-center justify-between mt-4">
+            <button type="button" id="engage-activity-prev-btn" class="btn-secondary text-sm" disabled>Previous</button>
+            <span class="text-sm text-muted" id="engage-activity-page-info">Page 1</span>
+            <button type="button" id="engage-activity-next-btn" class="btn-secondary text-sm">Next</button>
+          </div>
+        </div>
+      </div>
+
     <!-- Team Shortcut Modal (Admin) -->
     <div id="team-shortcut-modal" class="modal-overlay hidden">
       <div class="modal-card">
@@ -1328,8 +1402,6 @@
         </div>
       </div>
     </div>
-
-        <footer class="footer">&copy; <span class="current-year"></span> RedSec Offensive Security</footer>
       </div>
     </div>
   </div>

@@ -26,7 +26,7 @@ function escapeModalHtml(value) {
   return div.innerHTML;
 }
 
-export function showConfirmModal({ title = "Confirm", message = "", confirmLabel = "Confirm", cancelLabel = "Cancel", danger = false } = {}) {
+export function showConfirmModal({ title = "Confirm", message = "", htmlMessage = false, confirmLabel = "Confirm", cancelLabel = "Cancel", danger = false } = {}) {
   return new Promise(function (resolve) {
     var overlay = createOverlay();
 
@@ -34,7 +34,7 @@ export function showConfirmModal({ title = "Confirm", message = "", confirmLabel
     card.className = "modal-card";
     card.innerHTML =
       '<h3 class="confirm-modal-title">' + escapeModalHtml(title) + "</h3>" +
-      '<p class="confirm-modal-message">' + escapeModalHtml(message) + "</p>" +
+      '<p class="confirm-modal-message">' + (htmlMessage ? message : escapeModalHtml(message)) + "</p>" +
       '<div class="confirm-modal-actions">' +
         '<button type="button" class="btn-secondary confirm-modal-cancel">' + escapeModalHtml(cancelLabel) + "</button>" +
         '<button type="button" class="btn-primary confirm-modal-confirm' + (danger ? " btn-danger" : "") + '">' + escapeModalHtml(confirmLabel) + "</button>" +
@@ -48,9 +48,8 @@ export function showConfirmModal({ title = "Confirm", message = "", confirmLabel
     var cancelBtn = card.querySelector(".confirm-modal-cancel");
 
     function cleanup(result) {
-      overlay.remove();
-      activeOverlay = null;
       resolve(result);
+      setTimeout(function () { overlay.remove(); activeOverlay = null; }, 0);
     }
 
     confirmBtn.addEventListener("click", function () { cleanup(true); });
@@ -66,7 +65,7 @@ export function showConfirmModal({ title = "Confirm", message = "", confirmLabel
   });
 }
 
-export function showAlertModal({ title = "Notice", message = "", confirmLabel = "OK" } = {}) {
+export function showAlertModal({ title = "Notice", message = "", htmlMessage = false, confirmLabel = "OK" } = {}) {
   return new Promise(function (resolve) {
     var overlay = createOverlay();
 
@@ -74,7 +73,7 @@ export function showAlertModal({ title = "Notice", message = "", confirmLabel = 
     card.className = "modal-card";
     card.innerHTML =
       '<h3 class="confirm-modal-title">' + escapeModalHtml(title) + "</h3>" +
-      '<p class="confirm-modal-message">' + escapeModalHtml(message) + "</p>" +
+      '<p class="confirm-modal-message">' + (htmlMessage ? message : escapeModalHtml(message)) + "</p>" +
       '<div class="confirm-modal-actions">' +
         '<button type="button" class="btn-primary confirm-modal-confirm">' + escapeModalHtml(confirmLabel) + "</button>" +
       "</div>";
@@ -86,9 +85,8 @@ export function showAlertModal({ title = "Notice", message = "", confirmLabel = 
     var confirmBtn = card.querySelector(".confirm-modal-confirm");
 
     function cleanup() {
-      overlay.remove();
-      activeOverlay = null;
       resolve();
+      setTimeout(function () { overlay.remove(); activeOverlay = null; }, 0);
     }
 
     confirmBtn.addEventListener("click", cleanup);

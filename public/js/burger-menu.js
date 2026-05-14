@@ -161,6 +161,7 @@ initBurgerMenu();
     "/survey": "RedSecSurvey",
     "/threat": "RedSecThreat",
     "/reporter": "RedSecReporter",
+    "/engage": "RedSecEngage",
     "/ai": "RedSecAI",
   };
 

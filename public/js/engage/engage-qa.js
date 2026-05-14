@@ -1,14 +1,13 @@
 const EngageQa = (() => {
-  let state = { reviews: [], activeFilter: "ready_for_qa" };
+  let state = { reviews: [], activeFilter: "queue" };
 
   const QA_STATUS_LABELS = {
     not_requested: "Not Requested",
-    ready_for_qa: "Ready for QA",
+    ready_for_qa: "QA Requested",
     assigned: "Assigned",
     reviewing: "Reviewing",
-    requires_more_work: "Requires More Work",
-    ready_for_delivery: "Ready for Delivery",
-    delivered: "Delivered",
+    requires_more_work: "Changes Required",
+    ready_for_delivery: "Approved for Delivery",
     cancelled: "Cancelled",
   };
 
@@ -19,20 +18,15 @@ const EngageQa = (() => {
     reviewing: "testing",
     requires_more_work: "blocked",
     ready_for_delivery: "delivered",
-    delivered: "delivered",
     cancelled: "closed",
   };
 
   const QA_FILTERS = [
-    { key: "ready_for_qa", label: "Queue", param: { status: "ready_for_qa" } },
-    { key: "my_reviews", label: "My Reviews", param: { assignee: "me" } },
-    { key: "assigned", label: "Assigned", param: { status: "assigned" } },
-    { key: "reviewing", label: "In Review", param: { status: "reviewing" } },
-    { key: "requires_more_work", label: "Needs Work", param: { status: "requires_more_work" } },
-    { key: "ready_for_delivery", label: "Ready to Deliver", param: { status: "ready_for_delivery" } },
-    { key: "delivered", label: "Completed", param: { status: "delivered" } },
+    { key: "queue", label: "Queue", param: { status: "queue" } },
+    { key: "completed", label: "Completed", param: { status: "completed" } },
     { key: "all", label: "All", param: { status: "all" } },
   ];
+  const QA_STATUS_OPTIONS = ["ready_for_qa", "assigned", "reviewing", "requires_more_work", "ready_for_delivery", "cancelled"];
 
   function esc(str) {
     const d = document.createElement("div");
@@ -52,7 +46,7 @@ const EngageQa = (() => {
   }
 
   async function init() {
-    state.activeFilter = "ready_for_qa";
+    state.activeFilter = "queue";
     await refresh();
   }
 
@@ -62,7 +56,7 @@ const EngageQa = (() => {
     section.innerHTML = '<div class="engage-empty">Loading QA queue...</div>';
     try {
       const filter = QA_FILTERS.find((f) => f.key === state.activeFilter);
-      let params = filter ? { ...filter.param } : { status: "ready_for_qa" };
+      let params = filter ? { ...filter.param } : { status: "queue" };
 
       if (params.assignee === "me") {
         const userId = window._engageUser?.id;
@@ -93,7 +87,6 @@ const EngageQa = (() => {
 
     html += '<div class="engage-tabs engage-qa-filters">';
     for (const filter of QA_FILTERS) {
-      if (filter.key === "my_reviews" && !caps.canPerformQa && !caps.canManageQa && !caps.canManageAll) continue;
       const isActive = filter.key === state.activeFilter;
       html += `<button type="button" class="engage-tab ${isActive ? "active" : ""}" data-qa-filter="${filter.key}">${esc(filter.label)}</button>`;
     }
@@ -114,14 +107,16 @@ const EngageQa = (() => {
   }
 
   function renderReviewCard(review, caps) {
-    let html = `<div class="engage-qa-detail-card" data-qa-id="${esc(review.id)}">`;
+    const userId = window._engageUser?.id;
+    const isAssignee = review.assigned_to_user_id === userId;
+    let html = `<div class="engage-qa-detail-card ${review.assigned_to_user_id ? "" : "unassigned"}" data-qa-id="${esc(review.id)}">`;
 
     html += '<div class="engage-qa-card-header">';
     html += "<div>";
     html += `<div class="engage-qa-card-title">${esc(review.engagement_title || "Unknown Engagement")}</div>`;
     html += `<div class="engage-qa-card-meta">${esc(review.client_display_name || review.client_name || "")}</div>`;
     html += "</div>";
-    html += qaStatusPill(review.status);
+    html += `<div class="engage-qa-status-control">${renderStatusControl(review, caps, isAssignee)}</div>`;
     html += "</div>";
 
     html += '<div class="engage-qa-card-details">';
@@ -135,7 +130,7 @@ const EngageQa = (() => {
       html += `<div class="engage-qa-card-field"><span class="engage-qa-field-label">Reviewer:</span> ${esc(review.assigned_to_username)}</div>`;
     }
     if (review.assigned_by_username) {
-      html += `<div class="engage-qa-card-field"><span class="engage-qa-field-label">Assigned by:</span> ${esc(review.assigned_by_username)}</div>`;
+      html += `<div class="engage-qa-card-field"><span class="engage-qa-field-label">Submitted by:</span> ${esc(review.assigned_by_username)}</div>`;
     }
     if (review.qa_notes) {
       const truncated = review.qa_notes.length > 150 ? review.qa_notes.substring(0, 150) + "..." : review.qa_notes;
@@ -150,8 +145,6 @@ const EngageQa = (() => {
     }
     html += "</div>";
 
-    const userId = window._engageUser?.id;
-    const isAssignee = review.assigned_to_user_id === userId;
     const actions = getActions(review, caps, isAssignee);
     if (actions.length > 0) {
       html += '<div class="engage-qa-card-actions">';
@@ -166,6 +159,14 @@ const EngageQa = (() => {
     return html;
   }
 
+  function renderStatusControl(review, caps, isAssignee) {
+    const canUpdate = isAssignee || caps.canManageQa || caps.canManageAll;
+    if (!canUpdate || ["requires_more_work", "ready_for_delivery", "cancelled"].includes(review.status)) return qaStatusPill(review.status);
+    return `<select class="input-field text-sm qa-status-select" title="Change QA status">
+      ${QA_STATUS_OPTIONS.map((status) => `<option value="${status}" ${status === review.status ? "selected" : ""}>${esc(QA_STATUS_LABELS[status] || status)}</option>`).join("")}
+    </select>`;
+  }
+
   function getActions(review, caps, isAssignee) {
     const actions = [];
     const s = review.status;
@@ -177,19 +178,13 @@ const EngageQa = (() => {
       actions.push({ action: "update_status", status: "reviewing", label: "Start Review" });
     }
     if (s === "reviewing" && (isAssignee || caps.canManageQa || caps.canManageAll)) {
-      actions.push({ action: "update_status_with_notes", status: "requires_more_work", label: "Requires More Work" });
-      actions.push({ action: "update_status", status: "ready_for_delivery", label: "Ready for Delivery" });
+      actions.push({ action: "update_status_with_notes", status: "requires_more_work", label: "Request Changes" });
+      actions.push({ action: "update_status", status: "ready_for_delivery", label: "Approve for Delivery" });
     }
-    if (s === "requires_more_work" && (isAssignee || caps.canManageQa || caps.canManageAll)) {
-      actions.push({ action: "update_status", status: "reviewing", label: "Resume Review" });
-    }
-    if (s === "ready_for_delivery" && (caps.canManageQa || caps.canManageAll)) {
-      actions.push({ action: "update_status", status: "delivered", label: "Mark Delivered" });
-    }
-    if ((caps.canManageQa || caps.canManageAll) && !["delivered", "cancelled"].includes(s)) {
+    if ((caps.canManageQa || caps.canManageAll) && !["requires_more_work", "ready_for_delivery", "cancelled"].includes(s)) {
       actions.push({ action: "update_status", status: "cancelled", label: "Cancel", danger: true });
     }
-    if (["assigned", "reviewing", "requires_more_work"].includes(s) && (isAssignee || caps.canManageQa || caps.canManageAll)) {
+    if (["assigned", "reviewing"].includes(s) && (isAssignee || caps.canManageQa || caps.canManageAll)) {
       actions.push({ action: "add_notes", label: "Add Notes" });
     }
 
@@ -214,6 +209,33 @@ const EngageQa = (() => {
         const action = btn.dataset.action;
         const targetStatus = btn.dataset.status;
         await handleAction(reviewId, action, targetStatus, caps);
+      });
+    });
+
+    section.querySelectorAll(".qa-status-select").forEach((select) => {
+      select.addEventListener("change", async () => {
+        const card = select.closest("[data-qa-id]");
+        const reviewId = card?.dataset.qaId;
+        const review = state.reviews.find((r) => r.id === reviewId);
+        const targetStatus = select.value;
+        if (!reviewId || !review || targetStatus === review.status) return;
+        const confirmed = await EngageModal.confirm({
+          title: "Update QA Status",
+          message: `Change QA status to "${QA_STATUS_LABELS[targetStatus] || targetStatus}"?`,
+          confirmLabel: "Update",
+          danger: targetStatus === "cancelled",
+        });
+        if (!confirmed) {
+          select.value = review.status;
+          return;
+        }
+        try {
+          await EngageApi.updateQaStatus(reviewId, { status: targetStatus });
+          await refresh();
+        } catch (err) {
+          select.value = review.status;
+          await EngageModal.alert({ title: "Error", message: "Failed to update QA status: " + err.message });
+        }
       });
     });
   }
@@ -401,10 +423,21 @@ const EngageQa = (() => {
     EngageApi.listEngagements().then((result) => {
       const select = overlay.querySelector("#qa-submit-engagement");
       const engagements = result.engagements || [];
+      const blockedStatuses = new Set(["delivered", "closed", "cancelled", "archived"]);
       select.innerHTML = '<option value="">Select an engagement</option>' +
-        engagements.filter((e) => !e.archived_at).map((e) =>
+        engagements.filter((e) => !e.archived_at && !blockedStatuses.has(e.status)).map((e) =>
           `<option value="${e.id}">${esc(e.title)}${e.client_display_name ? " — " + esc(e.client_display_name) : ""}</option>`
         ).join("");
+      select.addEventListener("change", async () => {
+        if (!select.value) return;
+        try {
+          const detail = await EngageApi.getEngagementDetail(select.value);
+          overlay.querySelector("#qa-submit-reporter-id").value = detail.linkedReporterProject?.id || detail.engagement?.redsec_reporter_project_id || "";
+          overlay.querySelector("#qa-submit-report-link").value = detail.latestReporterPdf?.downloadUrl || "";
+        } catch {
+          // Autofill is best-effort.
+        }
+      });
     }).catch(() => {
       overlay.querySelector("#qa-submit-engagement").innerHTML = '<option value="">Failed to load engagements</option>';
     });

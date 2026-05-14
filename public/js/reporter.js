@@ -16,6 +16,18 @@ function formatDateTime(ts) {
   return d.toLocaleDateString() + " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+function dateInputValue(value) {
+  if (!value) return "";
+  const d = typeof value === "number" ? new Date(value * 1000) : new Date(value);
+  return Number.isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10);
+}
+
+function dateInputToEpoch(value) {
+  if (!value) return null;
+  const d = new Date(`${value}T00:00:00`);
+  return Number.isNaN(d.getTime()) ? null : Math.floor(d.getTime() / 1000);
+}
+
 function debounce(fn, ms) {
   let timer;
   return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), ms); };
@@ -249,7 +261,15 @@ async function init() {
   renderDashboard();
   bindNavigation();
   window.ReporterProposals?.init(state.capabilities);
-  if (new URLSearchParams(window.location.search).get("view") === "about") {
+  const params = new URLSearchParams(window.location.search);
+  const projectId = params.get("projectId");
+  const proposalId = params.get("proposalId");
+  if (projectId) {
+    const project = state.projects.find((p) => p.id === projectId);
+    if (project) openProjectDetail(projectId);
+  } else if (proposalId && window.ReporterProposals?.showDetailView) {
+    await window.ReporterProposals.showDetailView(proposalId);
+  } else if (params.get("view") === "about") {
     setCurrentView("about");
   }
   bindModals();
@@ -313,7 +333,7 @@ function bindNavigation() {
   document.querySelectorAll("[data-pt-tab]").forEach((btn) => {
     btn.addEventListener("click", () => {
       state.ptTab = btn.dataset.ptTab;
-      updatePtTabs();
+      renderProposalTemplatesView();
     });
   });
   document.getElementById("reporter-new-pt-btn")?.addEventListener("click", () => openCreateProposalTemplateModal());
@@ -348,7 +368,6 @@ function setCurrentView(view) {
   if (view === "templates") renderTemplatesList();
   if (view === "proposals") window.ReporterProposals?.showListView();
   if (view === "proposal-templates") renderProposalTemplatesView();
-  if (view === "engagement-templates") { /* static empty state, no render needed */ }
 }
 
 // --- Dashboard ---
@@ -359,7 +378,7 @@ function renderDashboard() {
   setText("reporter-dash-critical", s.criticalFindings || 0);
 
   const container = document.getElementById("reporter-dash-recent-projects");
-  const active = state.projects.filter((p) => !p.isArchived).slice(0, 5);
+  const active = state.projects.filter((p) => !p.isArchived && p.status !== "archived").slice(0, 5);
   if (!active.length) {
     container.innerHTML = `<p class="text-sm text-muted">No reports yet. Create one to get started.</p>`;
   } else {
@@ -480,6 +499,7 @@ function bindBuilder() {
   document.querySelectorAll("[data-reporter-meta]").forEach((btn) => {
     btn.addEventListener("click", () => showMetaPanel(btn.dataset.reporterMeta));
   });
+  document.getElementById("reporter-save-details-btn")?.addEventListener("click", () => saveProjectDetails());
 
   // Inline save buttons
   document.getElementById("reporter-inline-save-finding")?.addEventListener("click", () => saveInlineFinding());
@@ -1235,19 +1255,78 @@ function showMetaPanel(panelName) {
   if (metaPanel) metaPanel.classList.remove("hidden");
 
   // Show the right sub-panel
-  ["members", "evidence", "notes", "comments", "history", "pdfs"].forEach((name) => {
+  ["details", "members", "evidence", "notes", "comments", "history", "pdfs"].forEach((name) => {
     const el = document.getElementById(`reporter-meta-${name}`);
     if (el) el.classList.toggle("hidden", name !== panelName);
   });
 
   // Load data for the panel
   switch (panelName) {
+    case "details": renderProjectDetailsForm(); break;
     case "members": renderProjectMembers(); break;
     case "evidence": loadProjectEvidence(); break;
     case "notes": loadProjectNotes(); break;
     case "comments": loadProjectComments(); break;
     case "history": loadProjectHistory(); break;
     case "pdfs": loadProjectPdfs(); break;
+  }
+}
+
+function renderProjectDetailsForm() {
+  const p = state.selectedProject;
+  if (!p) return;
+  const md = p.projectMetadata || {};
+  const setValue = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.value = value == null ? "" : String(value);
+  };
+  setValue("reporter-detail-title", p.title || "");
+  setValue("reporter-detail-client", p.clientName || "");
+  setValue("reporter-detail-customer-name", md.customer_name || "");
+  setValue("reporter-detail-position-title", md.position_title || "");
+  setValue("reporter-detail-author", md.author || p.creatorUsername || "");
+  setValue("reporter-detail-author-title", md.author_title || "");
+  setValue("reporter-detail-version", md.report_version || p.version || "1.0");
+  setValue("reporter-detail-report-date", dateInputValue(md.report_date));
+  setValue("reporter-detail-start-date", dateInputValue(md.start_date));
+  setValue("reporter-detail-end-date", dateInputValue(md.end_date));
+  setValue("reporter-detail-duration", md.duration || "");
+  setValue("reporter-detail-due-date", dateInputValue(p.dueDate));
+}
+
+async function saveProjectDetails() {
+  const p = state.selectedProject;
+  if (!p) return;
+  const metadata = { ...(p.projectMetadata || {}) };
+  const getValue = (id) => document.getElementById(id)?.value?.trim() || "";
+  metadata.customer_name = getValue("reporter-detail-customer-name");
+  metadata.position_title = getValue("reporter-detail-position-title");
+  metadata.author = getValue("reporter-detail-author");
+  metadata.author_title = getValue("reporter-detail-author-title");
+  metadata.report_version = getValue("reporter-detail-version");
+  metadata.report_date = getValue("reporter-detail-report-date");
+  metadata.start_date = getValue("reporter-detail-start-date");
+  metadata.end_date = getValue("reporter-detail-end-date");
+  metadata.duration = getValue("reporter-detail-duration");
+
+  try {
+    await api(`/projects/${p.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: getValue("reporter-detail-title"),
+        clientName: getValue("reporter-detail-client"),
+        projectMetadata: metadata,
+        dueDate: dateInputToEpoch(getValue("reporter-detail-due-date")),
+      }),
+    });
+    const data = await api(`/projects/${p.id}`);
+    state.selectedProject = data.project;
+    renderProjectHeader();
+    renderProjectDetailsForm();
+    await showAlertModal({ title: "Saved", message: "Report details updated." });
+  } catch (err) {
+    await showAlertModal({ title: "Error", message: err.message });
   }
 }
 
@@ -2585,7 +2664,7 @@ async function refreshProjects() {
 async function renderDashboardProposals() {
   try {
     const data = await api("/proposals?filter=active");
-    const proposals = data.proposals || data || [];
+    const proposals = (data.proposals || data || []).filter((p) => !p.archivedAt && p.status !== "archived");
     setText("reporter-dash-proposals", proposals.length);
 
     const inReview = state.projects.filter((p) => p.status === "in_review" && !p.isArchived).length;
@@ -3003,29 +3082,63 @@ async function openWriteupDetail(id) {
   const methodInput = document.getElementById("reporter-writeup-edit-methodology");
   const scopeInput = document.getElementById("reporter-writeup-edit-scope");
   const delivInput = document.getElementById("reporter-writeup-edit-deliverables");
-  if (typeInput) { typeInput.value = w.testType || ""; typeInput.disabled = w.is_builtin; }
-  if (nameInput) { nameInput.value = w.name || ""; nameInput.disabled = w.is_builtin; }
-  if (methodInput) { methodInput.value = w.methodology || ""; methodInput.disabled = w.is_builtin; }
-  if (scopeInput) { scopeInput.value = w.scope || ""; scopeInput.disabled = w.is_builtin; }
-  if (delivInput) { delivInput.value = w.deliverables || ""; delivInput.disabled = w.is_builtin; }
+  const clientReqsInput = document.getElementById("reporter-writeup-edit-client-reqs");
+  const consultantReqsInput = document.getElementById("reporter-writeup-edit-consultant-reqs");
+  const assumptionsInput = document.getElementById("reporter-writeup-edit-assumptions");
+  const restrictionsInput = document.getElementById("reporter-writeup-edit-restrictions");
+  if (typeInput) { typeInput.value = w.testType || ""; }
+  if (nameInput) { nameInput.value = w.name || ""; }
+  if (methodInput) { methodInput.value = w.methodology || ""; }
+  if (scopeInput) { scopeInput.value = w.scope || ""; }
+  if (delivInput) { delivInput.value = w.deliverables || ""; }
+  if (clientReqsInput) { clientReqsInput.value = w.clientRequirements || ""; }
+  if (consultantReqsInput) { consultantReqsInput.value = w.consultantRequirements || ""; }
+  if (assumptionsInput) { assumptionsInput.value = w.assumptions || ""; }
+  if (restrictionsInput) { restrictionsInput.value = w.restrictions || ""; }
 
   setCurrentView("writeup-detail");
+  bindMarkdownToolbars();
+  setupWriteupPreviews();
+}
+
+function setupWriteupPreviews() {
+  const pairs = [
+    ["reporter-writeup-edit-methodology", "reporter-writeup-methodology-preview"],
+    ["reporter-writeup-edit-scope", "reporter-writeup-scope-preview"],
+    ["reporter-writeup-edit-deliverables", "reporter-writeup-deliverables-preview"],
+    ["reporter-writeup-edit-client-reqs", "reporter-writeup-client-reqs-preview"],
+    ["reporter-writeup-edit-consultant-reqs", "reporter-writeup-consultant-reqs-preview"],
+    ["reporter-writeup-edit-assumptions", "reporter-writeup-assumptions-preview"],
+    ["reporter-writeup-edit-restrictions", "reporter-writeup-restrictions-preview"],
+  ];
+  pairs.forEach(([inputId, previewId]) => {
+    const input = document.getElementById(inputId);
+    const preview = document.getElementById(previewId);
+    if (input && preview) {
+      renderMarkdownPreview(input.value, preview);
+      input.addEventListener("input", debounce(() => renderMarkdownPreview(input.value, preview), 300));
+    }
+  });
 }
 
 async function saveWriteupDetail() {
   const w = state.selectedWriteup;
-  if (w?.is_builtin) { showAlertModal({ title: "Not Allowed", message: "Built-in write-ups cannot be edited." }); return; }
+  if (!w) { showAlertModal({ title: "Error", message: "No write-up loaded." }); return; }
   const testType = document.getElementById("reporter-writeup-edit-type")?.value?.trim();
   const name = document.getElementById("reporter-writeup-edit-name")?.value?.trim();
-  const methodology = document.getElementById("reporter-writeup-edit-methodology")?.value || "";
-  const scope = document.getElementById("reporter-writeup-edit-scope")?.value || "";
+  const methodologyWriteup = document.getElementById("reporter-writeup-edit-methodology")?.value || "";
+  const scopeGuidance = document.getElementById("reporter-writeup-edit-scope")?.value || "";
   const deliverables = document.getElementById("reporter-writeup-edit-deliverables")?.value || "";
+  const clientRequirements = document.getElementById("reporter-writeup-edit-client-reqs")?.value || "";
+  const consultantRequirements = document.getElementById("reporter-writeup-edit-consultant-reqs")?.value || "";
+  const assumptions = document.getElementById("reporter-writeup-edit-assumptions")?.value || "";
+  const restrictions = document.getElementById("reporter-writeup-edit-restrictions")?.value || "";
   if (!testType || !name) { showAlertModal({ title: "Validation", message: "Test type and name are required." }); return; }
   try {
     await api("/test-type-writeups/" + state.selectedWriteupId, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ testType, name, methodology, scope, deliverables }),
+      body: JSON.stringify({ testType, name, methodologyWriteup, scopeGuidance, deliverables, clientRequirements, consultantRequirements, assumptions, restrictions }),
     });
     await openWriteupDetail(state.selectedWriteupId);
   } catch (err) {

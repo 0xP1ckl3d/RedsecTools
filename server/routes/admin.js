@@ -43,6 +43,7 @@ const redsecAiProvider = require("../modules/redsecai/provider");
 const router = Router();
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+const SITE_PRIMARY_THEMES = new Set(["red", "green", "blue", "orange", "purple"]);
 
 function adminCookieOptions() {
   return {
@@ -1083,6 +1084,26 @@ router.post("/api/settings/calendar", requireAdmin, (req, res) => {
   });
 });
 
+router.get("/api/settings/theme", requireAdmin, (req, res) => {
+  const primaryTheme = String(getSetting("site_primary_theme") || "red").trim().toLowerCase();
+  res.json({ primaryTheme: SITE_PRIMARY_THEMES.has(primaryTheme) ? primaryTheme : "red" });
+});
+
+router.post("/api/settings/theme", requireAdmin, (req, res) => {
+  const primaryTheme = String(req.body?.primaryTheme || "red").trim().toLowerCase();
+  if (!SITE_PRIMARY_THEMES.has(primaryTheme)) {
+    return res.status(400).json({ error: "Invalid site theme" });
+  }
+  setSetting("site_primary_theme", primaryTheme);
+  auditAdmin(req, {
+    category: "settings",
+    action: "theme_update",
+    targetType: "site_theme",
+    metadata: { primaryTheme },
+  });
+  res.json({ success: true, primaryTheme });
+});
+
 // ============================================================
 // Chat management
 // ============================================================
@@ -1549,6 +1570,43 @@ router.post("/api/shortcuts/team/upload-icon", requireAdmin, teamIconUpload.sing
     res.json({ url: `/api/homepage/shortcut-icon/${id}` });
   } catch {
     res.status(500).json({ error: "Failed to process image" });
+  }
+});
+
+// ============================================================
+// Engage Activity Log (Admin)
+// ============================================================
+
+router.get("/api/engage-activity", requireAdmin, (req, res) => {
+  const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 500);
+  const page = Math.max(Number(req.query.page) || 1, 1);
+  const offset = (page - 1) * limit;
+  try {
+    const { listEngageActivityPage, getEngageActivityCount } = require("../database");
+    const total = getEngageActivityCount();
+    const rows = listEngageActivityPage(limit, offset);
+    res.status(200).json({ rows, total, page, limit });
+  } catch {
+    res.status(500).json({ error: "Failed to load engage activity." });
+  }
+});
+
+router.get("/api/engage-activity.csv", requireAdmin, (req, res) => {
+  try {
+    const { listEngageActivityPage } = require("../database");
+    const rows = listEngageActivityPage(100000, 0);
+    const header = "Time,Entity Type,Entity ID,Action,User,Username,Details";
+    const lines = rows.map((r) => {
+      const ts = r.created_at ? new Date(r.created_at * 1000).toISOString() : "";
+      const details = r.details ? String(r.details).replace(/"/g, '""') : "";
+      return `"${ts}","${r.entity_type || ""}","${r.entity_id || ""}","${r.action || ""}","${r.user_id || ""}","${r.username || ""}","${details}"`;
+    });
+    const csv = [header, ...lines].join("\n");
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", "attachment; filename=engage-activity.csv");
+    res.status(200).send(csv);
+  } catch {
+    res.status(500).json({ error: "Failed to export engage activity." });
   }
 });
 

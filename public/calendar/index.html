@@ -150,6 +150,13 @@
                 <h2 class="text-lg font-semibold">Project Management</h2>
                 <p class="text-sm text-muted mt-1">Track delivery windows, estimated effort, scheduled allocations, completed work, and projected value.</p>
               </div>
+              <div class="flex items-center gap-3 flex-wrap">
+                <label class="bulletin-checkbox-row">
+                  <input id="calendar-project-hide-completed" type="checkbox" class="checkbox-field" checked>
+                  <span class="text-sm">Hide completed</span>
+                </label>
+                <input id="calendar-project-search" type="text" class="input-field calendar-project-search" placeholder="Search projects...">
+              </div>
             </div>
             <div class="overflow-x-auto">
               <table class="calendar-project-table">
@@ -173,6 +180,7 @@
                 </tbody>
               </table>
             </div>
+            <div id="calendar-project-pagination" class="calendar-pagination hidden"></div>
           </div>
         </section>
 
@@ -321,6 +329,13 @@
               <span class="text-sm text-muted">Use full-day dates instead of custom times.</span>
             </span>
           </label>
+          <label id="calendar-entry-weekdays-only-wrap" class="bulletin-checkbox-row hidden">
+            <input id="calendar-entry-weekdays-only" type="checkbox" class="checkbox-field">
+            <span>
+              <span class="text-xs font-semibold uppercase tracking-wide text-muted block">Weekdays Only</span>
+              <span class="text-sm text-muted">Skip weekends when spanning multiple days.</span>
+            </span>
+          </label>
           <div class="calendar-inline-note">
             <span class="calendar-inline-note-label">Display State</span>
             <span class="calendar-inline-note-copy">Future items show as scheduled. Current items move to in progress and past items to completed automatically.</span>
@@ -360,9 +375,16 @@
           <textarea id="calendar-entry-description" class="input-field min-h-[120px]" placeholder="Description, handover notes, or scheduling context"></textarea>
         </label>
 
-        <div class="flex gap-2">
+        <div id="calendar-entry-series-info" class="hidden text-sm text-muted mb-2"></div>
+        <div class="flex items-center gap-2">
           <button type="button" id="calendar-entry-save-btn" class="btn-primary flex-1">Save Item</button>
+          <label id="calendar-entry-series-toggle" class="custom-checkbox gap-2 text-sm hidden">
+            <input type="checkbox" id="calendar-entry-apply-series">
+            <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+            Apply to All Days
+          </label>
           <button type="button" id="calendar-entry-delete-btn" class="btn-danger hidden">Delete</button>
+          <button type="button" id="calendar-entry-delete-series-btn" class="btn-danger hidden">Delete Series</button>
           <button type="button" id="calendar-entry-cancel-btn" class="btn-secondary">Cancel</button>
         </div>
         <p id="calendar-entry-msg" class="text-sm hidden"></p>
@@ -425,18 +447,12 @@
               <option value="purple">Purple</option>
             </select>
           </label>
-          <label class="space-y-1">
-            <span class="text-xs font-semibold uppercase tracking-wide text-muted">Estimate Type</span>
-            <select id="calendar-project-estimate-mode" class="input-field">
-              <option value="hours">Hours</option>
-              <option value="days">Days</option>
-            </select>
-          </label>
+          <input type="hidden" id="calendar-project-estimate-mode" value="days">
         </div>
 
         <div class="grid gap-3 md:grid-cols-3">
           <label class="space-y-1">
-            <span class="text-xs font-semibold uppercase tracking-wide text-muted">Estimate Value</span>
+            <span class="text-xs font-semibold uppercase tracking-wide text-muted">Estimated Days</span>
             <input id="calendar-project-estimate-value" type="number" min="0" step="0.1" class="input-field" placeholder="0">
           </label>
           <label class="space-y-1">
@@ -444,7 +460,7 @@
             <input id="calendar-project-rate" type="number" min="0" step="0.01" class="input-field" placeholder="0">
           </label>
           <div class="calendar-inline-note">
-            <span class="calendar-inline-note-label">Estimated Cost</span>
+            <span class="calendar-inline-note-label">Estimate</span>
             <span id="calendar-project-estimated-cost" class="calendar-inline-note-value">$0.00</span>
           </div>
         </div>

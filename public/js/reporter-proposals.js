@@ -52,6 +52,7 @@
     currentProposal: null,
     sections: [],
     generations: [],
+    users: [],
     activeSectionId: null,
     searchQuery: "",
     filter: "active",
@@ -74,6 +75,12 @@
   function formatDate(ts) {
     if (!ts) return "";
     return new Date(ts * 1000).toLocaleDateString();
+  }
+
+  function dateInputValue(ts) {
+    if (!ts) return "";
+    const d = new Date(ts * 1000);
+    return Number.isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10);
   }
 
   async function api(url, opts) {
@@ -111,6 +118,15 @@
   function setText(id, text) {
     const el = document.getElementById(id);
     if (el) el.textContent = text;
+  }
+
+  function setProposalPreviewVisible(visible) {
+    const builder = document.querySelector(".reporter-proposal-builder");
+    const preview = document.getElementById("reporter-proposal-builder-preview");
+    const iframe = document.getElementById("reporter-proposal-preview-iframe");
+    if (builder) builder.classList.toggle("proposal-preview-open", !!visible);
+    if (preview) preview.classList.toggle("hidden", !visible);
+    if (!visible && iframe) iframe.removeAttribute("src");
   }
 
   function typeCheckboxesHtml(selectedTypes) {
@@ -166,6 +182,13 @@
     return api("/api/reporter/proposals/test-types");
   }
 
+  async function fetchUsers() {
+    if (state.users.length) return state.users;
+    const data = await api("/api/reporter/users");
+    state.users = data.users || [];
+    return state.users;
+  }
+
   // --- List view ---
 
   function renderProposalsList() {
@@ -195,21 +218,24 @@
     }
 
     list.innerHTML = proposals
-      .map(
-        (p) => `
-      <div class="reporter-project-card" data-proposal-id="${escapeHtml(p.id)}">
-        <div class="reporter-project-card-header">
-          <h3 class="reporter-project-card-title">${escapeHtml(p.title)}</h3>
+      .map((p) => {
+        const testTypes = Array.isArray(p.testTypes) ? p.testTypes : [];
+        return `
+      <div class="reporter-list-item" data-proposal-id="${escapeHtml(p.id)}">
+        <div class="reporter-list-item-main">
+          <strong>${escapeHtml(p.title)}</strong>
+          <span class="text-sm text-muted ml-2">${escapeHtml(p.clientName || "Not set")}</span>
+          ${p.archivedAt ? '<span class="badge badge-gray ml-2">Archived</span>' : ""}
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-sm text-muted">${escapeHtml(testTypes.length ? testTypes.join(", ") : "No types")}</span>
           <span class="badge ${STATUS_BADGES[p.status] || "badge-gray"}">${escapeHtml(STATUS_LABELS[p.status] || p.status)}</span>
+          ${p.creatorUsername ? `<span class="text-sm text-muted">${escapeHtml(p.creatorUsername)}</span>` : ""}
+          <span class="text-sm text-muted">${formatDateTime(p.updatedAt)}</span>
+          ${p.quotedValue ? `<span class="text-sm text-muted">${escapeHtml(String(p.quotedValue))}</span>` : ""}
         </div>
-        <div class="reporter-project-card-meta">
-          <span>Client: ${escapeHtml(p.clientName || "Not set")}</span>
-          <span>Types: ${p.testTypes.length ? p.testTypes.map((t) => escapeHtml(t)).join(", ") : "None"}</span>
-          <span>Updated: ${formatDateTime(p.updatedAt)}</span>
-          ${p.quotedValue ? '<span>Fee: ' + escapeHtml(String(p.quotedValue)) + "</span>" : ""}
-        </div>
-      </div>`
-      )
+      </div>`;
+      })
       .join("");
 
     list.querySelectorAll("[data-proposal-id]").forEach((card) => {
@@ -220,7 +246,12 @@
   }
 
   async function showListView() {
-    hideEl("reporter-proposals-list");
+    document.querySelectorAll(".reporter-view").forEach((el) => el.classList.add("hidden"));
+    hideEl("reporter-view-proposal-detail");
+    setProposalPreviewVisible(false);
+    hideEl("reporter-proposal-toggle-preview-btn");
+
+    showEl("reporter-proposals-list");
     showEl("reporter-view-proposals");
 
     const btn = document.getElementById("reporter-new-proposal-btn");
@@ -250,6 +281,7 @@
     renderProposalOverview();
     showPanel("overview");
     showEl("reporter-proposal-toggle-preview-btn");
+    setProposalPreviewVisible(false);
   }
 
   function renderProposalHeader() {
@@ -306,12 +338,11 @@
 
     document.getElementById("reporter-proposal-preview-btn")?.addEventListener("click", () => {
       const preview = document.getElementById("reporter-proposal-builder-preview");
-      if (preview) {
-        preview.classList.toggle("hidden");
-        const iframe = document.getElementById("reporter-proposal-preview-iframe");
-        if (iframe && !preview.classList.contains("hidden")) {
-          iframe.src = "/api/reporter/proposals/" + p.id + "/preview";
-        }
+      const showPreview = !preview || preview.classList.contains("hidden");
+      setProposalPreviewVisible(showPreview);
+      const iframe = document.getElementById("reporter-proposal-preview-iframe");
+      if (iframe && showPreview) {
+        iframe.src = "/api/reporter/proposals/" + p.id + "/preview.pdf?t=" + Date.now();
       }
     });
   }
@@ -423,30 +454,41 @@
 
   // --- Metadata editor ---
 
-  function openMetadataEditor() {
+  async function openMetadataEditor() {
     const p = state.currentProposal;
     if (!p) return;
 
     const titleEl = document.getElementById("reporter-proposal-edit-title");
     const clientEl = document.getElementById("reporter-proposal-edit-client");
+    const preparedForNameEl = document.getElementById("reporter-proposal-edit-prepared-for-name");
+    const preparedForEmailEl = document.getElementById("reporter-proposal-edit-prepared-for-email");
     const contactNameEl = document.getElementById("reporter-proposal-edit-contact-name");
     const contactEmailEl = document.getElementById("reporter-proposal-edit-contact-email");
+    const preparedByEl = document.getElementById("reporter-proposal-edit-prepared-by");
+    const proposalTypeEl = document.getElementById("reporter-proposal-edit-type");
     const daysEl = document.getElementById("reporter-proposal-edit-days");
     const valueEl = document.getElementById("reporter-proposal-edit-value");
     const validUntilEl = document.getElementById("reporter-proposal-edit-valid-until");
 
     if (titleEl) titleEl.value = p.title;
     if (clientEl) clientEl.value = p.clientName;
+    if (preparedForNameEl) preparedForNameEl.value = p.preparedForName || "";
+    if (preparedForEmailEl) preparedForEmailEl.value = p.preparedForEmail || "";
     if (contactNameEl) contactNameEl.value = p.primaryContactName;
     if (contactEmailEl) contactEmailEl.value = p.primaryContactEmail;
+    if (proposalTypeEl) proposalTypeEl.value = p.proposalType || "security_assessment";
     if (daysEl) daysEl.value = p.estimatedDays || "";
     if (valueEl) valueEl.value = p.quotedValue || "";
-    if (validUntilEl) {
-      if (p.validUntil) {
-        const d = new Date(p.validUntil * 1000);
-        validUntilEl.value = d.toISOString().split("T")[0];
-      } else {
-        validUntilEl.value = "";
+    if (validUntilEl) validUntilEl.value = dateInputValue(p.validUntil);
+
+    if (preparedByEl) {
+      try {
+        const users = await fetchUsers();
+        preparedByEl.innerHTML = '<option value="">Not set</option>' + users
+          .map((user) => `<option value="${escapeHtml(user.id)}" ${user.id === p.preparedByUserId ? "selected" : ""}>${escapeHtml(user.username || user.email || user.id)}</option>`)
+          .join("");
+      } catch {
+        preparedByEl.innerHTML = `<option value="${escapeHtml(p.preparedByUserId || "")}">${escapeHtml(p.preparedByUsername || "Current preparer")}</option>`;
       }
     }
 
@@ -462,8 +504,12 @@
 
     const title = document.getElementById("reporter-proposal-edit-title")?.value;
     const clientName = document.getElementById("reporter-proposal-edit-client")?.value;
+    const preparedForName = document.getElementById("reporter-proposal-edit-prepared-for-name")?.value;
+    const preparedForEmail = document.getElementById("reporter-proposal-edit-prepared-for-email")?.value;
     const primaryContactName = document.getElementById("reporter-proposal-edit-contact-name")?.value;
     const primaryContactEmail = document.getElementById("reporter-proposal-edit-contact-email")?.value;
+    const preparedByUserId = document.getElementById("reporter-proposal-edit-prepared-by")?.value;
+    const proposalType = document.getElementById("reporter-proposal-edit-type")?.value;
     const estimatedDays = document.getElementById("reporter-proposal-edit-days")?.value;
     const quotedValue = document.getElementById("reporter-proposal-edit-value")?.value;
     const validUntil = document.getElementById("reporter-proposal-edit-valid-until")?.value;
@@ -475,8 +521,12 @@
       body: JSON.stringify({
         title,
         clientName,
+        preparedForName,
+        preparedForEmail,
         primaryContactName,
         primaryContactEmail,
+        preparedByUserId,
+        proposalType,
         estimatedDays: estimatedDays ? parseFloat(estimatedDays) : null,
         quotedValue: quotedValue ? parseFloat(quotedValue) : null,
         validUntil: validUntil ? Math.floor(new Date(validUntil).getTime() / 1000) : null,
@@ -486,7 +536,9 @@
 
     await fetchProposalDetail(p.id);
     renderProposalHeader();
+    renderProposalSections();
     renderProposalOverview();
+    if (state.activeSectionId) openSectionEditor(state.activeSectionId);
   }
 
   // --- Generations ---
@@ -692,7 +744,7 @@
     });
 
     document.getElementById("reporter-proposal-close-preview-btn")?.addEventListener("click", () => {
-      hideEl("reporter-proposal-builder-preview");
+      setProposalPreviewVisible(false);
     });
 
     bindTypeCheckboxToggle("reporter-proposal-edit-types");
@@ -709,5 +761,6 @@
     },
     showListView: showListView,
     showDetailView: openProposalDetail,
+    openProposal: openProposalDetail,
   };
 })();

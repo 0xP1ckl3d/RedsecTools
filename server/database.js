@@ -1583,10 +1583,10 @@ const stmts = {
   createCalendarEntry: db.prepare(`
     INSERT INTO calendar_entries (
       id, type, title, description, owner_id, assignee_user_id, project_id,
-      starts_at, ends_at, all_day, scheduled_hours, utilization_percent, status
+      starts_at, ends_at, all_day, scheduled_hours, utilization_percent, status, group_id
     ) VALUES (
       @id, @type, @title, @description, @ownerId, @assigneeUserId, @projectId,
-      @startsAt, @endsAt, @allDay, @scheduledHours, @utilizationPercent, @status
+      @startsAt, @endsAt, @allDay, @scheduledHours, @utilizationPercent, @status, @groupId
     )
   `),
   updateCalendarEntry: db.prepare(`
@@ -1602,10 +1602,14 @@ const stmts = {
       scheduled_hours = @scheduledHours,
       utilization_percent = @utilizationPercent,
       status = @status,
+      group_id = @groupId,
       updated_at = unixepoch()
     WHERE id = @id
   `),
   deleteCalendarEntry: db.prepare("DELETE FROM calendar_entries WHERE id = ?"),
+  listCalendarEntriesByGroup: db.prepare("SELECT * FROM calendar_entries WHERE group_id = ? ORDER BY starts_at ASC"),
+  deleteCalendarEntriesByGroup: db.prepare("DELETE FROM calendar_entries WHERE group_id = ?"),
+  countCalendarEntriesByGroup: db.prepare("SELECT COUNT(*) as total FROM calendar_entries WHERE group_id = ?"),
   getCalendarEntryById: db.prepare("SELECT * FROM calendar_entries WHERE id = ?"),
   listCalendarEntries: db.prepare(`
     SELECT
@@ -2414,11 +2418,26 @@ const stmts = {
   deleteReporterTemplateFields: db.prepare("DELETE FROM reporter_template_fields WHERE template_id = ?"),
 
   // --- Reporter: Stats ---
-  countReporterProjects: db.prepare("SELECT COUNT(*) AS total FROM reporter_projects WHERE is_archived = 0"),
-  countReporterArchivedProjects: db.prepare("SELECT COUNT(*) AS total FROM reporter_projects WHERE is_archived = 1"),
-  countReporterAllFindings: db.prepare("SELECT COUNT(*) AS total FROM reporter_findings"),
-  countReporterCriticalFindings: db.prepare("SELECT COUNT(*) AS total FROM reporter_findings WHERE severity = 'critical'"),
-  countReporterHighFindings: db.prepare("SELECT COUNT(*) AS total FROM reporter_findings WHERE severity = 'high'"),
+  countReporterProjects: db.prepare("SELECT COUNT(*) AS total FROM reporter_projects WHERE is_archived = 0 AND status != 'archived'"),
+  countReporterArchivedProjects: db.prepare("SELECT COUNT(*) AS total FROM reporter_projects WHERE is_archived = 1 OR status = 'archived'"),
+  countReporterAllFindings: db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM reporter_findings rf
+    INNER JOIN reporter_projects rp ON rp.id = rf.project_id
+    WHERE rp.is_archived = 0 AND rp.status != 'archived'
+  `),
+  countReporterCriticalFindings: db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM reporter_findings rf
+    INNER JOIN reporter_projects rp ON rp.id = rf.project_id
+    WHERE rf.severity = 'critical' AND rp.is_archived = 0 AND rp.status != 'archived'
+  `),
+  countReporterHighFindings: db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM reporter_findings rf
+    INNER JOIN reporter_projects rp ON rp.id = rf.project_id
+    WHERE rf.severity = 'high' AND rp.is_archived = 0 AND rp.status != 'archived'
+  `),
   countReporterAllTemplates: db.prepare("SELECT COUNT(*) AS total FROM reporter_finding_templates"),
   countReporterDesigns: db.prepare("SELECT COUNT(*) AS total FROM reporter_designs"),
   createReporterPdfGeneration: db.prepare(`
@@ -2602,7 +2621,7 @@ const stmts = {
     VALUES (@id, @testType, @name, @description, @methodologyWriteup, @scopeGuidance, @deliverables, @clientRequirements, @consultantRequirements, @assumptions, @restrictions, 0, @sortOrder, unixepoch(), unixepoch())
   `),
   updateReporterTestTypeTemplate: db.prepare(`
-    UPDATE reporter_test_type_templates SET name = @name, description = @description, methodology_writeup = @methodologyWriteup, scope_guidance = @scopeGuidance, deliverables = @deliverables, client_requirements = @clientRequirements, consultant_requirements = @consultantRequirements, assumptions = @assumptions, restrictions = @restrictions, updated_at = unixepoch() WHERE id = @id AND is_builtin = 0
+    UPDATE reporter_test_type_templates SET name = @name, description = @description, methodology_writeup = @methodologyWriteup, scope_guidance = @scopeGuidance, deliverables = @deliverables, client_requirements = @clientRequirements, consultant_requirements = @consultantRequirements, assumptions = @assumptions, restrictions = @restrictions, updated_at = unixepoch() WHERE id = @id
   `),
   archiveReporterTestTypeTemplate: db.prepare(`
     UPDATE reporter_test_type_templates SET archived_at = unixepoch() WHERE id = ? AND is_builtin = 0
@@ -2748,6 +2767,15 @@ const stmts = {
   linkEngageOpportunityProposal: db.prepare(`
     UPDATE engage_opportunities SET reporter_proposal_id = @reporterProposalId, updated_at = unixepoch() WHERE id = @id
   `),
+  addOppProposalLink: db.prepare(`
+    INSERT OR IGNORE INTO engage_opportunity_proposals (opportunity_id, reporter_proposal_id) VALUES (?, ?)
+  `),
+  removeOppProposalLink: db.prepare(`
+    DELETE FROM engage_opportunity_proposals WHERE opportunity_id = ? AND reporter_proposal_id = ?
+  `),
+  listOppProposalLinks: db.prepare(`
+    SELECT reporter_proposal_id FROM engage_opportunity_proposals WHERE opportunity_id = ? ORDER BY linked_at DESC
+  `),
 
   // --- Engage engagement statements ---
   createEngageEngagement: db.prepare(`
@@ -2798,9 +2826,6 @@ const stmts = {
     LEFT JOIN engage_clients c ON c.id = e.client_id
     WHERE e.client_id = ? AND e.archived_at IS NULL ORDER BY e.created_at DESC
   `),
-  listEngageEngagementsByClient: db.prepare(`
-    SELECT * FROM engage_engagements WHERE client_id = ? AND archived_at IS NULL ORDER BY created_at DESC
-  `),
   updateEngageEngagement: db.prepare(`
     UPDATE engage_engagements SET title = @title, engagement_type = @engagementType, status = @status,
       priority = @priority, commercial_value = @commercialValue, estimated_days = @estimatedDays,
@@ -2824,7 +2849,11 @@ const stmts = {
     VALUES (@id, @engagementId, @userId, @role, @isPrimary)
   `),
   listEngageMembersByEngagement: db.prepare(`
-    SELECT * FROM engage_engagement_members WHERE engagement_id = ?
+    SELECT m.*, u.username
+    FROM engage_engagement_members m
+    LEFT JOIN users u ON u.id = m.user_id
+    WHERE m.engagement_id = ?
+    ORDER BY m.is_primary DESC, u.username ASC, m.created_at ASC
   `),
   updateEngageMember: db.prepare(`
     UPDATE engage_engagement_members SET role = @role, is_primary = @isPrimary, updated_at = unixepoch()
@@ -2902,7 +2931,7 @@ const stmts = {
     VALUES (@id, @entityType, @entityId, @userId, @content)
   `),
   listEngageNotesByEntity: db.prepare(`
-    SELECT * FROM engage_notes WHERE entity_type = ? AND entity_id = ? ORDER BY created_at DESC
+    SELECT n.*, u.username FROM engage_notes n LEFT JOIN users u ON u.id = n.user_id WHERE n.entity_type = ? AND n.entity_id = ? ORDER BY n.created_at DESC
   `),
 
   // --- Engage activity log statements ---
@@ -2933,7 +2962,7 @@ const stmts = {
   `),
   engageEngActiveCount: db.prepare(`
     SELECT COUNT(*) as count FROM engage_engagements
-    WHERE archived_at IS NULL AND status IN ('testing_in_progress', 'reporting_in_progress', 'qa_in_progress', 'scheduled', 'testing_not_started')
+    WHERE archived_at IS NULL AND status NOT IN ('draft', 'delivered', 'closed', 'cancelled', 'archived')
   `),
   engageEngScheduledCount: db.prepare(`
     SELECT COUNT(*) as count FROM engage_engagements
@@ -2949,7 +2978,7 @@ const stmts = {
   `),
   engageBlockedEngagements: db.prepare(`
     SELECT id, title, status FROM engage_engagements
-    WHERE archived_at IS NULL AND status IN ('testing_blocked', 'qa_changes_required')
+    WHERE archived_at IS NULL AND status = 'testing_blocked'
     ORDER BY updated_at DESC
   `),
   engageOverdueEngagements: db.prepare(`
@@ -2962,6 +2991,7 @@ const stmts = {
     SELECT e.* FROM engage_engagements e
     JOIN engage_engagement_members m ON e.id = m.engagement_id
     WHERE m.user_id = ? AND e.archived_at IS NULL
+      AND e.status NOT IN ('delivered', 'closed', 'cancelled', 'archived')
     ORDER BY e.updated_at DESC LIMIT 20
   `),
   engageRecentlyUpdated: db.prepare(`
@@ -2970,6 +3000,8 @@ const stmts = {
   engageRecentActivity: db.prepare(`
     SELECT * FROM engage_activity ORDER BY created_at DESC LIMIT 20
   `),
+  engageActivityCount: db.prepare(`SELECT COUNT(*) as total FROM engage_activity`),
+  engageActivityPage: db.prepare(`SELECT * FROM engage_activity ORDER BY created_at DESC LIMIT ? OFFSET ?`),
   engageUtilisationSummary: db.prepare(`
     SELECT ce.assignee_user_id, u.username,
       SUM(ce.scheduled_hours) as booked_hours,
@@ -2977,7 +3009,7 @@ const stmts = {
     FROM calendar_entries ce
     LEFT JOIN users u ON ce.assignee_user_id = u.id
     WHERE ce.assignee_user_id IS NOT NULL
-      AND ce.type = 'project_time'
+      AND ce.type IN ('assignment', 'project', 'project_time')
       AND ce.starts_at >= ? AND ce.ends_at <= ?
     GROUP BY ce.assignee_user_id
     ORDER BY booked_hours DESC
@@ -2991,16 +3023,16 @@ const stmts = {
   // --- Engage extra dashboard stats ---
   engageDeliveredThisMonth: db.prepare(`
     SELECT COUNT(*) as count FROM engage_engagements
-    WHERE status IN ('delivered', 'qa_ready_for_delivery') AND updated_at >= ? AND updated_at < ?
+    WHERE archived_at IS NULL AND status = 'delivered' AND updated_at >= ? AND updated_at < ?
   `),
   engageClosedThisMonth: db.prepare(`
     SELECT COUNT(*) as count FROM engage_engagements
-    WHERE status IN ('closed', 'cancelled') AND closed_at >= ? AND closed_at < ?
+    WHERE archived_at IS NULL AND status IN ('closed', 'cancelled') AND closed_at >= ? AND closed_at < ?
   `),
   engageAvgDaysInQA: db.prepare(`
-    SELECT AVG(q.completed_at - q.created_at) as avg_days
+    SELECT AVG(COALESCE(q.completed_at, q.updated_at) - q.created_at) as avg_days
     FROM engage_qa_reviews q
-    WHERE q.completed_at IS NOT NULL AND q.status IN ('ready_for_delivery', 'delivered')
+    WHERE q.status = 'ready_for_delivery'
   `),
 };
 
@@ -3017,6 +3049,7 @@ const DEFAULTS = {
   calendar_workday_start: "08:30",
   calendar_workday_end: "17:30",
   calendar_workdays: "1,2,3,4,5",
+  site_primary_theme: "red",
   wiki_personal_spaces_enabled: "true",
   wiki_search_result_limit: "20",
   wiki_team_home_page_id: "",
@@ -4681,6 +4714,7 @@ function createCalendarEntry(payload) {
     scheduledHours: Number(payload.scheduledHours || 0),
     utilizationPercent: payload.utilizationPercent || 0,
     status: payload.status || "scheduled",
+    groupId: payload.groupId || null,
   });
 }
 
@@ -4698,7 +4732,20 @@ function updateCalendarEntry(payload) {
     scheduledHours: Number(payload.scheduledHours || 0),
     utilizationPercent: payload.utilizationPercent || 0,
     status: payload.status || "scheduled",
+    groupId: payload.groupId !== undefined ? payload.groupId : undefined,
   });
+}
+
+function listCalendarEntriesByGroup(groupId) {
+  return stmts.listCalendarEntriesByGroup.all(groupId);
+}
+
+function deleteCalendarEntriesByGroup(groupId) {
+  return stmts.deleteCalendarEntriesByGroup.run(groupId).changes;
+}
+
+function countCalendarEntriesByGroup(groupId) {
+  return stmts.countCalendarEntriesByGroup.get(groupId).total;
 }
 
 function deleteCalendarEntryById(id) {
@@ -7596,20 +7643,45 @@ function duplicateReporterProposalTemplate(templateId, newId, createdBy) {
 }
 
 // Test type templates
+function mapReporterTestTypeRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    testType: row.test_type,
+    name: row.name,
+    description: row.description,
+    methodologyWriteup: row.methodology_writeup,
+    methodology: row.methodology_writeup,
+    scopeGuidance: row.scope_guidance,
+    scope: row.scope_guidance,
+    deliverables: row.deliverables,
+    clientRequirements: row.client_requirements,
+    consultantRequirements: row.consultant_requirements,
+    assumptions: row.assumptions,
+    restrictions: row.restrictions,
+    isBuiltin: !!row.is_builtin,
+    is_builtin: !!row.is_builtin,
+    sortOrder: row.sort_order,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    archivedAt: row.archived_at,
+  };
+}
+
 function listReporterTestTypeTemplates() {
-  return stmts.listReporterTestTypeTemplates.all();
+  return stmts.listReporterTestTypeTemplates.all().map(mapReporterTestTypeRow);
 }
 
 function listAllReporterTestTypeTemplates() {
-  return stmts.listAllReporterTestTypeTemplates.all();
+  return stmts.listAllReporterTestTypeTemplates.all().map(mapReporterTestTypeRow);
 }
 
 function getReporterTestTypeTemplateById(id) {
-  return stmts.getReporterTestTypeTemplateById.get(id);
+  return mapReporterTestTypeRow(stmts.getReporterTestTypeTemplateById.get(id));
 }
 
 function getReporterTestTypeTemplateByType(testType) {
-  return stmts.getReporterTestTypeTemplateByType.get(testType);
+  return mapReporterTestTypeRow(stmts.getReporterTestTypeTemplateByType.get(testType));
 }
 
 function createReporterTestTypeTemplate(payload) {
@@ -7715,7 +7787,7 @@ const VALID_CLIENT_STATUSES = new Set(["active", "inactive", "prospect", "archiv
 const VALID_CONTACT_TYPES = new Set(["commercial", "technical", "security", "procurement", "executive", "other"]);
 const VALID_OPP_STAGES = new Set(["lead", "qualified", "scoping", "proposal_drafting", "proposal_sent", "negotiation", "won", "lost", "rejected", "archived"]);
 const VALID_OPP_TYPES = new Set(["internal", "external", "webapp", "cloud", "build_review", "red_team", "wireless", "configuration_review", "assumed_breach", "custom"]);
-const VALID_ENG_STATUSES = new Set(["draft", "contract_signed", "scheduled", "testing_not_started", "testing_in_progress", "testing_blocked", "testing_complete", "reporting_in_progress", "ready_for_qa", "qa_assigned", "qa_in_progress", "qa_changes_required", "qa_ready_for_delivery", "delivered", "retest_pending", "post_engagement_followup", "closed", "cancelled", "archived"]);
+const VALID_ENG_STATUSES = new Set(["draft", "contract_signed", "scheduled", "testing_not_started", "testing_in_progress", "testing_blocked", "testing_complete", "reporting_in_progress", "ready_for_delivery", "ready_for_qa", "qa_assigned", "qa_in_progress", "qa_changes_required", "qa_ready_for_delivery", "delivered", "retest_pending", "post_engagement_followup", "closed", "cancelled", "archived"]);
 const VALID_ENG_TYPES = VALID_OPP_TYPES;
 const VALID_ENG_PRIORITIES = new Set(["low", "normal", "high", "critical"]);
 
@@ -7735,7 +7807,7 @@ function normaliseOppTypes(raw) {
   return "[]";
 }
 const VALID_TEAM_ROLES = new Set(["manager", "technical_lead", "tester", "qa_reviewer", "observer"]);
-const VALID_QA_STATUSES = new Set(["not_requested", "ready_for_qa", "assigned", "reviewing", "requires_more_work", "ready_for_delivery", "delivered", "cancelled"]);
+const VALID_QA_STATUSES = new Set(["not_requested", "ready_for_qa", "assigned", "reviewing", "requires_more_work", "ready_for_delivery", "cancelled"]);
 
 function createEngageClient(payload) {
   const id = payload.id || generateId();
@@ -7881,7 +7953,12 @@ function updateEngageOpportunityStage(id, stage) {
 
 function linkEngageOpportunityProposal(opportunityId, reporterProposalId) {
   stmts.linkEngageOpportunityProposal.run({ id: opportunityId, reporterProposalId });
+  stmts.addOppProposalLink.run(opportunityId, reporterProposalId);
   return stmts.getEngageOpportunityById.get(opportunityId);
+}
+
+function listOppProposalLinks(opportunityId) {
+  return stmts.listOppProposalLinks.all(opportunityId).map((r) => r.reporter_proposal_id);
 }
 
 function createEngageEngagement(payload) {
@@ -8021,14 +8098,15 @@ function getEngageQaReviewById(id) {
 }
 
 function updateEngageQaReview(payload) {
+  const existing = stmts.getEngageQaReviewById.get(payload.id) || {};
   stmts.updateEngageQaReview.run({
     id: payload.id,
-    status: payload.status,
-    qaNotes: payload.qaNotes || "",
-    reportLink: payload.reportLink || null,
-    shareLink: payload.shareLink || null,
-    assignedToUserId: payload.assignedToUserId || null,
-    completedAt: payload.completedAt || null,
+    status: payload.status !== undefined ? payload.status : existing.status,
+    qaNotes: payload.qaNotes !== undefined ? payload.qaNotes : (existing.qa_notes || ""),
+    reportLink: payload.reportLink !== undefined ? payload.reportLink : (existing.report_link || null),
+    shareLink: payload.shareLink !== undefined ? payload.shareLink : (existing.share_link || null),
+    assignedToUserId: payload.assignedToUserId !== undefined ? payload.assignedToUserId : (existing.assigned_to_user_id || null),
+    completedAt: payload.completedAt !== undefined ? payload.completedAt : (existing.completed_at || null),
   });
   return stmts.getEngageQaReviewById.get(payload.id);
 }
@@ -8115,6 +8193,13 @@ function getEngageDashboardStats() {
   for (const row of engStatuses) engCounts[row.status] = row.count;
   const qaCounts = {};
   for (const row of qaQueue) qaCounts[row.status] = row.count;
+  const latestQaCounts = {};
+  const seenQaEngagements = new Set();
+  for (const row of stmts.listAllEngageQaReviewsEnriched.all()) {
+    if (seenQaEngagements.has(row.engagement_id)) continue;
+    seenQaEngagements.add(row.engagement_id);
+    latestQaCounts[row.status] = (latestQaCounts[row.status] || 0) + 1;
+  }
   const monthCounts = {};
   for (const row of oppThisMonth) monthCounts[row.stage] = row.count;
 
@@ -8151,10 +8236,10 @@ function getEngageDashboardStats() {
     scheduledEngagements: scheduled.count,
     testingInProgress: engCounts.testing_in_progress || 0,
     reportingInProgress: engCounts.reporting_in_progress || 0,
-    waitingForQA: (qaCounts.ready_for_qa || 0) + (qaCounts.assigned || 0),
-    qaInProgress: qaCounts.reviewing || 0,
-    qaChangesRequired: engCounts.qa_changes_required || 0,
-    readyForDelivery: engCounts.qa_ready_for_delivery || 0,
+    waitingForQA: (latestQaCounts.ready_for_qa || 0) + (latestQaCounts.assigned || 0),
+    qaInProgress: latestQaCounts.reviewing || 0,
+    qaChangesRequired: latestQaCounts.requires_more_work || 0,
+    readyForDelivery: engCounts.ready_for_delivery || 0,
     deliveredThisMonth: deliveredThisMonth.count,
     closedThisMonth: closedThisMonth.count,
     blockedEngagements: blocked.length,
@@ -8167,7 +8252,7 @@ function getEngageDashboardStats() {
     overdueList: overdue,
     oppStageDistribution: oppCounts,
     engStatusDistribution: engCounts,
-    qaStatusDistribution: qaCounts,
+    qaStatusDistribution: latestQaCounts,
   };
 }
 
@@ -8179,6 +8264,14 @@ function getEngageMyWork(userId) {
 
 function getEngageRecentActivity() {
   return stmts.engageRecentActivity.all();
+}
+
+function listEngageActivityPage(limit, offset) {
+  return stmts.engageActivityPage.all(limit, offset);
+}
+
+function getEngageActivityCount() {
+  return stmts.engageActivityCount.get().total;
 }
 
 function getEngageRecentlyUpdated() {
@@ -8423,6 +8516,9 @@ module.exports = {
   deleteCalendarEntryById,
   getCalendarEntryById,
   listCalendarEntries,
+  listCalendarEntriesByGroup,
+  deleteCalendarEntriesByGroup,
+  countCalendarEntriesByGroup,
   // Survey
   createSurvey,
   updateSurvey,
@@ -8682,6 +8778,7 @@ module.exports = {
   updateEngageOpportunity,
   updateEngageOpportunityStage,
   linkEngageOpportunityProposal,
+  listOppProposalLinks,
   createEngageEngagement,
   getEngageEngagementById,
   getEngageEngagementByReporterProject,
@@ -8710,6 +8807,8 @@ module.exports = {
   listEngageNotesByEntity,
   createEngageActivity,
   listEngageActivityByEntity,
+  listEngageActivityPage,
+  getEngageActivityCount,
   getEngageDashboardStats,
   getEngageMyWork,
   getEngageRecentActivity,

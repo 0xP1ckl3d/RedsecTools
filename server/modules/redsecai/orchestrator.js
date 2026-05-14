@@ -949,6 +949,7 @@ function normalizeAllocationWriteCall(call, page = {}, access = null) {
   const start = parseLocalTime(body.startLocal || body.startTimeLocal);
   const end = parseLocalTime(body.endLocal || body.endTimeLocal);
   const durationMinutes = Number.parseInt(body.durationMinutes, 10);
+  if (timeZone) body.timeZone = timeZone;
   if (start) {
     const dateIntent = normalizeDateIntentForUserYear(body.dateIntent || body.dateLocal || body.date || body.startDate, page, { rollPastToNextYear: true });
     const date = resolveDateIntent(dateIntent, timeZone || null);
@@ -963,7 +964,9 @@ function normalizeAllocationWriteCall(call, page = {}, access = null) {
   }
   if (body.startsAt !== undefined && Number.isFinite(Number(body.startsAt))) body.startsAt = Number(body.startsAt);
   if (body.endsAt !== undefined && Number.isFinite(Number(body.endsAt))) body.endsAt = Number(body.endsAt);
+  const keepTimeZoneForDaily = String(body.allocationMode || "daily") === "daily" && body.startDate && body.endDate && !!body.timeZone;
   for (const helperField of ["dateIntent", "dateLocal", "date", "startLocal", "startTimeLocal", "endLocal", "endTimeLocal", "durationMinutes", "timeZone"]) {
+    if (helperField === "timeZone" && keepTimeZoneForDaily) continue;
     delete body[helperField];
   }
 
