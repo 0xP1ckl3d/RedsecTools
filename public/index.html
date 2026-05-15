@@ -72,7 +72,7 @@
       <header class="dashboard-header">
         <h1 class="text-xl font-bold">
           <a href="/" class="hover:underline transition-colors">
-            <span class="text-accent">RedSec</span><span class="text-secondary">Tools</span>
+            <span class="text-accent" data-bp>RedSec</span><span class="text-secondary">Tools</span>
           </a>
         </h1>
         <div class="flex items-center gap-2">
@@ -154,16 +154,58 @@
         <!-- Tools View -->
         <section id="view-tools" class="dashboard-view hidden">
           <div class="flex justify-between items-center mb-2">
-            <h1 class="text-2xl font-bold">Security Tools</h1>
+            <h1 class="text-2xl font-bold">Toolkit</h1>
             <button type="button" id="tools-edit-btn" class="btn-secondary text-xs py-1 px-2" data-editing="false">Edit</button>
           </div>
-          <p class="text-muted mb-6">Encrypted tools protect content in your browser before upload. The server stores opaque ciphertext during normal operation.</p>
+          <p class="text-muted mb-6">Collaboration, reporting, and operations tools for offensive security teams.</p>
           <div class="tools-grid">
+            <a href="/reporter" class="tool-card" data-tool-key="reporter">
+              <div class="card">
+                <div class="flex items-center gap-3 mb-2">
+                  <svg class="w-8 h-8 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-6m4 6V7m4 10v-4m2 8H5a2 2 0 01-2-2V5a2 2 0 012-2h6.586a1 1 0 01.707.293l7.414 7.414A1 1 0 0120 11.414V19a2 2 0 01-2 2z"/></svg>
+                  <h3 class="text-base font-bold"><span class="text-accent" data-bp>RedSec</span><span class="text-secondary">Reporter</span></h3>
+                </div>
+                <p class="text-muted text-sm">Pentest report builder with findings management, CVSS scoring, and PDF-ready project structure.</p>
+                <div class="flex gap-2 mt-2">
+                  <span class="badge badge-red">Pentest Reports</span>
+                  <span class="badge badge-gray">Findings</span>
+                </div>
+              </div>
+              <button type="button" class="shortcut-fav tool-fav-btn" data-tool-fav-id="reporter" title="Add to favourites">☆</button>
+            </a>
+            <a href="/engage" class="tool-card" data-tool-key="engage">
+              <div class="card">
+                <div class="flex items-center gap-3 mb-2">
+                  <svg class="w-8 h-8 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                  <h3 class="text-base font-bold"><span class="text-accent" data-bp>RedSec</span><span class="text-secondary">Engage</span></h3>
+                </div>
+                <p class="text-muted text-sm">Client engagement tracking, opportunity pipeline, and QA management.</p>
+                <div class="flex gap-2 mt-2">
+                  <span class="badge badge-red">CRM</span>
+                  <span class="badge badge-gray">Pipeline</span>
+                </div>
+              </div>
+              <button type="button" class="shortcut-fav tool-fav-btn" data-tool-fav-id="engage" title="Add to favourites">☆</button>
+            </a>
+            <a href="/threat" class="tool-card" data-tool-key="threat">
+              <div class="card">
+                <div class="flex items-center gap-3 mb-2">
+                  <svg class="w-8 h-8 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                  <h3 class="text-base font-bold"><span class="text-accent" data-bp>RedSec</span><span class="text-secondary">Threat</span></h3>
+                </div>
+                <p class="text-muted text-sm">Threat intelligence monitoring, keyword alerts, and IOC extraction.</p>
+                <div class="flex gap-2 mt-2">
+                  <span class="badge badge-red">Feed Monitoring</span>
+                  <span class="badge badge-gray">Alerts</span>
+                </div>
+              </div>
+              <button type="button" class="shortcut-fav tool-fav-btn" data-tool-fav-id="threat" title="Add to favourites">☆</button>
+            </a>
             <a href="/paste" class="tool-card" data-tool-key="paste">
               <div class="card">
                 <div class="flex items-center gap-3 mb-2">
                   <svg class="w-8 h-8 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                  <h3 class="text-base font-bold"><span class="text-accent">RedSec</span><span class="text-secondary">Paste</span></h3>
+                  <h3 class="text-base font-bold"><span class="text-accent" data-bp>RedSec</span><span class="text-secondary">Paste</span></h3>
                 </div>
                 <p class="text-muted text-sm">End-to-end encrypted text and code sharing. The server stores opaque ciphertext.</p>
                 <div class="flex gap-2 mt-2">
@@ -177,7 +219,7 @@
               <div class="card">
                 <div class="flex items-center gap-3 mb-2">
                   <svg class="w-8 h-8 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.783A6 6 0 1111.41 4.283 4 4 0 017 16zm10-5a4 4 0 01-4.283 5.717A6 6 0 0111.717 4 4 4 0 0117 11z"/></svg>
-                  <h3 class="text-base font-bold"><span class="text-accent">RedSec</span><span class="text-secondary">Share</span></h3>
+                  <h3 class="text-base font-bold"><span class="text-accent" data-bp>RedSec</span><span class="text-secondary">Share</span></h3>
                 </div>
                 <p class="text-muted text-sm">Encrypted file sharing with admin-configured limits. Client-side encryption, self-destructing links.</p>
                 <div class="flex gap-2 mt-2">
@@ -191,7 +233,7 @@
               <div class="card">
                 <div class="flex items-center gap-3 mb-2">
                   <svg class="w-8 h-8 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
-                  <h3 class="text-base font-bold"><span class="text-accent">RedSec</span><span class="text-secondary">Team</span></h3>
+                  <h3 class="text-base font-bold"><span class="text-accent" data-bp>RedSec</span><span class="text-secondary">Team</span></h3>
                 </div>
                 <p class="text-muted text-sm">End-to-end encrypted team chat. Private messaging and group conversations.</p>
                 <div class="flex gap-2 mt-2">
@@ -205,7 +247,7 @@
               <div class="card">
                 <div class="flex items-center gap-3 mb-2">
                   <svg class="w-8 h-8 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
-                  <h3 class="text-base font-bold"><span class="text-accent">RedSec</span><span class="text-secondary">Vault</span></h3>
+                  <h3 class="text-base font-bold"><span class="text-accent" data-bp>RedSec</span><span class="text-secondary">Vault</span></h3>
                 </div>
                 <p class="text-muted text-sm">Encrypted credential manager. Passwords, API keys, SSH keys, TOTP, and secure notes.</p>
                 <div class="flex gap-2 mt-2">
@@ -219,7 +261,7 @@
               <div class="card">
                 <div class="flex items-center gap-3 mb-2">
                   <svg class="w-8 h-8 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-                  <h3 class="text-base font-bold"><span class="text-accent">RedSec</span><span class="text-secondary">Cal</span></h3>
+                  <h3 class="text-base font-bold"><span class="text-accent" data-bp>RedSec</span><span class="text-secondary">Cal</span></h3>
                 </div>
                 <p class="text-muted text-sm">Assignments, scheduling, and utilisation planning for the team.</p>
                 <div class="flex gap-2 mt-2">
@@ -229,25 +271,11 @@
               </div>
               <button type="button" class="shortcut-fav tool-fav-btn" data-tool-fav-id="calendar" title="Add to favourites">☆</button>
             </a>
-            <a href="/survey" class="tool-card" data-tool-key="survey">
-              <div class="card">
-                <div class="flex items-center gap-3 mb-2">
-                  <svg class="w-8 h-8 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-6m3 6V7m3 10v-4m3 4V5M4 19h16"/></svg>
-                  <h3 class="text-base font-bold"><span class="text-accent">RedSec</span><span class="text-secondary">Survey</span></h3>
-                </div>
-                <p class="text-muted text-sm">Create surveys, share token links, and review response trends.</p>
-                <div class="flex gap-2 mt-2">
-                  <span class="badge badge-red">Analytics</span>
-                  <span class="badge badge-gray">Token Links</span>
-                </div>
-              </div>
-              <button type="button" class="shortcut-fav tool-fav-btn" data-tool-fav-id="survey" title="Add to favourites">☆</button>
-            </a>
             <a href="/wiki" class="tool-card" data-tool-key="wiki">
               <div class="card">
                 <div class="flex items-center gap-3 mb-2">
                   <svg class="w-8 h-8 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5 4.186 5 1.5 6.79 1.5 9v9c0-2.21 2.686-4 6-4 1.746 0 3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c3.314 0 6 1.79 6 4v9c0-2.21-2.686-4-6-4-1.746 0-3.332.477-4.5 1.253"/></svg>
-                  <h3 class="text-base font-bold"><span class="text-accent">RedSec</span><span class="text-secondary">Wiki</span></h3>
+                  <h3 class="text-base font-bold"><span class="text-accent" data-bp>RedSec</span><span class="text-secondary">Wiki</span></h3>
                 </div>
                 <p class="text-muted text-sm">Shared markdown documentation with revisions and internal search.</p>
                 <div class="flex gap-2 mt-2">
@@ -257,40 +285,25 @@
               </div>
               <button type="button" class="shortcut-fav tool-fav-btn" data-tool-fav-id="wiki" title="Add to favourites">☆</button>
             </a>
-
-            <a href="/threat" class="tool-card" data-tool-key="threat">
+            <a href="/survey" class="tool-card" data-tool-key="survey">
               <div class="card">
                 <div class="flex items-center gap-3 mb-2">
-                  <svg class="w-8 h-8 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-                  <h3 class="text-base font-bold"><span class="text-accent">RedSec</span><span class="text-secondary">Threat</span></h3>
+                  <svg class="w-8 h-8 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-6m3 6V7m3 10v-4m3 4V5M4 19h16"/></svg>
+                  <h3 class="text-base font-bold"><span class="text-accent" data-bp>RedSec</span><span class="text-secondary">Survey</span></h3>
                 </div>
-                <p class="text-muted text-sm">Threat intelligence monitoring, keyword alerts, and IOC extraction.</p>
+                <p class="text-muted text-sm">Create surveys, share token links, and review response trends.</p>
                 <div class="flex gap-2 mt-2">
-                  <span class="badge badge-red">Feed Monitoring</span>
-                  <span class="badge badge-gray">Alerts</span>
+                  <span class="badge badge-red">Analytics</span>
+                  <span class="badge badge-gray">Token Links</span>
                 </div>
               </div>
-              <button type="button" class="shortcut-fav tool-fav-btn" data-tool-fav-id="threat" title="Add to favourites">☆</button>
-            </a>
-            <a href="/reporter" class="tool-card" data-tool-key="reporter">
-              <div class="card">
-                <div class="flex items-center gap-3 mb-2">
-                  <svg class="w-8 h-8 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-6m4 6V7m4 10v-4m2 8H5a2 2 0 01-2-2V5a2 2 0 012-2h6.586a1 1 0 01.707.293l7.414 7.414A1 1 0 0120 11.414V19a2 2 0 01-2 2z"/></svg>
-                  <h3 class="text-base font-bold"><span class="text-accent">RedSec</span><span class="text-secondary">Reporter</span></h3>
-                </div>
-                <p class="text-muted text-sm">Pentest report builder with findings management, CVSS scoring, and PDF-ready project structure.</p>
-                <div class="flex gap-2 mt-2">
-                  <span class="badge badge-red">Pentest Reports</span>
-                  <span class="badge badge-gray">Findings</span>
-                </div>
-              </div>
-              <button type="button" class="shortcut-fav tool-fav-btn" data-tool-fav-id="reporter" title="Add to favourites">☆</button>
+              <button type="button" class="shortcut-fav tool-fav-btn" data-tool-fav-id="survey" title="Add to favourites">☆</button>
             </a>
             <a href="/ai" class="tool-card hidden" data-tool-key="redsecai">
               <div class="card">
                 <div class="flex items-center gap-3 mb-2">
                   <svg class="w-8 h-8 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5.75C4 4.23 5.23 3 6.75 3h10.5C18.77 3 20 4.23 20 5.75v7.5A2.75 2.75 0 0117.25 16H12l-4.1 3.25A.85.85 0 016.5 18.58V16A2.75 2.75 0 014 13.25v-7.5Z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 8.5h8M8 11.5h5.5"/></svg>
-                  <h3 class="text-base font-bold"><span class="text-accent">RedSec</span><span class="text-secondary">AI</span></h3>
+                  <h3 class="text-base font-bold"><span class="text-accent" data-bp>RedSec</span><span class="text-secondary">AI</span></h3>
                 </div>
                 <p class="text-muted text-sm">Full-page assistant for scoped RedSecTools workflows and confirmation-gated actions.</p>
                 <div class="flex gap-2 mt-2">
@@ -597,8 +610,8 @@
                     <div>
                       <label class="block text-sm font-medium mb-1.5">Tool</label>
                       <select id="guest-tool" class="input-field">
-                        <option value="paste">RedSecPaste</option>
-                        <option value="share">RedSecShare</option>
+                        <option value="paste"><span data-bp>RedSec</span>Paste</option>
+                        <option value="share"><span data-bp>RedSec</span>Share</option>
                       </select>
                     </div>
                     <div>
@@ -728,7 +741,7 @@
         <section id="view-about" class="dashboard-view hidden">
           <div class="space-y-6">
             <div>
-              <h1 class="text-2xl font-bold mb-2">About RedSecTools</h1>
+              <h1 class="text-2xl font-bold mb-2">About <span data-bp>RedSec</span>Tools</h1>
               <p class="text-muted max-w-4xl">
                 RedSecTools is a self-hosted security operations workspace for small offensive security teams. It brings secure sharing, team knowledge, scheduling, reporting, threat monitoring, surveys, bulletins, and scoped AI assistance into one permission-aware dashboard.
               </p>

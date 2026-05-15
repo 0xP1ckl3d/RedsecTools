@@ -6,7 +6,7 @@ const TOOL_MAP = {
   paste: {
     key: "paste",
     href: "/paste",
-    name: "RedSecPaste",
+    name: window.brandName("Paste"),
     shortName: "Paste",
     desc: "Encrypted text sharing",
     icon: '<svg class="quick-tool-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>',
@@ -14,7 +14,7 @@ const TOOL_MAP = {
   share: {
     key: "share",
     href: "/share",
-    name: "RedSecShare",
+    name: window.brandName("Share"),
     shortName: "Share",
     desc: "Encrypted file sharing",
     icon: '<svg class="quick-tool-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.783A6 6 0 1111.41 4.283 4 4 0 017 16zm10-5a4 4 0 01-4.283 5.717A6 6 0 0111.717 4 4 4 0 0117 11z"/></svg>',
@@ -22,7 +22,7 @@ const TOOL_MAP = {
   chat: {
     key: "chat",
     href: "/chat",
-    name: "RedSecTeam",
+    name: window.brandName("Team"),
     shortName: "Team",
     desc: "E2E encrypted chat",
     icon: '<svg class="quick-tool-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>',
@@ -30,7 +30,7 @@ const TOOL_MAP = {
   vault: {
     key: "vault",
     href: "/vault",
-    name: "RedSecVault",
+    name: window.brandName("Vault"),
     shortName: "Vault",
     desc: "Credential manager",
     icon: '<svg class="quick-tool-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>',
@@ -38,7 +38,7 @@ const TOOL_MAP = {
   calendar: {
     key: "calendar",
     href: "/calendar",
-    name: "RedSecCal",
+    name: window.brandName("Cal"),
     shortName: "Cal",
     desc: "Scheduling and utilisation",
     icon: '<svg class="quick-tool-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>',
@@ -46,7 +46,7 @@ const TOOL_MAP = {
   survey: {
     key: "survey",
     href: "/survey",
-    name: "RedSecSurvey",
+    name: window.brandName("Survey"),
     shortName: "Survey",
     desc: "Surveys and response stats",
     icon: '<svg class="quick-tool-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-6m3 6V7m3 10v-4m3 4V5M4 19h16"/></svg>',
@@ -54,7 +54,7 @@ const TOOL_MAP = {
   wiki: {
     key: "wiki",
     href: "/wiki",
-    name: "RedSecWiki",
+    name: window.brandName("Wiki"),
     shortName: "Wiki",
     desc: "Internal documentation",
     icon: '<svg class="quick-tool-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5 4.186 5 1.5 6.79 1.5 9v9c0-2.21 2.686-4 6-4 1.746 0 3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c3.314 0 6 1.79 6 4v9c0-2.21-2.686-4-6-4-1.746 0-3.332.477-4.5 1.253"/></svg>',
@@ -62,7 +62,7 @@ const TOOL_MAP = {
   threat: {
     key: "threat",
     href: "/threat",
-    name: "RedSecThreat",
+    name: window.brandName("Threat"),
     shortName: "Threat",
     desc: "Threat intelligence monitoring",
     icon: '<svg class="quick-tool-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>',
@@ -70,7 +70,7 @@ const TOOL_MAP = {
   reporter: {
     key: "reporter",
     href: "/reporter",
-    name: "RedSecReporter",
+    name: window.brandName("Reporter"),
     shortName: "Reporter",
     desc: "Pentest report builder",
     icon: '<svg class="quick-tool-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-6m4 6V7m4 10v-4m2 8H5a2 2 0 01-2-2V5a2 2 0 012-2h6.586a1 1 0 01.707.293l7.414 7.414A1 1 0 0120 11.414V19a2 2 0 01-2 2z"/></svg>',
@@ -78,10 +78,18 @@ const TOOL_MAP = {
   redsecai: {
     key: "redsecai",
     href: "/ai",
-    name: "RedSecAI",
+    name: window.brandName("AI"),
     shortName: "AI",
     desc: "Scoped assistant",
     icon: '<svg class="quick-tool-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5.75C4 4.23 5.23 3 6.75 3h10.5C18.77 3 20 4.23 20 5.75v7.5A2.75 2.75 0 0117.25 16H12l-4.1 3.25A.85.85 0 016.5 18.58V16A2.75 2.75 0 014 13.25v-7.5Z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 8.5h8M8 11.5h5.5"/></svg>',
+  },
+  engage: {
+    key: "engage",
+    href: "/engage",
+    name: window.brandName("Engage"),
+    shortName: "Engage",
+    desc: "Client engagement tracking",
+    icon: '<svg class="quick-tool-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>',
   },
 };
 
@@ -188,7 +196,7 @@ async function addRedSecAiToolAvailability() {
     if (!res.ok || status.enabled === false) return;
     const tools = Array.isArray(authState.availableTools) ? authState.availableTools : [];
     if (!tools.some((tool) => tool.key === "redsecai")) {
-      authState.availableTools = [...tools, { key: "redsecai", name: "RedSecAI", href: "/ai" }];
+      authState.availableTools = [...tools, { key: "redsecai", name: window.brandName("AI"), href: "/ai" }];
     }
   } catch (_) {
     // Leave RedSecAI hidden when status cannot be confirmed.

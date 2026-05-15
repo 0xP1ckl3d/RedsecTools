@@ -2190,16 +2190,20 @@ router.get("/reporter/proposals/:id/supporting-images", requireUser, attachUserA
 
 router.post("/reporter/proposals/:id/supporting-images", writeLimiter, requireUser, attachUserAccess, canCreateProposals, evidenceUpload.single("file"), (req, res) => {
   const proposal = getReporterProposalById(req.params.id);
-  if (!proposal) return res.status(404).json({ error: "Proposal not found" });
+  if (!proposal || !canAccessProposal(req, proposal)) return res.status(404).json({ error: "Proposal not found" });
+  if (proposal.archivedAt) return res.status(400).json({ error: "Archived proposals cannot be edited" });
   if (!req.file) return res.status(400).json({ error: "Image file is required" });
   if (!String(req.file.mimetype || "").startsWith("image/")) {
-    try { fs.unlinkSync(req.file.path); } catch {}
     return res.status(400).json({ error: "Only image uploads are supported" });
   }
+  ensureReporterEvidenceDir();
+  const storedFilename = `${crypto.randomBytes(16).toString("hex")}-${safeDownloadName(req.file.originalname, "supporting-image")}`;
+  const fullPath = path.join(REPORTER_EVIDENCE_DIR, storedFilename);
+  fs.writeFileSync(fullPath, req.file.buffer);
   const image = createReporterEvidenceRow({
     projectId: proposal.id,
     filename: req.file.originalname,
-    storedFilename: path.basename(req.file.path),
+    storedFilename,
     mimeType: req.file.mimetype,
     sizeBytes: req.file.size,
     caption: String(req.body.caption || "").trim(),
@@ -2226,7 +2230,8 @@ router.delete("/reporter/proposals/supporting-images/:imageId", writeLimiter, re
   const image = getReporterEvidenceById(req.params.imageId);
   if (!image) return res.status(404).json({ error: "Image not found" });
   const proposal = getReporterProposalById(image.projectId);
-  if (!proposal) return res.status(404).json({ error: "Image not found" });
+  if (!proposal || !canAccessProposal(req, proposal)) return res.status(404).json({ error: "Image not found" });
+  if (proposal.archivedAt) return res.status(400).json({ error: "Archived proposals cannot be edited" });
   try { fs.unlinkSync(path.join(REPORTER_EVIDENCE_DIR, image.storedFilename)); } catch {}
   deleteReporterEvidenceById(image.id);
   createReporterHistoryRow({ projectId: proposal.id, targetType: "proposal_image", targetId: image.id, snapshot: image, changeSummary: "Supporting image deleted", createdBy: req.access.userId });
@@ -2241,7 +2246,8 @@ router.get("/reporter/proposals/:id/notes", requireUser, attachUserAccess, canVi
 
 router.post("/reporter/proposals/:id/notes", writeLimiter, requireUser, attachUserAccess, canCreateProposals, (req, res) => {
   const proposal = getReporterProposalById(req.params.id);
-  if (!proposal) return res.status(404).json({ error: "Proposal not found" });
+  if (!proposal || !canAccessProposal(req, proposal)) return res.status(404).json({ error: "Proposal not found" });
+  if (proposal.archivedAt) return res.status(400).json({ error: "Archived proposals cannot be edited" });
   const title = String(req.body.title || "Untitled Note").trim().slice(0, 200);
   const content = String(req.body.content || "");
   const note = createReporterNoteRow({ projectId: proposal.id, title, content, orderIndex: 0, createdBy: req.access.userId });
@@ -2257,7 +2263,8 @@ router.get("/reporter/proposals/:id/comments", requireUser, attachUserAccess, ca
 
 router.post("/reporter/proposals/:id/comments", writeLimiter, requireUser, attachUserAccess, canCreateProposals, (req, res) => {
   const proposal = getReporterProposalById(req.params.id);
-  if (!proposal) return res.status(404).json({ error: "Proposal not found" });
+  if (!proposal || !canAccessProposal(req, proposal)) return res.status(404).json({ error: "Proposal not found" });
+  if (proposal.archivedAt) return res.status(400).json({ error: "Archived proposals cannot be edited" });
   const content = String(req.body.content || "").trim();
   if (!content) return res.status(400).json({ error: "Comment is required" });
   const commentId = createReporterCommentRow({ projectId: proposal.id, targetType: "proposal", targetId: proposal.id, content, createdBy: req.access.userId });

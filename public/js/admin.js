@@ -153,12 +153,12 @@ logoutBtn.addEventListener("click", async () => {
 // --- Tabs ---
 
 const tabBtns = document.querySelectorAll(".admin-tab[data-tab]");
-const childTabs = ["theme", "settings", "security", "deployment", "roles", "bulletins", "weather", "team-shortcuts", "invites", "users", "chat", "pastes", "files", "survey-tool-settings", "vaults", "calendar-tool-settings", "wiki-tool-settings", "redsecai-tool-settings", "threat-tool-settings", "reporter-tool-settings", "engage-tool-settings"];
+const childTabs = ["theme", "settings", "security", "deployment", "roles", "bulletins", "weather", "team-shortcuts", "users", "invites", "calendar-tool-settings", "engage-tool-settings", "reporter-tool-settings", "survey-tool-settings", "wiki-tool-settings", "chat", "vaults", "pastes", "files", "threat-tool-settings", "redsecai-tool-settings"];
 const adminTabGroups = {
   server: ["theme", "settings", "security", "deployment", "roles"],
   homepage: ["weather", "bulletins", "team-shortcuts"],
   "users-admin": ["users", "invites"],
-  tools: ["calendar-tool-settings", "wiki-tool-settings", "redsecai-tool-settings", "chat", "pastes", "files", "survey-tool-settings", "vaults", "threat-tool-settings", "reporter-tool-settings", "engage-tool-settings"],
+  tools: ["calendar-tool-settings", "engage-tool-settings", "reporter-tool-settings", "survey-tool-settings", "wiki-tool-settings", "chat", "vaults", "pastes", "files", "threat-tool-settings", "redsecai-tool-settings"],
 };
 const adminSubtabLabels = {
   theme: "Branding",
@@ -171,17 +171,17 @@ const adminSubtabLabels = {
   "team-shortcuts": "Shortcuts",
   users: "Users",
   invites: "Invites",
-  "calendar-tool-settings": "RedSecCal",
-  "wiki-tool-settings": "RedSecWiki",
-  "redsecai-tool-settings": "RedSecAI",
-  chat: "RedSecTeam",
-  pastes: "RedSecPaste",
-  files: "RedSecShare",
-  "survey-tool-settings": "RedSecSurvey",
-  vaults: "RedSecVault",
-  "threat-tool-settings": "RedSecThreat",
-  "reporter-tool-settings": "RedSecReporter",
-  "engage-tool-settings": "RedSecEngage",
+  "calendar-tool-settings": window.brandName("Cal"),
+  "wiki-tool-settings": window.brandName("Wiki"),
+  "redsecai-tool-settings": window.brandName("AI"),
+  chat: window.brandName("Team"),
+  pastes: window.brandName("Paste"),
+  files: window.brandName("Share"),
+  "survey-tool-settings": window.brandName("Survey"),
+  vaults: window.brandName("Vault"),
+  "threat-tool-settings": window.brandName("Threat"),
+  "reporter-tool-settings": window.brandName("Reporter"),
+  "engage-tool-settings": window.brandName("Engage"),
 };
 let activeAdminParentTab = "server";
 let activeAdminChildTab = "settings";
@@ -278,6 +278,7 @@ function updateAdminVisibleTabs() {
     loadReporterAdminStats();
   }
   if (visibleTabs.has("engage-tool-settings")) {
+    loadEngageAdminSummary();
     loadEngageActivity();
   }
 }
@@ -942,6 +943,76 @@ const calendarSettingsResult = document.getElementById("calendar-settings-result
 const siteThemeInputs = [...document.querySelectorAll("input[name='site-primary-theme']")];
 const saveThemeSettingsBtn = document.getElementById("save-theme-settings-btn");
 const themeSettingsResult = document.getElementById("theme-settings-result");
+const brandLogoInput = document.getElementById("brand-logo-input");
+const brandLogoPreview = document.getElementById("brand-logo-preview");
+const deleteBrandLogoBtn = document.getElementById("delete-brand-logo-btn");
+const brandLogoResult = document.getElementById("brand-logo-result");
+const customThemePickerRow = document.getElementById("custom-theme-picker-row");
+const customThemeSwatch = document.getElementById("custom-theme-swatch");
+const customThemeHexDisplay = document.getElementById("custom-theme-hex-display");
+const customThemeModal = document.getElementById("custom-theme-modal");
+const customThemeColorPicker = document.getElementById("custom-theme-color-picker");
+const customThemeHexInput = document.getElementById("custom-theme-hex-input");
+const customThemePreview = document.getElementById("custom-theme-preview");
+const siteBrandPrefix = document.getElementById("site-brand-prefix");
+let customThemeHex = "";
+
+function setAdminBrandLogoState(hasBrandLogo, version) {
+  const hasLogo = !!hasBrandLogo;
+  const cacheBust = version || Date.now();
+  if (brandLogoPreview) {
+    if (hasLogo) {
+      brandLogoPreview.onerror = () => setAdminBrandLogoState(false, "");
+      brandLogoPreview.src = "/brand-logo.webp?v=" + encodeURIComponent(cacheBust);
+      brandLogoPreview.alt = "Current brand logo";
+      brandLogoPreview.classList.remove("hidden");
+    } else {
+      brandLogoPreview.onerror = null;
+      brandLogoPreview.removeAttribute("src");
+      brandLogoPreview.alt = "";
+      brandLogoPreview.classList.add("hidden");
+    }
+  }
+  if (deleteBrandLogoBtn) {
+    deleteBrandLogoBtn.disabled = !hasLogo;
+    deleteBrandLogoBtn.setAttribute("aria-disabled", hasLogo ? "false" : "true");
+  }
+  try {
+    if (hasLogo) {
+      localStorage.setItem("site-brand-logo", "true");
+      localStorage.setItem("site-brand-logo-version", String(cacheBust));
+    } else {
+      localStorage.removeItem("site-brand-logo");
+      localStorage.removeItem("site-brand-logo-version");
+    }
+  } catch {}
+}
+
+function probeAdminBrandLogoAsset() {
+  if (!brandLogoPreview) return;
+  const version = Date.now();
+  const img = new Image();
+  img.onload = () => setAdminBrandLogoState(true, version);
+  img.onerror = () => setAdminBrandLogoState(false, "");
+  img.src = "/brand-logo.webp?v=" + encodeURIComponent(version);
+}
+
+function primeAdminBrandLogoState() {
+  let cachedLogo = "";
+  let cachedVersion = "";
+  try {
+    cachedLogo = localStorage.getItem("site-brand-logo") || "";
+    cachedVersion = localStorage.getItem("site-brand-logo-version") || "";
+  } catch {}
+  if (cachedLogo === "true") {
+    setAdminBrandLogoState(true, cachedVersion || Date.now());
+  } else if (deleteBrandLogoBtn) {
+    deleteBrandLogoBtn.disabled = false;
+    deleteBrandLogoBtn.setAttribute("aria-disabled", "false");
+  }
+  probeAdminBrandLogoAsset();
+}
+
 const wikiPersonalSpacesEnabled = document.getElementById("wiki-personal-spaces-enabled");
 const wikiSearchResultLimit = document.getElementById("wiki-search-result-limit");
 const wikiTeamHomePage = document.getElementById("wiki-team-home-page");
@@ -978,14 +1049,46 @@ async function loadCalendarSettings() {
 
 async function loadThemeSettings() {
   if (!siteThemeInputs.length) return;
+  primeAdminBrandLogoState();
   try {
     const res = await api("/api/settings/theme");
     const config = await res.json();
     const theme = config.primaryTheme || "red";
-    siteThemeInputs.forEach((input) => { input.checked = input.value === theme; });
-    document.documentElement.setAttribute("data-primary-theme", theme);
-    localStorage.setItem("site-primary-theme", theme);
+    const customHex = config.customHex || "";
+    if (siteBrandPrefix) siteBrandPrefix.value = config.brandPrefix || "";
+    setAdminBrandLogoState(!!config.hasBrandLogo, config.brandLogoVersion || "");
+    if (!config.hasBrandLogo) probeAdminBrandLogoAsset();
+    if (customHex && theme === "custom") {
+      customThemeHex = customHex;
+      siteThemeInputs.forEach((input) => { input.checked = input.value === "custom"; });
+      customThemeSwatch.style.background = customHex;
+      customThemeHexDisplay.textContent = customHex;
+      customThemePickerRow?.classList.remove("hidden");
+      applyCustomTheme(customHex);
+    } else {
+      siteThemeInputs.forEach((input) => { input.checked = input.value === theme; });
+      customThemePickerRow?.classList.add("hidden");
+      document.documentElement.setAttribute("data-primary-theme", theme);
+      localStorage.setItem("site-primary-theme", theme);
+    }
   } catch {}
+}
+
+function applyCustomTheme(hex) {
+  document.documentElement.setAttribute("data-primary-theme", "custom");
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const hoverR = Math.max(0, Math.round(r * 0.8));
+  const hoverG = Math.max(0, Math.round(g * 0.8));
+  const hoverB = Math.max(0, Math.round(b * 0.8));
+  document.documentElement.style.setProperty("--accent", hex);
+  document.documentElement.style.setProperty("--accent-hover", `#${hoverR.toString(16).padStart(2,"0")}${hoverG.toString(16).padStart(2,"0")}${hoverB.toString(16).padStart(2,"0")}`);
+  document.documentElement.style.setProperty("--accent-glow", `rgba(${r}, ${g}, ${b}, 0.25)`);
+  document.documentElement.style.setProperty("--accent-muted", `rgba(${r}, ${g}, ${b}, 0.12)`);
+  document.documentElement.style.setProperty("--selection-bg", `rgba(${r}, ${g}, ${b}, 0.3)`);
+  localStorage.setItem("site-primary-theme", "custom");
+  localStorage.setItem("site-custom-theme-hex", hex);
 }
 
 async function loadWikiToolSettings() {
@@ -1135,15 +1238,25 @@ saveThemeSettingsBtn?.addEventListener("click", async () => {
   saveThemeSettingsBtn.disabled = true;
   themeSettingsResult.classList.add("hidden");
   const primaryTheme = siteThemeInputs.find((input) => input.checked)?.value || "red";
+  const payload = { primaryTheme };
+  if (siteBrandPrefix) payload.brandPrefix = siteBrandPrefix.value.trim();
+  if (primaryTheme === "custom" && customThemeHex) {
+    payload.customHex = customThemeHex;
+  }
   try {
     const res = await api("/api/settings/theme", {
       method: "POST",
-      body: JSON.stringify({ primaryTheme }),
+      body: JSON.stringify(payload),
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
-      document.documentElement.setAttribute("data-primary-theme", data.primaryTheme || primaryTheme);
-      localStorage.setItem("site-primary-theme", data.primaryTheme || primaryTheme);
+      const saved = data.primaryTheme || primaryTheme;
+      if (saved === "custom" && data.customHex) {
+        applyCustomTheme(data.customHex);
+      } else {
+        document.documentElement.setAttribute("data-primary-theme", saved);
+        localStorage.setItem("site-primary-theme", saved);
+      }
       themeSettingsResult.textContent = "Theme saved.";
       themeSettingsResult.className = "text-sm text-accent";
     } else {
@@ -1156,6 +1269,64 @@ saveThemeSettingsBtn?.addEventListener("click", async () => {
   } finally {
     themeSettingsResult.classList.remove("hidden");
     saveThemeSettingsBtn.disabled = false;
+  }
+});
+
+brandLogoInput?.addEventListener("change", async () => {
+  const file = brandLogoInput.files[0];
+  if (!file) return;
+  if (!file.type.startsWith("image/")) {
+    brandLogoResult.textContent = "Only image files are accepted.";
+    brandLogoResult.className = "text-sm text-error";
+    brandLogoResult.classList.remove("hidden");
+    return;
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    brandLogoResult.textContent = "File must be under 5 MB.";
+    brandLogoResult.className = "text-sm text-error";
+    brandLogoResult.classList.remove("hidden");
+    return;
+  }
+  brandLogoResult.classList.add("hidden");
+  const formData = new FormData();
+  formData.append("logo", file);
+  try {
+    const res = await fetch("/admin/api/settings/brand-logo", { method: "POST", body: formData });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      setAdminBrandLogoState(true, data.brandLogoVersion || Date.now());
+      brandLogoResult.textContent = "Logo uploaded.";
+      brandLogoResult.className = "text-sm text-accent";
+    } else {
+      brandLogoResult.textContent = data.error || "Upload failed.";
+      brandLogoResult.className = "text-sm text-error";
+    }
+  } catch {
+    brandLogoResult.textContent = "Network error";
+    brandLogoResult.className = "text-sm text-error";
+  } finally {
+    brandLogoResult.classList.remove("hidden");
+    brandLogoInput.value = "";
+  }
+});
+
+deleteBrandLogoBtn?.addEventListener("click", async () => {
+  brandLogoResult.classList.add("hidden");
+  try {
+    const res = await api("/api/settings/brand-logo", { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      setAdminBrandLogoState(false, "");
+      location.reload();
+    } else {
+      brandLogoResult.textContent = data.error || "Failed to remove logo.";
+      brandLogoResult.className = "text-sm text-error";
+      brandLogoResult.classList.remove("hidden");
+    }
+  } catch {
+    brandLogoResult.textContent = "Network error";
+    brandLogoResult.className = "text-sm text-error";
+    brandLogoResult.classList.remove("hidden");
   }
 });
 
@@ -1188,6 +1359,75 @@ wikiSettingsSaveBtn?.addEventListener("click", async () => {
     wikiSettingsResult.classList.remove("hidden");
     wikiSettingsSaveBtn.disabled = false;
   }
+});
+
+// Custom theme radio change — show/hide picker row
+siteThemeInputs.forEach((input) => {
+  input.addEventListener("change", () => {
+    if (input.value === "custom" && input.checked) {
+      customThemePickerRow?.classList.remove("hidden");
+      if (!customThemeHex) {
+        customThemeHex = "#E53935";
+        customThemeSwatch.style.background = customThemeHex;
+        customThemeHexDisplay.textContent = customThemeHex;
+      }
+    } else if (input.checked) {
+      customThemePickerRow?.classList.add("hidden");
+      // Reset to named theme preview
+      document.documentElement.removeAttribute("style");
+      document.documentElement.setAttribute("data-primary-theme", input.value);
+    }
+  });
+});
+
+// Custom theme modal open/close
+document.getElementById("open-custom-theme-modal")?.addEventListener("click", () => {
+  if (!customThemeHex) customThemeHex = "#E53935";
+  customThemeColorPicker.value = customThemeHex;
+  customThemeHexInput.value = customThemeHex;
+  customThemePreview.style.background = customThemeHex;
+  customThemeModal?.classList.remove("hidden");
+});
+
+document.getElementById("custom-theme-modal-close")?.addEventListener("click", () => {
+  customThemeModal?.classList.add("hidden");
+});
+
+document.getElementById("custom-theme-cancel-btn")?.addEventListener("click", () => {
+  customThemeModal?.classList.add("hidden");
+});
+
+customThemeModal?.addEventListener("click", (e) => {
+  if (e.target === customThemeModal) customThemeModal.classList.add("hidden");
+});
+
+// Color picker → hex input sync
+customThemeColorPicker?.addEventListener("input", () => {
+  customThemeHexInput.value = customThemeColorPicker.value.toUpperCase();
+  customThemePreview.style.background = customThemeColorPicker.value;
+});
+
+// Hex input → color picker sync
+customThemeHexInput?.addEventListener("input", () => {
+  const val = customThemeHexInput.value.trim();
+  if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
+    customThemeColorPicker.value = val;
+    customThemePreview.style.background = val;
+  }
+});
+
+// Apply custom color
+document.getElementById("custom-theme-apply-btn")?.addEventListener("click", () => {
+  const hex = customThemeHexInput.value.trim();
+  if (!/^#[0-9A-Fa-f]{6}$/.test(hex)) {
+    customThemeHexInput.style.borderColor = "var(--accent)";
+    return;
+  }
+  customThemeHex = hex;
+  customThemeSwatch.style.background = hex;
+  customThemeHexDisplay.textContent = hex;
+  applyCustomTheme(hex);
+  customThemeModal?.classList.add("hidden");
 });
 
 const redsecAiEnabled = document.getElementById("redsecai-enabled");
@@ -1233,12 +1473,12 @@ async function loadRedSecAiSettings() {
         ? `Installed models: ${(data.availableModels || []).map(escapeHtml).join(", ")}`
         : "No installed models reported by Ollama.";
       const readyText = data.cloudModel && data.ready
-        ? "RedSecAI cloud model is available through this Ollama service."
-        : (data.ready ? "RedSecAI is ready." : escapeHtml(data.error || "RedSecAI is not ready."));
+        ? `${window.brandName("AI")} cloud model is available through this Ollama service.`
+        : (data.ready ? `${window.brandName("AI")} is ready.` : escapeHtml(data.error || `${window.brandName("AI")} is not ready.`));
       redsecAiStatusBox.className = `info-box text-sm mt-4 ${data.ready ? "text-accent" : "text-warning"}`;
       redsecAiStatusBox.innerHTML = data.enabled
         ? `${readyText}<br>${models}`
-        : "RedSecAI is globally disabled.";
+        : `${window.brandName("AI")} is globally disabled.`;
     }
     if (redsecAiEndpointBox) {
       const warnings = Array.isArray(data.endpointWarnings) ? data.endpointWarnings : [];
@@ -1254,15 +1494,15 @@ async function loadRedSecAiSettings() {
       const events = data.actionStats?.recentEvents || [];
       redsecAiActionsBox.innerHTML = events.length
         ? `<strong>Recent AI activity</strong><br>${events.slice(0, 8).map((event) => `${escapeHtml(event.type || "event")} - ${escapeHtml(event.tool || "system")} - ${escapeHtml(event.summary || "")}`).join("<br>")}`
-        : "No recent RedSecAI confirmed-action activity.";
+        : `No recent ${window.brandName("AI")} confirmed-action activity.`;
     }
   } catch {
     if (redsecAiStatusBox) {
       redsecAiStatusBox.className = "info-box text-sm mt-4 text-error";
-      redsecAiStatusBox.textContent = "Failed to load RedSecAI settings.";
+      redsecAiStatusBox.textContent = `Failed to load ${window.brandName("AI")} settings.`;
     }
-    if (redsecAiActionsBox) redsecAiActionsBox.textContent = "Failed to load RedSecAI activity.";
-    if (redsecAiEndpointBox) redsecAiEndpointBox.textContent = "Failed to load RedSecAI endpoint processing mode.";
+    if (redsecAiActionsBox) redsecAiActionsBox.textContent = `Failed to load ${window.brandName("AI")} activity.`;
+    if (redsecAiEndpointBox) redsecAiEndpointBox.textContent = `Failed to load ${window.brandName("AI")} endpoint processing mode.`;
   }
 }
 
@@ -1283,9 +1523,9 @@ redsecAiSaveBtn?.addEventListener("click", async () => {
       }),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || "Failed to save RedSecAI settings");
+    if (!res.ok) throw new Error(data.error || `Failed to save ${window.brandName("AI")} settings`);
     if (redsecAiResult) {
-      redsecAiResult.textContent = "RedSecAI settings saved.";
+      redsecAiResult.textContent = `${window.brandName("AI")} settings saved.`;
       redsecAiResult.className = "text-sm text-accent";
       redsecAiResult.classList.remove("hidden");
     }
@@ -1305,7 +1545,7 @@ redsecAiDiagnosticsBtn?.addEventListener("click", async () => {
   redsecAiDiagnosticsBtn.disabled = true;
   if (redsecAiDiagnosticsBox) {
     redsecAiDiagnosticsBox.className = "info-box text-sm mt-4";
-    redsecAiDiagnosticsBox.textContent = "Running RedSecAI diagnostics from the app server...";
+    redsecAiDiagnosticsBox.textContent = `Running ${window.brandName("AI")} diagnostics from the app server...`;
   }
   try {
     const res = await api("/api/settings/redsecai/diagnostics", {
@@ -2788,7 +3028,7 @@ function applyThreatNotificationPolicy(policy = {}) {
   if (emailFrom) emailFrom.value = email.fromOverride || "";
   if (webhookEnabled) webhookEnabled.checked = webhook.enabled !== false;
   if (discordEnabled) discordEnabled.checked = discord.enabled !== false;
-  if (discordUsername) discordUsername.value = discord.username || "RedSecThreat";
+  if (discordUsername) discordUsername.value = discord.username || window.brandName("Threat");
   if (discordAvatar) discordAvatar.value = discord.avatarUrl || "";
 }
 
@@ -2803,7 +3043,7 @@ function readThreatNotificationPolicy() {
     },
     discord: {
       enabled: document.getElementById("threat-notify-discord-enabled")?.checked ?? true,
-      username: document.getElementById("threat-notify-discord-username")?.value.trim() || "RedSecThreat",
+      username: document.getElementById("threat-notify-discord-username")?.value.trim() || window.brandName("Threat"),
       avatarUrl: document.getElementById("threat-notify-discord-avatar")?.value.trim() || "",
     },
   };
@@ -3169,7 +3409,7 @@ document.getElementById("threat-templates-body")?.addEventListener("click", asyn
 
   const deleteBtn = e.target.closest(".threat-template-delete-btn");
   if (!deleteBtn) return;
-  if (!await showConfirmModal({ title: "Delete API Template", message: "Remove this API template from RedSecThreat?", confirmLabel: "Delete", danger: true })) return;
+  if (!await showConfirmModal({ title: "Delete API Template", message: `Remove this API template from ${window.brandName("Threat")}?`, confirmLabel: "Delete", danger: true })) return;
   try {
     await threatAdminJson("/api/threat/templates/" + deleteBtn.dataset.id, { method: "DELETE" });
     loadThreatAdminTemplates();
@@ -3218,6 +3458,82 @@ document.getElementById("threat-force-refresh-btn")?.addEventListener("click", a
 let engageActivityPage = 1;
 let engageActivityTotal = 0;
 
+function setEngageText(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = value;
+}
+
+function moneyCompact(value) {
+  const number = Number(value || 0);
+  if (!Number.isFinite(number) || number <= 0) return "0";
+  return new Intl.NumberFormat(undefined, {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(number);
+}
+
+function renderIssueList(items, label, field = "title") {
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) return `<div>${escapeHtml(label)}: 0</div>`;
+  return `<div>${escapeHtml(label)}: <strong>${list.length}</strong></div><ul class="mt-1 list-disc pl-5">${list.slice(0, 5).map((item) => `<li>${escapeHtml(item[field] || item.engagement_title || item.id || "Item")}</li>`).join("")}</ul>`;
+}
+
+async function loadEngageAdminSummary() {
+  try {
+    const res = await fetch("/admin/api/engage-summary");
+    if (!res.ok) throw new Error("Failed to load");
+    const data = await res.json();
+    const stats = data.stats || {};
+    const counts = data.counts || {};
+    const issues = data.issues || {};
+
+    setEngageText("engage-admin-stat-active", counts.engagements ?? "-");
+    setEngageText("engage-admin-stat-pipeline", moneyCompact(stats.pipelineValue));
+    setEngageText("engage-admin-stat-qa", counts.qaQueue ?? "-");
+    setEngageText("engage-admin-stat-issues", counts.attention ?? "-");
+
+    const deliveryBox = document.getElementById("engage-admin-delivery-box");
+    if (deliveryBox) {
+      deliveryBox.innerHTML = [
+        `Active engagements: <strong>${escapeHtml(counts.engagements ?? 0)}</strong>`,
+        `Open opportunities: <strong>${escapeHtml(counts.opportunities ?? 0)}</strong>`,
+        `Linked to Reporter/Calendar: <strong>${escapeHtml(counts.linkedEngagements ?? 0)}</strong>`,
+        `Activity records: <strong>${escapeHtml(counts.activity ?? 0)}</strong>`,
+      ].join("<br>");
+    }
+
+    const qaBox = document.getElementById("engage-admin-qa-box");
+    if (qaBox) {
+      qaBox.innerHTML = [
+        `Queue items: <strong>${escapeHtml(counts.qaQueue ?? 0)}</strong>`,
+        `Unassigned reviews: <strong>${escapeHtml(counts.unassignedQa ?? 0)}</strong>`,
+        renderIssueList(issues.unassignedQa, "Unassigned QA", "engagement_title"),
+      ].join("<br>");
+    }
+
+    const qualityBox = document.getElementById("engage-admin-quality-box");
+    if (qualityBox) {
+      qualityBox.innerHTML = [
+        renderIssueList(issues.missingTeam, "Missing tester/technical lead"),
+        renderIssueList(issues.overdue, "Overdue engagements"),
+        renderIssueList(issues.blocked, "Blocked engagements"),
+        renderIssueList(issues.unlinkedActive, "No linked Reporter/Calendar resource"),
+      ].join("");
+    }
+  } catch {
+    setEngageText("engage-admin-stat-active", "-");
+    setEngageText("engage-admin-stat-pipeline", "-");
+    setEngageText("engage-admin-stat-qa", "-");
+    setEngageText("engage-admin-stat-issues", "-");
+    const deliveryBox = document.getElementById("engage-admin-delivery-box");
+    const qaBox = document.getElementById("engage-admin-qa-box");
+    const qualityBox = document.getElementById("engage-admin-quality-box");
+    if (deliveryBox) deliveryBox.textContent = "Failed to load delivery health.";
+    if (qaBox) qaBox.textContent = "Failed to load QA state.";
+    if (qualityBox) qualityBox.textContent = "Failed to load quality checks.";
+  }
+}
+
 async function loadEngageActivity() {
   const body = document.getElementById("engage-activity-body");
   const countEl = document.getElementById("engage-activity-count");
@@ -3257,6 +3573,10 @@ async function loadEngageActivity() {
   }
 }
 
+document.getElementById("engage-admin-refresh-btn")?.addEventListener("click", () => {
+  loadEngageAdminSummary();
+  loadEngageActivity();
+});
 document.getElementById("engage-activity-refresh-btn")?.addEventListener("click", loadEngageActivity);
 document.getElementById("engage-activity-prev-btn")?.addEventListener("click", () => { engageActivityPage = Math.max(1, engageActivityPage - 1); loadEngageActivity(); });
 document.getElementById("engage-activity-next-btn")?.addEventListener("click", () => { engageActivityPage++; loadEngageActivity(); });

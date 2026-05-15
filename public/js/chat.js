@@ -615,14 +615,14 @@
       if (embedData.type === "vault") {
         contentHtml =
           '<a href="' + escapeHtml(embedData.url) + '" class="chat-embed-card block p-3 rounded border" target="_blank">' +
-          '<div class="text-xs font-bold mb-1 text-accent">RedSecVault</div>' +
+          '<div class="text-xs font-bold mb-1 text-accent">' + window.brandName("Vault") + '</div>' +
           '<div class="text-sm truncate">' + escapeHtml(embedData.content) + '</div>' +
           '<div class="text-xs text-muted mt-1">Encrypted vault entry — click to view</div>' +
           '</a>';
       } else {
         contentHtml =
           '<a href="' + escapeHtml(embedData.url) + '" class="chat-embed-card block p-3 rounded border" target="_blank">' +
-          '<div class="text-xs font-bold mb-1 text-accent">' + (embedData.type === "paste" ? "RedSecPaste" : "RedSecShare") + '</div>' +
+          '<div class="text-xs font-bold mb-1 text-accent">' + (embedData.type === "paste" ? window.brandName("Paste") : window.brandName("Share")) + '</div>' +
           '<div class="text-sm truncate">' + escapeHtml(embedData.content) + '</div>' +
           '</a>';
       }

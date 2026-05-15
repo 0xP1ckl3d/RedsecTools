@@ -66,7 +66,7 @@ function setActiveJob(job) {
 async function checkStatus() {
   const res = await fetch("/api/ai/status", { headers: { accept: "application/json" } });
   if (res.status === 401 || res.status === 403) return null;
-  if (!res.ok) return { enabled: false, ready: false, error: "RedSecAI status unavailable" };
+  if (!res.ok) return { enabled: false, ready: false, error: `${window.brandName("AI")} status unavailable` };
   return res.json();
 }
 
@@ -90,24 +90,24 @@ function createWidget(status, options = {}) {
   const root = document.createElement("section");
   root.className = isPage ? "redsecai-widget redsecai-page-widget" : "redsecai-widget";
   root.innerHTML = `
-    ${isPage ? "" : `<button type="button" class="redsecai-launcher" aria-label="Open RedSecAI" title="RedSecAI">
+    ${isPage ? "" : `<button type="button" class="redsecai-launcher" aria-label="Open ${window.brandName("AI")}" title="${window.brandName("AI")}">
       <svg class="redsecai-launcher-icon" viewBox="0 0 24 24" aria-hidden="true">
         <path d="M4 5.75C4 4.23 5.23 3 6.75 3h10.5C18.77 3 20 4.23 20 5.75v7.5A2.75 2.75 0 0 1 17.25 16H12l-4.1 3.25A.85.85 0 0 1 6.5 18.58V16A2.75 2.75 0 0 1 4 13.25v-7.5Z"></path>
         <path d="M8 8.5h8M8 11.5h5.5"></path>
       </svg>
-      <span class="redsecai-launcher-mark">RedSecAI</span>
+      <span class="redsecai-launcher-mark">${window.brandName("AI")}</span>
       <span class="redsecai-status-dot ${status.ready ? "ready" : "offline"}"></span>
       <span class="redsecai-alert-badge hidden" aria-hidden="true"></span>
     </button>`}
-    <div class="redsecai-panel ${isPage ? "" : "hidden"}" role="${isPage ? "region" : "dialog"}" aria-label="RedSecAI assistant">
+    <div class="redsecai-panel ${isPage ? "" : "hidden"}" role="${isPage ? "region" : "dialog"}" aria-label="${window.brandName("AI")} assistant">
       <header class="redsecai-header">
         <div>
-          <div class="redsecai-kicker">RedSecAI</div>
+          <div class="redsecai-kicker">${window.brandName("AI")}</div>
           <h2>Local assistant</h2>
         </div>
         <div class="redsecai-header-actions">
-          <a class="redsecai-icon-btn" href="/ai?view=about" title="About RedSecAI" aria-label="About RedSecAI">${iconSvg("info")}</a>
-          ${isPage ? "" : `<a class="redsecai-icon-btn" href="/ai" title="Open full page" aria-label="Open RedSecAI full page">${iconSvg("expand")}</a>`}
+          <a class="redsecai-icon-btn" href="/ai?view=about" title="About ${window.brandName("AI")}" aria-label="About ${window.brandName("AI")}">${iconSvg("info")}</a>
+          ${isPage ? "" : `<a class="redsecai-icon-btn" href="/ai" title="Open full page" aria-label="Open ${window.brandName("AI")} full page">${iconSvg("expand")}</a>`}
           <button type="button" class="redsecai-icon-btn" data-redsecai-clear title="Clear chat" aria-label="Clear chat">${iconSvg("refresh")}</button>
           ${isPage ? "" : `<button type="button" class="redsecai-icon-btn" data-redsecai-close title="Close" aria-label="Close">${iconSvg("close")}</button>`}
         </div>
@@ -131,7 +131,7 @@ function createWidget(status, options = {}) {
 function appendMessage(container, message) {
   const item = document.createElement("article");
   item.className = `redsecai-message ${message.role === "assistant" ? "assistant" : "user"}`;
-  item.innerHTML = `<div class="redsecai-message-role">${message.role === "assistant" ? "RedSecAI" : "You"}</div><div class="redsecai-message-body">${renderMarkdownLite(message.content)}</div>`;
+  item.innerHTML = `<div class="redsecai-message-role">${message.role === "assistant" ? window.brandName("AI") : "You"}</div><div class="redsecai-message-body">${renderMarkdownLite(message.content)}</div>`;
   container.appendChild(item);
   container.scrollTop = container.scrollHeight;
 }
@@ -255,7 +255,7 @@ async function initRedSecAI() {
   }
   if (!status || status.enabled === false) {
     if (pageMode && pageMount) {
-      pageMount.innerHTML = '<div class="info-box text-sm">RedSecAI is not enabled for this site.</div>';
+      pageMount.innerHTML = `<div class="info-box text-sm">${window.brandName("AI")} is not enabled for this site.</div>`;
     }
     return;
   }
@@ -307,7 +307,7 @@ async function initRedSecAI() {
     alertBadge.classList.toggle("hidden", total <= 0);
     alertBadge.textContent = total > 9 ? "9+" : String(total);
     launcher.classList.toggle("has-alert", total > 0);
-    launcher.setAttribute("aria-label", total > 0 ? `Open RedSecAI, ${total} unread item${total === 1 ? "" : "s"}` : "Open RedSecAI");
+    launcher.setAttribute("aria-label", total > 0 ? `Open ${window.brandName("AI")}, ${total} unread item${total === 1 ? "" : "s"}` : `Open ${window.brandName("AI")}`);
   }
 
   function markUnread(count = 1) {
@@ -325,7 +325,7 @@ async function initRedSecAI() {
     if (activeAssistant) return activeAssistant;
     activeAssistant = document.createElement("article");
     activeAssistant.className = "redsecai-message assistant";
-    activeAssistant.innerHTML = `<div class="redsecai-message-role">RedSecAI</div><div class="redsecai-message-body">Thinking...</div>`;
+    activeAssistant.innerHTML = `<div class="redsecai-message-role">${window.brandName("AI")}</div><div class="redsecai-message-body">Thinking...</div>`;
     messagesEl.appendChild(activeAssistant);
     messagesEl.scrollTop = messagesEl.scrollHeight;
     return activeAssistant;
@@ -374,7 +374,7 @@ async function initRedSecAI() {
       const remainingMs = Math.max(0, activeJobTimeoutMs - (Date.now() - progressStartedAt));
       progressTimeoutTimer = setTimeout(() => {
         if (activeJobId) timedOutJobIds.add(activeJobId);
-        failActiveAssistant(`RedSecAI request timed out after ${formatDuration(activeJobTimeoutMs)}. The server did not send a completion event.`);
+        failActiveAssistant(`${window.brandName("AI")} request timed out after ${formatDuration(activeJobTimeoutMs)}. The server did not send a completion event.`);
       }, remainingMs + 1000);
     }
   }
@@ -397,7 +397,7 @@ async function initRedSecAI() {
   }
 
   function failActiveAssistant(text) {
-    finishActiveAssistant(text || "RedSecAI request failed.");
+    finishActiveAssistant(text || `${window.brandName("AI")} request failed.`);
   }
 
   function renderActionCard(action) {
@@ -444,7 +444,7 @@ async function initRedSecAI() {
         confirmBtn.disabled = false;
         if (error.stale) {
           card.remove();
-          const staleMessage = { role: "assistant", content: error.message || "This RedSecAI action is no longer pending." };
+          const staleMessage = { role: "assistant", content: error.message || `This ${window.brandName("AI")} action is no longer pending.` };
           messages.push(staleMessage);
           saveMessages(messages);
           appendMessage(messagesEl, staleMessage);
@@ -521,7 +521,7 @@ async function initRedSecAI() {
       renderActionCards(latest.pendingActions, { replace: true });
       const liveAction = latest.pendingActions.find((item) => item.id === action.id);
       if (!liveAction) {
-        const error = new Error("This RedSecAI action is no longer pending. Please ask RedSecAI to prepare it again.");
+        const error = new Error(`This ${window.brandName("AI")} action is no longer pending. Please ask ${window.brandName("AI")} to prepare it again.`);
         error.stale = true;
         completedActionIds.add(action.id);
         removeActionCard(action.id);
@@ -592,7 +592,7 @@ async function initRedSecAI() {
     if (res.ok) renderActionCards(body.pendingActions || []);
     if (res.ok) return body.message || "No response.";
     const detail = body.details?.elapsedMs ? `\n\nElapsed: ${formatDuration(body.details.elapsedMs)}.` : "";
-    return (body.error || "RedSecAI is unavailable.") + detail;
+    return (body.error || `${window.brandName("AI")} is unavailable.`) + detail;
   }
 
   const aiSocket = createRedSecAiSocket({
@@ -603,7 +603,7 @@ async function initRedSecAI() {
       send.disabled = true;
       startProgress({ jobId: message.jobId, startedAt, timeoutMs });
       ensureActiveAssistant();
-      updateActiveStatus("Starting RedSecAI turn");
+      updateActiveStatus(`Starting ${window.brandName("AI")} turn`);
     },
     onStatus(message) {
       if (message.jobId && timedOutJobIds.has(message.jobId)) return;
@@ -621,7 +621,7 @@ async function initRedSecAI() {
     onError(message) {
       if (message.jobId && timedOutJobIds.has(message.jobId)) return;
       const detail = message.details?.elapsedMs ? `\n\nElapsed: ${formatDuration(message.details.elapsedMs)}.` : "";
-      failActiveAssistant((message.error || "RedSecAI is unavailable.") + detail);
+      failActiveAssistant((message.error || `${window.brandName("AI")} is unavailable.`) + detail);
     },
     onSnapshot(message) {
       if (!message.jobId) return;
@@ -733,7 +733,7 @@ async function initRedSecAI() {
         const fallbackMessage = await fallbackPost();
         if (activeJobId === jobId && !timedOutJobIds.has(jobId)) finishActiveAssistant(fallbackMessage);
       } catch {
-        if (activeJobId === jobId && !timedOutJobIds.has(jobId)) failActiveAssistant("RedSecAI is unavailable right now.");
+        if (activeJobId === jobId && !timedOutJobIds.has(jobId)) failActiveAssistant(`${window.brandName("AI")} is unavailable right now.`);
       }
     }
   });

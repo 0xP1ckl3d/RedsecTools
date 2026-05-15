@@ -15,7 +15,7 @@
     <header class="flex justify-between items-center mb-8">
       <div>
         <h1 class="text-2xl font-bold flex items-center gap-2">
-          <span class="text-accent">RedSec</span><span class="text-secondary">Tools</span>
+          <span class="text-accent" data-bp>RedSec</span><span class="text-secondary">Tools</span>
           <span class="text-muted text-base font-normal ml-1">Admin</span>
         </h1>
       </div>
@@ -68,7 +68,7 @@
       <header class="dashboard-header">
         <div>
           <h1 class="text-xl font-bold">
-            <span class="text-accent">RedSec</span><span class="text-secondary">Tools</span>
+            <span class="text-accent" data-bp>RedSec</span><span class="text-secondary">Tools</span>
             <span class="text-muted text-base font-normal ml-1">Admin</span>
           </h1>
           <p class="text-sm text-muted mt-1">Server configuration, access controls, homepage settings, and tool administration.</p>
@@ -109,7 +109,7 @@
           <div class="admin-card-header">
             <div>
               <p class="admin-card-kicker">Tool Settings</p>
-              <h2 class="admin-card-title">RedSecPaste Records</h2>
+              <h2 class="admin-card-title"><span data-bp>RedSec</span>Paste Records</h2>
               <p class="admin-card-copy">Review stored encrypted pastes, expiry state, and bulk removal actions.</p>
             </div>
             <div class="admin-card-actions">
@@ -156,7 +156,7 @@
           <div class="admin-card-header">
             <div>
               <p class="admin-card-kicker">Tool Settings</p>
-              <h2 class="admin-card-title">RedSecShare Limits</h2>
+              <h2 class="admin-card-title"><span data-bp>RedSec</span>Share Limits</h2>
               <p class="admin-card-copy">Choose the server-enforced upload ceilings for file size and files per share.</p>
             </div>
           </div>
@@ -198,7 +198,7 @@
           <div class="admin-card-header">
             <div>
               <p class="admin-card-kicker">Tool Settings</p>
-              <h2 class="admin-card-title">RedSecShare Records</h2>
+              <h2 class="admin-card-title"><span data-bp>RedSec</span>Share Records</h2>
               <p class="admin-card-copy">Inspect encrypted file drops, expiry windows, and storage usage in one place.</p>
             </div>
             <div class="admin-card-actions">
@@ -250,7 +250,7 @@
           <div class="admin-card-header">
             <div>
               <p class="admin-card-kicker">Tool Settings</p>
-              <h2 class="admin-card-title">RedSecSurvey Records</h2>
+              <h2 class="admin-card-title"><span data-bp>RedSec</span>Survey Records</h2>
               <p class="admin-card-copy">Review survey owners, statuses, response volume, and remove surveys when required.</p>
             </div>
             <div class="admin-card-actions">
@@ -378,19 +378,47 @@
           <div class="admin-card-header">
             <div>
               <p class="admin-card-kicker">Branding</p>
-              <h2 class="admin-card-title">Site Primary Colour</h2>
-              <p class="admin-card-copy">Set the primary accent colour used across RedSecTools for all users. Red remains the default.</p>
+              <h2 class="admin-card-title">Site Branding</h2>
+              <p class="admin-card-copy">Customise the primary colour and brand name used across the site for all users.</p>
             </div>
           </div>
           <div class="space-y-4">
-            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5" id="site-theme-picker">
+            <label class="block space-y-1">
+              <span class="text-sm font-semibold">Brand Logo</span>
+              <span class="text-sm text-muted block">Upload a custom logo to replace the default branding across the site, including the favicon. Accepts PNG, JPEG, WebP, GIF, BMP, and TIFF images. Only one logo can be active at a time &mdash; uploading a new one replaces the previous.</span>
+            </label>
+            <div id="brand-logo-section" class="flex items-center gap-4">
+              <img id="brand-logo-preview" src="" alt="" class="h-12 w-12 rounded object-contain border border-[var(--border)] hidden">
+              <div class="flex items-center gap-2">
+                <label class="btn-secondary text-xs cursor-pointer">
+                  Upload Logo
+                  <input type="file" id="brand-logo-input" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/tiff,image/svg+xml" class="hidden">
+                </label>
+                <button type="button" id="delete-brand-logo-btn" class="btn-secondary text-xs">Revert to Default</button>
+              </div>
+            </div>
+            <p id="brand-logo-result" class="text-sm hidden"></p>
+            <hr class="border-[var(--border)]">
+            <label class="block space-y-1">
+              <span class="text-sm font-semibold">Brand Prefix</span>
+              <span class="text-sm text-muted block">Replaces the "RedSec" prefix in tool names, page titles, and navigation labels. For example, "BlueSec" makes RedSecTools &rarr; BlueSecTools, RedSecPaste &rarr; BlueSecPaste. Leave blank for default.</span>
+              <input type="text" id="site-brand-prefix" class="input-field" placeholder="RedSec" maxlength="30" spellcheck="false">
+            </label>
+            <hr class="border-[var(--border)]">
+            <h3 class="text-sm font-semibold">Primary Colour</h3>
+            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-6" id="site-theme-picker">
               <label class="site-theme-choice" data-theme-choice="red"><input type="radio" name="site-primary-theme" value="red"><span class="site-theme-swatch" data-theme-swatch="red"></span><span>Red</span></label>
               <label class="site-theme-choice" data-theme-choice="green"><input type="radio" name="site-primary-theme" value="green"><span class="site-theme-swatch" data-theme-swatch="green"></span><span>Green</span></label>
               <label class="site-theme-choice" data-theme-choice="blue"><input type="radio" name="site-primary-theme" value="blue"><span class="site-theme-swatch" data-theme-swatch="blue"></span><span>Blue</span></label>
               <label class="site-theme-choice" data-theme-choice="orange"><input type="radio" name="site-primary-theme" value="orange"><span class="site-theme-swatch" data-theme-swatch="orange"></span><span>Orange</span></label>
               <label class="site-theme-choice" data-theme-choice="purple"><input type="radio" name="site-primary-theme" value="purple"><span class="site-theme-swatch" data-theme-swatch="purple"></span><span>Purple / Pink</span></label>
+              <label class="site-theme-choice" data-theme-choice="custom"><input type="radio" name="site-primary-theme" value="custom"><span class="site-theme-swatch" id="custom-theme-swatch"></span><span>Custom</span></label>
             </div>
-            <button type="button" id="save-theme-settings-btn" class="btn-primary">Save Theme</button>
+            <div id="custom-theme-picker-row" class="hidden flex items-center gap-3 mt-2">
+              <button type="button" id="open-custom-theme-modal" class="btn-secondary text-xs">Pick Colour</button>
+              <span id="custom-theme-hex-display" class="text-sm text-muted"></span>
+            </div>
+            <button type="button" id="save-theme-settings-btn" class="btn-primary">Save Branding</button>
             <p id="theme-settings-result" class="text-sm hidden"></p>
           </div>
         </div>
@@ -717,7 +745,7 @@
           <div class="admin-card-header">
             <div>
               <p class="admin-card-kicker">Tool Settings</p>
-              <h2 class="admin-card-title">RedSecTeam Conversations</h2>
+              <h2 class="admin-card-title"><span data-bp>RedSec</span>Team Conversations</h2>
               <p class="admin-card-copy">Monitor channel activity, direct messages, membership, and message volume.</p>
             </div>
             <button id="refresh-chat-btn" class="btn-secondary text-sm">Refresh</button>
@@ -761,7 +789,7 @@
           <div class="admin-card-header">
             <div>
               <p class="admin-card-kicker">Tool Settings</p>
-              <h2 class="admin-card-title">RedSecVault Records</h2>
+              <h2 class="admin-card-title"><span data-bp>RedSec</span>Vault Records</h2>
               <p class="admin-card-copy">Audit vault ownership, member access, and shared secret entry counts.</p>
             </div>
           </div>
@@ -851,7 +879,7 @@
           <div class="admin-card-header">
             <div>
               <p class="admin-card-kicker">Tool Settings</p>
-              <h2 class="admin-card-title">RedSecCal Workweek & Capacity</h2>
+              <h2 class="admin-card-title"><span data-bp>RedSec</span>Cal Workweek & Capacity</h2>
               <p class="admin-card-copy">Controls the visible workday span, active daily hours, break-aware defaults, and which days count toward calendar capacity and utilisation.</p>
             </div>
           </div>
@@ -900,7 +928,7 @@
           <div class="card admin-section-card">
             <div class="admin-card-header">
               <div>
-                <h2 class="admin-card-title">RedSecWiki Settings</h2>
+                <h2 class="admin-card-title"><span data-bp>RedSec</span>Wiki Settings</h2>
               </div>
             </div>
             <div class="space-y-4">
@@ -950,7 +978,7 @@
           <div class="admin-card-header">
             <div>
               <p class="admin-card-kicker">Tool Settings</p>
-              <h2 class="admin-card-title">RedSecAI Controls</h2>
+              <h2 class="admin-card-title"><span data-bp>RedSec</span>AI Controls</h2>
               <p class="admin-card-copy">Control the global assistant, local Ollama endpoint, and model selection. User access remains scoped through RBAC-protected internal APIs.</p>
             </div>
             <div class="admin-card-actions">
@@ -963,7 +991,7 @@
             <label class="bulletin-checkbox-row">
               <input id="redsecai-enabled" type="checkbox" class="checkbox-field">
               <span>
-                <span class="text-xs font-semibold uppercase tracking-wide text-muted block">Enable RedSecAI</span>
+                <span class="text-xs font-semibold uppercase tracking-wide text-muted block">Enable <span data-bp>RedSec</span>AI</span>
                 <span class="text-sm text-muted">Shows the chat bubble and enables authenticated AI API routes.</span>
               </span>
             </label>
@@ -1009,11 +1037,11 @@
           </div>
 
           <div id="redsecai-endpoint-box" class="info-box text-sm mt-4">Loading endpoint processing mode...</div>
-          <div id="redsecai-status-box" class="info-box text-sm mt-4">Loading RedSecAI status...</div>
+          <div id="redsecai-status-box" class="info-box text-sm mt-4">Loading <span data-bp>RedSec</span>AI status...</div>
           <div id="redsecai-diagnostics-box" class="info-box text-sm mt-4 hidden"></div>
-          <div id="redsecai-actions-box" class="info-box text-sm mt-4">Loading RedSecAI action activity...</div>
+          <div id="redsecai-actions-box" class="info-box text-sm mt-4">Loading <span data-bp>RedSec</span>AI action activity...</div>
           <div class="flex items-center gap-3 mt-4">
-            <button type="button" id="redsecai-save-btn" class="btn-primary">Save RedSecAI Settings</button>
+            <button type="button" id="redsecai-save-btn" class="btn-primary">Save <span data-bp>RedSec</span>AI Settings</button>
             <p id="redsecai-settings-result" class="text-sm hidden"></p>
           </div>
         </div>
@@ -1031,7 +1059,7 @@
           <div class="admin-card-header">
             <div>
               <p class="admin-card-kicker">Tool Settings</p>
-              <h2 class="admin-card-title">RedSecReporter Projects</h2>
+              <h2 class="admin-card-title"><span data-bp>RedSec</span>Reporter Projects</h2>
               <p class="admin-card-copy">Review reporter adoption, project status, and recent report activity from the admin panel.</p>
             </div>
             <div class="admin-card-actions">
@@ -1072,7 +1100,7 @@
           <div class="admin-card-header">
             <div>
               <p class="admin-card-kicker">Tool Settings</p>
-              <h2 class="admin-card-title">RedSecThreat Feed Sources</h2>
+              <h2 class="admin-card-title"><span data-bp>RedSec</span>Threat Feed Sources</h2>
               <p class="admin-card-copy">Manage threat intelligence feed sources grouped by type, toggle activation, and set defaults. Onion / dark web feeds require a Tor or SOCKS proxy.</p>
             </div>
             <div class="admin-card-actions">
@@ -1106,7 +1134,7 @@
           <div class="admin-card-header">
             <div>
               <p class="admin-card-kicker">Tool Settings</p>
-              <h2 class="admin-card-title">RedSecThreat API Templates</h2>
+              <h2 class="admin-card-title"><span data-bp>RedSec</span>Threat API Templates</h2>
               <p class="admin-card-copy">Manage API feed templates from the admin panel. Template testing is constrained in a scrollable modal so large responses stay readable.</p>
             </div>
             <div class="admin-card-actions">
@@ -1135,7 +1163,7 @@
           <div class="admin-card-header">
             <div>
               <p class="admin-card-kicker">Tool Settings</p>
-              <h2 class="admin-card-title">RedSecThreat General Settings</h2>
+              <h2 class="admin-card-title"><span data-bp>RedSec</span>Threat General Settings</h2>
               <p class="admin-card-copy">Configure the scheduler loop, alert retention, and proxy routing. Per-feed cadence is set in the table above.</p>
             </div>
           </div>
@@ -1171,7 +1199,7 @@
           <div class="admin-card-header">
             <div>
               <p class="admin-card-kicker">Tool Settings</p>
-              <h2 class="admin-card-title">RedSecThreat Notification Policy</h2>
+              <h2 class="admin-card-title"><span data-bp>RedSec</span>Threat Notification Policy</h2>
               <p class="admin-card-copy">Admins control which notification types are allowed and the shared delivery behavior. Users only opt in and configure their own destinations.</p>
             </div>
           </div>
@@ -1205,7 +1233,7 @@
                 </label>
                 <div>
                   <label class="block text-sm font-medium mb-1.5" for="threat-notify-discord-username">Discord Sender Name</label>
-                  <input type="text" id="threat-notify-discord-username" class="input-field" placeholder="RedSecThreat">
+                  <input type="text" id="threat-notify-discord-username" class="input-field" placeholder="RedSecThreat" data-bp-ph>
                 </div>
                 <div>
                   <label class="block text-sm font-medium mb-1.5" for="threat-notify-discord-avatar">Discord Avatar URL</label>
@@ -1322,11 +1350,44 @@
 
       <!-- Engage Tool Settings Tab -->
       <div id="engage-tool-settings-tab" class="hidden admin-page-stack">
+        <div class="admin-stat-grid admin-stat-grid-4">
+          <div class="stat-card"><div class="stat-value" id="engage-admin-stat-active">-</div><div class="stat-label">Active Delivery</div></div>
+          <div class="stat-card"><div class="stat-value" id="engage-admin-stat-pipeline">-</div><div class="stat-label">Pipeline Value</div></div>
+          <div class="stat-card"><div class="stat-value" id="engage-admin-stat-qa">-</div><div class="stat-label">QA Queue</div></div>
+          <div class="stat-card"><div class="stat-value" id="engage-admin-stat-issues">-</div><div class="stat-label">Needs Attention</div></div>
+        </div>
         <div class="card admin-section-card">
           <div class="admin-card-header">
             <div>
               <p class="admin-card-kicker">Tool Settings</p>
-              <h2 class="admin-card-title">RedSecEngage Activity Log</h2>
+              <h2 class="admin-card-title"><span data-bp>RedSec</span>Engage Operations</h2>
+              <p class="admin-card-copy">Monitor delivery health, QA pressure, and data-quality issues that affect project visibility and handover.</p>
+            </div>
+            <div class="admin-card-actions">
+              <button type="button" id="engage-admin-refresh-btn" class="btn-secondary text-sm">Refresh</button>
+              <a href="/engage" class="btn-secondary text-sm">Open Engage</a>
+            </div>
+          </div>
+          <div class="grid lg:grid-cols-3 gap-4">
+            <div class="info-box text-sm">
+              <strong>Delivery Health</strong>
+              <div id="engage-admin-delivery-box" class="mt-2 text-muted">Loading delivery health...</div>
+            </div>
+            <div class="info-box text-sm">
+              <strong>QA Governance</strong>
+              <div id="engage-admin-qa-box" class="mt-2 text-muted">Loading QA state...</div>
+            </div>
+            <div class="info-box text-sm">
+              <strong>Data Quality</strong>
+              <div id="engage-admin-quality-box" class="mt-2 text-muted">Loading quality checks...</div>
+            </div>
+          </div>
+        </div>
+        <div class="card admin-section-card">
+          <div class="admin-card-header">
+            <div>
+              <p class="admin-card-kicker">Tool Settings</p>
+              <h2 class="admin-card-title"><span data-bp>RedSec</span>Engage Activity Log</h2>
               <p class="admin-card-copy">Full audit trail of all RedSecEngage actions across clients, opportunities, engagements, and QA.</p>
             </div>
             <div class="admin-card-actions">
@@ -1405,6 +1466,29 @@
       </div>
     </div>
   </div>
+  <div id="custom-theme-modal" class="modal-overlay hidden">
+    <div class="modal-card custom-theme-modal-card">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-sm font-semibold">Custom Theme Colour</h3>
+        <button type="button" id="custom-theme-modal-close" class="text-muted hover:text-primary text-lg cursor-pointer" title="Close">&times;</button>
+      </div>
+      <div class="space-y-4">
+        <div class="flex justify-center">
+          <input type="color" id="custom-theme-color-picker" class="custom-color-picker-input" value="#E53935">
+        </div>
+        <div class="flex items-center gap-2">
+          <label class="text-sm text-muted shrink-0">Hex</label>
+          <input type="text" id="custom-theme-hex-input" class="input-field" placeholder="#E53935" maxlength="7" spellcheck="false">
+        </div>
+        <div id="custom-theme-preview" class="custom-theme-preview-bar"></div>
+        <div class="flex gap-2">
+          <button type="button" id="custom-theme-apply-btn" class="btn-primary flex-1">Apply</button>
+          <button type="button" id="custom-theme-cancel-btn" class="btn-secondary">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script type="module" src="/js/admin.js?v=20260429-admin-deployment"></script>
   <script type="module" src="/js/burger-menu.js"></script>
   <script src="/js/notifications.js"></script>

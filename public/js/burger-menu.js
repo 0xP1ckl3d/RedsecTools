@@ -16,6 +16,12 @@ const TOOL_LINKS = [
   { href: "/ai", label: "RedSecAI", aiOnly: true },
 ];
 
+function brandedLabel(defaultLabel) {
+  var prefix = window.siteBrandPrefix;
+  if (prefix && prefix !== "RedSec") return defaultLabel.replace(/RedSec/, prefix);
+  return defaultLabel;
+}
+
 export function initBurgerMenu() {
   const btn = document.getElementById("burger-btn");
   const nav = document.getElementById("burger-nav");
@@ -63,7 +69,7 @@ function injectLinks(nav, allowedToolKeys, options = {}) {
     html += '<summary>Tools</summary>';
     html += '<div class="burger-tools-list">';
     for (const link of visibleTools) {
-      html += `<a href="${link.href}">${link.label}</a>`;
+      html += `<a href="${link.href}">${brandedLabel(link.label)}</a>`;
     }
     html += "</div></details>";
   }

@@ -8,6 +8,7 @@ const FILES_DIR = path.join(__dirname, "..", "..", "..", "data", "files");
 const TMP_DIR = path.join(__dirname, "..", "..", "..", "data", "tmp");
 const AVATARS_DIR = path.join(__dirname, "..", "..", "..", "data", "avatars");
 const BULLETIN_ASSETS_DIR = path.join(__dirname, "..", "..", "..", "data", "bulletin-assets");
+const BRAND_DIR = path.join(__dirname, "..", "..", "..", "data", "brand");
 
 function ensureDir(dirPath) {
   if (!fs.existsSync(dirPath)) {
@@ -21,6 +22,7 @@ function openDatabase() {
   ensureDir(TMP_DIR);
   ensureDir(AVATARS_DIR);
   ensureDir(BULLETIN_ASSETS_DIR);
+  ensureDir(BRAND_DIR);
 
   const db = new Database(DB_PATH);
   db.pragma("journal_mode = WAL");
@@ -35,4 +37,5 @@ module.exports = {
   TMP_DIR,
   AVATARS_DIR,
   BULLETIN_ASSETS_DIR,
+  BRAND_DIR,
 };

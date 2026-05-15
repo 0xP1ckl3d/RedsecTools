@@ -8,6 +8,13 @@ function sanitizeHref(href) {
   return "#";
 }
 
+function sanitizeImageSrc(src) {
+  const value = String(src || "").trim();
+  if (/^\/api\/reporter\/proposals\/supporting-images\/[A-Za-z0-9_-]+\/download$/.test(value)) return value;
+  if (/^\/api\/reporter\/evidence\/[A-Za-z0-9_-]+\/download$/.test(value)) return value;
+  return "";
+}
+
 function slugifyHeading(text) {
   return String(text || "")
     .toLowerCase()
@@ -23,6 +30,14 @@ function applyInlineFormatting(text) {
   output = output.replace(/`([^`]+)`/g, (_, code) => {
     const token = `__WIKI_TOKEN_${tokens.length}__`;
     tokens.push(`<code>${escapeHtml(code)}</code>`);
+    return token;
+  });
+
+  output = output.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, src) => {
+    const safeSrc = sanitizeImageSrc(src);
+    if (!safeSrc) return "";
+    const token = `__WIKI_TOKEN_${tokens.length}__`;
+    tokens.push(`<img src="${escapeHtml(safeSrc)}" alt="${escapeHtml(alt || "")}">`);
     return token;
   });
 
@@ -71,7 +86,12 @@ function parseTable(lines, startIndex) {
   const dividerCells = dividerLine.split("|").map((cell) => cell.trim()).filter(Boolean);
   if (!dividerCells.length || dividerCells.some((cell) => !/^:?-{3,}:?$/.test(cell))) return null;
 
-  const parseCells = (line) => line.split("|").map((cell) => cell.trim()).filter((_, index, arr) => !(arr.length === 1 && !arr[0]));
+  const parseCells = (line) => {
+    const cells = line.split("|").map((cell) => cell.trim());
+    if (cells[0] === "") cells.shift();
+    if (cells[cells.length - 1] === "") cells.pop();
+    return cells;
+  };
   const headers = parseCells(headerLine);
   const rows = [];
   let cursor = startIndex + 2;

@@ -693,7 +693,6 @@ const defaultReportHtml = String.raw`<!doctype html>
       </div>
     </div>
 
-    <div class="classification-footer">Confidential</div>
   </section>
 
   <div class="page-break"></div>

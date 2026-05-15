@@ -10,6 +10,7 @@ const {
   TMP_DIR,
   AVATARS_DIR,
   BULLETIN_ASSETS_DIR,
+  BRAND_DIR,
 } = require("./core/db/connection");
 const { runMigrations } = require("./core/db/migrations");
 
@@ -8422,6 +8423,7 @@ module.exports = {
   updateAvatarTimestamp,
   clearAvatarTimestamp,
   AVATARS_DIR,
+  BRAND_DIR,
   // Chat: Admin
   getChatStats,
   listConversationsAdmin,

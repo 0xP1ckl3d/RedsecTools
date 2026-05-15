@@ -490,7 +490,7 @@ async function initEngageApp() {
     const res = await fetch("/api/engage/bootstrap");
     if (res.status === 403) {
       loading.classList.add("hidden");
-      errorEl.textContent = "You do not have permission to access RedSecEngage.";
+      errorEl.textContent = "You do not have permission to access " + window.brandName("Engage") + ".";
       errorEl.classList.remove("hidden");
       return;
     }

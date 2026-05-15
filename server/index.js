@@ -3,6 +3,7 @@ require("dotenv").config();
 const express = require("express");
 const http = require("http");
 const path = require("path");
+const fs = require("fs");
 const helmet = require("helmet");
 const cookieParser = require("cookie-parser");
 const pasteRouter = require("./routes/paste");
@@ -37,6 +38,7 @@ const {
   deleteExpiredPendingLogins, deleteExpiredTrustedDevices, deleteExpiredAdminSessions, deleteExpiredExtensionSessions,
   closeExpiredSurveys, cleanupOldThreatAlerts, cleanupOldThreatArticles, getSetting,
   deleteExpiredNotifications,
+  BRAND_DIR,
 } = require("./database");
 const { pageRequireUser, pageRequireGuestOrUser } = require("./middleware/auth");
 const { pageRequirePermission, pageRequireAnyPermission } = require("./middleware/permissions");
@@ -113,6 +115,27 @@ function pageRequireRedSecAiEnabled(req, res, next) {
 
 app.get("/ai/index.html", pageRequireUser, pageRequireRedSecAiEnabled, (req, res) => res.sendFile(page("ai/index.html")));
 
+// --- Custom brand logo / favicon override (before static middleware) ---
+const BRAND_FAVICON_PATH = path.join(BRAND_DIR, "favicon.png");
+const BRAND_LOGO_PATH = path.join(BRAND_DIR, "logo.webp");
+const DEFAULT_FAVICON_PATH = path.join(__dirname, "..", "public", "assets", "favicon.ico");
+
+app.get("/assets/favicon.ico", (req, res) => {
+  if (fs.existsSync(BRAND_FAVICON_PATH)) {
+    res.set("Content-Type", "image/png");
+    res.set("Cache-Control", "no-cache");
+    return fs.createReadStream(BRAND_FAVICON_PATH).pipe(res);
+  }
+  res.sendFile(DEFAULT_FAVICON_PATH);
+});
+
+app.get("/brand-logo.webp", (req, res) => {
+  if (!fs.existsSync(BRAND_LOGO_PATH)) return res.status(404).send("Not found");
+  res.set("Content-Type", "image/webp");
+  res.set("Cache-Control", "no-cache");
+  fs.createReadStream(BRAND_LOGO_PATH).pipe(res);
+});
+
 // --- Static files ---
 app.use(express.static(path.join(__dirname, "..", "public"), {
   index: false,
@@ -130,7 +153,12 @@ app.use(express.static(path.join(__dirname, "..", "public"), {
 const SITE_PRIMARY_THEMES = new Set(["red", "green", "blue", "orange", "purple"]);
 app.get("/api/site-theme", (req, res) => {
   const primaryTheme = String(getSetting("site_primary_theme") || "red").trim().toLowerCase();
-  res.json({ primaryTheme: SITE_PRIMARY_THEMES.has(primaryTheme) ? primaryTheme : "red" });
+  const customHex = String(getSetting("site_custom_theme_hex") || "").trim();
+  const brandPrefix = String(getSetting("site_brand_prefix") || "").trim();
+  const theme = primaryTheme === "custom" && /^#[0-9A-Fa-f]{6}$/.test(customHex) ? "custom" : (SITE_PRIMARY_THEMES.has(primaryTheme) ? primaryTheme : "red");
+  const hasBrandLogo = getSetting("site_brand_logo") === "true" && fs.existsSync(BRAND_LOGO_PATH);
+  const brandLogoVersion = hasBrandLogo ? (getSetting("site_brand_logo_version") || "1") : "";
+  res.json({ primaryTheme: theme, customHex: theme === "custom" ? customHex : "", brandPrefix, hasBrandLogo, brandLogoVersion });
 });
 
 // --- API routes ---

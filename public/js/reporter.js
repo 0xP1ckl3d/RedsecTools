@@ -2356,7 +2356,7 @@ async function saveNewProject() {
 
 function openImportProjectModal() {
   openModal("Import Project", `
-    <label class="block text-sm text-muted mb-1">RedSecReporter Archive</label>
+    <label class="block text-sm text-muted mb-1">${window.brandName("Reporter")} Archive</label>
     <input type="file" id="modal-import-archive" class="input-field w-full" accept=".json,.redsecreporter">
   `, async () => {
     const input = document.getElementById("modal-import-archive");

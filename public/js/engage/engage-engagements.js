@@ -546,7 +546,7 @@ const EngageEngagements = (() => {
         <label class="block text-sm text-muted mb-1 mt-3">Report Link</label>
         <input type="text" id="qa-report-link" class="input-field w-full" placeholder="PDF URL or path">
         <label class="block text-sm text-muted mb-1 mt-3">Share Link</label>
-        <input type="text" id="qa-share-link" class="input-field w-full" placeholder="Optional RedSecShare link">
+        <input type="text" id="qa-share-link" class="input-field w-full" placeholder="Optional ${window.brandName("Share")} link">
         <label class="block text-sm text-muted mb-1 mt-3">Notes for Reviewer</label>
         <textarea id="qa-request-notes" class="input-field w-full" rows="3" placeholder="Context for the QA reviewer..."></textarea>
       </div>

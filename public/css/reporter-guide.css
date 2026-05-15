@@ -1,0 +1,260 @@
+/* RedSecReporter in-app guide */
+.reporter-guide {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.reporter-guide-hero.card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1.25rem;
+  align-items: start;
+  padding: 1.4rem 1.5rem;
+  border-top: 3px solid var(--accent);
+  border-radius: 0.75rem;
+}
+
+.reporter-guide-hero h2 {
+  font-size: 1.45rem;
+  line-height: 1.2;
+}
+
+.reporter-guide-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  max-width: 28rem;
+}
+
+.reporter-guide-tab-radio {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.reporter-guide-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--bg-card);
+}
+
+.reporter-guide-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.25rem;
+  padding: 0.5rem 0.85rem;
+  border: 1px solid transparent;
+  border-radius: 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.reporter-guide-tab:hover {
+  border-color: var(--border-hover);
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+}
+
+#reporter-guide-tab-overview:checked ~ .reporter-guide-tabs label[for="reporter-guide-tab-overview"],
+#reporter-guide-tab-editing:checked ~ .reporter-guide-tabs label[for="reporter-guide-tab-editing"],
+#reporter-guide-tab-markdown:checked ~ .reporter-guide-tabs label[for="reporter-guide-tab-markdown"],
+#reporter-guide-tab-reports:checked ~ .reporter-guide-tabs label[for="reporter-guide-tab-reports"],
+#reporter-guide-tab-proposals:checked ~ .reporter-guide-tabs label[for="reporter-guide-tab-proposals"],
+#reporter-guide-tab-design:checked ~ .reporter-guide-tabs label[for="reporter-guide-tab-design"],
+#reporter-guide-tab-csp:checked ~ .reporter-guide-tabs label[for="reporter-guide-tab-csp"],
+#reporter-guide-tab-reusable:checked ~ .reporter-guide-tabs label[for="reporter-guide-tab-reusable"] {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-card));
+  color: var(--text-primary);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.reporter-guide-panels {
+  display: grid;
+}
+
+.reporter-guide-section.card {
+  display: none;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 0.75rem;
+}
+
+#reporter-guide-tab-overview:checked ~ .reporter-guide-panels [data-guide-panel="overview"],
+#reporter-guide-tab-editing:checked ~ .reporter-guide-panels [data-guide-panel="editing"],
+#reporter-guide-tab-markdown:checked ~ .reporter-guide-panels [data-guide-panel="markdown"],
+#reporter-guide-tab-reports:checked ~ .reporter-guide-panels [data-guide-panel="reports"],
+#reporter-guide-tab-proposals:checked ~ .reporter-guide-panels [data-guide-panel="proposals"],
+#reporter-guide-tab-design:checked ~ .reporter-guide-panels [data-guide-panel="design"],
+#reporter-guide-tab-csp:checked ~ .reporter-guide-panels [data-guide-panel="csp"],
+#reporter-guide-tab-reusable:checked ~ .reporter-guide-panels [data-guide-panel="reusable"] {
+  display: block;
+}
+
+.reporter-guide-section-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 1rem 1.1rem;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 10%, var(--bg-card)), var(--bg-card));
+}
+
+.reporter-guide-section-head h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.reporter-guide-body {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem 1.1rem 1.2rem;
+  color: var(--text-secondary);
+  line-height: 1.62;
+}
+
+.reporter-guide-body h3 {
+  margin: 0.35rem 0 0.2rem;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.reporter-guide-body ul {
+  margin: 0;
+  padding-left: 1.25rem;
+  list-style: disc;
+}
+
+.reporter-guide-body li + li {
+  margin-top: 0.35rem;
+}
+
+.reporter-guide-body code,
+.reporter-guide-variable-grid code {
+  padding: 0.12rem 0.32rem;
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.82em;
+}
+
+.reporter-guide-body pre {
+  margin: 0;
+  padding: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--bg-elevated);
+  overflow-x: auto;
+  color: var(--text-primary);
+  line-height: 1.55;
+}
+
+.reporter-guide-body pre code {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 0.78rem;
+  white-space: pre;
+}
+
+.reporter-guide-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.reporter-guide-callout {
+  padding: 0.9rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 0.5rem;
+  background: var(--bg-elevated);
+}
+
+.reporter-guide-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}
+
+.reporter-guide-table {
+  width: 100%;
+  min-width: 42rem;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+}
+
+.reporter-guide-table th,
+.reporter-guide-table td {
+  padding: 0.7rem 0.85rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.reporter-guide-table th {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.reporter-guide-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.reporter-guide-table td:first-child {
+  width: 15rem;
+  color: var(--text-primary);
+}
+
+.reporter-guide-variable-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12.5rem, 1fr));
+  gap: 0.45rem;
+}
+
+.reporter-guide-variable-grid code {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 900px) {
+  .reporter-guide-hero.card,
+  .reporter-guide-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .reporter-guide-badges {
+    justify-content: flex-start;
+    max-width: none;
+  }
+
+  .reporter-guide-tabs {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+  }
+
+  .reporter-guide-tab {
+    white-space: nowrap;
+  }
+}

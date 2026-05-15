@@ -7,7 +7,8 @@
   <title>RedSecReporter</title>
   <link rel="icon" href="/assets/favicon.ico" type="image/x-icon">
   <script src="/js/theme-init.js?v=20260514-reporter-preview"></script>
-  <link rel="stylesheet" href="/css/style.css?v=20260514-reporter-preview">
+  <link rel="stylesheet" href="/css/style.css?v=20260515-reporter-guide">
+  <link rel="stylesheet" href="/css/reporter-guide.css?v=20260515-reporter-guide">
   <link rel="stylesheet" href="/css/notifications.css">
 </head>
 <body>
@@ -58,7 +59,7 @@
         <div>
           <h1 class="text-xl font-bold">
             <a href="/" class="hover:underline transition-colors">
-              <span class="text-accent">RedSec</span><span class="text-secondary">Reporter</span>
+              <span class="text-accent" data-bp>RedSec</span><span class="text-secondary">Reporter</span>
             </a>
           </h1>
           <p class="text-sm text-muted mt-1">Pentest report builder with findings management and CVSS scoring.</p>
@@ -662,28 +663,48 @@
               <div id="reporter-proposal-editor-supporting-images" class="reporter-editor-panel hidden">
                 <div class="card">
                   <div class="card-header"><h3 class="font-semibold">Supporting Images</h3></div>
-                  <div id="reporter-proposal-supporting-images-content" class="p-3 text-sm text-muted">Supporting image upload and section insertion will appear here.</div>
+                  <div class="p-3 space-y-3">
+                    <div class="reporter-inline-composer">
+                      <input type="file" id="reporter-proposal-image-file" class="input-field w-full" accept="image/*">
+                      <input type="text" id="reporter-proposal-image-caption" class="input-field w-full" placeholder="Caption / alt text">
+                      <button type="button" id="reporter-proposal-upload-image-btn" class="btn-primary text-sm">Upload Image</button>
+                    </div>
+                    <div id="reporter-proposal-supporting-images-list"></div>
+                  </div>
                 </div>
               </div>
 
               <div id="reporter-proposal-editor-notes" class="reporter-editor-panel hidden">
                 <div class="card">
                   <div class="card-header"><h3 class="font-semibold">Notes</h3></div>
-                  <div class="p-3 text-sm text-muted">Proposal notes will appear here.</div>
+                  <div class="p-3 space-y-3">
+                    <div class="reporter-inline-composer">
+                      <input type="text" id="reporter-proposal-note-title" class="input-field w-full" placeholder="Note title">
+                      <textarea id="reporter-proposal-note-content" class="input-field w-full" rows="6" placeholder="Internal proposal note..."></textarea>
+                      <button type="button" id="reporter-proposal-save-note-btn" class="btn-primary text-sm">Add Note</button>
+                    </div>
+                    <div id="reporter-proposal-notes-list"></div>
+                  </div>
                 </div>
               </div>
 
               <div id="reporter-proposal-editor-comments" class="reporter-editor-panel hidden">
                 <div class="card">
                   <div class="card-header"><h3 class="font-semibold">Comments</h3></div>
-                  <div class="p-3 text-sm text-muted">Proposal comments will appear here.</div>
+                  <div class="p-3 space-y-3">
+                    <div class="reporter-inline-composer">
+                      <textarea id="reporter-proposal-comment-content" class="input-field w-full" rows="5" placeholder="Add a proposal comment..."></textarea>
+                      <button type="button" id="reporter-proposal-save-comment-btn" class="btn-primary text-sm">Add Comment</button>
+                    </div>
+                    <div id="reporter-proposal-comments-list"></div>
+                  </div>
                 </div>
               </div>
 
               <div id="reporter-proposal-editor-history" class="reporter-editor-panel hidden">
                 <div class="card">
                   <div class="card-header"><h3 class="font-semibold">History</h3></div>
-                  <div class="p-3 text-sm text-muted">Proposal history will appear here.</div>
+                  <div id="reporter-proposal-history-list" class="p-3"></div>
                 </div>
               </div>
             </div>
@@ -1082,29 +1103,358 @@
         </section>
 
         <section id="reporter-view-about" class="reporter-view hidden">
-          <div class="card max-w-3xl mx-auto space-y-4 text-sm">
-            <p>RedSecReporter is the pentest reporting and findings management tool for RedSecTools. It provides a structured workflow for creating penetration test reports, managing security findings, and generating professional deliverables.</p>
-            <p>Projects are built on customisable report designs that define the section layout, finding fields, and output format. Each project supports team collaboration with role-based access for leads, pentesters, and reviewers. Findings are tracked through a full lifecycle from draft to approval with severity classification and optional CVSS scoring.</p>
-            <p>A shared finding template library lets teams reuse and standardise common vulnerability descriptions. Report sections support rich text editing for executive summaries, scope definitions, methodology descriptions, and custom content.</p>
-            <div class="flex flex-wrap gap-2">
-              <span class="badge badge-red">Pentest Reports</span>
-              <span class="badge badge-red">Findings Management</span>
-              <span class="badge badge-red">CVSS Scoring</span>
-              <span class="badge badge-red">PDF Generation</span>
-              <span class="badge badge-gray">Team Collaboration</span>
-              <span class="badge badge-gray">Template Library</span>
-              <span class="badge badge-gray">Design Templates</span>
+          <div class="reporter-guide max-w-6xl mx-auto text-sm">
+            <div class="reporter-guide-hero card">
+              <div>
+                <p class="text-xs text-muted uppercase tracking-wide font-semibold mb-2"><span data-bp>RedSec</span>Reporter Guide</p>
+                <h2 class="text-2xl font-semibold mb-2">Building reports, proposals, and compliant PDF templates</h2>
+                <p class="text-muted">This page documents how the Reporter builders work, how template rendering is split between document templates and section markdown, and which server-side values are available when building report and proposal designs.</p>
+              </div>
+              <div class="reporter-guide-badges">
+                <span class="badge badge-red">Reports</span>
+                <span class="badge badge-red">Proposals</span>
+                <span class="badge badge-red">PDF Templates</span>
+                <span class="badge badge-gray">Markdown Sections</span>
+                <span class="badge badge-gray">Finding Templates</span>
+                <span class="badge badge-gray">Test Type Write-ups</span>
+              </div>
             </div>
-            <h2 class="text-lg font-semibold mt-6">Reports</h2>
-            <p>Create pentest reports from design templates. Assign team members with defined roles, set due dates, and track report status through draft, review, approval, and delivery stages. Duplicate completed reports to reuse structure for similar engagements.</p>
-            <h2 class="text-lg font-semibold mt-6">Findings</h2>
-            <p>Document security findings with structured fields including description, attack scenario, remediation guidance, and references. Each finding is classified by severity with optional CVSS vector scoring. Findings flow through a review pipeline from draft to approved, supporting retest tracking and client-ready status.</p>
-            <h2 class="text-lg font-semibold">Design Templates</h2>
-            <p>Define report templates with custom section layouts, finding field schemas, and output formatting. Designs control which fields are available, how findings are ordered and grouped, and the overall report structure. Multiple designs support different engagement types such as external, internal, web application, and red team assessments.</p>
-            <h2 class="text-lg font-semibold">Finding Templates</h2>
-            <p>Build a shared library of common findings with pre-written descriptions, severity defaults, and remediation guidance. Templates speed up finding creation and ensure consistency across engagements and team members.</p>
-            <h2 class="text-lg font-semibold">Sections</h2>
-            <p>Create structured report sections for executive summaries, scope definitions, methodology descriptions, and custom content. Sections are ordered independently and can be included or excluded from the final report.</p>
+
+            <input class="reporter-guide-tab-radio" type="radio" name="reporter-guide-tab" id="reporter-guide-tab-overview" checked>
+            <input class="reporter-guide-tab-radio" type="radio" name="reporter-guide-tab" id="reporter-guide-tab-editing">
+            <input class="reporter-guide-tab-radio" type="radio" name="reporter-guide-tab" id="reporter-guide-tab-markdown">
+            <input class="reporter-guide-tab-radio" type="radio" name="reporter-guide-tab" id="reporter-guide-tab-reports">
+            <input class="reporter-guide-tab-radio" type="radio" name="reporter-guide-tab" id="reporter-guide-tab-proposals">
+            <input class="reporter-guide-tab-radio" type="radio" name="reporter-guide-tab" id="reporter-guide-tab-design">
+            <input class="reporter-guide-tab-radio" type="radio" name="reporter-guide-tab" id="reporter-guide-tab-csp">
+            <input class="reporter-guide-tab-radio" type="radio" name="reporter-guide-tab" id="reporter-guide-tab-reusable">
+
+            <div class="reporter-guide-tabs" role="tablist" aria-label="Reporter guide sections">
+              <label class="reporter-guide-tab" for="reporter-guide-tab-overview">Overview</label>
+              <label class="reporter-guide-tab" for="reporter-guide-tab-editing">Editing</label>
+              <label class="reporter-guide-tab" for="reporter-guide-tab-markdown">Markdown</label>
+              <label class="reporter-guide-tab" for="reporter-guide-tab-reports">Report Templates</label>
+              <label class="reporter-guide-tab" for="reporter-guide-tab-proposals">Proposal Templates</label>
+              <label class="reporter-guide-tab" for="reporter-guide-tab-design">Design Rules</label>
+              <label class="reporter-guide-tab" for="reporter-guide-tab-csp">CSP Limits</label>
+              <label class="reporter-guide-tab" for="reporter-guide-tab-reusable">Reusable Content</label>
+            </div>
+
+            <div class="reporter-guide-panels">
+            <article class="reporter-guide-section card" data-guide-panel="overview">
+              <div class="reporter-guide-section-head">
+                <span class="badge badge-red">Concepts</span>
+                <h3>How Reporter content is assembled</h3>
+              </div>
+              <div class="reporter-guide-body">
+                <p><span data-bp>RedSec</span>Reporter separates content from design. Reports and proposals store structured details, sections, findings, evidence, comments, and generated PDFs. Designs decide how those values are placed into the final PDF.</p>
+                <div class="reporter-guide-grid">
+                  <div class="reporter-guide-callout">
+                    <h3>Report designs</h3>
+                    <p>Report designs are full HTML and CSS templates rendered server-side with Nunjucks. They receive a controlled context containing <code>report</code>, <code>sections</code>, <code>findings</code>, <code>severity_counts</code>, <code>toc_items</code>, <code>annexures</code>, <code>members</code>, <code>evidence</code>, and <code>stats</code>.</p>
+                  </div>
+                  <div class="reporter-guide-callout">
+                    <h3>Proposal templates</h3>
+                    <p>Proposal document templates are also HTML and CSS, but each proposal section is normally markdown. Section markdown supports a deliberately limited placeholder set such as <code>{{client_name}}</code> and <code>{{time_allocation_table}}</code>. Unknown placeholders render as blank text.</p>
+                  </div>
+                </div>
+                <p>Generated PDFs do not fetch remote assets. Use inline CSS, the provided <code>{{ css | safe }}</code> block, local Reporter image routes, or data URLs already produced by the renderer. Avoid external fonts, scripts, remote images, and browser-only JavaScript in templates.</p>
+              </div>
+            </article>
+
+            <article class="reporter-guide-section card" data-guide-panel="editing">
+              <div class="reporter-guide-section-head">
+                <span class="badge badge-red">Builder Workflow</span>
+                <h3>Editing workflow and builder tools</h3>
+              </div>
+              <div class="reporter-guide-body">
+                <div class="reporter-guide-grid">
+                  <div>
+                    <h3>Reports</h3>
+                    <ul>
+                      <li><strong>Details</strong> feed the <code>report.*</code> values used on cover pages, metadata tables, executive summaries, and headers.</li>
+                      <li><strong>Members</strong> control team access and visible ownership inside the report workspace.</li>
+                      <li><strong>Sections</strong> are ordered markdown blocks. Executive summary and scope sections are promoted into <code>report.executive_summary_html</code> and <code>report.scope_html</code>.</li>
+                      <li><strong>Findings</strong> use the active design field schema. Markdown fields become <code>finding.renderedFields</code> for PDF output.</li>
+                      <li><strong>Evidence</strong> stores supporting files and images. Images can be inserted into markdown fields using the evidence insertion tool.</li>
+                      <li><strong>Notes, comments, history, and PDFs</strong> are operational records and review artefacts for the project.</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <h3>Proposals</h3>
+                    <ul>
+                      <li><strong>Details</strong> feed proposal placeholders, cover metadata, commercial terms, delivery schedule, and calculated totals.</li>
+                      <li><strong>Sections</strong> are markdown blocks rendered with the safe proposal placeholder set before markdown conversion.</li>
+                      <li><strong>Supporting Images</strong> uploads images to the proposal and inserts markdown image links into the selected section.</li>
+                      <li><strong>Notes, comments, history, and PDFs</strong> track internal preparation, review, and generated deliverables.</li>
+                      <li><strong>Test Type Write-ups</strong> provide reusable methodology, scope, deliverable, requirement, assumption, and restriction content for selected proposal types.</li>
+                    </ul>
+                  </div>
+                </div>
+                <p>The live markdown preview uses the same server markdown renderer as PDF generation. For proposal placeholders, the final generated PDF applies placeholders first, then renders the markdown.</p>
+              </div>
+            </article>
+
+            <article class="reporter-guide-section card" data-guide-panel="markdown">
+              <div class="reporter-guide-section-head">
+                <span class="badge badge-red">Markdown</span>
+                <h3>Markdown section rules</h3>
+              </div>
+              <div class="reporter-guide-body">
+                <p>Report sections, proposal sections, finding fields, finding templates, and test type write-ups use markdown. Supported formatting includes headings, paragraphs, bold, italic, inline code, fenced code blocks, blockquotes, unordered lists, ordered lists, task lists, links, images, horizontal rules, and markdown tables.</p>
+                <div class="reporter-guide-grid">
+                  <div>
+                    <h3>Recommended table format</h3>
+                    <pre><code>Item | Value
+-----|------
+Estimated effort | {{estimated_days}} days
+Total fee | {{quoted_value}}
+Proposal valid until | {{valid_until}}</code></pre>
+                    <p>Use no outer pipe characters for simple tables. The renderer accepts normal markdown tables, but this shape avoids accidental blank edge columns.</p>
+                  </div>
+                  <div>
+                    <h3>Proposal placeholder example</h3>
+                    <pre><code>## Client
+
+**{{client_name}}**
+
+**Primary Contact:** {{primary_contact_name}}{% if primary_contact_email %} ({{primary_contact_email}}){% endif %}
+
+## Prepared By
+
+{{prepared_by_name}}{% if prepared_by_email %} &lt;{{prepared_by_email}}&gt;{% endif %}</code></pre>
+                    <p>Proposal section placeholders are allowlisted names only. They do not execute arbitrary server expressions.</p>
+                  </div>
+                </div>
+              </div>
+            </article>
+
+            <article class="reporter-guide-section card" data-guide-panel="reports">
+              <div class="reporter-guide-section-head">
+                <span class="badge badge-red">Reports</span>
+                <h3>Report design templates: server-side values</h3>
+              </div>
+              <div class="reporter-guide-body">
+                <p>Report designs are server-rendered Nunjucks templates. Autoescaping is enabled. Use <code>| safe</code> only for values that are already generated by the server renderer, such as <code>css</code>, <code>section.contentHtml</code>, <code>report.scope_html</code>, <code>report.executive_summary_html</code>, and <code>field.html</code>.</p>
+
+                <h3>Top-level report template values</h3>
+                <div class="reporter-guide-table-wrap">
+                  <table class="reporter-guide-table">
+                    <thead><tr><th>Value</th><th>Purpose</th></tr></thead>
+                    <tbody>
+                      <tr><td><code>project</code></td><td>Raw report project record.</td></tr>
+                      <tr><td><code>report</code></td><td>Normalised report metadata and promoted section content.</td></tr>
+                      <tr><td><code>design</code></td><td>Active report design record and configuration.</td></tr>
+                      <tr><td><code>members</code></td><td>Assigned report team members.</td></tr>
+                      <tr><td><code>sections</code></td><td>Included report sections with rendered markdown HTML.</td></tr>
+                      <tr><td><code>findings</code></td><td>Included findings after design ordering has been applied.</td></tr>
+                      <tr><td><code>grouped_findings</code></td><td>Findings grouped by the design grouping rule when configured.</td></tr>
+                      <tr><td><code>severity_counts</code></td><td>Finding counts for <code>critical</code>, <code>high</code>, <code>medium</code>, <code>low</code>, and <code>info</code>.</td></tr>
+                      <tr><td><code>toc_items</code></td><td>Generated table of contents entries: <code>title</code>, <code>level</code>, and <code>id</code>.</td></tr>
+                      <tr><td><code>annexures</code></td><td>Appendix and custom sections separated for annexure output.</td></tr>
+                      <tr><td><code>evidence</code></td><td>Project evidence records available to the report.</td></tr>
+                      <tr><td><code>stats</code></td><td>Project statistics supplied to the render service.</td></tr>
+                      <tr><td><code>generatedAt</code></td><td>ISO timestamp for the render run.</td></tr>
+                      <tr><td><code>css</code></td><td>CSS template text for inline style output.</td></tr>
+                      <tr><td><code>cssHref</code></td><td>Optional stylesheet URL used by preview rendering.</td></tr>
+                      <tr><td><code>escapeHtml</code></td><td>Server helper exposed for template use when needed.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <h3><code>report.*</code> values</h3>
+                <div class="reporter-guide-variable-grid">
+                  <code>report.title</code><code>report.customer</code><code>report.customer_name</code><code>report.position_title</code>
+                  <code>report.author</code><code>report.author_title</code><code>report.version</code><code>report.report_date</code>
+                  <code>report.start_date</code><code>report.end_date</code><code>report.duration</code><code>report.report_type</code>
+                  <code>report.executive_summary</code><code>report.executive_summary_html</code><code>report.scope</code><code>report.scope_html</code>
+                  <code>report.out_of_scope</code><code>report.out_of_scope_html</code>
+                </div>
+
+                <h3>Report collection item shapes</h3>
+                <div class="reporter-guide-table-wrap">
+                  <table class="reporter-guide-table">
+                    <thead><tr><th>Collection</th><th>Available fields</th></tr></thead>
+                    <tbody>
+                      <tr><td><code>sections[]</code></td><td><code>id</code>, <code>anchorId</code>, <code>title</code>, <code>sectionType</code>, <code>content</code>, <code>contentHtml</code>, <code>orderIndex</code></td></tr>
+                      <tr><td><code>findings[]</code></td><td><code>id</code>, <code>anchorId</code>, <code>title</code>, <code>severity</code>, <code>status</code>, <code>retest_status</code>, <code>cvss</code>, <code>fields</code>, <code>renderedFields</code>, <code>orderIndex</code>, <code>createdAt</code></td></tr>
+                      <tr><td><code>finding.cvss</code></td><td><code>score</code>, <code>level</code>, <code>vector</code></td></tr>
+                      <tr><td><code>finding.renderedFields[]</code></td><td><code>name</code>, <code>label</code>, <code>html</code></td></tr>
+                      <tr><td><code>toc_items[]</code></td><td><code>title</code>, <code>level</code>, <code>id</code>. Use <code>href="#{{ item.id }}"</code> for clickable internal links.</td></tr>
+                      <tr><td><code>annexures[]</code></td><td><code>title</code>, <code>anchorId</code>, <code>content_html</code></td></tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <h3>Minimal report template pattern</h3>
+                <pre><code>&lt;style&gt;{{ css | safe }}&lt;/style&gt;
+&lt;ol class="toc-list"&gt;
+{% for item in toc_items %}
+  &lt;li&gt;&lt;a href="#{{ item.id }}"&gt;{{ item.title }}&lt;/a&gt;&lt;/li&gt;
+{% endfor %}
+&lt;/ol&gt;
+
+{% for section in sections %}
+  &lt;section id="{{ section.anchorId }}" class="content-page"&gt;
+    &lt;h1&gt;{{ section.title }}&lt;/h1&gt;
+    &lt;div class="prose"&gt;{{ section.contentHtml | safe }}&lt;/div&gt;
+  &lt;/section&gt;
+{% endfor %}</code></pre>
+              </div>
+            </article>
+
+            <article class="reporter-guide-section card" data-guide-panel="proposals">
+              <div class="reporter-guide-section-head">
+                <span class="badge badge-red">Proposals</span>
+                <h3>Proposal templates: document values and section placeholders</h3>
+              </div>
+              <div class="reporter-guide-body">
+                <p>Proposal HTML/CSS templates are server-rendered with Nunjucks. Proposal section markdown is rendered through a smaller inline placeholder engine first, then converted to markdown HTML. This keeps editable proposal sections useful without allowing arbitrary server-side template execution in section content.</p>
+
+                <h3>Top-level proposal document values</h3>
+                <div class="reporter-guide-table-wrap">
+                  <table class="reporter-guide-table">
+                    <thead><tr><th>Value</th><th>Purpose</th></tr></thead>
+                    <tbody>
+                      <tr><td><code>proposal</code></td><td>Raw proposal record.</td></tr>
+                      <tr><td><code>meta</code></td><td>Normalised proposal metadata for cover pages and commercial details.</td></tr>
+                      <tr><td><code>sections</code></td><td>Included proposal sections with rendered markdown HTML.</td></tr>
+                      <tr><td><code>toc_items</code></td><td>Generated proposal table of contents entries: <code>title</code>, <code>level</code>, and <code>id</code>.</td></tr>
+                      <tr><td><code>test_types</code></td><td>Reusable write-up content for selected proposal test types.</td></tr>
+                      <tr><td><code>generated_at</code></td><td>ISO timestamp for the render run.</td></tr>
+                      <tr><td><code>css</code></td><td>CSS template text for inline style output.</td></tr>
+                      <tr><td><code>cssHref</code></td><td>Optional stylesheet URL used by preview rendering.</td></tr>
+                      <tr><td><code>escapeHtml</code></td><td>Server helper exposed for template use when needed.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <h3><code>meta.*</code> proposal values</h3>
+                <div class="reporter-guide-variable-grid">
+                  <code>meta.title</code><code>meta.clientName</code><code>meta.primaryContactName</code><code>meta.primaryContactEmail</code>
+                  <code>meta.preparedForName</code><code>meta.preparedForEmail</code><code>meta.preparedByUsername</code><code>meta.preparedByEmail</code>
+                  <code>meta.proposalType</code><code>meta.quotedValue</code><code>meta.estimatedDays</code><code>meta.dailyRate</code>
+                  <code>meta.validUntil</code><code>meta.status</code><code>meta.createdAt</code><code>meta.scopingDays</code>
+                  <code>meta.testingDays</code><code>meta.reportingDays</code><code>meta.retestDays</code><code>meta.managementDays</code>
+                  <code>meta.startDate</code><code>meta.endDate</code><code>meta.draftDate</code><code>meta.finalDate</code>
+                </div>
+
+                <h3>Proposal section placeholder values</h3>
+                <p>These values are available inside proposal section markdown using <code>{{name}}</code>. Simple <code>{% if name %}...{% endif %}</code> blocks are supported for these names only.</p>
+                <div class="reporter-guide-variable-grid">
+                  <code>{{title}}</code><code>{{client_name}}</code><code>{{clientName}}</code><code>{{primary_contact_name}}</code>
+                  <code>{{primaryContactName}}</code><code>{{primary_contact_email}}</code><code>{{primaryContactEmail}}</code><code>{{prepared_for_name}}</code>
+                  <code>{{preparedForName}}</code><code>{{prepared_for_email}}</code><code>{{preparedForEmail}}</code><code>{{prepared_by_name}}</code>
+                  <code>{{preparedByName}}</code><code>{{prepared_by_username}}</code><code>{{preparedByUsername}}</code><code>{{prepared_by_email}}</code>
+                  <code>{{preparedByEmail}}</code><code>{{proposal_type}}</code><code>{{proposalType}}</code><code>{{quoted_value}}</code>
+                  <code>{{quotedValue}}</code><code>{{estimated_days}}</code><code>{{estimatedDays}}</code><code>{{valid_until}}</code>
+                  <code>{{validUntil}}</code><code>{{date}}</code><code>{{created_at}}</code><code>{{createdAt}}</code>
+                  <code>{{scoping_days}}</code><code>{{scopingDays}}</code><code>{{testing_days}}</code><code>{{testingDays}}</code>
+                  <code>{{reporting_days}}</code><code>{{reportingDays}}</code><code>{{retest_days}}</code><code>{{retestDays}}</code>
+                  <code>{{management_days}}</code><code>{{managementDays}}</code><code>{{daily_rate}}</code><code>{{dailyRate}}</code>
+                  <code>{{time_allocation_table}}</code><code>{{timeAllocationTable}}</code><code>{{start_date}}</code><code>{{startDate}}</code>
+                  <code>{{end_date}}</code><code>{{endDate}}</code><code>{{draft_date}}</code><code>{{draftDate}}</code>
+                  <code>{{final_date}}</code><code>{{finalDate}}</code>
+                </div>
+
+                <h3>Proposal collection item shapes</h3>
+                <div class="reporter-guide-table-wrap">
+                  <table class="reporter-guide-table">
+                    <thead><tr><th>Collection</th><th>Available fields</th></tr></thead>
+                    <tbody>
+                      <tr><td><code>sections[]</code></td><td><code>id</code>, <code>anchorId</code>, <code>title</code>, <code>contentHtml</code>, <code>sectionType</code>, <code>orderIndex</code></td></tr>
+                      <tr><td><code>toc_items[]</code></td><td><code>title</code>, <code>level</code>, <code>id</code>. Use <code>href="#{{ item.id }}"</code> for clickable internal links.</td></tr>
+                      <tr><td><code>test_types[]</code></td><td><code>type</code>, <code>name</code>, <code>methodologyHtml</code>, <code>scopeHtml</code>, <code>deliverablesHtml</code>, <code>clientRequirementsHtml</code>, <code>consultantRequirementsHtml</code>, <code>assumptionsHtml</code>, <code>restrictionsHtml</code></td></tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <h3>Minimal proposal template pattern</h3>
+                <pre><code>&lt;style&gt;{{ css | safe }}&lt;/style&gt;
+&lt;ol class="toc-list"&gt;
+{% for item in toc_items %}
+  &lt;li&gt;&lt;a href="#{{ item.id }}"&gt;{{ item.title }}&lt;/a&gt;&lt;/li&gt;
+{% endfor %}
+&lt;/ol&gt;
+
+{% for section in sections %}
+  &lt;section id="{{ section.anchorId }}" class="content-page proposal-section"&gt;
+    &lt;h1&gt;{{ section.title }}&lt;/h1&gt;
+    &lt;div class="prose"&gt;{{ section.contentHtml | safe }}&lt;/div&gt;
+  &lt;/section&gt;
+{% endfor %}</code></pre>
+              </div>
+            </article>
+
+            <article class="reporter-guide-section card" data-guide-panel="design">
+              <div class="reporter-guide-section-head">
+                <span class="badge badge-red">PDF Design</span>
+                <h3>Design compliance rules for PDF output</h3>
+              </div>
+              <div class="reporter-guide-body">
+                <ul>
+                  <li>Target A4 print output with <code>@page</code>. Cover pages can use a named page with zero margins; content pages should leave enough margin for readable headers and footers.</li>
+                  <li>Make internal table of contents links clickable with anchors: render each content section with <code>id="{{ section.anchorId }}"</code> and link to <code>#{{ item.id }}</code>.</li>
+                  <li>Use CSS counters for section numbering instead of hardcoding numbers into section titles.</li>
+                  <li>Do not add browser PDF headers or footers in the HTML. Any visual footer should be a deliberate part of the document design.</li>
+                  <li>Keep scripts out of templates. PDF generation renders static HTML and blocks remote network requests.</li>
+                  <li>Use server-rendered HTML fields with <code>| safe</code>; keep normal text values escaped.</li>
+                  <li>Keep recurring components such as <code>.running-header</code>, <code>.running-footer</code>, <code>.content-page</code>, <code>.page-break</code>, <code>.prose</code>, and severity classes consistent across templates.</li>
+                  <li>Use the details panel for client, prepared-by, date, duration, daily rate, allocation, and contact data. Do not duplicate those values as manually edited static text in sections.</li>
+                  <li>For proposal service content, prefer test type write-ups and selected proposal types over manually copying methodology, scope, deliverables, requirements, assumptions, and restrictions into each proposal.</li>
+                </ul>
+              </div>
+            </article>
+
+            <article class="reporter-guide-section card" data-guide-panel="csp">
+              <div class="reporter-guide-section-head">
+                <span class="badge badge-red">Security Boundary</span>
+                <h3>Site CSP and preview rendering limitations</h3>
+              </div>
+              <div class="reporter-guide-body">
+                <p>Reporter previews run inside the <span data-bp>RedSec</span>Tools CSP and generated PDFs are rendered in a locked-down browser context. A template can look valid HTML and still fail if it depends on resources the site deliberately blocks.</p>
+                <div class="reporter-guide-grid">
+                  <div class="reporter-guide-callout">
+                    <h3>HTML preview CSP</h3>
+                    <p>Embeddable HTML previews are served with a restrictive policy: <code>default-src 'self'</code>, <code>script-src 'none'</code>, <code>style-src 'self'</code>, <code>img-src 'self' data:</code>, <code>object-src 'none'</code>, <code>base-uri 'self'</code>, and <code>frame-ancestors 'self'</code>.</p>
+                    <p>This means no JavaScript, no external stylesheets, no remote images, no remote fonts, no third-party CDNs, and no inline event handlers.</p>
+                  </div>
+                  <div class="reporter-guide-callout">
+                    <h3>PDF renderer network rules</h3>
+                    <p>PDF generation sets the document from server-rendered HTML and aborts network requests except <code>about:blank</code> and <code>data:</code> URLs. Proposal supporting images from <code>/api/reporter/proposals/supporting-images/.../download</code> are inlined by the renderer before PDF generation.</p>
+                    <p>Use bundled CSS, inline CSS through <code>{{ css | safe }}</code>, local Reporter image routes, or data URLs. Do not import Google Fonts, Font Awesome, Bootstrap, external SVGs, CDN CSS, CDN scripts, or remote tracking pixels.</p>
+                  </div>
+                </div>
+                <h3>Compliant asset patterns</h3>
+                <ul>
+                  <li>Use system fonts such as <code>"Segoe UI", Arial, Helvetica, sans-serif</code> unless a font is packaged and served by <span data-bp>RedSec</span>Tools under a same-origin URL allowed by CSP.</li>
+                  <li>Keep all document styling in the template CSS editor or the <code>{{ css | safe }}</code> style block generated by Reporter.</li>
+                  <li>Use uploaded report evidence or proposal supporting images for images that need to appear in a PDF.</li>
+                  <li>Use CSS shapes, borders, counters, and tables for layout. Do not depend on client-side scripts to build or modify the PDF DOM.</li>
+                  <li>If preview shows missing styling or blank media, check for blocked external URLs before changing CSP. The correct fix is normally to make the design self-contained.</li>
+                </ul>
+              </div>
+            </article>
+
+            <article class="reporter-guide-section card" data-guide-panel="reusable">
+              <div class="reporter-guide-section-head">
+                <span class="badge badge-red">Reuse</span>
+                <h3>Finding templates and test type write-ups</h3>
+              </div>
+              <div class="reporter-guide-body">
+                <div class="reporter-guide-grid">
+                  <div>
+                    <h3>Finding templates</h3>
+                    <p>Finding templates are reusable finding records. They store a title, category, severity, optional CVSS vector, tags, and markdown content for each finding field configured by the active report design. Use them to standardise common vulnerability language without changing the report design.</p>
+                  </div>
+                  <div>
+                    <h3>Test type write-ups</h3>
+                    <p>Test type write-ups are reusable proposal content keyed by assessment type. They can provide methodology, scope, deliverables, client requirements, consultant requirements, assumptions, and restrictions. Proposal templates can render those fields from <code>test_types[]</code> so selected proposal types automatically pull the matching content.</p>
+                  </div>
+                </div>
+              </div>
+            </article>
+            </div>
           </div>
         </section>
 

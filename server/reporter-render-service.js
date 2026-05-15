@@ -11,6 +11,7 @@ const {
 } = require("./reporter-default-templates");
 
 const REPORTER_PDF_DIR = path.join(__dirname, "..", "data", "reporter-pdfs");
+const REPORTER_EVIDENCE_DIR = path.join(__dirname, "..", "data", "reporter-evidence");
 const DEFAULT_TIMEOUT_MS = parseInt(process.env.REPORTER_PDF_TIMEOUT_MS, 10) || 120000;
 
 function ensureReporterPdfDir() {
@@ -158,6 +159,31 @@ function renderInlineTemplate(source, context) {
       const value = getValue(key);
       return value == null ? "" : String(value);
     });
+}
+
+function inlineReporterImages(html) {
+  return String(html || "").replace(/src="\/api\/reporter\/proposals\/supporting-images\/([^"/]+)\/download"/g, (match, imageId) => {
+    try {
+      const { getReporterEvidenceById } = require("./database");
+      const image = getReporterEvidenceById(imageId);
+      if (!image || !String(image.mimeType || "").startsWith("image/")) return match;
+      const filePath = path.join(REPORTER_EVIDENCE_DIR, image.storedFilename);
+      const data = fs.readFileSync(filePath).toString("base64");
+      return `src="data:${image.mimeType};base64,${data}"`;
+    } catch {
+      return match;
+    }
+  });
+}
+
+function normalizeRenderedTables(html) {
+  return String(html || "").replace(/<table\b[^>]*>[\s\S]*?<\/table>/gi, (tableHtml) => {
+    return tableHtml.replace(/<tr>[\s\S]*?<\/tr>/gi, (rowHtml) => {
+      return rowHtml
+        .replace(/^(\s*<tr>\s*)<(th|td)(?:\s[^>]*)?>\s*<\/\2>/i, "$1")
+        .replace(/<(th|td)(?:\s[^>]*)?>\s*<\/\1>(\s*<\/tr>\s*)$/i, "$2");
+    });
+  });
 }
 
 function defaultHtmlTemplate() {
@@ -1116,7 +1142,7 @@ async function renderPdfBuffer(html, options = {}) {
         request.abort();
       }
     });
-    await page.setContent(html, { waitUntil: "networkidle0", timeout: timeoutMs });
+    await page.setContent(inlineReporterImages(html), { waitUntil: "networkidle0", timeout: timeoutMs });
     if (options.suppressDocumentTitle !== false) {
       await page.evaluate(() => { document.title = ""; });
     }
@@ -1315,7 +1341,7 @@ function buildProposalContext({ proposal, template, sections, testTypes }) {
       renderedContent = stripDuplicateProposalIntro(renderedContent, displayTitle, meta.title);
     }
     let contentHtml = "";
-    try { contentHtml = renderMarkdownToHtml(renderedContent); } catch { contentHtml = escapeHtml(renderedContent); }
+    try { contentHtml = normalizeRenderedTables(renderMarkdownToHtml(renderedContent)); } catch { contentHtml = escapeHtml(renderedContent); }
     return {
       id: s.id || "",
       anchorId: uniqueAnchorId(usedAnchors, "proposal-section", s.id || s.title, i),

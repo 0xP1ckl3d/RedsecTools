@@ -24,7 +24,7 @@ const {
   getEmailSendState, setEmailSendState,
   countAllUsers,
   getShortcutsByCategory, getShortcutByIdAny, deleteShortcutByIdAdmin,
-  getShortcutsByUser, deleteShortcutById, deleteFavouritesByShortcut, AVATARS_DIR,
+  getShortcutsByUser, deleteShortcutById, deleteFavouritesByShortcut, AVATARS_DIR, BRAND_DIR,
   getVault, getVaultMembersList, updateVaultMemberPermission, removeVaultMember,
   listAllSurveys, getSurveyStats, deleteSurveyById,
   createAuditEvent, listAuditEvents, listSchemaMigrations, getDeploymentCounts,
@@ -1084,24 +1084,145 @@ router.post("/api/settings/calendar", requireAdmin, (req, res) => {
   });
 });
 
+const VALID_CUSTOM_HEX = /^#[0-9A-Fa-f]{6}$/;
+const VALID_BRAND_PREFIX = /^[A-Za-z][A-Za-z0-9]{0,29}$/;
+
 router.get("/api/settings/theme", requireAdmin, (req, res) => {
   const primaryTheme = String(getSetting("site_primary_theme") || "red").trim().toLowerCase();
-  res.json({ primaryTheme: SITE_PRIMARY_THEMES.has(primaryTheme) ? primaryTheme : "red" });
+  const customHex = String(getSetting("site_custom_theme_hex") || "").trim();
+  const brandPrefix = String(getSetting("site_brand_prefix") || "").trim();
+  const theme = primaryTheme === "custom" && VALID_CUSTOM_HEX.test(customHex) ? "custom" : (SITE_PRIMARY_THEMES.has(primaryTheme) ? primaryTheme : "red");
+  const brandLogoPath = path.join(BRAND_DIR, "logo.webp");
+  const hasBrandLogoFile = fs.existsSync(brandLogoPath);
+  const hasBrandLogo = hasBrandLogoFile;
+  let brandLogoVersion = hasBrandLogo ? (getSetting("site_brand_logo_version") || "") : "";
+  if (hasBrandLogoFile && getSetting("site_brand_logo") !== "true") {
+    setSetting("site_brand_logo", "true");
+  }
+  if (!hasBrandLogoFile && getSetting("site_brand_logo") === "true") {
+    setSetting("site_brand_logo", "");
+    setSetting("site_brand_logo_version", "");
+  }
+  if (hasBrandLogoFile && !brandLogoVersion) {
+    brandLogoVersion = String(fs.statSync(brandLogoPath).mtimeMs || Date.now());
+    setSetting("site_brand_logo_version", brandLogoVersion);
+  }
+  res.json({ primaryTheme: theme, customHex: theme === "custom" ? customHex : "", brandPrefix, hasBrandLogo, brandLogoVersion });
 });
 
 router.post("/api/settings/theme", requireAdmin, (req, res) => {
   const primaryTheme = String(req.body?.primaryTheme || "red").trim().toLowerCase();
-  if (!SITE_PRIMARY_THEMES.has(primaryTheme)) {
+  const customHex = String(req.body?.customHex || "").trim();
+  const brandPrefix = String(req.body?.brandPrefix || "").trim();
+
+  if (brandPrefix && !VALID_BRAND_PREFIX.test(brandPrefix)) {
+    return res.status(400).json({ error: "Brand prefix must be 1-30 alphanumeric characters, starting with a letter" });
+  }
+  setSetting("site_brand_prefix", brandPrefix);
+
+  if (primaryTheme === "custom") {
+    if (!VALID_CUSTOM_HEX.test(customHex)) {
+      return res.status(400).json({ error: "Custom theme requires a valid hex colour (#RRGGBB)" });
+    }
+    setSetting("site_primary_theme", "custom");
+    setSetting("site_custom_theme_hex", customHex);
+  } else if (SITE_PRIMARY_THEMES.has(primaryTheme)) {
+    setSetting("site_primary_theme", primaryTheme);
+  } else {
     return res.status(400).json({ error: "Invalid site theme" });
   }
-  setSetting("site_primary_theme", primaryTheme);
+
   auditAdmin(req, {
     category: "settings",
     action: "theme_update",
     targetType: "site_theme",
-    metadata: { primaryTheme },
+    metadata: { primaryTheme, customHex: primaryTheme === "custom" ? customHex : "", brandPrefix },
   });
-  res.json({ success: true, primaryTheme });
+  res.json({ success: true, primaryTheme, customHex: primaryTheme === "custom" ? customHex : "", brandPrefix });
+});
+
+// ============================================================
+// Brand logo upload
+// ============================================================
+
+const VALID_LOGO_MIMES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif", "image/svg+xml", "image/bmp", "image/tiff"]);
+
+const brandLogoUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+});
+
+// POST /admin/api/settings/brand-logo
+router.post("/api/settings/brand-logo", requireAdmin, brandLogoUpload.single("logo"), async (req, res) => {
+  const file = req.file;
+  if (!file) return res.status(400).json({ error: "No file uploaded" });
+  if (!VALID_LOGO_MIMES.has(file.mimetype)) {
+    return res.status(400).json({ error: "Only image files are accepted (PNG, JPEG, WebP, GIF, SVG, BMP, TIFF)" });
+  }
+
+  try {
+    const sharp = require("sharp");
+    const logoPath = path.join(BRAND_DIR, "logo.webp");
+    const faviconPath = path.join(BRAND_DIR, "favicon.png");
+
+    const logoBuffer = await sharp(file.buffer)
+      .rotate()
+      .resize(512, 512, { fit: "inside", withoutEnlargement: true })
+      .webp({ quality: 90 })
+      .toBuffer();
+
+    const faviconBuffer = await sharp(file.buffer)
+      .rotate()
+      .resize(64, 64, { fit: "cover" })
+      .png()
+      .toBuffer();
+
+    fs.writeFileSync(logoPath, logoBuffer);
+    fs.writeFileSync(faviconPath, faviconBuffer);
+
+    const brandLogoVersion = String(Date.now());
+    setSetting("site_brand_logo", "true");
+    setSetting("site_brand_logo_version", brandLogoVersion);
+
+    auditAdmin(req, {
+      category: "settings",
+      action: "brand_logo_upload",
+      targetType: "site_brand",
+    });
+
+    res.json({ success: true, hasBrandLogo: true, brandLogoVersion });
+  } catch (err) {
+    auditAdmin(req, {
+      category: "settings",
+      action: "brand_logo_upload",
+      targetType: "site_brand",
+      outcome: "failure",
+      metadata: { error: err.message },
+    });
+    res.status(500).json({ error: "Failed to process logo image" });
+  }
+});
+
+// DELETE /admin/api/settings/brand-logo
+router.delete("/api/settings/brand-logo", requireAdmin, (req, res) => {
+  try {
+    const logoPath = path.join(BRAND_DIR, "logo.webp");
+    const faviconPath = path.join(BRAND_DIR, "favicon.png");
+    if (fs.existsSync(logoPath)) fs.unlinkSync(logoPath);
+    if (fs.existsSync(faviconPath)) fs.unlinkSync(faviconPath);
+    setSetting("site_brand_logo", "");
+    setSetting("site_brand_logo_version", "");
+
+    auditAdmin(req, {
+      category: "settings",
+      action: "brand_logo_delete",
+      targetType: "site_brand",
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to delete logo" });
+  }
 });
 
 // ============================================================
@@ -1574,8 +1695,58 @@ router.post("/api/shortcuts/team/upload-icon", requireAdmin, teamIconUpload.sing
 });
 
 // ============================================================
-// Engage Activity Log (Admin)
+// Engage Operations (Admin)
 // ============================================================
+
+router.get("/api/engage-summary", requireAdmin, (req, res) => {
+  try {
+    const {
+      getEngageDashboardStats,
+      getEngageEngagementsWithoutTesters,
+      listEngageClients,
+      listEngageOpportunities,
+      listEngageEngagements,
+      listAllEngageQaReviewsEnriched,
+      getEngageActivityCount,
+    } = require("../database");
+    const stats = getEngageDashboardStats();
+    const clients = listEngageClients(100000, 0);
+    const opportunities = listEngageOpportunities(100000, 0);
+    const engagements = listEngageEngagements(100000, 0);
+    const qaReviews = listAllEngageQaReviewsEnriched();
+    const activeQaStatuses = new Set(["ready_for_qa", "assigned", "reviewing", "requires_more_work"]);
+    const terminalEngagementStatuses = new Set(["delivered", "closed", "cancelled", "archived"]);
+    const activeEngagements = engagements.filter((item) => !item.archived_at && !terminalEngagementStatuses.has(item.status));
+    const qaQueue = qaReviews.filter((item) => activeQaStatuses.has(item.status));
+    const unassignedQa = qaQueue.filter((item) => !item.assigned_to_user_id);
+    const missingTeam = getEngageEngagementsWithoutTesters();
+    const linkedEngagements = engagements.filter((item) => item.reporter_project_id || item.calendar_project_id);
+    const unlinkedActive = activeEngagements.filter((item) => !item.reporter_project_id && !item.calendar_project_id);
+    res.status(200).json({
+      stats,
+      counts: {
+        clients: clients.filter((item) => !item.archived_at).length,
+        opportunities: opportunities.filter((item) => !item.archived_at && !["won", "lost", "rejected", "archived"].includes(item.stage)).length,
+        engagements: activeEngagements.length,
+        linkedEngagements: linkedEngagements.length,
+        qaQueue: qaQueue.length,
+        unassignedQa: unassignedQa.length,
+        missingTeam: missingTeam.length,
+        attention: Number(stats.blockedEngagements || 0) + Number(stats.overdueEngagements || 0) + missingTeam.length + unassignedQa.length,
+        activity: getEngageActivityCount(),
+      },
+      issues: {
+        blocked: stats.blockedList || [],
+        overdue: stats.overdueList || [],
+        missingTeam,
+        unassignedQa: unassignedQa.slice(0, 10),
+        unlinkedActive: unlinkedActive.slice(0, 10),
+      },
+    });
+  } catch {
+    res.status(500).json({ error: "Failed to load engage summary." });
+  }
+});
 
 router.get("/api/engage-activity", requireAdmin, (req, res) => {
   const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 500);

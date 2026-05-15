@@ -52,6 +52,10 @@
     currentProposal: null,
     sections: [],
     generations: [],
+    supportingImages: [],
+    notes: [],
+    comments: [],
+    history: [],
     users: [],
     activeSectionId: null,
     searchQuery: "",
@@ -86,7 +90,11 @@
 
   async function api(url, opts) {
     const res = await fetch(url, opts);
-    return res.json();
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || data.message || "Request failed");
+    }
+    return data;
   }
 
   async function renderMarkdownPreview(markdown, targetEl) {
@@ -236,6 +244,24 @@
       if (type && Number.isFinite(number) && number > 0) allocations[type] = number;
     });
     return allocations;
+  }
+
+  function insertAtCursor(textarea, text) {
+    if (!textarea) return;
+    const start = textarea.selectionStart ?? textarea.value.length;
+    const end = textarea.selectionEnd ?? textarea.value.length;
+    textarea.value = textarea.value.slice(0, start) + text + textarea.value.slice(end);
+    textarea.selectionStart = textarea.selectionEnd = start + text.length;
+    textarea.focus();
+    renderMarkdownPreview(textarea.value, document.getElementById("reporter-proposal-section-preview"));
+  }
+
+  function proposalImageUrl(imageId) {
+    return `/api/reporter/proposals/supporting-images/${encodeURIComponent(imageId)}/download`;
+  }
+
+  function markdownImageAlt(text) {
+    return String(text || "Supporting image").replace(/[\r\n[\]()]/g, " ").replace(/\s+/g, " ").trim() || "Supporting image";
   }
 
   // --- API calls ---
@@ -768,6 +794,193 @@
     }, 2000);
   }
 
+  // --- Supporting images / notes / comments / history ---
+
+  async function loadSupportingImages() {
+    if (!state.currentProposal) return;
+    const data = await api(`/api/reporter/proposals/${state.currentProposal.id}/supporting-images`);
+    state.supportingImages = data.images || [];
+    renderSupportingImages();
+  }
+
+  function renderSupportingImages() {
+    const list = document.getElementById("reporter-proposal-supporting-images-list");
+    if (!list) return;
+    if (!state.supportingImages.length) {
+      list.innerHTML = '<p class="text-sm text-muted">No supporting images uploaded.</p>';
+      return;
+    }
+    list.innerHTML = state.supportingImages.map((img) => `
+      <div class="reporter-list-item">
+        <div class="reporter-list-item-main">
+          <strong>${escapeHtml(img.filename || "Image")}</strong>
+          ${img.caption ? `<span class="text-sm text-muted ml-2">${escapeHtml(img.caption)}</span>` : ""}
+          <div class="mt-2"><img src="${proposalImageUrl(img.id)}" alt="${escapeHtml(img.caption || img.filename || "")}" style="max-width: 220px; max-height: 140px; border: 1px solid var(--border); border-radius: 4px;"></div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button type="button" class="btn-secondary text-sm" data-proposal-image-insert="${escapeHtml(img.id)}">Insert</button>
+          <button type="button" class="btn-danger text-sm" data-proposal-image-delete="${escapeHtml(img.id)}">Delete</button>
+        </div>
+      </div>
+    `).join("");
+    list.querySelectorAll("[data-proposal-image-insert]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const image = state.supportingImages.find((item) => item.id === btn.dataset.proposalImageInsert);
+        const textarea = document.getElementById("reporter-proposal-section-content");
+        if (!textarea || document.getElementById("reporter-proposal-editor-section")?.classList.contains("hidden")) {
+          await ProposalsModal.alert({ title: "Open a Section", message: "Open the section you want to insert this image into first." });
+          return;
+        }
+        const alt = markdownImageAlt(image?.caption || image?.filename);
+        insertAtCursor(textarea, `\n\n![${alt}](${proposalImageUrl(btn.dataset.proposalImageInsert)})\n`);
+      });
+    });
+    list.querySelectorAll("[data-proposal-image-delete]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const ok = await ProposalsModal.confirm({ title: "Delete Image", message: "Remove this supporting image?", confirmLabel: "Delete", danger: true });
+        if (!ok) return;
+        await api(`/api/reporter/proposals/supporting-images/${btn.dataset.proposalImageDelete}`, { method: "DELETE" });
+        await loadSupportingImages();
+      });
+    });
+  }
+
+  async function uploadSupportingImage() {
+    if (!state.currentProposal) return;
+    const fileInput = document.getElementById("reporter-proposal-image-file");
+    if (!fileInput?.files.length) {
+      await ProposalsModal.alert({ title: "Validation Error", message: "Choose an image first." });
+      return;
+    }
+    const form = new FormData();
+    form.append("file", fileInput.files[0]);
+    form.append("caption", document.getElementById("reporter-proposal-image-caption")?.value.trim() || "");
+    const data = await api(`/api/reporter/proposals/${state.currentProposal.id}/supporting-images`, { method: "POST", body: form });
+    if (data.error) {
+      await ProposalsModal.alert({ title: "Upload Failed", message: data.error });
+      return;
+    }
+    fileInput.value = "";
+    const caption = document.getElementById("reporter-proposal-image-caption");
+    if (caption) caption.value = "";
+    await loadSupportingImages();
+  }
+
+  async function loadProposalNotes() {
+    if (!state.currentProposal) return;
+    const data = await api(`/api/reporter/proposals/${state.currentProposal.id}/notes`);
+    state.notes = data.notes || [];
+    renderProposalNotes();
+  }
+
+  function renderProposalNotes() {
+    const list = document.getElementById("reporter-proposal-notes-list");
+    if (!list) return;
+    if (!state.notes.length) {
+      list.innerHTML = '<p class="text-sm text-muted">No notes yet.</p>';
+      return;
+    }
+    list.innerHTML = state.notes.map((note) => `
+      <div class="reporter-list-item">
+        <div class="reporter-list-item-main">
+          <strong>${escapeHtml(note.title || "Untitled Note")}</strong>
+          <span class="text-sm text-muted ml-2">${escapeHtml(note.username || "unknown")} · ${formatDateTime(note.updatedAt || note.createdAt)}</span>
+          <p class="text-sm mt-2">${escapeHtml(note.content || "")}</p>
+        </div>
+      </div>
+    `).join("");
+  }
+
+  async function addProposalNote() {
+    if (!state.currentProposal) return;
+    const titleEl = document.getElementById("reporter-proposal-note-title");
+    const contentEl = document.getElementById("reporter-proposal-note-content");
+    const title = titleEl?.value.trim() || "Untitled Note";
+    const content = contentEl?.value || "";
+    const data = await api(`/api/reporter/proposals/${state.currentProposal.id}/notes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, content }),
+    });
+    if (data.error) {
+      await ProposalsModal.alert({ title: "Error", message: data.error });
+      return;
+    }
+    if (titleEl) titleEl.value = "";
+    if (contentEl) contentEl.value = "";
+    await loadProposalNotes();
+  }
+
+  async function loadProposalComments() {
+    if (!state.currentProposal) return;
+    const data = await api(`/api/reporter/proposals/${state.currentProposal.id}/comments`);
+    state.comments = data.comments || [];
+    renderProposalComments();
+  }
+
+  function renderProposalComments() {
+    const list = document.getElementById("reporter-proposal-comments-list");
+    if (!list) return;
+    if (!state.comments.length) {
+      list.innerHTML = '<p class="text-sm text-muted">No comments yet.</p>';
+      return;
+    }
+    list.innerHTML = state.comments.map((comment) => `
+      <div class="reporter-list-item">
+        <div class="reporter-list-item-main">
+          <strong>${escapeHtml(comment.username || "unknown")}</strong>
+          <span class="text-sm text-muted ml-2">${formatDateTime(comment.updatedAt || comment.createdAt)}</span>
+          <p class="text-sm mt-2">${escapeHtml(comment.content || "")}</p>
+        </div>
+      </div>
+    `).join("");
+  }
+
+  async function addProposalComment() {
+    if (!state.currentProposal) return;
+    const contentEl = document.getElementById("reporter-proposal-comment-content");
+    const content = contentEl?.value.trim() || "";
+    if (!content) {
+      await ProposalsModal.alert({ title: "Validation Error", message: "Comment is required." });
+      return;
+    }
+    const data = await api(`/api/reporter/proposals/${state.currentProposal.id}/comments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content }),
+    });
+    if (data.error) {
+      await ProposalsModal.alert({ title: "Error", message: data.error });
+      return;
+    }
+    if (contentEl) contentEl.value = "";
+    await loadProposalComments();
+  }
+
+  async function loadProposalHistory() {
+    if (!state.currentProposal) return;
+    const data = await api(`/api/reporter/proposals/${state.currentProposal.id}/history`);
+    state.history = data.history || [];
+    renderProposalHistory();
+  }
+
+  function renderProposalHistory() {
+    const list = document.getElementById("reporter-proposal-history-list");
+    if (!list) return;
+    if (!state.history.length) {
+      list.innerHTML = '<p class="text-sm text-muted">No history yet.</p>';
+      return;
+    }
+    list.innerHTML = state.history.map((item) => `
+      <div class="reporter-list-item">
+        <div class="reporter-list-item-main">
+          <strong>${escapeHtml(item.changeSummary || item.change_summary || "Change")}</strong>
+          <span class="text-sm text-muted ml-2">${escapeHtml(item.username || "system")} · ${formatDateTime(item.createdAt || item.created_at)}</span>
+        </div>
+      </div>
+    `).join("");
+  }
+
   // --- Panel switching ---
 
   function showPanel(panel) {
@@ -798,18 +1011,22 @@
     if (panel === "supporting-images") {
       showEl("reporter-proposal-editor-supporting-images");
       document.querySelector('[data-proposal-meta="supporting-images"]')?.classList.add("active");
+      loadSupportingImages().catch((err) => ProposalsModal.alert({ title: "Error", message: err.message }));
     }
     if (panel === "notes") {
       showEl("reporter-proposal-editor-notes");
       document.querySelector('[data-proposal-meta="notes"]')?.classList.add("active");
+      loadProposalNotes().catch((err) => ProposalsModal.alert({ title: "Error", message: err.message }));
     }
     if (panel === "comments") {
       showEl("reporter-proposal-editor-comments");
       document.querySelector('[data-proposal-meta="comments"]')?.classList.add("active");
+      loadProposalComments().catch((err) => ProposalsModal.alert({ title: "Error", message: err.message }));
     }
     if (panel === "history") {
       showEl("reporter-proposal-editor-history");
       document.querySelector('[data-proposal-meta="history"]')?.classList.add("active");
+      loadProposalHistory().catch((err) => ProposalsModal.alert({ title: "Error", message: err.message }));
     }
   }
 
@@ -940,7 +1157,7 @@
       btn.addEventListener("click", () => {
         const meta = btn.dataset.proposalMeta;
         if (meta === "metadata") openMetadataEditor();
-        if (meta === "generations") showPanel("generations");
+        else showPanel(meta);
       });
     });
 
@@ -953,6 +1170,18 @@
         await fetchProposalDetail(state.currentProposal.id);
         renderGenerations();
       }
+    });
+
+    document.getElementById("reporter-proposal-upload-image-btn")?.addEventListener("click", () => {
+      uploadSupportingImage().catch((err) => ProposalsModal.alert({ title: "Upload Failed", message: err.message }));
+    });
+
+    document.getElementById("reporter-proposal-save-note-btn")?.addEventListener("click", () => {
+      addProposalNote().catch((err) => ProposalsModal.alert({ title: "Error", message: err.message }));
+    });
+
+    document.getElementById("reporter-proposal-save-comment-btn")?.addEventListener("click", () => {
+      addProposalComment().catch((err) => ProposalsModal.alert({ title: "Error", message: err.message }));
     });
 
     document.getElementById("reporter-proposal-close-preview-btn")?.addEventListener("click", () => {
