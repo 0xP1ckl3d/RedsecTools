@@ -1213,6 +1213,15 @@ Proposal valid until | {{valid_until}}</code></pre>
                     <p>Use no outer pipe characters for simple tables. The renderer accepts normal markdown tables, but this shape avoids accidental blank edge columns.</p>
                   </div>
                   <div>
+                    <h3>Report placeholder example</h3>
+                    <pre><code>## Assessment Overview
+
+{{client_name}} engaged {{prepared_by_name}} to perform a {{report_type}} assessment.
+
+{% if start_date %}Testing commenced on {{start_date}}.{% endif %}</code></pre>
+                    <p>Report section and finding markdown supports the same allowlisted placeholder approach as proposals.</p>
+                  </div>
+                  <div>
                     <h3>Proposal placeholder example</h3>
                     <pre><code>## Client
 
@@ -1269,6 +1278,20 @@ Proposal valid until | {{valid_until}}</code></pre>
                   <code>report.start_date</code><code>report.end_date</code><code>report.duration</code><code>report.report_type</code>
                   <code>report.executive_summary</code><code>report.executive_summary_html</code><code>report.scope</code><code>report.scope_html</code>
                   <code>report.out_of_scope</code><code>report.out_of_scope_html</code>
+                </div>
+
+                <h3>Report section and finding markdown placeholders</h3>
+                <p>These values are available inside report section markdown and finding markdown fields using <code>{{name}}</code>. Simple <code>{% if name %}...{% endif %}</code> blocks are supported for these names only.</p>
+                <div class="reporter-guide-variable-grid">
+                  <code>{{title}}</code><code>{{report_title}}</code><code>{{reportTitle}}</code><code>{{client_name}}</code>
+                  <code>{{clientName}}</code><code>{{customer}}</code><code>{{customer_name}}</code><code>{{customerName}}</code>
+                  <code>{{client_contact_name}}</code><code>{{clientContactName}}</code><code>{{position_title}}</code><code>{{positionTitle}}</code>
+                  <code>{{client_contact_title}}</code><code>{{clientContactTitle}}</code><code>{{prepared_by_name}}</code><code>{{preparedByName}}</code>
+                  <code>{{author}}</code><code>{{prepared_by_title}}</code><code>{{preparedByTitle}}</code><code>{{author_title}}</code>
+                  <code>{{authorTitle}}</code><code>{{version}}</code><code>{{report_version}}</code><code>{{reportVersion}}</code>
+                  <code>{{report_date}}</code><code>{{reportDate}}</code><code>{{start_date}}</code><code>{{startDate}}</code>
+                  <code>{{end_date}}</code><code>{{endDate}}</code><code>{{duration}}</code><code>{{report_type}}</code>
+                  <code>{{reportType}}</code><code>{{due_date}}</code><code>{{dueDate}}</code>
                 </div>
 
                 <h3>Report collection item shapes</h3>

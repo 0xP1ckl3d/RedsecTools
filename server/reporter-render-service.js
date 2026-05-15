@@ -911,6 +911,50 @@ function labelForField(name) {
     .join(" ");
 }
 
+function buildReportInlineTemplateContext(report, metadata = {}, project = {}) {
+  return {
+    project,
+    report,
+    title: report.title,
+    report_title: report.title,
+    reportTitle: report.title,
+    client_name: report.customer,
+    clientName: report.customer,
+    customer: report.customer,
+    customer_name: report.customer_name,
+    customerName: report.customer_name,
+    client_contact_name: report.customer_name,
+    clientContactName: report.customer_name,
+    position_title: report.position_title,
+    positionTitle: report.position_title,
+    client_contact_title: report.position_title,
+    clientContactTitle: report.position_title,
+    prepared_by_name: report.author,
+    preparedByName: report.author,
+    author: report.author,
+    prepared_by_title: report.author_title,
+    preparedByTitle: report.author_title,
+    author_title: report.author_title,
+    authorTitle: report.author_title,
+    version: report.version,
+    report_version: report.version,
+    reportVersion: report.version,
+    report_date: report.report_date,
+    reportDate: report.report_date,
+    start_date: report.start_date,
+    startDate: report.start_date,
+    end_date: report.end_date,
+    endDate: report.end_date,
+    duration: report.duration,
+    report_type: report.report_type,
+    reportType: report.report_type,
+    due_date: project.dueDate ? formatDate(project.dueDate, "long") : "",
+    dueDate: project.dueDate ? formatDate(project.dueDate, "long") : "",
+    project_metadata: metadata,
+    projectMetadata: metadata,
+  };
+}
+
 function buildReportContext({ project, design, findings, sections, members, evidence, stats }) {
   const fieldDefinitions = Array.isArray(design?.findingFieldDefinitions) && design.findingFieldDefinitions.length
     ? design.findingFieldDefinitions
@@ -942,6 +986,7 @@ function buildReportContext({ project, design, findings, sections, members, evid
     out_of_scope: "",
     out_of_scope_html: "",
   };
+  const reportTemplateContext = buildReportInlineTemplateContext(report, metadata, project);
 
   const tocItems = [];
   const usedAnchors = new Set(["executive-summary", "report-scope", "findings", "annexures"]);
@@ -949,11 +994,16 @@ function buildReportContext({ project, design, findings, sections, members, evid
   const annexures = [];
   const includedFindings = (findings || []).filter((f) => f.isIncluded !== false);
   const includedSections = (sections || []).filter((s) => s.isIncluded !== false);
-  const processedSectionRecords = includedSections.map((section, index) => ({
-    ...section,
-    anchorId: uniqueAnchorId(usedAnchors, "section", section.id || section.title, index),
-    contentHtml: renderMarkdownToHtml(section.content || ""),
-  }));
+  const processedSectionRecords = includedSections.map((section, index) => {
+    const renderedContent = renderInlineTemplate(section.content || "", reportTemplateContext);
+    return {
+      ...section,
+      content: renderedContent,
+      sourceContent: section.content || "",
+      anchorId: uniqueAnchorId(usedAnchors, "section", section.id || section.title, index),
+      contentHtml: renderMarkdownToHtml(renderedContent),
+    };
+  });
 
   tocItems.push({ title: "Executive Summary", level: 1, id: "executive-summary" });
 
@@ -992,10 +1042,11 @@ function buildReportContext({ project, design, findings, sections, members, evid
     const renderedFields = fieldDefinitions.map((field) => {
       const name = field.name || field.fieldName;
       const value = fields[name] || "";
+      const renderedValue = value ? renderInlineTemplate(String(value), reportTemplateContext) : "";
       return {
         name,
         label: field.label || labelForField(name),
-        html: value ? renderMarkdownToHtml(String(value)) : "",
+        html: renderedValue ? renderMarkdownToHtml(renderedValue) : "",
       };
     }).filter((f) => f.html);
 
