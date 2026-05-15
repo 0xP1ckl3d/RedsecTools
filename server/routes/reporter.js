@@ -126,6 +126,7 @@ const {
   defaultHtmlTemplate,
   defaultCssTemplate,
   renderProposalDocumentHtml,
+  renderProposalMarkdownPreview,
   defaultProposalHtmlTemplate,
   defaultProposalCssTemplate,
 } = require("../reporter-render-service");
@@ -218,6 +219,12 @@ function canAccessProject(req, project) {
   const caps = getCapabilities(req);
   if (caps.canManageAll) return true;
   return isReporterProjectMemberRow(project.id, req.access.userId);
+}
+
+function canAccessProposal(req, proposal) {
+  const caps = getCapabilities(req);
+  if (caps.canManageAll || caps.canCreate) return true;
+  return proposal.createdBy === req.access.userId || proposal.preparedByUserId === req.access.userId;
 }
 
 function canDeleteOwnedReporterItem(req, item) {
@@ -447,12 +454,27 @@ router.get("/reporter/users", requireUser, attachUserAccess, canViewReporter, (r
   res.json({
     users: (result.users || [])
       .filter((user) => !user.suspended)
-      .map((user) => ({ id: user.id, username: user.username, email: user.email })),
+      .map((user) => ({ id: user.id, username: user.username, fullName: user.fullName || "", email: user.email })),
   });
 });
 
 router.post("/reporter/markdown-preview", requireUser, attachUserAccess, canViewReporter, (req, res) => {
   const markdown = typeof req.body?.markdown === "string" ? req.body.markdown : "";
+  const proposalId = typeof req.body?.proposalId === "string" ? req.body.proposalId : "";
+  if (proposalId) {
+    const proposal = getReporterProposalById(proposalId);
+    if (!proposal) return res.status(404).json({ error: "Proposal not found" });
+    const testTypes = (proposal.testTypes || []).map((tt) => getReporterTestTypeTemplateByType(tt) || { test_type: tt, name: tt });
+    return res.json({
+      html: renderProposalMarkdownPreview({
+        proposal,
+        markdown,
+        sectionId: req.body.sectionId || "preview",
+        sectionTitle: req.body.sectionTitle || "Preview",
+        testTypes,
+      }),
+    });
+  }
   res.json({ html: renderMarkdownToHtml(markdown) });
 });
 
@@ -1871,6 +1893,64 @@ const PROPOSAL_PDF_DIR = path.join(__dirname, "..", "..", "data", "reporter-prop
 const VALID_PROPOSAL_STATUSES = ["draft", "in_review", "changes_required", "approved", "sent", "accepted", "rejected", "archived"];
 const VALID_TEST_TYPES = ["internal", "external", "webapp", "cloud", "build_review", "red_team", "wireless", "configuration_review", "assumed_breach", "custom"];
 
+function proposalNumber(value) {
+  if (value === undefined || value === null || value === "") return 0;
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : 0;
+}
+
+function normalizeProposalCosting(payload, existingProposal = {}) {
+  const selectedTypes = Array.isArray(payload.testTypes) ? payload.testTypes : existingProposal.testTypes || [];
+  const metadata = {
+    ...(existingProposal.proposalMetadata || {}),
+    ...(payload.proposalMetadata || {}),
+  };
+  const rawAllocations = metadata.type_allocations || metadata.typeAllocations || {};
+  const typeAllocations = {};
+  for (const type of selectedTypes) {
+    const days = proposalNumber(rawAllocations[type]);
+    if (days > 0) typeAllocations[type] = days;
+  }
+
+  const reportingDays = proposalNumber(metadata.reporting_days ?? metadata.reportingDays);
+  const retestDays = proposalNumber(metadata.retest_days ?? metadata.retestDays);
+  const managementDays = proposalNumber(metadata.management_days ?? metadata.managementDays);
+  const dailyRate = proposalNumber(metadata.daily_rate ?? metadata.dailyRate);
+  const totalDays = Object.values(typeAllocations).reduce((sum, value) => sum + value, 0) + reportingDays + retestDays + managementDays;
+
+  metadata.type_allocations = typeAllocations;
+  metadata.reporting_days = reportingDays;
+  metadata.retest_days = retestDays;
+  metadata.management_days = managementDays;
+  metadata.daily_rate = dailyRate || null;
+
+  delete metadata.typeAllocations;
+  delete metadata.reportingDays;
+  delete metadata.retestDays;
+  delete metadata.managementDays;
+  delete metadata.dailyRate;
+
+  payload.proposalMetadata = metadata;
+  payload.estimatedDays = totalDays || null;
+  payload.quotedValue = totalDays && dailyRate ? totalDays * dailyRate : null;
+  return payload;
+}
+
+function hasProposalCosting(metadata = {}) {
+  return Boolean(
+    metadata.type_allocations ||
+    metadata.typeAllocations ||
+    metadata.reporting_days !== undefined ||
+    metadata.reportingDays !== undefined ||
+    metadata.retest_days !== undefined ||
+    metadata.retestDays !== undefined ||
+    metadata.management_days !== undefined ||
+    metadata.managementDays !== undefined ||
+    metadata.daily_rate !== undefined ||
+    metadata.dailyRate !== undefined
+  );
+}
+
 function getWriteupField(writeup, camelName, snakeName) {
   return writeup?.[camelName] || writeup?.[snakeName] || "";
 }
@@ -2059,6 +2139,10 @@ router.put("/reporter/proposals/:id", writeLimiter, requireUser, attachUserAcces
     payload.testTypes = payload.testTypes.filter((t) => VALID_TEST_TYPES.includes(t));
   }
 
+  if (payload.proposalMetadata !== undefined || hasProposalCosting(proposal.proposalMetadata)) {
+    normalizeProposalCosting(payload, proposal);
+  }
+
   const updated = updateReporterProposalRow(proposal.id, payload);
   if (payload.testTypes) {
     syncProposalGeneratedSections(updated, payload.testTypes, req.access.userId);
@@ -2096,6 +2180,96 @@ router.post("/reporter/proposals/:id/unarchive", writeLimiter, requireUser, atta
   const updated = unarchiveReporterProposalRow(proposal.id);
   auditReporter(req, { action: "proposal_unarchive", targetType: "reporter_proposal", targetId: proposal.id });
   res.json({ proposal: updated });
+});
+
+router.get("/reporter/proposals/:id/supporting-images", requireUser, attachUserAccess, canViewProposals, (req, res) => {
+  const proposal = getReporterProposalById(req.params.id);
+  if (!proposal || !canAccessProposal(req, proposal)) return res.status(404).json({ error: "Proposal not found" });
+  res.json({ images: listReporterEvidenceByProject(proposal.id).filter((item) => String(item.mimeType || "").startsWith("image/")) });
+});
+
+router.post("/reporter/proposals/:id/supporting-images", writeLimiter, requireUser, attachUserAccess, canCreateProposals, evidenceUpload.single("file"), (req, res) => {
+  const proposal = getReporterProposalById(req.params.id);
+  if (!proposal) return res.status(404).json({ error: "Proposal not found" });
+  if (!req.file) return res.status(400).json({ error: "Image file is required" });
+  if (!String(req.file.mimetype || "").startsWith("image/")) {
+    try { fs.unlinkSync(req.file.path); } catch {}
+    return res.status(400).json({ error: "Only image uploads are supported" });
+  }
+  const image = createReporterEvidenceRow({
+    projectId: proposal.id,
+    filename: req.file.originalname,
+    storedFilename: path.basename(req.file.path),
+    mimeType: req.file.mimetype,
+    sizeBytes: req.file.size,
+    caption: String(req.body.caption || "").trim(),
+    evidenceType: "supporting_image",
+    redactionStatus: "none",
+    createdBy: req.access.userId,
+  });
+  createReporterHistoryRow({ projectId: proposal.id, targetType: "proposal_image", targetId: image.id, snapshot: image, changeSummary: "Supporting image uploaded", createdBy: req.access.userId });
+  res.status(201).json({ image });
+});
+
+router.get("/reporter/proposals/supporting-images/:imageId/download", requireUser, attachUserAccess, canViewProposals, (req, res) => {
+  const image = getReporterEvidenceById(req.params.imageId);
+  if (!image) return res.status(404).json({ error: "Image not found" });
+  const proposal = getReporterProposalById(image.projectId);
+  if (!proposal || !canAccessProposal(req, proposal)) return res.status(404).json({ error: "Image not found" });
+  const filePath = path.join(REPORTER_EVIDENCE_DIR, image.storedFilename);
+  res.setHeader("Content-Type", image.mimeType || "application/octet-stream");
+  res.setHeader("Content-Disposition", `inline; filename="${safeDownloadName(image.filename, "supporting-image")}"`);
+  res.sendFile(filePath);
+});
+
+router.delete("/reporter/proposals/supporting-images/:imageId", writeLimiter, requireUser, attachUserAccess, canCreateProposals, (req, res) => {
+  const image = getReporterEvidenceById(req.params.imageId);
+  if (!image) return res.status(404).json({ error: "Image not found" });
+  const proposal = getReporterProposalById(image.projectId);
+  if (!proposal) return res.status(404).json({ error: "Image not found" });
+  try { fs.unlinkSync(path.join(REPORTER_EVIDENCE_DIR, image.storedFilename)); } catch {}
+  deleteReporterEvidenceById(image.id);
+  createReporterHistoryRow({ projectId: proposal.id, targetType: "proposal_image", targetId: image.id, snapshot: image, changeSummary: "Supporting image deleted", createdBy: req.access.userId });
+  res.json({ success: true });
+});
+
+router.get("/reporter/proposals/:id/notes", requireUser, attachUserAccess, canViewProposals, (req, res) => {
+  const proposal = getReporterProposalById(req.params.id);
+  if (!proposal || !canAccessProposal(req, proposal)) return res.status(404).json({ error: "Proposal not found" });
+  res.json({ notes: listReporterNotesByProject(proposal.id) });
+});
+
+router.post("/reporter/proposals/:id/notes", writeLimiter, requireUser, attachUserAccess, canCreateProposals, (req, res) => {
+  const proposal = getReporterProposalById(req.params.id);
+  if (!proposal) return res.status(404).json({ error: "Proposal not found" });
+  const title = String(req.body.title || "Untitled Note").trim().slice(0, 200);
+  const content = String(req.body.content || "");
+  const note = createReporterNoteRow({ projectId: proposal.id, title, content, orderIndex: 0, createdBy: req.access.userId });
+  createReporterHistoryRow({ projectId: proposal.id, targetType: "proposal_note", targetId: note.id, snapshot: note, changeSummary: "Note added", createdBy: req.access.userId });
+  res.status(201).json({ note });
+});
+
+router.get("/reporter/proposals/:id/comments", requireUser, attachUserAccess, canViewProposals, (req, res) => {
+  const proposal = getReporterProposalById(req.params.id);
+  if (!proposal || !canAccessProposal(req, proposal)) return res.status(404).json({ error: "Proposal not found" });
+  res.json({ comments: listReporterCommentsByProject(proposal.id) });
+});
+
+router.post("/reporter/proposals/:id/comments", writeLimiter, requireUser, attachUserAccess, canCreateProposals, (req, res) => {
+  const proposal = getReporterProposalById(req.params.id);
+  if (!proposal) return res.status(404).json({ error: "Proposal not found" });
+  const content = String(req.body.content || "").trim();
+  if (!content) return res.status(400).json({ error: "Comment is required" });
+  const commentId = createReporterCommentRow({ projectId: proposal.id, targetType: "proposal", targetId: proposal.id, content, createdBy: req.access.userId });
+  const comment = getReporterCommentById(commentId);
+  createReporterHistoryRow({ projectId: proposal.id, targetType: "proposal_comment", targetId: commentId, snapshot: comment, changeSummary: "Comment added", createdBy: req.access.userId });
+  res.status(201).json({ comment });
+});
+
+router.get("/reporter/proposals/:id/history", requireUser, attachUserAccess, canViewProposals, (req, res) => {
+  const proposal = getReporterProposalById(req.params.id);
+  if (!proposal || !canAccessProposal(req, proposal)) return res.status(404).json({ error: "Proposal not found" });
+  res.json({ history: listReporterHistoryByProject(proposal.id) });
 });
 
 // List proposal sections
@@ -2201,9 +2375,7 @@ router.post("/reporter/proposals/:id/render-pdf", writeLimiter, requireUser, att
     const testTypes = (proposal.testTypes || []).map((tt) => getReporterTestTypeTemplateByType(tt) || { test_type: tt, name: tt });
 
     const html = renderProposalDocumentHtml({ proposal, template, sections, testTypes });
-    const pdfBuffer = await renderPdfBuffer(html, {
-      headerTemplate: '<div class="reporter-pdf-header">RedSec Proposal</div>',
-    });
+    const pdfBuffer = await renderPdfBuffer(html);
 
     fs.writeFileSync(filePath, pdfBuffer);
     updateReporterProposalGenerationRow(generation.id, {
@@ -2282,7 +2454,6 @@ router.get("/reporter/proposals/:id/preview.pdf", requireUser, attachUserAccess,
   try {
     const html = renderProposalDocumentHtml({ proposal, template, sections, testTypes });
     const pdf = await renderPdfBuffer(html, {
-      headerTemplate: '<div class="reporter-pdf-header">RedSec Proposal</div>',
       timeoutMs: parseInt(process.env.REPORTER_PDF_TIMEOUT_MS, 10) || undefined,
     });
     sendTempPdfPreview(req, res, pdf, `${proposal.title || "proposal"}-preview`);
@@ -2515,6 +2686,17 @@ function buildProposalTemplatePreviewInput(template) {
       preparedByUsername: "Consultant",
       proposalType: template.template_type || "security_assessment",
       testTypes: ["external", "webapp"],
+      proposalMetadata: {
+        type_allocations: { external: 4, webapp: 4 },
+        reporting_days: 1,
+        retest_days: 1,
+        management_days: 1,
+        daily_rate: 2500,
+        start_date: "2026-05-18",
+        end_date: "2026-05-29",
+        draft_date: "2026-06-02",
+        final_date: "2026-06-05",
+      },
       quotedValue: 25000,
       estimatedDays: 10,
       validUntil: null,
@@ -2555,9 +2737,7 @@ router.get("/reporter/proposal-templates/:id/preview.pdf", requireUser, attachUs
   if (!template) return res.status(404).json({ error: "Template not found" });
   try {
     const html = renderProposalDocumentHtml(buildProposalTemplatePreviewInput(template));
-    const pdf = await renderPdfBuffer(html, {
-      headerTemplate: '<div class="reporter-pdf-header">RedSec Proposal</div>',
-    });
+    const pdf = await renderPdfBuffer(html);
     sendTempPdfPreview(req, res, pdf, template.name || "proposal-template");
   } catch (err) {
     res.status(500).json({ error: "Failed to render proposal template PDF preview" });

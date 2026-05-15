@@ -279,6 +279,7 @@ async function init() {
 function showCapableButtons() {
   const c = state.capabilities;
   toggleClass("reporter-dash-new-project-btn", "hidden", !(c.canCreate || c.canManageAll));
+  toggleClass("reporter-dash-new-proposal-btn", "hidden", !(c.canCreate || c.canManageAll));
   toggleClass("reporter-new-project-btn", "hidden", !(c.canCreate || c.canManageAll));
   toggleClass("reporter-import-project-btn", "hidden", !(c.canCreate || c.canManageAll));
   toggleClass("reporter-new-design-btn", "hidden", !(c.canManageTemplates || c.canManageAll));
@@ -300,6 +301,7 @@ function bindNavigation() {
   });
 
   document.getElementById("reporter-dash-new-project-btn")?.addEventListener("click", () => openCreateProjectModal());
+  document.getElementById("reporter-dash-new-proposal-btn")?.addEventListener("click", () => window.ReporterProposals?.openCreateProposalModal?.());
   document.getElementById("reporter-new-project-btn")?.addEventListener("click", () => openCreateProjectModal());
   document.getElementById("reporter-import-project-btn")?.addEventListener("click", () => openImportProjectModal());
   document.getElementById("reporter-new-design-btn")?.addEventListener("click", () => openCreateDesignModal());

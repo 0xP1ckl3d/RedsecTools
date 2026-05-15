@@ -46,6 +46,120 @@ function formatDate(value, style) {
   return date.toLocaleDateString();
 }
 
+function anchorId(prefix, value, index) {
+  const base = String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 72);
+  return `${prefix}-${base || index + 1}`;
+}
+
+function uniqueAnchorId(used, prefix, value, index) {
+  const base = anchorId(prefix, value, index);
+  let id = base;
+  let suffix = 2;
+  while (used.has(id)) {
+    id = `${base}-${suffix}`;
+    suffix += 1;
+  }
+  used.add(id);
+  return id;
+}
+
+function firstValue(...values) {
+  for (const value of values) {
+    if (value !== undefined && value !== null && value !== "") return value;
+  }
+  return "";
+}
+
+function formatProposalNumber(value) {
+  if (value === undefined || value === null || value === "") return "";
+  const number = Number(value);
+  if (!Number.isFinite(number)) return String(value);
+  return Number.isInteger(number) ? String(number) : String(number).replace(/\.?0+$/, "");
+}
+
+function addCalendarDays(value, days) {
+  if (!value || !Number.isFinite(Number(days))) return "";
+  const date = new Date(value);
+  if (isNaN(date.getTime())) return "";
+  date.setDate(date.getDate() + Number(days));
+  return date;
+}
+
+function proposalPhaseDays(estimatedDays, metadata = {}) {
+  const explicitScoping = firstValue(metadata.scoping_days, metadata.scopingDays);
+  const explicitTesting = firstValue(metadata.testing_days, metadata.testingDays);
+  const explicitReporting = firstValue(metadata.reporting_days, metadata.reportingDays);
+  if (explicitScoping || explicitTesting || explicitReporting) {
+    return {
+      scoping: formatProposalNumber(explicitScoping),
+      testing: formatProposalNumber(explicitTesting),
+      reporting: formatProposalNumber(explicitReporting),
+    };
+  }
+
+  const total = Number(estimatedDays);
+  if (!Number.isFinite(total) || total <= 0) return { scoping: "", testing: "", reporting: "" };
+  if (total <= 2) return { scoping: "", testing: formatProposalNumber(total), reporting: "" };
+
+  const scoping = Math.max(1, Math.round(total * 0.1));
+  const reporting = Math.max(1, Math.round(total * 0.2));
+  const testing = Math.max(0, total - scoping - reporting);
+  return {
+    scoping: formatProposalNumber(scoping),
+    testing: formatProposalNumber(testing),
+    reporting: formatProposalNumber(reporting),
+  };
+}
+
+function proposalTypeKey(value) {
+  return String(value || "").trim();
+}
+
+function proposalDisplayTitle(title) {
+  const value = String(title || "").trim();
+  if (/^cover\s*\/\s*introduction$/i.test(value)) return "Introduction";
+  return value;
+}
+
+function stripDuplicateProposalIntro(content, sectionTitle, proposalTitle) {
+  const lines = String(content || "").replace(/\r/g, "").split("\n");
+  const title = String(proposalTitle || "").trim().toLowerCase();
+  const section = String(sectionTitle || "").trim().toLowerCase();
+  while (lines.length) {
+    const first = lines[0].trim();
+    const heading = first.replace(/^#{1,6}\s+/, "").trim().toLowerCase();
+    if (
+      !first ||
+      heading === title ||
+      heading === section ||
+      /^cover\s*\/\s*introduction$/i.test(heading)
+    ) {
+      lines.shift();
+      continue;
+    }
+    break;
+  }
+  return lines.join("\n").trimStart();
+}
+
+function renderInlineTemplate(source, context) {
+  const allowed = new Set(Object.keys(context || {}));
+  const getValue = (key) => allowed.has(key) ? context[key] : "";
+  return String(source || "")
+    .replace(/\{%\s*if\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*%\}([\s\S]*?)\{%\s*endif\s*%\}/g, (_, key, body) => {
+      const value = getValue(key);
+      return value ? renderInlineTemplate(body, context) : "";
+    })
+    .replace(/\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g, (_, key) => {
+      const value = getValue(key);
+      return value == null ? "" : String(value);
+    });
+}
+
 function defaultHtmlTemplate() {
   return `<!doctype html>
 <html>
@@ -804,34 +918,43 @@ function buildReportContext({ project, design, findings, sections, members, evid
   };
 
   const tocItems = [];
+  const usedAnchors = new Set(["executive-summary", "report-scope", "findings", "annexures"]);
   const sectionDefinitions = Array.isArray(design?.sectionDefinitions) ? design.sectionDefinitions : [];
   const annexures = [];
   const includedFindings = (findings || []).filter((f) => f.isIncluded !== false);
   const includedSections = (sections || []).filter((s) => s.isIncluded !== false);
+  const processedSectionRecords = includedSections.map((section, index) => ({
+    ...section,
+    anchorId: uniqueAnchorId(usedAnchors, "section", section.id || section.title, index),
+    contentHtml: renderMarkdownToHtml(section.content || ""),
+  }));
 
-  for (const section of includedSections) {
-    const contentHtml = renderMarkdownToHtml(section.content || "");
+  tocItems.push({ title: "Executive Summary", level: 1, id: "executive-summary" });
+
+  for (const section of processedSectionRecords) {
+    const contentHtml = section.contentHtml;
     if (section.sectionType === "executive_summary") {
       report.executive_summary = section.content || "";
       report.executive_summary_html = contentHtml;
     } else if (section.sectionType === "scope") {
       report.scope = section.content || "";
       report.scope_html = contentHtml;
-    } else if (section.sectionType === "methodology") {
-      tocItems.push({ title: section.title, level: 1 });
+      tocItems.push({ title: section.title || "Scope", level: 2, id: "report-scope" });
     } else if (section.sectionType === "appendix" || section.sectionType === "custom") {
       annexures.push({
         title: section.title,
+        anchorId: section.anchorId,
         content_html: contentHtml,
       });
+    } else {
+      tocItems.push({ title: section.title, level: 1, id: section.anchorId });
     }
-    tocItems.push({ title: section.title, level: 1 });
   }
 
-  tocItems.push({ title: "Findings", level: 1 });
+  tocItems.push({ title: "Findings", level: 1, id: "findings" });
   const severityCounts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
 
-  const processedFindings = includedFindings.map((finding) => {
+  const processedFindings = includedFindings.map((finding, index) => {
     const fields = finding.fields || {};
     const level = (finding.cvssLevel || finding.severity || "info").toLowerCase();
     if (severityCounts[level] !== undefined) severityCounts[level]++;
@@ -851,6 +974,8 @@ function buildReportContext({ project, design, findings, sections, members, evid
     }).filter((f) => f.html);
 
     return {
+      id: finding.id || "",
+      anchorId: uniqueAnchorId(usedAnchors, "finding", finding.id || finding.title, index),
       title: finding.title,
       severity: finding.severity || "info",
       status: finding.status || "draft",
@@ -915,7 +1040,7 @@ function buildReportContext({ project, design, findings, sections, members, evid
   }
 
   for (const finding of processedFindings) {
-    tocItems.push({ title: finding.title, level: 2 });
+    tocItems.push({ title: finding.title, level: 2, id: finding.anchorId });
   }
 
   return {
@@ -930,10 +1055,7 @@ function buildReportContext({ project, design, findings, sections, members, evid
     severity_counts: severityCounts,
     toc_items: tocItems,
     annexures,
-    sections: includedSections.map((s) => ({
-      ...s,
-      contentHtml: renderMarkdownToHtml(s.content || ""),
-    })),
+    sections: processedSectionRecords,
     evidence: evidence || [],
   };
 }
@@ -995,16 +1117,25 @@ async function renderPdfBuffer(html, options = {}) {
       }
     });
     await page.setContent(html, { waitUntil: "networkidle0", timeout: timeoutMs });
-    return await page.pdf({
+    if (options.suppressDocumentTitle !== false) {
+      await page.evaluate(() => { document.title = ""; });
+    }
+    const displayHeaderFooter = options.displayHeaderFooter === true;
+    const pdfOptions = {
       format: "A4",
       printBackground: true,
       preferCSSPageSize: true,
-      displayHeaderFooter: true,
-      headerTemplate: options.headerTemplate || '<div class="reporter-pdf-header">RedSec Penetration Test Report</div>',
-      footerTemplate: options.footerTemplate || '<div class="reporter-pdf-footer">Page <span class="pageNumber"></span></div>',
-      margin: { top: "25mm", right: "20mm", bottom: "25mm", left: "20mm" },
+      displayHeaderFooter,
+      headerTemplate: "<span></span>",
+      footerTemplate: "<span></span>",
+      margin: options.margin || { top: "0", right: "0", bottom: "0", left: "0" },
       timeout: timeoutMs,
-    });
+    };
+    if (displayHeaderFooter) {
+      pdfOptions.headerTemplate = options.headerTemplate || '<div class="reporter-pdf-header"></div>';
+      pdfOptions.footerTemplate = options.footerTemplate || '<div class="reporter-pdf-footer"></div>';
+    }
+    return await page.pdf(pdfOptions);
   } finally {
     await browser.close();
   }
@@ -1015,13 +1146,187 @@ async function renderPdfBuffer(html, options = {}) {
 function buildProposalContext({ proposal, template, sections, testTypes }) {
   const includedSections = (sections || []).filter((s) => s.isIncluded !== false && s.isIncluded !== 0);
 
+  const metadata = proposal.proposalMetadata || proposal.proposal_metadata || {};
+  const selectedProposalTypes = Array.isArray(proposal.testTypes || proposal.test_types)
+    ? proposal.testTypes || proposal.test_types
+    : [];
+  const typeNames = new Map((testTypes || []).map((tt) => [
+    proposalTypeKey(tt.test_type || tt.testType || tt.type),
+    tt.name || tt.test_type || tt.testType || tt.type || "Assessment",
+  ]));
+  const typeAllocations = metadata.type_allocations || metadata.typeAllocations || {};
+  const allocationRows = selectedProposalTypes
+    .map((type) => {
+      const days = typeAllocations[type];
+      return {
+        type,
+        label: typeNames.get(proposalTypeKey(type)) || String(type).replace(/_/g, " "),
+        days: formatProposalNumber(days),
+      };
+    })
+    .filter((row) => row.days);
+  const reportingDays = formatProposalNumber(firstValue(metadata.reporting_days, metadata.reportingDays));
+  const retestDays = formatProposalNumber(firstValue(metadata.retest_days, metadata.retestDays));
+  const managementDays = formatProposalNumber(firstValue(metadata.management_days, metadata.managementDays));
+  if (reportingDays) allocationRows.push({ type: "reporting", label: "Reporting", days: reportingDays });
+  if (retestDays) allocationRows.push({ type: "retest", label: "Retest", days: retestDays });
+  if (managementDays) allocationRows.push({ type: "project_management", label: "Project Management", days: managementDays });
+  const allocationTotal = allocationRows.reduce((sum, row) => sum + (Number(row.days) || 0), 0);
+  const estimatedDays = firstValue(allocationTotal || "", proposal.estimatedDays, proposal.estimated_days);
+  const phaseDays = proposalPhaseDays(estimatedDays, metadata);
+  const dailyRate = firstValue(metadata.daily_rate, metadata.dailyRate);
+  const calculatedQuotedValue = allocationTotal && Number(dailyRate) ? allocationTotal * Number(dailyRate) : "";
+  const timeAllocationMarkdown = allocationRows.length
+    ? [
+      "Activity | Days",
+      "---------|-----",
+      ...allocationRows.map((row) => `${row.label} | ${row.days}`),
+      `**Total** | **${formatProposalNumber(estimatedDays)}**`,
+    ].join("\n")
+    : "";
+  const startDateRaw = firstValue(metadata.start_date, metadata.startDate, proposal.startDate, proposal.start_date);
+  const endDateRaw = firstValue(metadata.end_date, metadata.endDate, proposal.endDate, proposal.end_date);
+  const derivedEndDate = !endDateRaw && startDateRaw && phaseDays.testing
+    ? addCalendarDays(startDateRaw, Math.max(0, Number(phaseDays.testing) - 1))
+    : "";
+  const draftDateRaw = firstValue(metadata.draft_date, metadata.draftDate, proposal.draftDate, proposal.draft_date);
+  const finalDateRaw = firstValue(metadata.final_date, metadata.finalDate, proposal.finalDate, proposal.final_date);
+  const createdAt = formatDate(proposal.createdAt || proposal.created_at, "long");
+  const validUntil = proposal.validUntil || proposal.valid_until ? formatDate(proposal.validUntil || proposal.valid_until, "long") : "";
+  const clientName = firstValue(proposal.clientName, proposal.client_name);
+  const preparedByName = firstValue(
+    metadata.prepared_by_name_override,
+    metadata.preparedByNameOverride,
+    proposal.preparedByFullName,
+    proposal.prepared_by_full_name,
+    proposal.preparedByUsername,
+    proposal.prepared_by_username,
+    proposal.preparedByName,
+    proposal.prepared_by_name,
+    proposal.creatorUsername,
+    proposal.creator_username
+  );
+  const preparedByEmail = firstValue(
+    metadata.prepared_by_email_override,
+    metadata.preparedByEmailOverride,
+    proposal.preparedByEmail,
+    proposal.prepared_by_email
+  );
+  const meta = {
+    title: proposal.title || "",
+    clientName,
+    primaryContactName: firstValue(proposal.primaryContactName, proposal.primary_contact_name),
+    primaryContactEmail: firstValue(proposal.primaryContactEmail, proposal.primary_contact_email),
+    preparedForName: firstValue(proposal.preparedForName, proposal.prepared_for_name),
+    preparedForEmail: firstValue(proposal.preparedForEmail, proposal.prepared_for_email),
+    preparedByUsername: preparedByName,
+    preparedByEmail,
+    proposalType: firstValue(proposal.proposalType, proposal.proposal_type, "security_assessment"),
+    quotedValue: firstValue(calculatedQuotedValue, proposal.quotedValue, proposal.quoted_value),
+    estimatedDays,
+    dailyRate,
+    validUntil,
+    status: proposal.status || "draft",
+    createdAt,
+    scopingDays: phaseDays.scoping,
+    testingDays: phaseDays.testing,
+    reportingDays: phaseDays.reporting,
+    retestDays,
+    managementDays,
+    startDate: startDateRaw ? formatDate(startDateRaw, "long") : "",
+    endDate: endDateRaw || derivedEndDate ? formatDate(endDateRaw || derivedEndDate, "long") : "",
+    draftDate: draftDateRaw ? formatDate(draftDateRaw, "long") : "",
+    finalDate: finalDateRaw ? formatDate(finalDateRaw, "long") : "",
+  };
+  const sectionTemplateContext = {
+    proposal,
+    meta,
+    title: meta.title,
+    client_name: meta.clientName,
+    clientName: meta.clientName,
+    primary_contact_name: meta.primaryContactName,
+    primaryContactName: meta.primaryContactName,
+    primary_contact_email: meta.primaryContactEmail,
+    primaryContactEmail: meta.primaryContactEmail,
+    prepared_for_name: meta.preparedForName,
+    preparedForName: meta.preparedForName,
+    prepared_for_email: meta.preparedForEmail,
+    preparedForEmail: meta.preparedForEmail,
+    prepared_by_name: meta.preparedByUsername,
+    preparedByName: meta.preparedByUsername,
+    prepared_by_username: meta.preparedByUsername,
+    preparedByUsername: meta.preparedByUsername,
+    prepared_by_email: meta.preparedByEmail,
+    preparedByEmail: meta.preparedByEmail,
+    proposal_type: meta.proposalType,
+    proposalType: meta.proposalType,
+    quoted_value: meta.quotedValue,
+    quotedValue: meta.quotedValue,
+    estimated_days: formatProposalNumber(meta.estimatedDays),
+    estimatedDays: formatProposalNumber(meta.estimatedDays),
+    valid_until: meta.validUntil,
+    validUntil: meta.validUntil,
+    date: meta.createdAt,
+    created_at: meta.createdAt,
+    createdAt: meta.createdAt,
+    scoping_days: meta.scopingDays,
+    scopingDays: meta.scopingDays,
+    testing_days: meta.testingDays,
+    testingDays: meta.testingDays,
+    reporting_days: meta.reportingDays,
+    reportingDays: meta.reportingDays,
+    retest_days: meta.retestDays,
+    retestDays: meta.retestDays,
+    management_days: meta.managementDays,
+    managementDays: meta.managementDays,
+    daily_rate: meta.dailyRate,
+    dailyRate: meta.dailyRate,
+    time_allocation_table: timeAllocationMarkdown,
+    timeAllocationTable: timeAllocationMarkdown,
+    start_date: meta.startDate,
+    startDate: meta.startDate,
+    end_date: meta.endDate,
+    endDate: meta.endDate,
+    draft_date: meta.draftDate,
+    draftDate: meta.draftDate,
+    final_date: meta.finalDate,
+    finalDate: meta.finalDate,
+    proposal_metadata: metadata,
+    proposalMetadata: metadata,
+  };
+
+  const usedAnchors = new Set();
   const processedSections = includedSections.map((s, i) => {
+    const displayTitle = proposalDisplayTitle(s.title);
+    const titleKey = String(displayTitle || "").trim().toLowerCase();
+    let sourceContent = s.content || "";
+    if (/^cover\s*\/\s*introduction$/i.test(String(s.title || ""))) {
+      sourceContent = stripDuplicateProposalIntro(sourceContent, s.title, meta.title);
+    }
+    if (
+      titleKey === "time allocation" &&
+      timeAllocationMarkdown &&
+      /\{\{\s*(scoping_days|testing_days|reporting_days|estimated_days|time_allocation_table)\s*\}\}/.test(sourceContent)
+    ) {
+      sourceContent = "## Time Allocation\n\n{{time_allocation_table}}";
+    }
+    let renderedContent = renderInlineTemplate(sourceContent, sectionTemplateContext);
+    if (/^cover\s*\/\s*introduction$/i.test(String(s.title || "")) || /^introduction$/i.test(displayTitle)) {
+      renderedContent = stripDuplicateProposalIntro(renderedContent, displayTitle, meta.title);
+    }
     let contentHtml = "";
-    try { contentHtml = renderMarkdownToHtml(s.content || ""); } catch { contentHtml = escapeHtml(s.content || ""); }
-    return { title: s.title, contentHtml, sectionType: s.sectionType || s.section_type || "markdown", orderIndex: i };
+    try { contentHtml = renderMarkdownToHtml(renderedContent); } catch { contentHtml = escapeHtml(renderedContent); }
+    return {
+      id: s.id || "",
+      anchorId: uniqueAnchorId(usedAnchors, "proposal-section", s.id || s.title, i),
+      title: displayTitle,
+      contentHtml,
+      sectionType: s.sectionType || s.section_type || "markdown",
+      orderIndex: i,
+    };
   });
 
-  const tocItems = processedSections.map((s) => ({ title: s.title, level: 1 }));
+  const tocItems = processedSections.map((s) => ({ title: s.title, level: 1, id: s.anchorId }));
 
   const processedTestTypes = (testTypes || []).map((tt) => {
     const render = (md) => { try { return renderMarkdownToHtml(md || ""); } catch { return escapeHtml(md || ""); } };
@@ -1040,21 +1345,7 @@ function buildProposalContext({ proposal, template, sections, testTypes }) {
 
   return {
     proposal,
-    meta: {
-      title: proposal.title || "",
-      clientName: proposal.clientName || proposal.client_name || "",
-      primaryContactName: proposal.primaryContactName || proposal.primary_contact_name || "",
-      primaryContactEmail: proposal.primaryContactEmail || proposal.primary_contact_email || "",
-      preparedForName: proposal.preparedForName || proposal.prepared_for_name || "",
-      preparedForEmail: proposal.preparedForEmail || proposal.prepared_for_email || "",
-      preparedByUsername: proposal.preparedByUsername || proposal.prepared_by_username || "",
-      proposalType: proposal.proposalType || proposal.proposal_type || "security_assessment",
-      quotedValue: proposal.quotedValue || proposal.quoted_value,
-      estimatedDays: proposal.estimatedDays || proposal.estimated_days,
-      validUntil: proposal.validUntil || proposal.valid_until ? formatDate(proposal.validUntil || proposal.valid_until, "long") : "",
-      status: proposal.status || "draft",
-      createdAt: formatDate(proposal.createdAt || proposal.created_at, "long"),
-    },
+    meta,
     sections: processedSections,
     toc_items: tocItems,
     test_types: processedTestTypes,
@@ -1078,6 +1369,21 @@ function renderProposalDocumentHtml(input, options = {}) {
   });
   const context = buildProposalContext(input);
   return env.renderString(html, { ...context, css, cssHref: options.cssHref || "", escapeHtml });
+}
+
+function renderProposalMarkdownPreview(input) {
+  const context = buildProposalContext({
+    proposal: input.proposal || {},
+    template: {},
+    sections: [{
+      id: input.sectionId || "preview",
+      title: input.sectionTitle || "Preview",
+      content: input.markdown || "",
+      isIncluded: true,
+    }],
+    testTypes: input.testTypes || [],
+  });
+  return context.sections[0]?.contentHtml || "";
 }
 
 function defaultProposalHtmlTemplate() {
@@ -1427,6 +1733,7 @@ module.exports = {
   defaultCssTemplate: () => defaultReportCss,
   buildReportContext,
   renderProposalDocumentHtml,
+  renderProposalMarkdownPreview,
   defaultProposalHtmlTemplate: () => defaultProposalHtml,
   defaultProposalCssTemplate: () => defaultProposalCss,
   buildProposalContext,

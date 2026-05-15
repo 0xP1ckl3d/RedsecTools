@@ -43,6 +43,9 @@ const defaultProposalHtml = String.raw`<!doctype html>
         <div class="meta-item">
           <span class="meta-label">Prepared By</span>
           <span class="meta-value">{{ meta.preparedByUsername }}</span>
+          {% if meta.preparedByEmail %}
+          <span class="meta-subvalue">{{ meta.preparedByEmail }}</span>
+          {% endif %}
         </div>
         {% endif %}
 
@@ -76,7 +79,6 @@ const defaultProposalHtml = String.raw`<!doctype html>
       </div>
     </div>
 
-    <div class="classification-footer">Commercial in Confidence</div>
   </section>
 
   <div class="page-break"></div>
@@ -92,7 +94,7 @@ const defaultProposalHtml = String.raw`<!doctype html>
     <ol class="toc-list">
       {% for item in toc_items %}
       <li class="toc-level{{ item.level }}">
-        <span>{{ item.title }}</span>
+        <a href="#{{ item.id }}">{{ item.title }}</a>
       </li>
       {% endfor %}
     </ol>
@@ -109,25 +111,11 @@ const defaultProposalHtml = String.raw`<!doctype html>
 
   <div class="page-break"></div>
 
-  {% for section in sections %}
-  <section class="content-page proposal-section">
+  <section class="content-page proposal-body">
     <div class="running-header">
       <span>{{ meta.title }}</span>
       <span>Proposal</span>
     </div>
-
-    <h1 class="in-toc numbered">{{ section.title }}</h1>
-
-    {% if section.contentHtml %}
-    <div class="prose">
-      {{ section.contentHtml | safe }}
-    </div>
-    {% else %}
-    <div class="placeholder">
-      This section has not yet been completed.
-    </div>
-    {% endif %}
-
     <div class="running-footer">
       <span>RedSec Offensive Security</span>
       {% if meta.clientName %}
@@ -136,9 +124,23 @@ const defaultProposalHtml = String.raw`<!doctype html>
       <span>Commercial in Confidence</span>
       {% endif %}
     </div>
+
+    {% for section in sections %}
+    <section id="{{ section.anchorId }}" class="proposal-section">
+      <h1 class="proposal-section-title">{{ loop.index }}. {{ section.title }}</h1>
+
+      {% if section.contentHtml %}
+      <div class="prose">
+        {{ section.contentHtml | safe }}
+      </div>
+      {% else %}
+      <div class="placeholder">
+        This section has not yet been completed.
+      </div>
+      {% endif %}
+    </section>
+    {% endfor %}
   </section>
-  {% if not loop.last %}<div class="page-break"></div>{% endif %}
-  {% endfor %}
 
 </body>
 </html>`;
@@ -229,7 +231,8 @@ body {
 
 .cover-page {
   page: cover;
-  width: 210mm;
+  width: 100%;
+  height: 297mm;
   min-height: 297mm;
   margin: 0;
   padding: 0;
@@ -241,9 +244,9 @@ body {
 .cover-band {
   position: absolute;
   top: 0;
-  right: 0;
-  width: 54mm;
-  height: 297mm;
+  right: -1mm;
+  width: 56mm;
+  height: 100%;
   background: linear-gradient(180deg, var(--slate), var(--red-dark));
 }
 
@@ -354,11 +357,19 @@ body {
   font-weight: 700;
 }
 
+.meta-subvalue {
+  display: block;
+  color: var(--steel);
+  font-size: 8pt;
+  font-weight: 500;
+  margin-top: 1mm;
+}
+
 .classification-footer {
   position: absolute;
   bottom: 0;
   left: 0;
-  right: 0;
+  right: -1mm;
   padding: 6mm 22mm;
   background: var(--slate);
   color: rgba(255, 255, 255, 0.72);
@@ -424,6 +435,13 @@ strong {
   padding: 2.5mm 0;
 }
 
+.toc-list a {
+  flex: 1;
+  color: var(--red);
+  text-decoration: underline;
+  text-underline-offset: 1mm;
+}
+
 .toc-list li::before {
   counter-increment: toc-item;
   content: counter(toc-item) ".";
@@ -451,22 +469,14 @@ strong {
 }
 
 .proposal-section {
-  page-break-inside: auto;
+  break-inside: avoid;
+  page-break-inside: avoid;
+  margin-bottom: 10mm;
+  padding-bottom: 4mm;
 }
 
 .proposal-section h1 {
   color: var(--ink);
-}
-
-.proposal-section h1::after {
-  content: "Proposal Section";
-  display: block;
-  margin-top: 1.5mm;
-  color: var(--red);
-  font-size: 7pt;
-  font-weight: 800;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
 }
 
 .prose {
@@ -699,7 +709,7 @@ const defaultReportHtml = String.raw`<!doctype html>
     <ol class="toc-list">
       {% for item in toc_items %}
       <li class="toc-level{{ item.level }}">
-        <span>{{ item.title }}</span>
+        <a href="#{{ item.id }}">{{ item.title }}</a>
       </li>
       {% endfor %}
     </ol>
@@ -766,7 +776,7 @@ const defaultReportHtml = String.raw`<!doctype html>
     </div>
 
     {% if report.scope_html %}
-    <h2 class="in-toc numbered">Scope</h2>
+    <h2 id="report-scope" class="in-toc numbered">Scope</h2>
     <div class="prose">
       {{ report.scope_html | safe }}
     </div>
@@ -788,7 +798,7 @@ const defaultReportHtml = String.raw`<!doctype html>
   {% for section in sections %}
   {% if section.sectionType != "executive_summary" and section.sectionType != "scope" and section.sectionType != "appendix" and section.sectionType != "custom" %}
   <div class="page-break"></div>
-  <section class="content-page">
+  <section id="{{ section.anchorId }}" class="content-page">
     <div class="running-header">
       <span>{{ report.title }}</span>
       <span>Confidential</span>
@@ -877,7 +887,7 @@ const defaultReportHtml = String.raw`<!doctype html>
 
   <div class="page-break"></div>
 
-  <section class="finding-page content-page finding-{{ severityLevel }}">
+  <section id="{{ finding.anchorId }}" class="finding-page content-page finding-{{ severityLevel }}">
     <div class="running-header">
       <span>{{ report.title }}</span>
       <span>Confidential</span>
@@ -944,7 +954,7 @@ const defaultReportHtml = String.raw`<!doctype html>
     <h1 class="numbered in-toc">Annexures</h1>
 
     {% for annexure in annexures %}
-    <div class="annexure-block">
+    <div id="{{ annexure.anchorId }}" class="annexure-block">
       <h2 class="numbered in-toc">{{ annexure.title }}</h2>
       <div class="prose">
         {{ annexure.content_html | safe }}
@@ -1059,7 +1069,8 @@ body {
 
 .cover-page {
   page: cover;
-  width: 210mm;
+  width: 100%;
+  height: 297mm;
   min-height: 297mm;
   margin: 0;
   padding: 0;
@@ -1071,9 +1082,9 @@ body {
 .cover-band {
   position: absolute;
   top: 0;
-  right: 0;
-  width: 54mm;
-  height: 297mm;
+  right: -1mm;
+  width: 56mm;
+  height: 100%;
   background: linear-gradient(180deg, var(--slate), var(--red-dark));
 }
 
@@ -1192,7 +1203,7 @@ body {
   position: absolute;
   bottom: 0;
   left: 0;
-  right: 0;
+  right: -1mm;
   padding: 6mm 22mm;
   background: var(--slate);
   color: rgba(255, 255, 255, 0.72);
@@ -1255,6 +1266,12 @@ strong {
   display: flex;
   border-bottom: 1px solid var(--border);
   padding: 2.5mm 0;
+}
+
+.toc-list a {
+  flex: 1;
+  color: inherit;
+  text-decoration: none;
 }
 
 .toc-level1 {

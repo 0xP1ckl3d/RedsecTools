@@ -533,10 +533,22 @@
 
             <div id="profile-content" class="space-y-6">
               <div class="card">
-                <h2 class="text-lg font-semibold mb-4">Username</h2>
-                <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-start">
-                  <input type="text" id="username-input" class="input-field flex-1" placeholder="Username" maxlength="30" autocomplete="off">
-                  <button type="button" id="update-username-btn" class="btn-secondary whitespace-nowrap">Update</button>
+                <h2 class="text-lg font-semibold mb-4">Profile</h2>
+                <div class="space-y-3">
+                  <div>
+                    <label class="input-label">Full Name</label>
+                    <input type="text" id="full-name-input" class="input-field w-full" placeholder="Jane Smith" maxlength="120" autocomplete="name">
+                  </div>
+                  <div>
+                    <label class="input-label">Username</label>
+                    <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-start">
+                      <input type="text" id="username-input" class="input-field flex-1" placeholder="Username" maxlength="30" autocomplete="off">
+                      <button type="button" id="update-username-btn" class="btn-secondary whitespace-nowrap">Update Username</button>
+                    </div>
+                  </div>
+                  <div class="flex justify-end">
+                    <button type="button" id="update-profile-btn" class="btn-secondary whitespace-nowrap">Update Profile</button>
+                  </div>
                 </div>
                 <p id="username-error" class="text-sm mt-2 hidden text-error"></p>
                 <p id="username-success" class="text-sm mt-2 hidden text-accent"></p>

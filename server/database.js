@@ -67,6 +67,7 @@ db.exec(`
     id TEXT PRIMARY KEY,
     email TEXT NOT NULL UNIQUE,
     username TEXT NOT NULL UNIQUE,
+    full_name TEXT,
     password_hash TEXT NOT NULL,
     role_id TEXT,
     suspended INTEGER NOT NULL DEFAULT 0,
@@ -984,13 +985,14 @@ const stmts = {
   updateUserPassword: db.prepare("UPDATE users SET password_hash = ?, updated_at = unixepoch() WHERE id = ?"),
   updateUser: db.prepare("UPDATE users SET email = @email, username = @username, role_id = COALESCE(@roleId, role_id), updated_at = unixepoch() WHERE id = @id"),
   updateUsername: db.prepare("UPDATE users SET username = ?, updated_at = unixepoch() WHERE id = ?"),
+  updateUserProfile: db.prepare("UPDATE users SET full_name = @fullName, updated_at = unixepoch() WHERE id = @id"),
   updateUserRole: db.prepare("UPDATE users SET role_id = ?, updated_at = unixepoch() WHERE id = ?"),
   suspendUser: db.prepare("UPDATE users SET suspended = 1, updated_at = unixepoch() WHERE id = ?"),
   unsuspendUser: db.prepare("UPDATE users SET suspended = 0, updated_at = unixepoch() WHERE id = ?"),
   deleteUser: db.prepare("DELETE FROM users WHERE id = ?"),
   deleteUserSessions: db.prepare("DELETE FROM sessions WHERE user_id = ?"),
   listUsers: db.prepare(`
-    SELECT u.id, u.email, u.username, u.suspended, u.created_at, u.updated_at, u.role_id, r.role_key, r.name as role_name
+    SELECT u.id, u.email, u.username, u.full_name, u.suspended, u.created_at, u.updated_at, u.role_id, r.role_key, r.name as role_name
     FROM users u
     LEFT JOIN roles r ON u.role_id = r.id
     ORDER BY u.created_at DESC LIMIT ? OFFSET ?
@@ -1035,7 +1037,7 @@ const stmts = {
     VALUES (@id, @userId, @expiresAt, @ipAddress, @userAgent)
   `),
   getSessionById: db.prepare(`
-    SELECT s.*, u.username, u.suspended, u.avatar_updated_at, u.role_id, r.role_key, r.name as role_name
+    SELECT s.*, u.username, u.email, u.full_name, u.suspended, u.avatar_updated_at, u.role_id, r.role_key, r.name as role_name
     FROM sessions s
     JOIN users u ON s.user_id = u.id
     LEFT JOIN roles r ON u.role_id = r.id
@@ -1051,7 +1053,7 @@ const stmts = {
     VALUES (@id, @userId, @expiresAt, @ipAddress, @userAgent)
   `),
   getExtensionSessionById: db.prepare(`
-    SELECT s.*, u.username, u.suspended, u.avatar_updated_at, u.role_id, r.role_key, r.name as role_name
+    SELECT s.*, u.username, u.email, u.full_name, u.suspended, u.avatar_updated_at, u.role_id, r.role_key, r.name as role_name
     FROM extension_sessions s
     JOIN users u ON s.user_id = u.id
     LEFT JOIN roles r ON u.role_id = r.id
@@ -2527,7 +2529,10 @@ const stmts = {
       @testTypes, @proposalMetadata, @validUntil, @estimatedDays, @quotedValue, @createdBy)
   `),
   getReporterProposalById: db.prepare(`
-    SELECT rp.*, creator.username AS creator_username, prepared_by.username AS prepared_by_username
+    SELECT rp.*, creator.username AS creator_username,
+      prepared_by.username AS prepared_by_username,
+      prepared_by.full_name AS prepared_by_full_name,
+      prepared_by.email AS prepared_by_email
     FROM reporter_proposals rp
     LEFT JOIN users creator ON creator.id = rp.created_by
     LEFT JOIN users prepared_by ON prepared_by.id = rp.prepared_by_user_id
@@ -3494,6 +3499,10 @@ function updateUsername(id, username) {
   stmts.updateUsername.run(username, id);
 }
 
+function updateUserProfile({ id, fullName }) {
+  stmts.updateUserProfile.run({ id, fullName: String(fullName || "").trim() || null });
+}
+
 function updateUserDetails({ id, email, username, roleId = null }) {
   stmts.updateUser.run({ id, email, username, roleId });
 }
@@ -3527,6 +3536,7 @@ function listUsers(page = 1, limit = 50) {
       id: r.id,
       email: r.email,
       username: r.username,
+      fullName: r.full_name || "",
       roleId: r.role_id || null,
       roleKey: r.role_key || null,
       roleName: r.role_name || null,
@@ -7362,6 +7372,8 @@ function mapReporterProposalRow(row) {
     preparedForEmail: row.prepared_for_email,
     preparedByUserId: row.prepared_by_user_id,
     preparedByUsername: row.prepared_by_username || null,
+    preparedByFullName: row.prepared_by_full_name || null,
+    preparedByEmail: row.prepared_by_email || null,
     opportunityId: row.opportunity_id,
     engagementId: row.engagement_id,
     status: row.status,
@@ -7433,22 +7445,23 @@ function createReporterProposalRow(payload) {
 function updateReporterProposalRow(id, payload) {
   const existing = getReporterProposalById(id);
   if (!existing) return null;
+  const has = (key) => Object.prototype.hasOwnProperty.call(payload, key);
   stmts.updateReporterProposal.run({
     id,
-    title: payload.title != null ? payload.title : existing.title,
-    clientName: payload.clientName != null ? payload.clientName : existing.clientName,
-    clientId: payload.clientId != null ? payload.clientId : existing.clientId,
-    primaryContactName: payload.primaryContactName != null ? payload.primaryContactName : existing.primaryContactName,
-    primaryContactEmail: payload.primaryContactEmail != null ? payload.primaryContactEmail : existing.primaryContactEmail,
-    preparedForName: payload.preparedForName != null ? payload.preparedForName : existing.preparedForName,
-    preparedForEmail: payload.preparedForEmail != null ? payload.preparedForEmail : existing.preparedForEmail,
-    preparedByUserId: payload.preparedByUserId != null ? payload.preparedByUserId : existing.preparedByUserId,
-    proposalType: payload.proposalType != null ? payload.proposalType : existing.proposalType,
-    testTypes: JSON.stringify(payload.testTypes != null ? payload.testTypes : existing.testTypes),
-    proposalMetadata: JSON.stringify(payload.proposalMetadata != null ? payload.proposalMetadata : existing.proposalMetadata),
-    validUntil: payload.validUntil != null ? payload.validUntil : existing.validUntil,
-    estimatedDays: payload.estimatedDays != null ? payload.estimatedDays : existing.estimatedDays,
-    quotedValue: payload.quotedValue != null ? payload.quotedValue : existing.quotedValue,
+    title: has("title") ? payload.title : existing.title,
+    clientName: has("clientName") ? payload.clientName : existing.clientName,
+    clientId: has("clientId") ? payload.clientId : existing.clientId,
+    primaryContactName: has("primaryContactName") ? payload.primaryContactName : existing.primaryContactName,
+    primaryContactEmail: has("primaryContactEmail") ? payload.primaryContactEmail : existing.primaryContactEmail,
+    preparedForName: has("preparedForName") ? payload.preparedForName : existing.preparedForName,
+    preparedForEmail: has("preparedForEmail") ? payload.preparedForEmail : existing.preparedForEmail,
+    preparedByUserId: has("preparedByUserId") ? payload.preparedByUserId : existing.preparedByUserId,
+    proposalType: has("proposalType") ? payload.proposalType : existing.proposalType,
+    testTypes: JSON.stringify(has("testTypes") ? payload.testTypes : existing.testTypes),
+    proposalMetadata: JSON.stringify(has("proposalMetadata") ? payload.proposalMetadata : existing.proposalMetadata),
+    validUntil: has("validUntil") ? payload.validUntil : existing.validUntil,
+    estimatedDays: has("estimatedDays") ? payload.estimatedDays : existing.estimatedDays,
+    quotedValue: has("quotedValue") ? payload.quotedValue : existing.quotedValue,
   });
   return getReporterProposalById(id);
 }
@@ -8317,6 +8330,7 @@ module.exports = {
   getUserByUsername,
   updateUserPassword,
   updateUsername,
+  updateUserProfile,
   updateUserDetails,
   setUserRole,
   suspendUserById,

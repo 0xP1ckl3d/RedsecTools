@@ -20,7 +20,9 @@ const toastText = document.getElementById("toast-text");
 
 // --- Load current username ---
 const usernameInput = document.getElementById("username-input");
+const fullNameInput = document.getElementById("full-name-input");
 const updateUsernameBtn = document.getElementById("update-username-btn");
+const updateProfileBtn = document.getElementById("update-profile-btn");
 const usernameError = document.getElementById("username-error");
 const usernameSuccess = document.getElementById("username-success");
 
@@ -42,6 +44,7 @@ let currentUserId = null;
     const data = await res.json();
     if (data.authenticated && data.user) {
       usernameInput.value = data.user.username;
+      if (fullNameInput) fullNameInput.value = data.user.fullName || "";
       currentUserId = data.user.id;
       loadAvatar(data.user);
     }
@@ -83,6 +86,32 @@ updateUsernameBtn.addEventListener("click", async () => {
     usernameError.classList.remove("hidden");
   } finally {
     updateUsernameBtn.disabled = false;
+  }
+});
+
+updateProfileBtn?.addEventListener("click", async () => {
+  usernameError.classList.add("hidden");
+  usernameSuccess.classList.add("hidden");
+  updateProfileBtn.disabled = true;
+  try {
+    const res = await fetch("/api/auth/update-profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fullName: fullNameInput?.value.trim() || "" }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      usernameSuccess.textContent = "Profile updated";
+      usernameSuccess.classList.remove("hidden");
+    } else {
+      usernameError.textContent = data.error || "Failed to update profile";
+      usernameError.classList.remove("hidden");
+    }
+  } catch {
+    usernameError.textContent = "Network error";
+    usernameError.classList.remove("hidden");
+  } finally {
+    updateProfileBtn.disabled = false;
   }
 });
 

@@ -5,7 +5,7 @@ const crypto = require("crypto");
 const { requireUser, optionalUser } = require("../middleware/auth");
 const {
   getUserByEmail, getUserById, createUser, createSession, getSession, deleteSessionById,
-  deleteOtherSessions, updateUserPassword, updateUsername,
+  deleteOtherSessions, updateUserPassword, updateUsername, updateUserProfile,
   getInviteByToken, markInviteUsed,
   createGuestLink, validateGuestLink, redeemGuestLink,
   createPasswordReset, getPasswordResetByToken, markPasswordResetUsed, deleteSessionsByUserId,
@@ -824,6 +824,8 @@ router.get("/auth/me", (req, res) => {
         user: {
           id: session.user_id,
           username: session.username,
+          email: session.email || null,
+          fullName: session.full_name || "",
           avatarUpdatedAt: session.avatar_updated_at || null,
           roleId: session.role_id || null,
           roleKey: session.role_key || null,
@@ -932,6 +934,15 @@ router.post("/auth/update-username", usernameLimiter, requireUser, (req, res) =>
   logAction("auth:update_username", req, { userId: req.user.id, username });
   auditAuth(req, { action: "update_username", outcome: "success", metadata: { username } });
   res.json({ success: true, username });
+});
+
+router.post("/auth/update-profile", usernameLimiter, requireUser, (req, res) => {
+  const fullName = typeof req.body?.fullName === "string" ? req.body.fullName.trim() : "";
+  if (fullName && fullName.length > 120) return res.status(400).json({ error: "Full name must be 120 characters or less" });
+  updateUserProfile({ id: req.user.id, fullName });
+  logAction("auth:update_profile", req, { userId: req.user.id });
+  auditAuth(req, { action: "update_profile", outcome: "success", metadata: { fullNameSet: !!fullName } });
+  res.json({ success: true, fullName });
 });
 
 // GET /api/auth/smtp-status — check if SMTP is configured (for showing email buttons)

@@ -6868,6 +6868,28 @@ html.light[data-primary-theme="purple"] {
   gap: 1rem;
 }
 
+.reporter-dashboard-recents-grid {
+  align-items: stretch;
+}
+
+.reporter-dashboard-recents-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.reporter-dashboard-recents-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 3rem;
+}
+
+.reporter-dashboard-action-btn {
+  flex: 0 0 auto;
+  min-width: 7.9rem;
+}
+
 .reporter-list-item {
   display: flex;
   align-items: center;
@@ -7075,21 +7097,9 @@ html.light[data-primary-theme="purple"] {
   background: var(--bg-card);
 }
 
-.reporter-builder:has(.reporter-builder-preview:not(.hidden)) {
-  grid-template-columns: 260px 1fr 50%;
-}
-
-.reporter-proposal-builder:has(.reporter-builder-preview:not(.hidden)) {
-  grid-template-columns: 260px minmax(0, 1fr);
-}
-
-.reporter-proposal-builder:has(.reporter-builder-preview:not(.hidden)) .reporter-builder-editor,
-.reporter-proposal-builder.proposal-preview-open .reporter-builder-editor {
-  display: none;
-}
-
-.reporter-proposal-builder.proposal-preview-open {
-  grid-template-columns: 260px minmax(0, 1fr);
+.reporter-builder:has(.reporter-builder-preview:not(.hidden)),
+.reporter-builder.proposal-preview-open {
+  grid-template-columns: 260px minmax(340px, 0.9fr) minmax(460px, 1.1fr);
 }
 
 /* Builder sidebar */
@@ -7197,13 +7207,17 @@ html.light[data-primary-theme="purple"] {
 .reporter-tree-badge-info { background: #0288D1; color: #fff; }
 .reporter-tree-badge-section { background: var(--bg-elevated); color: var(--text-muted); }
 
-/* Meta buttons at bottom of sidebar */
 .reporter-tree-meta {
   display: flex;
   flex-wrap: wrap;
   gap: 0.25rem;
   padding: 0.5rem 0.75rem;
   border-top: 1px solid var(--border);
+}
+
+.reporter-tree-meta-top {
+  border-top: none;
+  border-bottom: 1px solid var(--border);
 }
 
 .reporter-tree-meta-btn {
@@ -7766,10 +7780,6 @@ html.light[data-primary-theme="purple"] {
   }
 
   .reporter-builder:has(.reporter-builder-preview:not(.hidden)) {
-    grid-template-columns: 1fr;
-  }
-
-  .reporter-proposal-builder:has(.reporter-builder-preview:not(.hidden)) {
     grid-template-columns: 1fr;
   }
 

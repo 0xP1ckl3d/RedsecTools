@@ -109,19 +109,20 @@
               <div class="stat-label">Critical Findings</div>
             </div>
           </div>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-            <div class="card">
-              <div class="card-header flex justify-between items-center">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 reporter-dashboard-recents-grid">
+            <div class="card reporter-dashboard-recents-card">
+              <div class="card-header reporter-dashboard-recents-header">
                 <h2 class="text-lg font-semibold">Recent Reports</h2>
-                <button type="button" id="reporter-dash-new-project-btn" class="btn-primary text-sm hidden">New Report</button>
+                <button type="button" id="reporter-dash-new-project-btn" class="btn-primary text-sm reporter-dashboard-action-btn hidden">New Report</button>
               </div>
               <div id="reporter-dash-recent-projects">
                 <p class="text-sm text-muted">Loading...</p>
               </div>
             </div>
-            <div class="card">
-              <div class="card-header">
+            <div class="card reporter-dashboard-recents-card">
+              <div class="card-header reporter-dashboard-recents-header">
                 <h2 class="text-lg font-semibold">Recent Proposals</h2>
+                <button type="button" id="reporter-dash-new-proposal-btn" class="btn-primary text-sm reporter-dashboard-action-btn hidden">New Proposal</button>
               </div>
               <div id="reporter-dash-recent-proposals">
                 <p class="text-sm text-muted">Loading...</p>
@@ -173,6 +174,15 @@
           <div class="reporter-builder">
             <!-- Left sidebar: navigation tree -->
             <div id="reporter-builder-sidebar" class="reporter-builder-sidebar">
+              <div class="reporter-tree-meta reporter-tree-meta-top">
+                <button type="button" class="reporter-tree-meta-btn" data-reporter-meta="details">Details</button>
+                <button type="button" class="reporter-tree-meta-btn" data-reporter-meta="members">Members</button>
+                <button type="button" class="reporter-tree-meta-btn" data-reporter-meta="evidence">Evidence</button>
+                <button type="button" class="reporter-tree-meta-btn" data-reporter-meta="notes">Notes</button>
+                <button type="button" class="reporter-tree-meta-btn" data-reporter-meta="comments">Comments</button>
+                <button type="button" class="reporter-tree-meta-btn" data-reporter-meta="history">History</button>
+                <button type="button" class="reporter-tree-meta-btn" data-reporter-meta="pdfs">PDFs</button>
+              </div>
               <div class="reporter-builder-sidebar-header">
                 <input type="text" id="reporter-tree-search" class="input-field reporter-tree-search" placeholder="Filter...">
                 <button type="button" id="reporter-tree-add-btn" class="btn-primary text-sm reporter-tree-add-btn" title="Add finding or section">+</button>
@@ -187,15 +197,6 @@
                   <div id="reporter-tree-findings"></div>
                 </div>
               </nav>
-              <div class="reporter-tree-meta">
-                <button type="button" class="reporter-tree-meta-btn" data-reporter-meta="details">Details</button>
-                <button type="button" class="reporter-tree-meta-btn" data-reporter-meta="members">Members</button>
-                <button type="button" class="reporter-tree-meta-btn" data-reporter-meta="evidence">Evidence</button>
-                <button type="button" class="reporter-tree-meta-btn" data-reporter-meta="notes">Notes</button>
-                <button type="button" class="reporter-tree-meta-btn" data-reporter-meta="comments">Comments</button>
-                <button type="button" class="reporter-tree-meta-btn" data-reporter-meta="history">History</button>
-                <button type="button" class="reporter-tree-meta-btn" data-reporter-meta="pdfs">PDFs</button>
-              </div>
             </div>
 
             <!-- Main editor area -->
@@ -442,7 +443,7 @@
 
         <!-- ===== PROPOSAL DETAIL VIEW ===== -->
         <section id="reporter-view-proposal-detail" class="reporter-view hidden">
-          <div class="card mb-3">
+          <div id="reporter-proposal-detail-header" class="card mb-3">
             <div class="flex justify-between items-center flex-wrap gap-3">
               <div>
                 <div class="flex items-center gap-3 mb-1">
@@ -458,17 +459,24 @@
 
           <div class="reporter-builder reporter-proposal-builder">
             <div id="reporter-proposal-builder-sidebar" class="reporter-builder-sidebar">
+              <div class="reporter-tree-meta reporter-tree-meta-top">
+                <button type="button" class="reporter-tree-meta-btn" data-proposal-meta="metadata">Details</button>
+                <button type="button" class="reporter-tree-meta-btn" data-proposal-meta="supporting-images">Supporting Images</button>
+                <button type="button" class="reporter-tree-meta-btn" data-proposal-meta="notes">Notes</button>
+                <button type="button" class="reporter-tree-meta-btn" data-proposal-meta="comments">Comments</button>
+                <button type="button" class="reporter-tree-meta-btn" data-proposal-meta="history">History</button>
+                <button type="button" class="reporter-tree-meta-btn" data-proposal-meta="generations">PDFs</button>
+              </div>
               <div class="reporter-builder-sidebar-header">
-                <span class="text-sm font-semibold">Sections</span>
+                <input type="text" id="reporter-proposal-tree-search" class="input-field reporter-tree-search" placeholder="Filter...">
                 <button type="button" id="reporter-proposal-add-section-btn" class="btn-primary text-sm reporter-tree-add-btn" title="Add section">+</button>
               </div>
               <nav id="reporter-proposal-tree-nav" class="reporter-tree-nav">
-                <div id="reporter-proposal-tree-sections"></div>
+                <div class="reporter-tree-section">
+                  <div class="reporter-tree-heading">Sections</div>
+                  <div id="reporter-proposal-tree-sections"></div>
+                </div>
               </nav>
-              <div class="reporter-tree-meta">
-                <button type="button" class="reporter-tree-meta-btn" data-proposal-meta="metadata">Details</button>
-                <button type="button" class="reporter-tree-meta-btn" data-proposal-meta="generations">PDFs</button>
-              </div>
             </div>
 
             <div id="reporter-proposal-builder-editor" class="reporter-builder-editor">
@@ -536,6 +544,10 @@
                         <input type="email" id="reporter-proposal-edit-prepared-for-email" class="input-field w-full">
                       </div>
                     </div>
+                    <label class="flex items-center gap-2 text-sm text-muted">
+                      <input type="checkbox" id="reporter-proposal-prepared-for-same-contact">
+                      Prepared for is the same as the primary contact
+                    </label>
                     <div class="grid grid-cols-2 gap-3">
                       <div>
                         <label class="block text-sm text-muted mb-1">Primary Contact Name</label>
@@ -560,19 +572,72 @@
                       <label class="block text-sm text-muted mb-1">Test Types</label>
                       <div id="reporter-proposal-edit-types" class="reporter-type-checkboxes"></div>
                     </div>
-                    <div class="grid grid-cols-2 gap-3">
+                    <div class="grid grid-cols-3 gap-3">
                       <div>
-                        <label class="block text-sm text-muted mb-1">Estimated Days</label>
-                        <input type="text" inputmode="numeric" id="reporter-proposal-edit-days" class="input-field w-full">
+                        <label class="block text-sm text-muted mb-1">Total Days</label>
+                        <input type="text" inputmode="numeric" id="reporter-proposal-edit-days" class="input-field w-full" readonly>
+                      </div>
+                      <div>
+                        <label class="block text-sm text-muted mb-1">Daily Rate</label>
+                        <input type="text" inputmode="numeric" id="reporter-proposal-edit-day-rate" class="input-field w-full">
                       </div>
                       <div>
                         <label class="block text-sm text-muted mb-1">Quoted Value</label>
-                        <input type="text" id="reporter-proposal-edit-value" class="input-field w-full">
+                        <input type="text" id="reporter-proposal-edit-value" class="input-field w-full" readonly>
+                      </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                      <div>
+                        <label class="block text-sm text-muted mb-1">Prepared By Name Override</label>
+                        <input type="text" id="reporter-proposal-edit-prepared-by-name" class="input-field w-full" placeholder="Uses user full name if blank">
+                      </div>
+                      <div>
+                        <label class="block text-sm text-muted mb-1">Prepared By Email Override</label>
+                        <input type="email" id="reporter-proposal-edit-prepared-by-email" class="input-field w-full" placeholder="Uses user account email if blank">
                       </div>
                     </div>
                     <div>
                       <label class="block text-sm text-muted mb-1">Valid Until</label>
                       <input type="date" id="reporter-proposal-edit-valid-until" class="input-field w-full">
+                    </div>
+                    <div class="reporter-detail-section">
+                      <h4 class="text-sm font-semibold">Time Allocation</h4>
+                      <div id="reporter-proposal-type-allocation" class="space-y-3"></div>
+                      <div class="grid grid-cols-3 gap-3 mt-3">
+                        <div>
+                          <label class="block text-sm text-muted mb-1">Reporting Days</label>
+                          <input type="text" inputmode="numeric" id="reporter-proposal-edit-reporting-days" class="input-field w-full">
+                        </div>
+                        <div>
+                          <label class="block text-sm text-muted mb-1">Retest Days</label>
+                          <input type="text" inputmode="numeric" id="reporter-proposal-edit-retest-days" class="input-field w-full">
+                        </div>
+                        <div>
+                          <label class="block text-sm text-muted mb-1">Project Management Days</label>
+                          <input type="text" inputmode="numeric" id="reporter-proposal-edit-management-days" class="input-field w-full">
+                        </div>
+                      </div>
+                    </div>
+                    <div class="reporter-detail-section">
+                      <h4 class="text-sm font-semibold">Delivery Schedule</h4>
+                      <div class="grid grid-cols-2 gap-3">
+                        <div>
+                          <label class="block text-sm text-muted mb-1">Testing Start</label>
+                          <input type="date" id="reporter-proposal-edit-start-date" class="input-field w-full">
+                        </div>
+                        <div>
+                          <label class="block text-sm text-muted mb-1">Testing End</label>
+                          <input type="date" id="reporter-proposal-edit-end-date" class="input-field w-full">
+                        </div>
+                        <div>
+                          <label class="block text-sm text-muted mb-1">Draft Report</label>
+                          <input type="date" id="reporter-proposal-edit-draft-date" class="input-field w-full">
+                        </div>
+                        <div>
+                          <label class="block text-sm text-muted mb-1">Final Report</label>
+                          <input type="date" id="reporter-proposal-edit-final-date" class="input-field w-full">
+                        </div>
+                      </div>
                     </div>
                     <div class="flex justify-end">
                       <button type="button" id="reporter-proposal-save-metadata-btn" class="btn-primary text-sm">Save Details</button>
@@ -591,6 +656,34 @@
                     </div>
                   </div>
                   <div id="reporter-proposal-generations-list"></div>
+                </div>
+              </div>
+
+              <div id="reporter-proposal-editor-supporting-images" class="reporter-editor-panel hidden">
+                <div class="card">
+                  <div class="card-header"><h3 class="font-semibold">Supporting Images</h3></div>
+                  <div id="reporter-proposal-supporting-images-content" class="p-3 text-sm text-muted">Supporting image upload and section insertion will appear here.</div>
+                </div>
+              </div>
+
+              <div id="reporter-proposal-editor-notes" class="reporter-editor-panel hidden">
+                <div class="card">
+                  <div class="card-header"><h3 class="font-semibold">Notes</h3></div>
+                  <div class="p-3 text-sm text-muted">Proposal notes will appear here.</div>
+                </div>
+              </div>
+
+              <div id="reporter-proposal-editor-comments" class="reporter-editor-panel hidden">
+                <div class="card">
+                  <div class="card-header"><h3 class="font-semibold">Comments</h3></div>
+                  <div class="p-3 text-sm text-muted">Proposal comments will appear here.</div>
+                </div>
+              </div>
+
+              <div id="reporter-proposal-editor-history" class="reporter-editor-panel hidden">
+                <div class="card">
+                  <div class="card-header"><h3 class="font-semibold">History</h3></div>
+                  <div class="p-3 text-sm text-muted">Proposal history will appear here.</div>
                 </div>
               </div>
             </div>

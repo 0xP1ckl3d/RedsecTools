@@ -55,6 +55,7 @@
     users: [],
     activeSectionId: null,
     searchQuery: "",
+    treeSearch: "",
     filter: "active",
     capabilities: {},
     initialised: false,
@@ -98,7 +99,12 @@
       const res = await fetch("/api/reporter/markdown-preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ markdown }),
+        body: JSON.stringify({
+          markdown,
+          proposalId: state.currentProposal?.id || "",
+          sectionId: state.activeSectionId || "preview",
+          sectionTitle: document.getElementById("reporter-proposal-section-title")?.value || "Preview",
+        }),
       });
       const data = await res.json();
       targetEl.innerHTML = data.html || "";
@@ -153,6 +159,83 @@
     const container = document.getElementById(containerId);
     if (!container) return [];
     return Array.from(container.querySelectorAll("input[type=checkbox]:checked")).map((cb) => cb.value);
+  }
+
+  function testTypeLabel(value) {
+    const found = TEST_TYPE_OPTIONS.find((t) => t.value === value);
+    return found ? found.label : String(value || "Test Type");
+  }
+
+  function metadataValue(metadata, snakeName, camelName) {
+    if (!metadata) return "";
+    return metadata[snakeName] ?? metadata[camelName] ?? "";
+  }
+
+  function dateInputFromValue(value) {
+    if (!value) return "";
+    if (typeof value === "number") return dateInputValue(value);
+    if (/^\d{4}-\d{2}-\d{2}/.test(String(value))) return String(value).slice(0, 10);
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10);
+  }
+
+  function numericInputValue(value) {
+    if (value === null || value === undefined || value === "") return "";
+    const number = Number(value);
+    if (!Number.isFinite(number)) return String(value);
+    return Number.isInteger(number) ? String(number) : String(number).replace(/\.?0+$/, "");
+  }
+
+  function readNumber(id) {
+    const raw = document.getElementById(id)?.value;
+    if (raw === undefined || raw === null || raw === "") return 0;
+    const number = Number(raw);
+    return Number.isFinite(number) ? number : 0;
+  }
+
+  function renderProposalTypeAllocation(selectedTypes, existingAllocations) {
+    const target = document.getElementById("reporter-proposal-type-allocation");
+    if (!target) return;
+    const allocations = existingAllocations || {};
+    if (!selectedTypes.length) {
+      target.innerHTML = '<p class="text-sm text-muted">Select proposal test types to allocate delivery days.</p>';
+      return;
+    }
+    target.innerHTML = selectedTypes.map((type) => `
+      <div>
+        <label class="block text-sm text-muted mb-1">${escapeHtml(testTypeLabel(type))} Days</label>
+        <input type="text" inputmode="numeric" class="input-field w-full reporter-proposal-type-days" data-proposal-type-days="${escapeHtml(type)}" value="${escapeHtml(numericInputValue(allocations[type]))}">
+      </div>
+    `).join("");
+    target.querySelectorAll(".reporter-proposal-type-days").forEach((input) => {
+      input.addEventListener("input", updateProposalQuoteTotals);
+    });
+  }
+
+  function updateProposalQuoteTotals() {
+    let total = 0;
+    document.querySelectorAll("[data-proposal-type-days]").forEach((input) => {
+      total += Number(input.value || 0) || 0;
+    });
+    total += readNumber("reporter-proposal-edit-reporting-days");
+    total += readNumber("reporter-proposal-edit-retest-days");
+    total += readNumber("reporter-proposal-edit-management-days");
+
+    const dailyRate = readNumber("reporter-proposal-edit-day-rate");
+    const totalEl = document.getElementById("reporter-proposal-edit-days");
+    const valueEl = document.getElementById("reporter-proposal-edit-value");
+    if (totalEl) totalEl.value = numericInputValue(total);
+    if (valueEl) valueEl.value = dailyRate ? numericInputValue(total * dailyRate) : "";
+  }
+
+  function collectProposalTypeAllocations() {
+    const allocations = {};
+    document.querySelectorAll("[data-proposal-type-days]").forEach((input) => {
+      const type = input.dataset.proposalTypeDays;
+      const number = Number(input.value || 0);
+      if (type && Number.isFinite(number) && number > 0) allocations[type] = number;
+    });
+    return allocations;
   }
 
   // --- API calls ---
@@ -300,18 +383,25 @@
     const actions = document.getElementById("reporter-proposal-actions");
     if (!actions) return;
 
-    let html = "";
-    if (state.capabilities.canCreate && !p.archivedAt) {
+    const canEdit = !!state.capabilities.canCreate;
+    let html = `<div class="reporter-project-actionbar">`;
+    html += `<button type="button" class="btn-secondary text-sm" id="reporter-proposal-preview-btn">Preview</button>`;
+    if (canEdit && !p.archivedAt) {
+      html += `<button type="button" class="btn-primary text-sm" id="reporter-proposal-header-generate-pdf-btn">Generate PDF</button>`;
+    }
+    html += `<details class="reporter-action-menu"><summary class="btn-secondary text-sm">Actions</summary><div class="reporter-action-menu-panel">`;
+    if (canEdit && !p.archivedAt) {
       html += `<select id="reporter-proposal-status-select" class="input-field text-sm">
-        ${Object.entries(STATUS_LABELS).map(([k, v]) => `<option value="${k}" ${k === p.status ? "selected" : ""}>${v}</option>`).join("")}
+        ${Object.entries(STATUS_LABELS).filter(([k]) => k !== "archived").map(([k, v]) => `<option value="${k}" ${k === p.status ? "selected" : ""}>${v}</option>`).join("")}
       </select>`;
-      html += `<button type="button" class="btn-secondary text-sm" id="reporter-proposal-preview-btn">Preview</button>`;
     }
-    if (p.archivedAt) {
+    html += `<button type="button" class="btn-secondary text-sm" id="reporter-proposal-side-preview-btn">Open Preview</button>`;
+    if (p.archivedAt && canEdit) {
       html += `<button type="button" class="btn-secondary text-sm" id="reporter-proposal-unarchive-btn">Unarchive</button>`;
-    } else if (state.capabilities.canCreate) {
-      html += `<button type="button" class="btn-danger text-sm" id="reporter-proposal-archive-btn">Archive</button>`;
+    } else if (canEdit) {
+      html += `<button type="button" class="btn-secondary text-sm" id="reporter-proposal-archive-btn">Archive</button>`;
     }
+    html += `</div></details></div>`;
     actions.innerHTML = html;
 
     document.getElementById("reporter-proposal-status-select")?.addEventListener("change", async (e) => {
@@ -337,6 +427,10 @@
     });
 
     document.getElementById("reporter-proposal-preview-btn")?.addEventListener("click", () => {
+      window.open("/api/reporter/proposals/" + p.id + "/preview.pdf", "_blank", "noopener");
+    });
+
+    document.getElementById("reporter-proposal-side-preview-btn")?.addEventListener("click", () => {
       const preview = document.getElementById("reporter-proposal-builder-preview");
       const showPreview = !preview || preview.classList.contains("hidden");
       setProposalPreviewVisible(showPreview);
@@ -345,17 +439,32 @@
         iframe.src = "/api/reporter/proposals/" + p.id + "/preview.pdf?t=" + Date.now();
       }
     });
+
+    document.getElementById("reporter-proposal-header-generate-pdf-btn")?.addEventListener("click", async () => {
+      await generatePdf();
+      showPanel("generations");
+    });
   }
 
   function renderProposalSections() {
     const tree = document.getElementById("reporter-proposal-tree-sections");
     if (!tree) return;
 
-    tree.innerHTML = state.sections
+    let sections = state.sections || [];
+    if (state.treeSearch) {
+      sections = sections.filter((s) => (s.title || "").toLowerCase().includes(state.treeSearch));
+    }
+    if (!sections.length) {
+      tree.innerHTML = `<div class="text-sm text-muted reporter-tree-empty">No sections</div>`;
+      return;
+    }
+
+    tree.innerHTML = sections
       .map(
         (s) => `
       <button type="button" class="reporter-tree-item ${s.id === state.activeSectionId ? "active" : ""}" data-section-id="${escapeHtml(s.id)}">
-        <span class="reporter-tree-item-label">${escapeHtml(s.title)}</span>
+        <span class="reporter-tree-badge reporter-tree-badge-section">${escapeHtml((s.sectionType || "sec").slice(0, 3))}</span>
+        <span class="reporter-tree-item-title">${escapeHtml(s.title)}</span>
         ${!s.isIncluded ? '<span class="text-muted text-xs">(excl.)</span>' : ""}
       </button>`
       )
@@ -467,8 +576,10 @@
     const preparedByEl = document.getElementById("reporter-proposal-edit-prepared-by");
     const proposalTypeEl = document.getElementById("reporter-proposal-edit-type");
     const daysEl = document.getElementById("reporter-proposal-edit-days");
+    const dayRateEl = document.getElementById("reporter-proposal-edit-day-rate");
     const valueEl = document.getElementById("reporter-proposal-edit-value");
     const validUntilEl = document.getElementById("reporter-proposal-edit-valid-until");
+    const metadata = p.proposalMetadata || {};
 
     if (titleEl) titleEl.value = p.title;
     if (clientEl) clientEl.value = p.clientName;
@@ -477,23 +588,75 @@
     if (contactNameEl) contactNameEl.value = p.primaryContactName;
     if (contactEmailEl) contactEmailEl.value = p.primaryContactEmail;
     if (proposalTypeEl) proposalTypeEl.value = p.proposalType || "security_assessment";
-    if (daysEl) daysEl.value = p.estimatedDays || "";
-    if (valueEl) valueEl.value = p.quotedValue || "";
+    if (daysEl) daysEl.value = numericInputValue(p.estimatedDays);
+    if (dayRateEl) dayRateEl.value = numericInputValue(metadataValue(metadata, "daily_rate", "dailyRate"));
+    if (valueEl) valueEl.value = numericInputValue(p.quotedValue);
     if (validUntilEl) validUntilEl.value = dateInputValue(p.validUntil);
+    const reportingDaysEl = document.getElementById("reporter-proposal-edit-reporting-days");
+    const retestDaysEl = document.getElementById("reporter-proposal-edit-retest-days");
+    const managementDaysEl = document.getElementById("reporter-proposal-edit-management-days");
+    const startDateEl = document.getElementById("reporter-proposal-edit-start-date");
+    const endDateEl = document.getElementById("reporter-proposal-edit-end-date");
+    const draftDateEl = document.getElementById("reporter-proposal-edit-draft-date");
+    const finalDateEl = document.getElementById("reporter-proposal-edit-final-date");
+    if (reportingDaysEl) reportingDaysEl.value = numericInputValue(metadataValue(metadata, "reporting_days", "reportingDays"));
+    if (retestDaysEl) retestDaysEl.value = numericInputValue(metadataValue(metadata, "retest_days", "retestDays"));
+    if (managementDaysEl) managementDaysEl.value = numericInputValue(metadataValue(metadata, "management_days", "managementDays"));
+    if (startDateEl) startDateEl.value = dateInputFromValue(metadataValue(metadata, "start_date", "startDate"));
+    if (endDateEl) endDateEl.value = dateInputFromValue(metadataValue(metadata, "end_date", "endDate"));
+    if (draftDateEl) draftDateEl.value = dateInputFromValue(metadataValue(metadata, "draft_date", "draftDate"));
+    if (finalDateEl) finalDateEl.value = dateInputFromValue(metadataValue(metadata, "final_date", "finalDate"));
 
     if (preparedByEl) {
       try {
         const users = await fetchUsers();
         preparedByEl.innerHTML = '<option value="">Not set</option>' + users
-          .map((user) => `<option value="${escapeHtml(user.id)}" ${user.id === p.preparedByUserId ? "selected" : ""}>${escapeHtml(user.username || user.email || user.id)}</option>`)
+          .map((user) => `<option value="${escapeHtml(user.id)}" ${user.id === p.preparedByUserId ? "selected" : ""}>${escapeHtml(user.fullName || user.username || user.email || user.id)}${user.email ? ` (${escapeHtml(user.email)})` : ""}</option>`)
           .join("");
       } catch {
         preparedByEl.innerHTML = `<option value="${escapeHtml(p.preparedByUserId || "")}">${escapeHtml(p.preparedByUsername || "Current preparer")}</option>`;
       }
     }
 
+    const preparedByNameOverride = document.getElementById("reporter-proposal-edit-prepared-by-name");
+    const preparedByEmailOverride = document.getElementById("reporter-proposal-edit-prepared-by-email");
+    if (preparedByNameOverride) preparedByNameOverride.value = metadataValue(metadata, "prepared_by_name_override", "preparedByNameOverride");
+    if (preparedByEmailOverride) preparedByEmailOverride.value = metadataValue(metadata, "prepared_by_email_override", "preparedByEmailOverride");
+
+    const sameContact = document.getElementById("reporter-proposal-prepared-for-same-contact");
+    const syncPreparedFor = () => {
+      if (!sameContact?.checked) return;
+      const name = document.getElementById("reporter-proposal-edit-contact-name")?.value || "";
+      const email = document.getElementById("reporter-proposal-edit-contact-email")?.value || "";
+      const preparedName = document.getElementById("reporter-proposal-edit-prepared-for-name");
+      const preparedEmail = document.getElementById("reporter-proposal-edit-prepared-for-email");
+      if (preparedName) preparedName.value = name;
+      if (preparedEmail) preparedEmail.value = email;
+    };
+    if (sameContact) {
+      sameContact.checked = !!metadataValue(metadata, "prepared_for_same_as_primary", "preparedForSameAsPrimary");
+      sameContact.onchange = syncPreparedFor;
+      document.getElementById("reporter-proposal-edit-contact-name")?.addEventListener("input", syncPreparedFor);
+      document.getElementById("reporter-proposal-edit-contact-email")?.addEventListener("input", syncPreparedFor);
+      syncPreparedFor();
+    }
+
     const typesEl = document.getElementById("reporter-proposal-edit-types");
-    if (typesEl) typesEl.innerHTML = typeCheckboxesHtml(p.testTypes);
+    if (typesEl) {
+      typesEl.innerHTML = typeCheckboxesHtml(p.testTypes);
+      typesEl.onchange = () => {
+        const selected = getSelectedTypes("reporter-proposal-edit-types");
+        const currentAllocations = collectProposalTypeAllocations();
+        renderProposalTypeAllocation(selected, currentAllocations);
+        updateProposalQuoteTotals();
+      };
+    }
+    renderProposalTypeAllocation(p.testTypes || [], metadataValue(metadata, "type_allocations", "typeAllocations") || {});
+    ["reporter-proposal-edit-day-rate", "reporter-proposal-edit-reporting-days", "reporter-proposal-edit-retest-days", "reporter-proposal-edit-management-days"].forEach((id) => {
+      const input = document.getElementById(id);
+      if (input) input.oninput = updateProposalQuoteTotals;
+    });
+    updateProposalQuoteTotals();
 
     showPanel("metadata");
   }
@@ -511,9 +674,25 @@
     const preparedByUserId = document.getElementById("reporter-proposal-edit-prepared-by")?.value;
     const proposalType = document.getElementById("reporter-proposal-edit-type")?.value;
     const estimatedDays = document.getElementById("reporter-proposal-edit-days")?.value;
+    const dailyRate = document.getElementById("reporter-proposal-edit-day-rate")?.value;
     const quotedValue = document.getElementById("reporter-proposal-edit-value")?.value;
     const validUntil = document.getElementById("reporter-proposal-edit-valid-until")?.value;
     const testTypes = getSelectedTypes("reporter-proposal-edit-types");
+    const proposalMetadata = {
+      ...(p.proposalMetadata || {}),
+      type_allocations: collectProposalTypeAllocations(),
+      reporting_days: readNumber("reporter-proposal-edit-reporting-days"),
+      retest_days: readNumber("reporter-proposal-edit-retest-days"),
+      management_days: readNumber("reporter-proposal-edit-management-days"),
+      daily_rate: dailyRate ? Number(dailyRate) : null,
+      prepared_by_name_override: document.getElementById("reporter-proposal-edit-prepared-by-name")?.value.trim() || "",
+      prepared_by_email_override: document.getElementById("reporter-proposal-edit-prepared-by-email")?.value.trim() || "",
+      prepared_for_same_as_primary: !!document.getElementById("reporter-proposal-prepared-for-same-contact")?.checked,
+      start_date: document.getElementById("reporter-proposal-edit-start-date")?.value || "",
+      end_date: document.getElementById("reporter-proposal-edit-end-date")?.value || "",
+      draft_date: document.getElementById("reporter-proposal-edit-draft-date")?.value || "",
+      final_date: document.getElementById("reporter-proposal-edit-final-date")?.value || "",
+    };
 
     await api("/api/reporter/proposals/" + p.id, {
       method: "PUT",
@@ -530,6 +709,7 @@
         estimatedDays: estimatedDays ? parseFloat(estimatedDays) : null,
         quotedValue: quotedValue ? parseFloat(quotedValue) : null,
         validUntil: validUntil ? Math.floor(new Date(validUntil).getTime() / 1000) : null,
+        proposalMetadata,
         testTypes,
       }),
     });
@@ -595,13 +775,41 @@
     hideEl("reporter-proposal-editor-section");
     hideEl("reporter-proposal-editor-metadata");
     hideEl("reporter-proposal-editor-generations");
+    hideEl("reporter-proposal-editor-supporting-images");
+    hideEl("reporter-proposal-editor-notes");
+    hideEl("reporter-proposal-editor-comments");
+    hideEl("reporter-proposal-editor-history");
+    document.querySelectorAll("[data-proposal-meta]").forEach((btn) => btn.classList.remove("active"));
+    document.querySelectorAll("#reporter-proposal-tree-sections .reporter-tree-item").forEach((item) => {
+      item.classList.toggle("active", panel === "section" && item.dataset.sectionId === state.activeSectionId);
+    });
 
     if (panel === "overview") showEl("reporter-proposal-editor-overview");
     if (panel === "section") showEl("reporter-proposal-editor-section");
-    if (panel === "metadata") showEl("reporter-proposal-editor-metadata");
+    if (panel === "metadata") {
+      showEl("reporter-proposal-editor-metadata");
+      document.querySelector('[data-proposal-meta="metadata"]')?.classList.add("active");
+    }
     if (panel === "generations") {
       showEl("reporter-proposal-editor-generations");
+      document.querySelector('[data-proposal-meta="generations"]')?.classList.add("active");
       renderGenerations();
+    }
+    if (panel === "supporting-images") {
+      showEl("reporter-proposal-editor-supporting-images");
+      document.querySelector('[data-proposal-meta="supporting-images"]')?.classList.add("active");
+    }
+    if (panel === "notes") {
+      showEl("reporter-proposal-editor-notes");
+      document.querySelector('[data-proposal-meta="notes"]')?.classList.add("active");
+    }
+    if (panel === "comments") {
+      showEl("reporter-proposal-editor-comments");
+      document.querySelector('[data-proposal-meta="comments"]')?.classList.add("active");
+    }
+    if (panel === "history") {
+      showEl("reporter-proposal-editor-history");
+      document.querySelector('[data-proposal-meta="history"]')?.classList.add("active");
     }
   }
 
@@ -699,6 +907,10 @@
     });
 
     document.getElementById("reporter-new-proposal-btn")?.addEventListener("click", () => openCreateProposalModal());
+    document.getElementById("reporter-proposal-tree-search")?.addEventListener("input", (e) => {
+      state.treeSearch = e.target.value.toLowerCase();
+      renderProposalSections();
+    });
 
     document.getElementById("reporter-proposal-back-btn")?.addEventListener("click", () => {
       state.currentProposal = null;
@@ -762,5 +974,6 @@
     showListView: showListView,
     showDetailView: openProposalDetail,
     openProposal: openProposalDetail,
+    openCreateProposalModal,
   };
 })();

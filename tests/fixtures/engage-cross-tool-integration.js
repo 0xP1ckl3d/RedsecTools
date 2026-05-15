@@ -122,8 +122,8 @@ const { createRouteHarness } = require("../helpers/route-harness");
     assert.ok(deliveryScheduleSection, "Proposal should include Delivery Schedule");
     assert.doesNotMatch(timeAllocationSection.content, /\\n/);
     assert.doesNotMatch(deliveryScheduleSection.content, /\\n/);
-    assert.match(timeAllocationSection.content, /\| Phase \| Days \| Notes \|/);
-    assert.match(deliveryScheduleSection.content, /\| Milestone \| Target Date \|/);
+    assert.match(timeAllocationSection.content, /\{\{time_allocation_table\}\}/);
+    assert.match(deliveryScheduleSection.content, /Testing Start/);
 
     const updateProposalTypes = await harness.requestJson({
       method: "PUT",
