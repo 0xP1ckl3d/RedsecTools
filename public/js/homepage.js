@@ -1,6 +1,7 @@
 import { EMOJI_DATA, loadShortcuts, initShortcutModal, onShortcutChange, showFavLimitModal } from "./homepage-shortcuts.js";
 import { showConfirmModal } from "./confirm-modal.js";
 import { loadWeather } from "./homepage-weather.js";
+import { escapeHtml, stateBlock } from "./ui-components.js";
 
 const TOOL_MAP = {
   paste: {
@@ -358,7 +359,7 @@ function renderToolFavourites(selectedKeys) {
       '<span class="quick-tool-name">' + escapeHtml(tool.shortName) + "</span>" +
       '<span class="quick-tool-desc text-muted">' + escapeHtml(tool.desc) + "</span></a>"
     ).join("")
-    : '<div class="card text-sm text-muted quick-access-empty">No favourite tools selected.</div>';
+    : stateBlock("No favourite tools selected.", "muted", "card quick-access-empty");
 }
 
 function renderShortcutFavourites(allShortcuts) {
@@ -379,7 +380,7 @@ function renderShortcutFavourites(allShortcuts) {
         '<span class="quick-tool-name">' + escapeHtml(shortcut.title) + "</span>" +
         '<span class="quick-tool-desc text-muted">' + escapeHtml(shortcut.description || "Favourite shortcut") + "</span></a>";
     }).join("")
-    : '<div class="card text-sm text-muted quick-access-empty">No favourite shortcuts selected.</div>';
+    : stateBlock("No favourite shortcuts selected.", "muted", "card quick-access-empty");
 }
 
 function initToolsView() {
@@ -453,7 +454,7 @@ function renderBulletinPreview(bulletins) {
   if (!container) return;
   container.innerHTML = bulletins.length
     ? bulletins.map((b) => renderBulletinPreviewCard(b)).join("")
-    : '<div class="card text-sm text-muted bulletin-preview-empty">No active bulletin messages.</div>';
+    : stateBlock("No active bulletin messages.", "muted", "card bulletin-preview-empty");
 
   container.querySelectorAll(".bulletin-preview-clickable").forEach((card) => {
     card.addEventListener("click", () => {
@@ -537,7 +538,7 @@ async function loadBulletinFeed(reset) {
 
   const html = data.bulletins.length
     ? data.bulletins.map(renderBulletinCard).join("")
-    : '<div class="card text-sm text-muted">No bulletin items are visible right now.</div>';
+    : stateBlock("No bulletin items are visible right now.", "muted", "card");
   if (reset) {
     feed.innerHTML = html;
   } else if (data.bulletins.length) {
@@ -1316,12 +1317,6 @@ async function fetchJson(url, options) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || "Request failed");
   return data;
-}
-
-function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str;
-  return div.innerHTML;
 }
 
 function stripHtml(html) {

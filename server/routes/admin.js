@@ -1,4 +1,5 @@
-const { Router } = require("express");
+const express = require("express");
+const { Router } = express;
 const rateLimit = require("express-rate-limit");
 const crypto = require("crypto");
 const multer = require("multer");
@@ -28,6 +29,10 @@ const {
   getVault, getVaultMembersList, updateVaultMemberPermission, removeVaultMember,
   listAllSurveys, getSurveyStats, deleteSurveyById,
   createAuditEvent, listAuditEvents, listSchemaMigrations, getDeploymentCounts,
+  createServiceAccount, updateServiceAccount, getServiceAccountById, listServiceAccounts,
+  createServiceAccountToken, revokeServiceAccountToken, revokeServiceAccountTokens,
+  createPlatformWebhook, updatePlatformWebhook, getPlatformWebhookById, listPlatformWebhooks,
+  deletePlatformWebhook, createPlatformWebhookDelivery, listPlatformWebhookDeliveries,
   getReporterGlobalStats, listReporterProjects, listReporterProjectMembers,
   encryptValue, decryptValue,
   db, DB_PATH,
@@ -39,15 +44,37 @@ const { getCookieSecure } = require("../core/security/cookies");
 const { buildBasePosture } = require("../core/security/posture");
 const { logEvent, redactObject } = require("../core/logger");
 const { parseInteger } = require("../core/validation");
+const { getFeatureFlag, listFeatureFlags } = require("../core/config/feature-flags");
+const { createPlainApiToken, hashApiToken, tokenDisplayPrefix } = require("../middleware/service-auth");
+const { assertPublicHttpUrl } = require("../core/security/fetch-targets");
+const { deliverPendingWebhooks, enqueueWebhookEvent } = require("../core/integrations/webhooks");
 const samlAuth = require("../core/auth/saml");
 const redsecAiProvider = require("../modules/redsecai/provider");
 
 const router = Router();
+const swaggerUiAssetPath = require("swagger-ui-dist").absolutePath();
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const SITE_PRIMARY_THEMES = new Set(["red", "green", "blue", "orange", "purple"]);
 const ADMIN_REAUTH_WINDOW_SECONDS = 15 * 60;
 const SSO_PROVIDERS = new Set(["none", "saml"]);
+const SERVICE_ACCOUNT_SCOPES = Object.freeze([
+  "audit.read",
+  "deployment.read",
+  "threat.read",
+  "webhooks.manage",
+]);
+const WEBHOOK_EVENTS = Object.freeze([
+  "*",
+  "service_account.created",
+  "service_account.updated",
+  "service_account.token_created",
+  "service_account.token_revoked",
+  "webhook.created",
+  "webhook.updated",
+  "webhook.deleted",
+  "webhook.test",
+]);
 
 function adminCookieOptions() {
   return {
@@ -213,9 +240,7 @@ function requireAdmin(req, res, next) {
 }
 
 function isAdminReauthRequired() {
-  const stored = getSetting("admin_reauth_required");
-  if (stored === "true" || stored === "false") return stored === "true";
-  return String(process.env.ADMIN_REAUTH_REQUIRED || "").trim().toLowerCase() === "true";
+  return getFeatureFlag("adminReauthRequired", { getSetting });
 }
 
 function requireRecentAdminAuth(req, res, next) {
@@ -395,6 +420,7 @@ router.get("/api/security-posture", requireAdmin, (req, res) => {
   })();
   const migrations = listSchemaMigrations();
   const sso = getSsoAdminSettings();
+  const flags = listFeatureFlags({ getSetting });
   res.json({
     ...base,
     database: {
@@ -415,6 +441,9 @@ router.get("/api/security-posture", requireAdmin, (req, res) => {
       adminReauthWindowSeconds: ADMIN_REAUTH_WINDOW_SECONDS,
       ssoEnabled: sso.enabled,
       ssoProvider: sso.provider,
+      openApiEnabled: flags.openApiEnabled,
+      serviceAccountsEnabled: flags.serviceAccountsEnabled,
+      webhooksEnabled: flags.webhooksEnabled,
     },
     counts: getDeploymentCounts(),
     storage: {
@@ -452,6 +481,356 @@ router.get("/api/audit-events.csv", requireAdmin, (req, res) => {
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
   res.setHeader("Content-Disposition", "attachment; filename=\"redsectools-audit-events.csv\"");
   res.send([headers.join(","), ...rows].join("\n"));
+});
+
+function requireOpenApiPublished(req, res, next) {
+  if (!getFeatureFlag("openApiEnabled", { getSetting })) {
+    if (req.path.endsWith(".json") || req.path.endsWith(".js")) {
+      return res.status(404).json({ error: "OpenAPI publishing is disabled" });
+    }
+    return res.status(404).send("OpenAPI publishing is disabled");
+  }
+  return next();
+}
+
+router.get("/openapi", requireAdmin, requireOpenApiPublished, (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.type("html").send(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RedSecTools API Docs</title>
+  <link rel="stylesheet" href="/admin/openapi/assets/swagger-ui.css">
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="/admin/openapi/assets/swagger-ui-bundle.js"></script>
+  <script src="/admin/openapi/assets/swagger-ui-standalone-preset.js"></script>
+  <script src="/admin/openapi/init.js"></script>
+</body>
+</html>`);
+});
+
+router.get("/openapi/init.js", requireAdmin, requireOpenApiPublished, (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.type("application/javascript").send(`(() => {
+  const target = document.getElementById("swagger-ui");
+  if (!target || typeof window.SwaggerUIBundle !== "function") return;
+  window.ui = window.SwaggerUIBundle({
+    url: "/admin/api/openapi.json",
+    dom_id: "#swagger-ui",
+    deepLinking: true,
+    persistAuthorization: false,
+    requestInterceptor: (request) => {
+      request.credentials = "same-origin";
+      return request;
+    },
+    presets: [
+      window.SwaggerUIBundle.presets.apis,
+      window.SwaggerUIStandalonePreset
+    ],
+    layout: "StandaloneLayout"
+  });
+})();`);
+});
+
+router.use(
+  "/openapi/assets",
+  requireAdmin,
+  requireOpenApiPublished,
+  express.static(swaggerUiAssetPath, {
+    index: false,
+    immutable: true,
+    maxAge: "1d",
+  }),
+);
+
+router.get("/api/openapi.json", requireAdmin, requireOpenApiPublished, (req, res) => {
+  const specPath = path.join(__dirname, "..", "..", "docs", "api", "openapi.json");
+  res.setHeader("Cache-Control", "no-store");
+  res.sendFile(specPath);
+});
+
+function normalizeScopes(rawScopes) {
+  const requested = Array.isArray(rawScopes) ? rawScopes : [];
+  return [...new Set(requested.map((scope) => String(scope || "").trim()).filter(Boolean))];
+}
+
+function validateScopes(scopes) {
+  const allowed = new Set(["*", ...SERVICE_ACCOUNT_SCOPES]);
+  return scopes.every((scope) => allowed.has(scope));
+}
+
+function serviceAccountsAvailable(res) {
+  if (getFeatureFlag("serviceAccountsEnabled", { getSetting })) return true;
+  res.status(404).json({ error: "Service accounts are disabled" });
+  return false;
+}
+
+router.get("/api/service-accounts/scopes", requireAdmin, (req, res) => {
+  res.json({ scopes: SERVICE_ACCOUNT_SCOPES });
+});
+
+router.get("/api/service-accounts", requireAdmin, (req, res) => {
+  if (!serviceAccountsAvailable(res)) return;
+  res.json({ serviceAccounts: listServiceAccounts() });
+});
+
+router.post("/api/service-accounts", requireAdmin, requireRecentAdminAuth, (req, res) => {
+  if (!serviceAccountsAvailable(res)) return;
+  const name = cleanOptionalText(req.body?.name, 120);
+  const description = cleanOptionalText(req.body?.description, 500);
+  const scopes = normalizeScopes(req.body?.scopes);
+  const enabled = req.body?.enabled !== false;
+  if (!name) return res.status(400).json({ error: "Service account name is required" });
+  if (!scopes.length) return res.status(400).json({ error: "At least one scope is required" });
+  if (!validateScopes(scopes)) return res.status(400).json({ error: "Invalid service account scope" });
+
+  const account = createServiceAccount({
+    name,
+    description,
+    scopes,
+    enabled,
+    createdBy: req.user?.id || null,
+  });
+  auditAdmin(req, {
+    category: "api",
+    action: "service_account_created",
+    targetType: "service_account",
+    targetId: account.id,
+    metadata: { name, scopes, enabled },
+  });
+  enqueueWebhookEvent(require("../database"), "service_account.created", { id: account.id, name, scopes, enabled });
+  res.status(201).json({ serviceAccount: account });
+});
+
+router.put("/api/service-accounts/:id", requireAdmin, requireRecentAdminAuth, (req, res) => {
+  if (!serviceAccountsAvailable(res)) return;
+  const existing = getServiceAccountById(req.params.id);
+  if (!existing) return res.status(404).json({ error: "Service account not found" });
+  const name = cleanOptionalText(req.body?.name, 120);
+  const description = cleanOptionalText(req.body?.description, 500);
+  const scopes = normalizeScopes(req.body?.scopes);
+  const enabled = req.body?.enabled !== false;
+  if (!name) return res.status(400).json({ error: "Service account name is required" });
+  if (!scopes.length) return res.status(400).json({ error: "At least one scope is required" });
+  if (!validateScopes(scopes)) return res.status(400).json({ error: "Invalid service account scope" });
+
+  const account = updateServiceAccount({ id: req.params.id, name, description, scopes, enabled });
+  auditAdmin(req, {
+    category: "api",
+    action: "service_account_updated",
+    targetType: "service_account",
+    targetId: account.id,
+    metadata: { name, scopes, enabled },
+  });
+  enqueueWebhookEvent(require("../database"), "service_account.updated", { id: account.id, name, scopes, enabled });
+  res.json({ serviceAccount: account });
+});
+
+router.post("/api/service-accounts/:id/tokens", requireAdmin, requireRecentAdminAuth, (req, res) => {
+  if (!serviceAccountsAvailable(res)) return;
+  const account = getServiceAccountById(req.params.id);
+  if (!account) return res.status(404).json({ error: "Service account not found" });
+  const label = cleanOptionalText(req.body?.label, 120) || "API token";
+  const expiresAt = req.body?.expiresAt ? parseInteger(req.body.expiresAt, { min: Math.floor(Date.now() / 1000) + 60, fallback: null }) : null;
+  if (req.body?.expiresAt && !expiresAt) return res.status(400).json({ error: "Token expiry must be a future Unix timestamp" });
+  const token = createPlainApiToken();
+  const tokenId = createServiceAccountToken({
+    serviceAccountId: account.id,
+    tokenHash: hashApiToken(token),
+    label,
+    prefix: tokenDisplayPrefix(token),
+    expiresAt,
+    createdBy: req.user?.id || null,
+  });
+  auditAdmin(req, {
+    category: "api",
+    action: "service_account_token_created",
+    targetType: "service_account",
+    targetId: account.id,
+    metadata: { tokenId, label, expiresAt, prefix: tokenDisplayPrefix(token) },
+  });
+  enqueueWebhookEvent(require("../database"), "service_account.token_created", { serviceAccountId: account.id, tokenId, label, expiresAt });
+  res.status(201).json({ token, tokenRecord: { id: tokenId, label, prefix: tokenDisplayPrefix(token), expiresAt } });
+});
+
+router.post("/api/service-accounts/:id/revoke-tokens", requireAdmin, requireRecentAdminAuth, (req, res) => {
+  if (!serviceAccountsAvailable(res)) return;
+  const account = getServiceAccountById(req.params.id);
+  if (!account) return res.status(404).json({ error: "Service account not found" });
+  const revoked = revokeServiceAccountTokens(account.id);
+  auditAdmin(req, {
+    category: "api",
+    action: "service_account_tokens_revoked",
+    targetType: "service_account",
+    targetId: account.id,
+    metadata: { revoked },
+  });
+  enqueueWebhookEvent(require("../database"), "service_account.token_revoked", { serviceAccountId: account.id, revoked });
+  res.json({ success: true, revoked });
+});
+
+router.post("/api/service-accounts/tokens/:tokenId/revoke", requireAdmin, requireRecentAdminAuth, (req, res) => {
+  if (!serviceAccountsAvailable(res)) return;
+  const revoked = revokeServiceAccountToken(req.params.tokenId);
+  if (!revoked) return res.status(404).json({ error: "Active token not found" });
+  auditAdmin(req, {
+    category: "api",
+    action: "service_account_token_revoked",
+    targetType: "service_account_token",
+    targetId: req.params.tokenId,
+  });
+  enqueueWebhookEvent(require("../database"), "service_account.token_revoked", { tokenId: req.params.tokenId });
+  res.json({ success: true });
+});
+
+function webhooksAvailable(res) {
+  if (getFeatureFlag("webhooksEnabled", { getSetting })) return true;
+  res.status(404).json({ error: "Platform webhooks are disabled" });
+  return false;
+}
+
+function normalizeWebhookEvents(rawEvents) {
+  const events = Array.isArray(rawEvents) ? rawEvents : [];
+  return [...new Set(events.map((event) => String(event || "").trim()).filter(Boolean))];
+}
+
+router.get("/api/webhooks/events", requireAdmin, (req, res) => {
+  res.json({ events: WEBHOOK_EVENTS });
+});
+
+router.get("/api/webhooks", requireAdmin, (req, res) => {
+  if (!webhooksAvailable(res)) return;
+  res.json({ webhooks: listPlatformWebhooks() });
+});
+
+router.post("/api/webhooks", requireAdmin, requireRecentAdminAuth, async (req, res) => {
+  if (!webhooksAvailable(res)) return;
+  const name = cleanOptionalText(req.body?.name, 120);
+  const url = cleanOptionalText(req.body?.url, 1000);
+  const secret = cleanOptionalText(req.body?.secret, 500);
+  const events = normalizeWebhookEvents(req.body?.events);
+  const enabled = req.body?.enabled !== false;
+  if (!name) return res.status(400).json({ error: "Webhook name is required" });
+  if (!url) return res.status(400).json({ error: "Webhook URL is required" });
+  if (!secret || secret.length < 16) return res.status(400).json({ error: "Webhook secret must be at least 16 characters" });
+  if (!events.length || events.some((event) => !WEBHOOK_EVENTS.includes(event))) {
+    return res.status(400).json({ error: "Invalid webhook event subscription" });
+  }
+  try {
+    await assertPublicHttpUrl(url);
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+
+  const webhook = createPlatformWebhook({
+    name,
+    url,
+    secretEncrypted: encryptValue(secret),
+    events,
+    enabled,
+    createdBy: req.user?.id || null,
+  });
+  auditAdmin(req, {
+    category: "api",
+    action: "webhook_created",
+    targetType: "webhook",
+    targetId: webhook.id,
+    metadata: { name, url, events, enabled },
+  });
+  enqueueWebhookEvent(require("../database"), "webhook.created", { id: webhook.id, name, events, enabled });
+  delete webhook.secretEncrypted;
+  res.status(201).json({ webhook });
+});
+
+router.put("/api/webhooks/:id", requireAdmin, requireRecentAdminAuth, async (req, res) => {
+  if (!webhooksAvailable(res)) return;
+  const existing = getPlatformWebhookById(req.params.id);
+  if (!existing) return res.status(404).json({ error: "Webhook not found" });
+  const name = cleanOptionalText(req.body?.name, 120);
+  const url = cleanOptionalText(req.body?.url, 1000);
+  const secret = cleanOptionalText(req.body?.secret, 500);
+  const events = normalizeWebhookEvents(req.body?.events);
+  const enabled = req.body?.enabled !== false;
+  if (!name) return res.status(400).json({ error: "Webhook name is required" });
+  if (!url) return res.status(400).json({ error: "Webhook URL is required" });
+  if (secret && secret.length < 16) return res.status(400).json({ error: "Webhook secret must be at least 16 characters" });
+  if (!events.length || events.some((event) => !WEBHOOK_EVENTS.includes(event))) {
+    return res.status(400).json({ error: "Invalid webhook event subscription" });
+  }
+  try {
+    await assertPublicHttpUrl(url);
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+
+  const webhook = updatePlatformWebhook({
+    id: req.params.id,
+    name,
+    url,
+    secretEncrypted: secret ? encryptValue(secret) : existing.secretEncrypted,
+    events,
+    enabled,
+  });
+  auditAdmin(req, {
+    category: "api",
+    action: "webhook_updated",
+    targetType: "webhook",
+    targetId: webhook.id,
+    metadata: { name, url, events, enabled, secretRotated: !!secret },
+  });
+  enqueueWebhookEvent(require("../database"), "webhook.updated", { id: webhook.id, name, events, enabled });
+  delete webhook.secretEncrypted;
+  res.json({ webhook });
+});
+
+router.delete("/api/webhooks/:id", requireAdmin, requireRecentAdminAuth, (req, res) => {
+  if (!webhooksAvailable(res)) return;
+  const existing = getPlatformWebhookById(req.params.id);
+  if (!existing) return res.status(404).json({ error: "Webhook not found" });
+  deletePlatformWebhook(req.params.id);
+  auditAdmin(req, {
+    category: "api",
+    action: "webhook_deleted",
+    targetType: "webhook",
+    targetId: req.params.id,
+    metadata: { name: existing.name },
+  });
+  enqueueWebhookEvent(require("../database"), "webhook.deleted", { id: req.params.id, name: existing.name });
+  res.json({ success: true });
+});
+
+router.get("/api/webhooks/:id/deliveries", requireAdmin, (req, res) => {
+  if (!webhooksAvailable(res)) return;
+  if (!getPlatformWebhookById(req.params.id)) return res.status(404).json({ error: "Webhook not found" });
+  res.json({ deliveries: listPlatformWebhookDeliveries(req.params.id, 50) });
+});
+
+router.post("/api/webhooks/:id/test", requireAdmin, requireRecentAdminAuth, async (req, res) => {
+  if (!webhooksAvailable(res)) return;
+  const webhook = getPlatformWebhookById(req.params.id);
+  if (!webhook) return res.status(404).json({ error: "Webhook not found" });
+  const deliveryId = createPlatformWebhookDelivery({
+    webhookId: webhook.id,
+    eventType: "webhook.test",
+    payload: {
+      id: crypto.randomBytes(16).toString("base64url"),
+      type: "webhook.test",
+      createdAt: new Date().toISOString(),
+      data: { source: "admin", webhookId: webhook.id },
+    },
+  });
+  await deliverPendingWebhooks(require("../database"), { limit: 10 });
+  auditAdmin(req, {
+    category: "api",
+    action: "webhook_test_sent",
+    targetType: "webhook",
+    targetId: webhook.id,
+    metadata: { deliveryId },
+  });
+  res.status(202).json({ deliveryId, deliveries: listPlatformWebhookDeliveries(webhook.id, 10) });
 });
 
 // POST /admin/api/backup/export
@@ -1457,6 +1836,7 @@ router.delete("/api/vaults/:id", requireAdmin, requireRecentAdminAuth, (req, res
 
 // GET /admin/api/settings/security
 router.get("/api/settings/security", requireAdmin, (req, res) => {
+  const flags = listFeatureFlags({ getSetting });
   res.json({
     sessionTTL: parseInt(getSetting("session_ttl"), 10) || 43200,
     sessionTTLExtended: parseInt(getSetting("session_ttl_extended"), 10) || 604800,
@@ -1464,12 +1844,24 @@ router.get("/api/settings/security", requireAdmin, (req, res) => {
     mfaRequired: getSetting("mfa_required") === "true",
     adminReauthRequired: isAdminReauthRequired(),
     adminReauthWindowSeconds: ADMIN_REAUTH_WINDOW_SECONDS,
+    openApiEnabled: flags.openApiEnabled,
+    serviceAccountsEnabled: flags.serviceAccountsEnabled,
+    webhooksEnabled: flags.webhooksEnabled,
   });
 });
 
 // POST /admin/api/settings/security
 router.post("/api/settings/security", requireAdmin, requireRecentAdminAuth, (req, res) => {
-  const { sessionTTL, sessionTTLExtended, mfaRememberDays, mfaRequired, adminReauthRequired } = req.body || {};
+  const {
+    sessionTTL,
+    sessionTTLExtended,
+    mfaRememberDays,
+    mfaRequired,
+    adminReauthRequired,
+    openApiEnabled,
+    serviceAccountsEnabled,
+    webhooksEnabled,
+  } = req.body || {};
 
   const VALID_SESSION_TTL = [1800, 3600, 7200, 14400, 43200, 86400];
   const VALID_EXTENDED_TTL = [86400, 172800, 604800, 1209600, 2592000];
@@ -1506,6 +1898,15 @@ router.post("/api/settings/security", requireAdmin, requireRecentAdminAuth, (req
   if (adminReauthRequired !== undefined) {
     setSetting("admin_reauth_required", adminReauthRequired ? "true" : "false");
   }
+  if (openApiEnabled !== undefined) {
+    setSetting("openapi_enabled", openApiEnabled ? "true" : "false");
+  }
+  if (serviceAccountsEnabled !== undefined) {
+    setSetting("service_accounts_enabled", serviceAccountsEnabled ? "true" : "false");
+  }
+  if (webhooksEnabled !== undefined) {
+    setSetting("webhooks_enabled", webhooksEnabled ? "true" : "false");
+  }
 
   auditAdmin(req, {
     category: "settings",
@@ -1517,6 +1918,9 @@ router.post("/api/settings/security", requireAdmin, requireRecentAdminAuth, (req
       mfaRememberDays,
       mfaRequired: mfaRequired !== undefined ? !!mfaRequired : undefined,
       adminReauthRequired: adminReauthRequired !== undefined ? !!adminReauthRequired : undefined,
+      openApiEnabled: openApiEnabled !== undefined ? !!openApiEnabled : undefined,
+      serviceAccountsEnabled: serviceAccountsEnabled !== undefined ? !!serviceAccountsEnabled : undefined,
+      webhooksEnabled: webhooksEnabled !== undefined ? !!webhooksEnabled : undefined,
     },
   });
   console.log(JSON.stringify({ ts: new Date().toISOString(), action: "admin:update_security", ip: req.ip }));

@@ -1,5 +1,6 @@
 // RedSecVault — Main UI logic
 import { showConfirmModal } from "./confirm-modal.js";
+import { escapeHtml as escHtml, safeAttr as escAttr } from "./ui-components.js";
 import {
   createPersonalVault, unlockPersonalVault,
   createTeamVault, unlockTeamVault, wrapTeamVaultKeyForMember,
@@ -1708,17 +1709,6 @@ async function copyToClipboard(text) {
     document.execCommand("copy");
     document.body.removeChild(ta);
   }
-}
-
-function escHtml(str) {
-  if (!str) return "";
-  const map = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
-  return String(str).replace(/[&<>"']/g, c => map[c]);
-}
-
-function escAttr(str) {
-  if (!str) return "";
-  return escHtml(str);
 }
 
 document.querySelectorAll("[data-vault-view]").forEach((btn) => {

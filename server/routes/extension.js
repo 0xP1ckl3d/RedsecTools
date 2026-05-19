@@ -9,6 +9,7 @@ const totp = require("../totp");
 const { requireExtensionUser } = require("../middleware/auth");
 const { decodeBase64Strict } = require("../base64");
 const { getCookieSecure } = require("../core/security/cookies");
+const { logEvent } = require("../core/logger");
 const {
   getUserByEmail,
   getUserById,
@@ -142,8 +143,7 @@ function runShareUpload(req, res, next) {
 }
 
 function logAction(action, req, extra = {}) {
-  const ip = req.ip || req.connection?.remoteAddress;
-  console.log(JSON.stringify({ ts: new Date().toISOString(), action, ip, userId: req.user?.id, ...extra }));
+  logEvent(action, req, extra);
 }
 
 function generateId(bytes = 32) {

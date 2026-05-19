@@ -1,14 +1,9 @@
 import { showAlertModal } from "./confirm-modal.js";
+import { escapeHtml } from "./ui-components.js";
 
 /* ------------------------------------------------------------------
    Helpers
    ------------------------------------------------------------------ */
-
-function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str;
-  return div.innerHTML;
-}
 
 async function fetchJson(url, options) {
   const res = await fetch(url, options);

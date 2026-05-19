@@ -1,4 +1,5 @@
 import { showConfirmModal, showAlertModal } from "./confirm-modal.js";
+import { escapeHtml, stateBlock } from "./ui-components.js";
 
 // RedSecTools — Survey Builder
 
@@ -11,12 +12,6 @@ const QUESTION_TYPES = [
   { value: "yes_no", label: "Yes / No" },
   { value: "dropdown", label: "Dropdown" },
 ];
-
-function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str == null ? "" : String(str);
-  return div.innerHTML;
-}
 
 async function fetchJson(url, options) {
   const res = await fetch(url, options);
@@ -117,7 +112,7 @@ function renderSurveyList() {
   const filtered = getFilteredSurveys();
 
   if (filtered.length === 0) {
-    body.innerHTML = '<p class="text-sm text-muted">No surveys found.</p>';
+    body.innerHTML = stateBlock("No surveys found.");
     return;
   }
 
@@ -257,7 +252,7 @@ function renderBuilder() {
   if (!state.selectedSurvey) {
     title.textContent = "Select a survey";
     subtitle.textContent = "Choose a survey from the list or create a new one.";
-    body.innerHTML = '<p class="text-sm text-muted">No survey selected.</p>';
+    body.innerHTML = stateBlock("No survey selected.");
     if (resultsBtn) resultsBtn.classList.add("hidden");
     return;
   }
@@ -661,7 +656,7 @@ function renderMetaPanel() {
   const body = document.getElementById("survey-meta-body");
 
   if (!state.selectedSurvey) {
-    body.innerHTML = '<div class="text-sm text-muted">Select a survey to see settings.</div>';
+    body.innerHTML = stateBlock("Select a survey to see settings.");
     return;
   }
 

@@ -1,5 +1,6 @@
 // RedSecShare — Multi-file create/upload page logic
 import { createEncryptedShare } from "./file-crypto.js";
+import { escapeHtml } from "./ui-components.js";
 
 const dropZone = document.getElementById("drop-zone");
 const fileInput = document.getElementById("file-input");
@@ -279,12 +280,6 @@ function formatSize(bytes) {
   if (bytes < 1024) return bytes + " B";
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
   return (bytes / (1024 * 1024)).toFixed(1) + " MB";
-}
-
-function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str;
-  return div.innerHTML;
 }
 
 function showLoading(text) {

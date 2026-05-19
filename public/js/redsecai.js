@@ -1,15 +1,8 @@
+import { escapeHtml } from "./ui-components.js";
+
 const STORAGE_KEY = "redsecai.messages.v1";
 const ACTIVE_JOB_KEY = "redsecai.activeJob.v1";
 const MAX_HISTORY = 12;
-
-function escapeHtml(value) {
-  return String(value || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
 
 function renderMarkdownLite(value) {
   const escaped = escapeHtml(value);

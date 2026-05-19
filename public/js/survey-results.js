@@ -1,12 +1,7 @@
 import { showAlertModal } from "./confirm-modal.js";
+import { escapeHtml, stateBlock } from "./ui-components.js";
 
 // RedSecTools — Survey Results & Analytics
-
-function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str == null ? "" : String(str);
-  return div.innerHTML;
-}
 
 async function fetchJson(url, options) {
   const res = await fetch(url, options);
@@ -355,7 +350,7 @@ function renderResponseList() {
   if (countEl) countEl.textContent = responses.length + " responses";
 
   if (responses.length === 0) {
-    container.innerHTML = '<p class="text-sm text-muted">No responses yet.</p>';
+    container.innerHTML = stateBlock("No responses yet.");
     return;
   }
 

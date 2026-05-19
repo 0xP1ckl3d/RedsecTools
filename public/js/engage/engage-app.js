@@ -1,5 +1,6 @@
 // RedSecEngage Dashboard — Phase 3
 // Statistics-first visual dashboard with role-aware views.
+import { escapeHtml as esc } from "../ui-components.js";
 
 const STATUS_CLASSES = {
   draft: "draft",
@@ -153,12 +154,6 @@ const QA_STATUS_LABELS = {
   ready_for_delivery: "Approved for Delivery",
   cancelled: "Cancelled",
 };
-
-function esc(str) {
-  const d = document.createElement("div");
-  d.textContent = str || "";
-  return d.innerHTML;
-}
 
 function formatCurrency(value) {
   if (value == null) return "---";
@@ -564,7 +559,7 @@ async function initEngageApp() {
 
     html += "</div>"; // close dashboard section
 
-    // Placeholder sections for other views (populated in later phases)
+    // Lazy-loaded sections for other views, populated by their feature modules.
     html += '<div data-engage-section="clients" class="hidden"><div class="engage-empty">Loading clients...</div></div>';
     html += '<div data-engage-section="pipeline" class="hidden"><div class="engage-empty">Loading pipeline...</div></div>';
     html += '<div data-engage-section="engagements" class="hidden"><div class="engage-empty">Loading engagements...</div></div>';

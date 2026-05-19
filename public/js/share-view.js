@@ -1,6 +1,7 @@
 // RedSecShare — Multi-file view/download page logic
 import { importKey, base64ToArray } from "./crypto.js";
 import { decryptFile, decryptFileWithPassword, decryptFilename } from "./file-crypto.js";
+import { escapeHtml } from "./ui-components.js";
 
 const loadingState = document.getElementById("loading-state");
 const passwordPrompt = document.getElementById("password-prompt");
@@ -241,12 +242,6 @@ function formatSize(bytes) {
   if (bytes < 1024) return bytes + " B";
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
   return (bytes / (1024 * 1024)).toFixed(1) + " MB";
-}
-
-function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str;
-  return div.innerHTML;
 }
 
 // --- Toast ---

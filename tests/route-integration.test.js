@@ -41,3 +41,15 @@ test("Engage routes enforce RBAC, CRUD, commercial field gating, team management
 test("Cross-tool integration covers proposals, Reporter projects, Calendar projects, allocations, notifications, and audit trails", async () => {
   await runFixture("engage-cross-tool-integration.js");
 });
+
+test("Service account API enforces feature flag and token scopes", async () => {
+  await runFixture("service-account-route-fixture.js");
+});
+
+test("Admin OpenAPI docs are interactive, gated, and host-relative", async () => {
+  await runFixture("admin-openapi-fixture.js");
+});
+
+test("Paste repository extraction preserves database facade behavior", async () => {
+  await runFixture("paste-repo-fixture.js");
+});

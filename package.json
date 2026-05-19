@@ -7,7 +7,8 @@
     "dev": "concurrently \"nodemon server/index.js\" \"npx tailwindcss -i ./public/css/input.css -o ./public/css/style.css --watch\"",
     "build": "npx tailwindcss -i ./public/css/input.css -o ./public/css/style.css --minify",
     "start": "node server/index.js",
-    "test": "node --test --experimental-test-isolation=none"
+    "test": "node --test --experimental-test-isolation=none",
+    "test:visual": "playwright test"
   },
   "dependencies": {
     "@node-saml/node-saml": "^5.1.0",
@@ -26,9 +27,12 @@
     "rss-parser": "^3.13.0",
     "sharp": "^0.34.5",
     "socks-proxy-agent": "^10.0.0",
+    "swagger-ui-dist": "^5.32.6",
     "ws": "^8.20.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "axe-core": "^4.11.4",
     "concurrently": "^9.0.0",
     "nodemon": "^3.1.0",
     "tailwindcss": "^3.4.0"

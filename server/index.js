@@ -25,6 +25,7 @@ const adminCollabRouter = require("./routes/admin-collab");
 const redsecAiRouter = require("./routes/redsecai");
 const notificationRouter = require("./routes/notifications");
 const engageRouter = require("./routes/engage");
+const integrationsRouter = require("./routes/integrations");
 const { runBulletinAutoPurge } = require("./bulletin-service");
 const { startFeedFetchInterval, seedDefaults: seedThreatDefaults } = require("./threat-feed-service");
 const { initWebSocket } = require("./chat-ws");
@@ -46,7 +47,9 @@ const { pageRequireUser, pageRequireGuestOrUser } = require("./middleware/auth")
 const { pageRequirePermission, pageRequireAnyPermission } = require("./middleware/permissions");
 const { buildDeploymentWarnings } = require("./core/security/posture");
 const { logWarn } = require("./core/logger");
+const { startWebhookWorker } = require("./core/integrations/webhooks");
 const redsecAiProvider = require("./modules/redsecai/provider");
+const database = require("./database");
 
 const app = express();
 const PORT = parseInt(process.env.PORT, 10) || 3000;
@@ -254,6 +257,7 @@ app.use("/api", reporterRouter);
 app.use("/api", redsecAiRouter);
 app.use("/api", notificationRouter);
 app.use("/api", engageRouter);
+app.use("/api", integrationsRouter);
 app.use("/api/ext", extensionRouter);
 app.use("/api/homepage", homepageRouter);
 app.use("/api/homepage", homepageDashboardRouter);
@@ -371,6 +375,7 @@ server.listen(PORT, HOST, () => {
   });
   seedThreatDefaults();
   startFeedFetchInterval();
+  startWebhookWorker(database);
 });
 
 module.exports = { server };

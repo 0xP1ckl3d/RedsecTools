@@ -131,7 +131,7 @@ const {
   defaultProposalCssTemplate,
 } = require("../reporter-render-service");
 const { renderMarkdownToHtml } = require("../wiki-render");
-const { logEvent, redactObject } = require("../core/logger");
+const { logEvent, logWarn, redactObject } = require("../core/logger");
 
 const router = Router();
 const REPORTER_EVIDENCE_DIR = path.join(__dirname, "..", "..", "data", "reporter-evidence");
@@ -342,7 +342,7 @@ function recordReporterHistory(projectId, targetType, targetId, snapshot, change
   try {
     createReporterHistoryRow({ projectId, targetType, targetId, snapshot, changeSummary, createdBy: userId, versionNumber });
   } catch (err) {
-    console.error(JSON.stringify({ level: "warn", msg: "reporter_history_write_failed", projectId, targetType, targetId, error: err.message }));
+    logWarn("reporter:history_write_failed", { projectId, targetType, targetId, error: err.message });
   }
 }
 

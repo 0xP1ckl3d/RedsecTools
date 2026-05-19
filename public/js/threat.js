@@ -1,4 +1,5 @@
 import { showAlertModal, showConfirmModal } from "./confirm-modal.js";
+import { escapeHtml, stateBlock, tableStateRow } from "./ui-components.js";
 
 // ---------------------------------------------------------------------------
 // State
@@ -52,12 +53,6 @@ async function api(path, options = {}) {
 // ---------------------------------------------------------------------------
 // HTML helpers
 // ---------------------------------------------------------------------------
-
-function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str == null ? "" : String(str);
-  return div.innerHTML;
-}
 
 function stableHash(value) {
   const text = String(value || "");
@@ -380,7 +375,7 @@ function buildCriticalityChart(dist) {
     .filter((level) => level.value > 0);
 
   if (!data.length) {
-    return '<div class="threat-chart-empty"><p class="text-sm text-muted">No alerts yet.</p></div>';
+    return `<div class="threat-chart-empty">${stateBlock("No alerts yet.")}</div>`;
   }
 
   const total = data.reduce((sum, level) => sum + level.value, 0);
@@ -564,8 +559,8 @@ function renderDashboard(stats, recentAlerts, feedHealth) {
       ).join("");
     } else {
       alertsEl.innerHTML = stats?.activeKeywords
-        ? '<p class="text-sm text-muted">No alerts yet.</p>'
-        : '<p class="text-sm text-muted">No alerts yet. Add or enable keywords to start generating matches.</p>';
+        ? stateBlock("No alerts yet.")
+        : stateBlock("No alerts yet. Add or enable keywords to start generating matches.");
     }
   }
 
@@ -734,7 +729,7 @@ function renderMitre(data) {
           "</div>" +
         "</div>"
       ).join("")
-      : '<p class="text-sm text-muted">No ATT&CK mappings yet.</p>';
+      : stateBlock("No ATT&CK mappings yet.");
   }
 
   const techniquesEl = document.getElementById("threat-mitre-techniques");
@@ -750,7 +745,7 @@ function renderMitre(data) {
           "</div>" +
         "</div>"
       ).join("")
-      : '<p class="text-sm text-muted">No ATT&CK mappings yet.</p>';
+      : stateBlock("No ATT&CK mappings yet.");
   }
 
   const recentEl = document.getElementById("threat-mitre-recent");
@@ -769,7 +764,7 @@ function renderMitre(data) {
           '<div class="threat-news-taxonomy">' + mitreBadges(alert.mitre || []) + "</div>" +
         "</button>"
       ).join("")
-      : '<p class="text-sm text-muted">No ATT&CK-mapped alerts yet.</p>';
+      : stateBlock("No ATT&CK-mapped alerts yet.");
   }
 }
 
@@ -1393,7 +1388,7 @@ function renderLogs(health, feedErrors) {
   const errors = feedErrors || [];
   const rows = errors.length ? errors : (health?.feeds || []);
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No feed status data.</td></tr>';
+    tbody.innerHTML = tableStateRow(6, "No feed status data.", "muted", "py-3");
     return;
   }
 

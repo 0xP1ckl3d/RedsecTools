@@ -28,11 +28,7 @@ const EngageQa = (() => {
   ];
   const QA_STATUS_OPTIONS = ["ready_for_qa", "assigned", "reviewing", "requires_more_work", "ready_for_delivery", "cancelled"];
 
-  function esc(str) {
-    const d = document.createElement("div");
-    d.textContent = str || "";
-    return d.innerHTML;
-  }
+  const esc = (str) => window.RedSecUI.escapeHtml(str || "");
 
   function formatDate(ts) {
     if (!ts) return "---";

@@ -1,6 +1,10 @@
 const nodemailer = require("nodemailer");
 const { createTransporter } = require("./email");
 const db = require("./database");
+const {
+  safeFetchPublicUrl,
+  readResponseTextWithLimit,
+} = require("./core/security/safe-fetch");
 
 function getThreatNotificationPolicy() {
   return {
@@ -57,17 +61,12 @@ async function sendWebhook(destination, alertPayload) {
       triggered_at: alertPayload.triggered_at,
     };
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 10_000);
-
-    const res = await fetch(destination, {
+    const { response: res } = await safeFetchPublicUrl(destination, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-      signal: controller.signal,
+      timeoutMs: 10_000,
     });
-
-    clearTimeout(timer);
 
     if (!res.ok) {
       return { success: false, error: `Webhook returned HTTP ${res.status}` };
@@ -182,20 +181,15 @@ async function sendDiscord(destination, alertPayload, options = {}) {
       ],
     };
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 10_000);
-
-    const res = await fetch(destination, {
+    const { response: res } = await safeFetchPublicUrl(destination, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-      signal: controller.signal,
+      timeoutMs: 10_000,
     });
 
-    clearTimeout(timer);
-
     if (!res.ok) {
-      const body = await res.text().catch(() => "");
+      const body = await readResponseTextWithLimit(res, 16 * 1024).catch(() => "");
       return { success: false, error: `Discord returned HTTP ${res.status}: ${body}` };
     }
     return { success: true };

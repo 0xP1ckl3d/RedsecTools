@@ -1,4 +1,5 @@
 import { showConfirmModal, showAlertModal } from "./confirm-modal.js";
+import { badge, booleanBadge, escapeHtml, setInlineResult, setTableState } from "./ui-components.js";
 
 const adminLoginShell = document.getElementById("admin-login-shell");
 const loginSection = document.getElementById("login-section");
@@ -233,6 +234,8 @@ function updateAdminVisibleTabs() {
   if (visibleTabs.has("security")) {
     loadSecuritySettings();
     loadSsoSettings();
+    loadServiceAccountControls();
+    loadWebhookControls();
   }
   if (visibleTabs.has("deployment")) {
     loadDeploymentQuality();
@@ -348,7 +351,7 @@ async function loadPastes() {
     pastesBody.innerHTML = "";
 
     if (data.pastes.length === 0) {
-      pastesBody.innerHTML = '<tr><td colspan="11" class="text-center text-muted py-8">No pastes found.</td></tr>';
+      setTableState(pastesBody, 11, "No pastes found.");
     } else {
       for (const p of data.pastes) {
         const isExpired = p.expiresAt < Math.floor(Date.now() / 1000);
@@ -360,9 +363,9 @@ async function loadPastes() {
           <td class="text-xs">${p.sourceIp}</td>
           <td class="text-xs">${p.syntax || "plaintext"}</td>
           <td class="text-xs">${formatTime(p.createdAt)}</td>
-          <td class="text-xs"><span class="badge ${isExpired ? "badge-red" : "badge-green"}">${formatExpiry(p.expiresAt)}</span></td>
-          <td>${p.hasPassword ? '<span class="badge badge-amber">Yes</span>' : '<span class="badge badge-gray">No</span>'}</td>
-          <td>${p.burnAfterReading ? '<span class="badge badge-red">Yes</span>' : '<span class="badge badge-gray">No</span>'}</td>
+          <td class="text-xs">${badge(formatExpiry(p.expiresAt), isExpired ? "red" : "green")}</td>
+          <td>${p.hasPassword ? badge("Yes", "amber") : booleanBadge(false)}</td>
+          <td>${p.burnAfterReading ? badge("Yes", "red") : booleanBadge(false)}</td>
           <td class="text-xs">${formatSize(p.size)}</td>
           <td><button class="delete-paste-btn text-error text-xs hover:underline" data-id="${p.id}">Delete</button></td>
         `;
@@ -480,7 +483,7 @@ async function loadFiles() {
     filesBody.innerHTML = "";
 
     if (data.files.length === 0) {
-      filesBody.innerHTML = '<tr><td colspan="11" class="text-center text-muted py-8">No files found.</td></tr>';
+      setTableState(filesBody, 11, "No files found.");
     } else {
       for (const f of data.files) {
         const isExpired = f.expiresAt < Math.floor(Date.now() / 1000);
@@ -493,9 +496,9 @@ async function loadFiles() {
           <td class="text-xs">${f.fileCount === 1 ? "1 file" : f.fileCount + " files"}</td>
           <td class="text-xs">${f.sourceIp}</td>
           <td class="text-xs">${formatTime(f.createdAt)}</td>
-          <td class="text-xs"><span class="badge ${isExpired ? "badge-red" : "badge-green"}">${formatExpiry(f.expiresAt)}</span></td>
-          <td>${f.hasPassword ? '<span class="badge badge-amber">Yes</span>' : '<span class="badge badge-gray">No</span>'}</td>
-          <td>${f.burnAfterReading ? '<span class="badge badge-red">Yes</span>' : '<span class="badge badge-gray">No</span>'}</td>
+          <td class="text-xs">${badge(formatExpiry(f.expiresAt), isExpired ? "red" : "green")}</td>
+          <td>${f.hasPassword ? badge("Yes", "amber") : booleanBadge(false)}</td>
+          <td>${f.burnAfterReading ? badge("Yes", "red") : booleanBadge(false)}</td>
           <td><button class="delete-file-btn text-error text-xs hover:underline" data-id="${f.id}">Delete</button></td>
         `;
         filesBody.appendChild(tr);
@@ -598,10 +601,10 @@ const surveyAdminRefreshBtn = document.getElementById("survey-admin-refresh-btn"
 let surveyAdminPage = 1;
 
 function formatSurveyStatus(status) {
-  if (status === "published") return '<span class="badge badge-green">Active</span>';
-  if (status === "draft") return '<span class="badge badge-amber">Draft</span>';
-  if (status === "ended") return '<span class="badge badge-red">Ended</span>';
-  return '<span class="badge badge-gray">Closed</span>';
+  if (status === "published") return badge("Active", "green");
+  if (status === "draft") return badge("Draft", "amber");
+  if (status === "ended") return badge("Ended", "red");
+  return badge("Closed", "gray");
 }
 
 function formatSurveyMode(mode) {
@@ -629,7 +632,7 @@ async function loadSurveysAdmin() {
     surveyAdminBody.innerHTML = "";
 
     if (!data.surveys.length) {
-      surveyAdminBody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-8">No surveys found.</td></tr>';
+      setTableState(surveyAdminBody, 8, "No surveys found.");
     } else {
       for (const survey of data.surveys) {
         const tr = document.createElement("tr");
@@ -741,7 +744,7 @@ async function loadUsers() {
     usersBody.innerHTML = "";
 
     if (data.users.length === 0) {
-      usersBody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-8">No users found.</td></tr>';
+      setTableState(usersBody, 7, "No users found.");
     } else {
       for (const u of data.users) {
         const tr = document.createElement("tr");
@@ -750,7 +753,7 @@ async function loadUsers() {
           <td class="text-sm font-medium">${escapeHtml(u.username)}</td>
           <td class="text-xs">${escapeHtml(u.email)}</td>
           <td>${roleOptions ? `<select class="input-field text-xs py-1 px-2 user-role-select" data-id="${u.id}">${roleOptions}</select>` : '<span class="text-xs text-muted">No roles</span>'}</td>
-          <td>${u.suspended ? '<span class="badge badge-red">Suspended</span>' : '<span class="badge badge-green">Active</span>'}</td>
+          <td>${u.suspended ? badge("Suspended", "red") : badge("Active", "green")}</td>
           <td id="mfa-${u.id}"><span class="text-xs text-muted">Loading...</span></td>
           <td class="text-xs">${formatTime(u.createdAt)}</td>
           <td>
@@ -834,13 +837,13 @@ async function loadInvites() {
     invitesBody.innerHTML = "";
 
     if (data.invites.length === 0) {
-      invitesBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-8">No invitations found.</td></tr>';
+      setTableState(invitesBody, 6, "No invitations found.");
     } else {
       for (const inv of data.invites) {
         const isExpired = inv.expiresAt < Math.floor(Date.now() / 1000);
-        const status = inv.used ? '<span class="badge badge-green">Used</span>'
-          : isExpired ? '<span class="badge badge-red">Expired</span>'
-          : '<span class="badge badge-amber">Pending</span>';
+        const status = inv.used ? badge("Used", "green")
+          : isExpired ? badge("Expired", "red")
+          : badge("Pending", "amber");
         const tr = document.createElement("tr");
         const isPending = !inv.used && !isExpired;
         const actions = isPending
@@ -1747,6 +1750,10 @@ const securitySessionTTLExtended = document.getElementById("security-session-ttl
 const securityMfaRememberDays = document.getElementById("security-mfa-remember-days");
 const securityMfaRequired = document.getElementById("security-mfa-required");
 const securityAdminReauthRequired = document.getElementById("security-admin-reauth-required");
+const securityOpenApiEnabled = document.getElementById("security-openapi-enabled");
+const securityServiceAccountsEnabled = document.getElementById("security-service-accounts-enabled");
+const securityWebhooksEnabled = document.getElementById("security-webhooks-enabled");
+const openApiAdminLink = document.getElementById("openapi-admin-link");
 const saveSecurityBtn = document.getElementById("save-security-btn");
 const securityResult = document.getElementById("security-result");
 const ssoEnabled = document.getElementById("sso-enabled");
@@ -1773,6 +1780,26 @@ const ssoForceAuthn = document.getElementById("sso-force-authn");
 const ssoMetadataLink = document.getElementById("sso-metadata-link");
 const saveSsoBtn = document.getElementById("save-sso-btn");
 const ssoResult = document.getElementById("sso-result");
+const serviceAccountDisabled = document.getElementById("service-account-disabled");
+const serviceAccountName = document.getElementById("service-account-name");
+const serviceAccountDescription = document.getElementById("service-account-description");
+const serviceAccountScopes = document.getElementById("service-account-scopes");
+const createServiceAccountBtn = document.getElementById("create-service-account-btn");
+const serviceAccountTokenOnce = document.getElementById("service-account-token-once");
+const serviceAccountsBody = document.getElementById("service-accounts-body");
+const serviceAccountsResult = document.getElementById("service-accounts-result");
+const webhookDisabled = document.getElementById("webhook-disabled");
+const webhookName = document.getElementById("webhook-name");
+const webhookUrl = document.getElementById("webhook-url");
+const webhookSecret = document.getElementById("webhook-secret");
+const webhookEnabled = document.getElementById("webhook-enabled");
+const webhookEvents = document.getElementById("webhook-events");
+const createWebhookBtn = document.getElementById("create-webhook-btn");
+const webhooksBody = document.getElementById("webhooks-body");
+const webhooksResult = document.getElementById("webhooks-result");
+
+let serviceAccountScopeOptions = [];
+let webhookEventOptions = [];
 
 async function loadSecuritySettings() {
   try {
@@ -1784,6 +1811,12 @@ async function loadSecuritySettings() {
     securityMfaRememberDays.value = data.mfaRememberDays || 30;
     securityMfaRequired.checked = data.mfaRequired || false;
     securityAdminReauthRequired.checked = data.adminReauthRequired || false;
+    if (securityOpenApiEnabled) securityOpenApiEnabled.checked = data.openApiEnabled || false;
+    if (securityServiceAccountsEnabled) securityServiceAccountsEnabled.checked = data.serviceAccountsEnabled || false;
+    if (securityWebhooksEnabled) securityWebhooksEnabled.checked = data.webhooksEnabled || false;
+    if (openApiAdminLink) openApiAdminLink.classList.toggle("hidden", !data.openApiEnabled);
+    serviceAccountDisabled?.classList.toggle("hidden", !!data.serviceAccountsEnabled);
+    webhookDisabled?.classList.toggle("hidden", !!data.webhooksEnabled);
   } catch {}
 }
 
@@ -1800,6 +1833,9 @@ saveSecurityBtn.addEventListener("click", async () => {
         mfaRememberDays: parseInt(securityMfaRememberDays.value, 10),
         mfaRequired: securityMfaRequired.checked,
         adminReauthRequired: securityAdminReauthRequired.checked,
+        openApiEnabled: securityOpenApiEnabled?.checked || false,
+        serviceAccountsEnabled: securityServiceAccountsEnabled?.checked || false,
+        webhooksEnabled: securityWebhooksEnabled?.checked || false,
       }),
     });
 
@@ -1807,6 +1843,8 @@ saveSecurityBtn.addEventListener("click", async () => {
       securityResult.textContent = "Security settings saved";
       securityResult.className = "text-sm text-accent";
       securityResult.classList.remove("hidden");
+      await loadServiceAccountControls();
+      await loadWebhookControls();
     } else {
       const data = await res.json();
       securityResult.textContent = data.error || "Failed to save";
@@ -1899,6 +1937,202 @@ saveSsoBtn?.addEventListener("click", async () => {
     ssoResult.classList.remove("hidden");
   } finally {
     saveSsoBtn.disabled = false;
+  }
+});
+
+function renderCheckboxGroup(container, options, prefix) {
+  if (!container) return;
+  container.innerHTML = options.map((option) => `
+    <label class="custom-checkbox gap-2">
+      <input type="checkbox" data-group="${escapeHtml(prefix)}" data-value="${escapeHtml(option)}">
+      <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+      <span class="text-sm">${escapeHtml(option)}</span>
+    </label>
+  `).join("");
+}
+
+function selectedDatasetValues(container, key) {
+  return [...(container?.querySelectorAll(`input[data-group="${key}"]:checked`) || [])].map((input) => input.dataset.value);
+}
+
+async function loadServiceAccountControls() {
+  if (!serviceAccountsBody) return;
+  const enabled = securityServiceAccountsEnabled?.checked || false;
+  serviceAccountDisabled?.classList.toggle("hidden", enabled);
+  createServiceAccountBtn.disabled = !enabled;
+  if (!serviceAccountScopeOptions.length) {
+    const scopesRes = await api("/api/service-accounts/scopes").catch(() => null);
+    if (scopesRes?.ok) {
+      serviceAccountScopeOptions = (await scopesRes.json()).scopes || [];
+      renderCheckboxGroup(serviceAccountScopes, serviceAccountScopeOptions, "scope");
+    }
+  }
+  if (!enabled) {
+    setTableState(serviceAccountsBody, 5, "Service-account API is disabled.", "muted", "py-3");
+    return;
+  }
+  const res = await api("/api/service-accounts").catch(() => null);
+  if (!res?.ok) {
+    setTableState(serviceAccountsBody, 5, "Failed to load service accounts.", "error", "py-3");
+    return;
+  }
+  const data = await res.json();
+  const rows = data.serviceAccounts || [];
+  if (!rows.length) {
+    setTableState(serviceAccountsBody, 5, "No service accounts yet.", "muted", "py-3");
+    return;
+  }
+  serviceAccountsBody.innerHTML = rows.map((account) => {
+    const activeTokens = (account.tokens || []).filter((token) => !token.revokedAt);
+    return `
+      <tr>
+        <td>
+          <div class="font-medium">${escapeHtml(account.name)}</div>
+          <div class="text-xs text-muted">${escapeHtml(account.description || "")}</div>
+        </td>
+        <td>${(account.scopes || []).map((scope) => badge(scope, "gray")).join(" ")}</td>
+        <td>${activeTokens.length} active</td>
+        <td>${badge(account.enabled ? "Enabled" : "Disabled", account.enabled ? "green" : "gray")}</td>
+        <td class="space-x-2">
+          <button type="button" class="btn-secondary text-xs service-token-btn" data-id="${escapeHtml(account.id)}">New Token</button>
+          <button type="button" class="btn-danger text-xs service-revoke-btn" data-id="${escapeHtml(account.id)}">Revoke Tokens</button>
+        </td>
+      </tr>
+    `;
+  }).join("");
+}
+
+createServiceAccountBtn?.addEventListener("click", async () => {
+  const scopes = selectedDatasetValues(serviceAccountScopes, "scope");
+  const res = await api("/api/service-accounts", {
+    method: "POST",
+    body: JSON.stringify({
+      name: serviceAccountName.value.trim(),
+      description: serviceAccountDescription.value.trim(),
+      scopes,
+      enabled: true,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return setInlineResult(serviceAccountsResult, data.error || "Failed to create service account", false);
+  serviceAccountName.value = "";
+  serviceAccountDescription.value = "";
+  serviceAccountScopes?.querySelectorAll("input").forEach((input) => { input.checked = false; });
+  setInlineResult(serviceAccountsResult, "Service account created");
+  await loadServiceAccountControls();
+});
+
+serviceAccountsBody?.addEventListener("click", async (event) => {
+  const button = event.target.closest("button");
+  if (!button) return;
+  const id = button.dataset.id;
+  if (button.classList.contains("service-token-btn")) {
+    const label = prompt("Token label", "API token");
+    if (label === null) return;
+    const res = await api(`/api/service-accounts/${id}/tokens`, {
+      method: "POST",
+      body: JSON.stringify({ label }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return setInlineResult(serviceAccountsResult, data.error || "Failed to create token", false);
+    serviceAccountTokenOnce.textContent = `Token shown once: ${data.token}`;
+    serviceAccountTokenOnce.classList.remove("hidden");
+    await loadServiceAccountControls();
+  }
+  if (button.classList.contains("service-revoke-btn")) {
+    if (!await showConfirmModal({ title: "Revoke Tokens", message: "All active tokens for this service account will stop working.", confirmLabel: "Revoke", danger: true })) return;
+    const res = await api(`/api/service-accounts/${id}/revoke-tokens`, { method: "POST" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return setInlineResult(serviceAccountsResult, data.error || "Failed to revoke tokens", false);
+    setInlineResult(serviceAccountsResult, `Revoked ${data.revoked || 0} token(s)`);
+    await loadServiceAccountControls();
+  }
+});
+
+async function loadWebhookControls() {
+  if (!webhooksBody) return;
+  const enabled = securityWebhooksEnabled?.checked || false;
+  webhookDisabled?.classList.toggle("hidden", enabled);
+  createWebhookBtn.disabled = !enabled;
+  if (!webhookEventOptions.length) {
+    const eventsRes = await api("/api/webhooks/events").catch(() => null);
+    if (eventsRes?.ok) {
+      webhookEventOptions = (await eventsRes.json()).events || [];
+      renderCheckboxGroup(webhookEvents, webhookEventOptions, "webhookEvent");
+    }
+  }
+  if (!enabled) {
+    setTableState(webhooksBody, 6, "Platform webhooks are disabled.", "muted", "py-3");
+    return;
+  }
+  const res = await api("/api/webhooks").catch(() => null);
+  if (!res?.ok) {
+    setTableState(webhooksBody, 6, "Failed to load webhooks.", "error", "py-3");
+    return;
+  }
+  const rows = (await res.json()).webhooks || [];
+  if (!rows.length) {
+    setTableState(webhooksBody, 6, "No webhooks yet.", "muted", "py-3");
+    return;
+  }
+  webhooksBody.innerHTML = rows.map((webhook) => {
+    const recent = webhook.recentDeliveries?.[0];
+    return `
+      <tr>
+        <td>${escapeHtml(webhook.name)}</td>
+        <td class="max-w-xs truncate">${escapeHtml(webhook.url)}</td>
+        <td>${(webhook.events || []).map((eventName) => badge(eventName, "gray")).join(" ")}</td>
+        <td>${badge(webhook.enabled ? "Enabled" : "Disabled", webhook.enabled ? "green" : "gray")}</td>
+        <td>${recent ? `${escapeHtml(recent.status)} (${recent.responseStatus || recent.error || "pending"})` : "No deliveries"}</td>
+        <td class="space-x-2">
+          <button type="button" class="btn-secondary text-xs webhook-test-btn" data-id="${escapeHtml(webhook.id)}">Test</button>
+          <button type="button" class="btn-danger text-xs webhook-delete-btn" data-id="${escapeHtml(webhook.id)}">Delete</button>
+        </td>
+      </tr>
+    `;
+  }).join("");
+}
+
+createWebhookBtn?.addEventListener("click", async () => {
+  const events = selectedDatasetValues(webhookEvents, "webhookEvent");
+  const res = await api("/api/webhooks", {
+    method: "POST",
+    body: JSON.stringify({
+      name: webhookName.value.trim(),
+      url: webhookUrl.value.trim(),
+      secret: webhookSecret.value,
+      events,
+      enabled: webhookEnabled.checked,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return setInlineResult(webhooksResult, data.error || "Failed to create webhook", false);
+  webhookName.value = "";
+  webhookUrl.value = "";
+  webhookSecret.value = "";
+  webhookEvents?.querySelectorAll("input").forEach((input) => { input.checked = false; });
+  setInlineResult(webhooksResult, "Webhook created");
+  await loadWebhookControls();
+});
+
+webhooksBody?.addEventListener("click", async (event) => {
+  const button = event.target.closest("button");
+  if (!button) return;
+  const id = button.dataset.id;
+  if (button.classList.contains("webhook-test-btn")) {
+    const res = await api(`/api/webhooks/${id}/test`, { method: "POST" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return setInlineResult(webhooksResult, data.error || "Failed to send test webhook", false);
+    setInlineResult(webhooksResult, "Webhook test queued and attempted");
+    await loadWebhookControls();
+  }
+  if (button.classList.contains("webhook-delete-btn")) {
+    if (!await showConfirmModal({ title: "Delete Webhook", message: "This delivery endpoint will be removed.", confirmLabel: "Delete", danger: true })) return;
+    const res = await api(`/api/webhooks/${id}`, { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return setInlineResult(webhooksResult, data.error || "Failed to delete webhook", false);
+    setInlineResult(webhooksResult, "Webhook deleted");
+    await loadWebhookControls();
   }
 });
 
@@ -2090,13 +2324,6 @@ backupExportBtn?.addEventListener("click", async () => {
     backupExportBtn.disabled = false;
   }
 });
-
-// --- Utility ---
-function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str;
-  return div.innerHTML;
-}
 
 // ============================================================
 // VAULTS

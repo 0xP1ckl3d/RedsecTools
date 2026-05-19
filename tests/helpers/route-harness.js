@@ -80,11 +80,14 @@ async function createRouteHarness(options = {}) {
     homepage: () => require("../../server/routes/homepage").router,
     reporter: () => require("../../server/routes/reporter"),
     engage: () => require("../../server/routes/engage"),
+    integrations: () => require("../../server/routes/integrations"),
+    admin: () => require("../../server/routes/admin").router,
   };
   for (const routeName of options.routes || []) {
     const routerFactory = routers[routeName];
     if (!routerFactory) throw new Error(`Unknown route harness router: ${routeName}`);
-    app.use(routeName === "homepage" ? "/api/homepage" : "/api", routerFactory());
+    const mountPath = routeName === "homepage" ? "/api/homepage" : (routeName === "admin" ? "/admin" : "/api");
+    app.use(mountPath, routerFactory());
   }
 
   const server = await new Promise((resolve) => {

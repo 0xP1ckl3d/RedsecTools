@@ -6,6 +6,8 @@
 (function () {
   "use strict";
 
+  const uiReady = import("/js/ui-components.js");
+
   const NOTIFICATION_ICONS = {
     bell: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>',
   };
@@ -77,9 +79,9 @@
       <div class="notification-item ${n.read_at ? "" : "unread"}" data-id="${n.id}">
         <div class="notification-item-title">
           <span class="notification-severity ${n.severity}"></span>
-          ${escapeHtml(n.title)}
+          ${window.RedSecUI.escapeHtml(n.title)}
         </div>
-        ${n.body ? `<div class="notification-item-body">${escapeHtml(n.body)}</div>` : ""}
+        ${n.body ? `<div class="notification-item-body">${window.RedSecUI.escapeHtml(n.body)}</div>` : ""}
         <div class="notification-item-meta">
           <span class="notification-item-time">${timeAgo(n.created_at)}</span>
         </div>
@@ -89,12 +91,6 @@
     list.querySelectorAll(".notification-item").forEach((item) => {
       item.addEventListener("click", () => handleNotificationClick(item.dataset.id));
     });
-  }
-
-  function escapeHtml(str) {
-    const div = document.createElement("div");
-    div.textContent = str;
-    return div.innerHTML;
   }
 
   async function handleNotificationClick(id) {
@@ -181,7 +177,8 @@
     panel.classList.toggle("hidden", !panelOpen);
   }
 
-  function initNotifications() {
+  async function initNotifications() {
+    await uiReady;
     const container = getOrCreateContainer();
     if (!container) return;
 

@@ -532,8 +532,27 @@
               <span class="text-sm">Require fresh admin authentication for high-risk changes</span>
             </label>
             <p class="text-xs text-muted -mt-3">When enabled, high-risk admin writes require the admin session to be 15 minutes old or newer.</p>
+            <div class="grid gap-3 md:grid-cols-3">
+              <label class="custom-checkbox gap-2">
+                <input type="checkbox" id="security-openapi-enabled">
+                <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+                <span class="text-sm">Publish OpenAPI in admin</span>
+              </label>
+              <label class="custom-checkbox gap-2">
+                <input type="checkbox" id="security-service-accounts-enabled">
+                <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+                <span class="text-sm">Enable service-account API</span>
+              </label>
+              <label class="custom-checkbox gap-2">
+                <input type="checkbox" id="security-webhooks-enabled">
+                <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+                <span class="text-sm">Enable platform webhooks</span>
+              </label>
+            </div>
+            <p class="text-xs text-muted -mt-3">These integration surfaces stay disabled until explicitly enabled here.</p>
             <div class="flex gap-3">
               <button type="button" id="save-security-btn" class="btn-primary">Save Security Settings</button>
+              <a href="/admin/openapi" id="openapi-admin-link" class="btn-secondary" target="_blank" rel="noopener noreferrer">Open API Docs</a>
             </div>
             <p id="security-result" class="text-sm hidden"></p>
           </div>
@@ -657,6 +676,84 @@
               <a href="/api/auth/sso/saml/metadata" id="sso-metadata-link" class="btn-secondary" target="_blank" rel="noopener noreferrer">View SP Metadata</a>
             </div>
             <p id="sso-result" class="text-sm hidden"></p>
+          </div>
+        </div>
+        <div class="card admin-section-card">
+          <div class="admin-card-header">
+            <div>
+              <p class="admin-card-kicker">API Readiness</p>
+              <h2 class="admin-card-title">Service Accounts</h2>
+              <p class="admin-card-copy">Create scoped machine identities for the professional API. Tokens are shown once and stored only as hashes.</p>
+            </div>
+          </div>
+          <div class="space-y-4">
+            <div id="service-account-disabled" class="info-box text-sm text-muted hidden">Enable service-account API above before creating API identities.</div>
+            <div class="grid gap-4 md:grid-cols-[1fr_1fr_auto]">
+              <input type="text" id="service-account-name" class="input-field" placeholder="Service account name" maxlength="120">
+              <input type="text" id="service-account-description" class="input-field" placeholder="Description" maxlength="500">
+              <button type="button" id="create-service-account-btn" class="btn-primary">Create</button>
+            </div>
+            <div id="service-account-scopes" class="grid gap-2 md:grid-cols-2"></div>
+            <p id="service-account-token-once" class="info-box text-sm hidden"></p>
+            <div class="overflow-x-auto">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Scopes</th>
+                    <th>Tokens</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="service-accounts-body">
+                  <tr><td colspan="5" class="text-muted">No service accounts loaded.</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p id="service-accounts-result" class="text-sm hidden"></p>
+          </div>
+        </div>
+        <div class="card admin-section-card">
+          <div class="admin-card-header">
+            <div>
+              <p class="admin-card-kicker">Integration Delivery</p>
+              <h2 class="admin-card-title">Platform Webhooks</h2>
+              <p class="admin-card-copy">Send signed event notifications to external systems with delivery history and retry state.</p>
+            </div>
+          </div>
+          <div class="space-y-4">
+            <div id="webhook-disabled" class="info-box text-sm text-muted hidden">Enable platform webhooks above before creating delivery endpoints.</div>
+            <div class="grid gap-4 md:grid-cols-2">
+              <input type="text" id="webhook-name" class="input-field" placeholder="Webhook name" maxlength="120">
+              <input type="url" id="webhook-url" class="input-field" placeholder="https://integrations.example.com/redsectools" maxlength="1000">
+              <input type="password" id="webhook-secret" class="input-field" placeholder="Signing secret (min 16 characters)" maxlength="500">
+              <label class="custom-checkbox gap-2">
+                <input type="checkbox" id="webhook-enabled" checked>
+                <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+                <span class="text-sm">Enabled</span>
+              </label>
+            </div>
+            <div id="webhook-events" class="grid gap-2 md:grid-cols-2"></div>
+            <button type="button" id="create-webhook-btn" class="btn-primary">Create Webhook</button>
+            <div class="overflow-x-auto">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>URL</th>
+                    <th>Events</th>
+                    <th>Status</th>
+                    <th>Recent Delivery</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="webhooks-body">
+                  <tr><td colspan="6" class="text-muted">No webhooks loaded.</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p id="webhooks-result" class="text-sm hidden"></p>
           </div>
         </div>
       </div>

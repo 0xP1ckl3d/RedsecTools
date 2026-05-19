@@ -49,6 +49,8 @@ function updateWeatherTimes() {
   });
 }
 
+import { escapeHtml } from "./ui-components.js";
+
 export async function loadWeather() {
   const container = document.getElementById("weather-widget");
   if (!container) return;
@@ -90,10 +92,4 @@ export async function loadWeather() {
   } catch {
     container.innerHTML = "";
   }
-}
-
-function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str;
-  return div.innerHTML;
 }

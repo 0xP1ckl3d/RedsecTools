@@ -65,12 +65,6 @@
     initialised: false,
   };
 
-  function escapeHtml(str) {
-    const div = document.createElement("div");
-    div.textContent = str == null ? "" : String(str);
-    return div.innerHTML;
-  }
-
   function formatDateTime(ts) {
     if (!ts) return "-";
     const d = new Date(ts * 1000);
@@ -211,8 +205,8 @@
     }
     target.innerHTML = selectedTypes.map((type) => `
       <div>
-        <label class="block text-sm text-muted mb-1">${escapeHtml(testTypeLabel(type))} Days</label>
-        <input type="text" inputmode="numeric" class="input-field w-full reporter-proposal-type-days" data-proposal-type-days="${escapeHtml(type)}" value="${escapeHtml(numericInputValue(allocations[type]))}">
+        <label class="block text-sm text-muted mb-1">${window.RedSecUI.escapeHtml(testTypeLabel(type))} Days</label>
+        <input type="text" inputmode="numeric" class="input-field w-full reporter-proposal-type-days" data-proposal-type-days="${window.RedSecUI.escapeHtml(type)}" value="${window.RedSecUI.escapeHtml(numericInputValue(allocations[type]))}">
       </div>
     `).join("");
     target.querySelectorAll(".reporter-proposal-type-days").forEach((input) => {
@@ -330,18 +324,18 @@
       .map((p) => {
         const testTypes = Array.isArray(p.testTypes) ? p.testTypes : [];
         return `
-      <div class="reporter-list-item" data-proposal-id="${escapeHtml(p.id)}">
+      <div class="reporter-list-item" data-proposal-id="${window.RedSecUI.escapeHtml(p.id)}">
         <div class="reporter-list-item-main">
-          <strong>${escapeHtml(p.title)}</strong>
-          <span class="text-sm text-muted ml-2">${escapeHtml(p.clientName || "Not set")}</span>
+          <strong>${window.RedSecUI.escapeHtml(p.title)}</strong>
+          <span class="text-sm text-muted ml-2">${window.RedSecUI.escapeHtml(p.clientName || "Not set")}</span>
           ${p.archivedAt ? '<span class="badge badge-gray ml-2">Archived</span>' : ""}
         </div>
         <div class="flex items-center gap-2">
-          <span class="text-sm text-muted">${escapeHtml(testTypes.length ? testTypes.join(", ") : "No types")}</span>
-          <span class="badge ${STATUS_BADGES[p.status] || "badge-gray"}">${escapeHtml(STATUS_LABELS[p.status] || p.status)}</span>
-          ${p.creatorUsername ? `<span class="text-sm text-muted">${escapeHtml(p.creatorUsername)}</span>` : ""}
+          <span class="text-sm text-muted">${window.RedSecUI.escapeHtml(testTypes.length ? testTypes.join(", ") : "No types")}</span>
+          <span class="badge ${STATUS_BADGES[p.status] || "badge-gray"}">${window.RedSecUI.escapeHtml(STATUS_LABELS[p.status] || p.status)}</span>
+          ${p.creatorUsername ? `<span class="text-sm text-muted">${window.RedSecUI.escapeHtml(p.creatorUsername)}</span>` : ""}
           <span class="text-sm text-muted">${formatDateTime(p.updatedAt)}</span>
-          ${p.quotedValue ? `<span class="text-sm text-muted">${escapeHtml(String(p.quotedValue))}</span>` : ""}
+          ${p.quotedValue ? `<span class="text-sm text-muted">${window.RedSecUI.escapeHtml(String(p.quotedValue))}</span>` : ""}
         </div>
       </div>`;
       })
@@ -488,9 +482,9 @@
     tree.innerHTML = sections
       .map(
         (s) => `
-      <button type="button" class="reporter-tree-item ${s.id === state.activeSectionId ? "active" : ""}" data-section-id="${escapeHtml(s.id)}">
-        <span class="reporter-tree-badge reporter-tree-badge-section">${escapeHtml((s.sectionType || "sec").slice(0, 3))}</span>
-        <span class="reporter-tree-item-title">${escapeHtml(s.title)}</span>
+      <button type="button" class="reporter-tree-item ${s.id === state.activeSectionId ? "active" : ""}" data-section-id="${window.RedSecUI.escapeHtml(s.id)}">
+        <span class="reporter-tree-badge reporter-tree-badge-section">${window.RedSecUI.escapeHtml((s.sectionType || "sec").slice(0, 3))}</span>
+        <span class="reporter-tree-item-title">${window.RedSecUI.escapeHtml(s.title)}</span>
         ${!s.isIncluded ? '<span class="text-muted text-xs">(excl.)</span>' : ""}
       </button>`
       )
@@ -525,7 +519,7 @@
           <div class="stat-label">PDF Generations</div>
         </div>
       </div>
-      ${state.engageOpportunity ? `<div class="card mt-3"><div class="card-header"><h3 class="font-semibold">Engage Opportunity</h3></div><div class="p-3"><a href="/engage/" class="text-accent" target="_blank">${escapeHtml(state.engageOpportunity.title)}</a> — ${escapeHtml(state.engageOpportunity.stage)} — ${escapeHtml(state.engageOpportunity.clientName || "")}</div></div>` : ""}`;
+      ${state.engageOpportunity ? `<div class="card mt-3"><div class="card-header"><h3 class="font-semibold">Engage Opportunity</h3></div><div class="p-3"><a href="/engage/" class="text-accent" target="_blank">${window.RedSecUI.escapeHtml(state.engageOpportunity.title)}</a> — ${window.RedSecUI.escapeHtml(state.engageOpportunity.stage)} — ${window.RedSecUI.escapeHtml(state.engageOpportunity.clientName || "")}</div></div>` : ""}`;
   }
 
   // --- Section editor ---
@@ -637,10 +631,10 @@
       try {
         const users = await fetchUsers();
         preparedByEl.innerHTML = '<option value="">Not set</option>' + users
-          .map((user) => `<option value="${escapeHtml(user.id)}" ${user.id === p.preparedByUserId ? "selected" : ""}>${escapeHtml(user.fullName || user.username || user.email || user.id)}${user.email ? ` (${escapeHtml(user.email)})` : ""}</option>`)
+          .map((user) => `<option value="${window.RedSecUI.escapeHtml(user.id)}" ${user.id === p.preparedByUserId ? "selected" : ""}>${window.RedSecUI.escapeHtml(user.fullName || user.username || user.email || user.id)}${user.email ? ` (${window.RedSecUI.escapeHtml(user.email)})` : ""}</option>`)
           .join("");
       } catch {
-        preparedByEl.innerHTML = `<option value="${escapeHtml(p.preparedByUserId || "")}">${escapeHtml(p.preparedByUsername || "Current preparer")}</option>`;
+        preparedByEl.innerHTML = `<option value="${window.RedSecUI.escapeHtml(p.preparedByUserId || "")}">${window.RedSecUI.escapeHtml(p.preparedByUsername || "Current preparer")}</option>`;
       }
     }
 
@@ -764,9 +758,9 @@
       <div class="reporter-pdf-item">
         <div class="reporter-pdf-info">
           <span class="text-sm font-semibold">v${g.version}</span>
-          <span class="badge ${g.status === "completed" ? "badge-green" : g.status === "failed" ? "badge-red" : "badge-yellow"}">${escapeHtml(g.status)}</span>
+          <span class="badge ${g.status === "completed" ? "badge-green" : g.status === "failed" ? "badge-red" : "badge-yellow"}">${window.RedSecUI.escapeHtml(g.status)}</span>
           <span class="text-sm text-muted">${formatDateTime(g.created_at || g.createdAt)}</span>
-          ${g.error_message ? '<span class="text-sm text-error">' + escapeHtml(g.error_message) + "</span>" : ""}
+          ${g.error_message ? '<span class="text-sm text-error">' + window.RedSecUI.escapeHtml(g.error_message) + "</span>" : ""}
         </div>
         <div class="reporter-pdf-actions">
           ${g.status === "completed" ? `<a href="/api/reporter/proposals/generations/${g.id}/download" class="btn-secondary text-sm" target="_blank">Download</a>` : ""}
@@ -813,13 +807,13 @@
     list.innerHTML = state.supportingImages.map((img) => `
       <div class="reporter-list-item">
         <div class="reporter-list-item-main">
-          <strong>${escapeHtml(img.filename || "Image")}</strong>
-          ${img.caption ? `<span class="text-sm text-muted ml-2">${escapeHtml(img.caption)}</span>` : ""}
-          <div class="mt-2"><img src="${proposalImageUrl(img.id)}" alt="${escapeHtml(img.caption || img.filename || "")}" style="max-width: 220px; max-height: 140px; border: 1px solid var(--border); border-radius: 4px;"></div>
+          <strong>${window.RedSecUI.escapeHtml(img.filename || "Image")}</strong>
+          ${img.caption ? `<span class="text-sm text-muted ml-2">${window.RedSecUI.escapeHtml(img.caption)}</span>` : ""}
+          <div class="mt-2"><img src="${proposalImageUrl(img.id)}" alt="${window.RedSecUI.escapeHtml(img.caption || img.filename || "")}" style="max-width: 220px; max-height: 140px; border: 1px solid var(--border); border-radius: 4px;"></div>
         </div>
         <div class="flex items-center gap-2">
-          <button type="button" class="btn-secondary text-sm" data-proposal-image-insert="${escapeHtml(img.id)}">Insert</button>
-          <button type="button" class="btn-danger text-sm" data-proposal-image-delete="${escapeHtml(img.id)}">Delete</button>
+          <button type="button" class="btn-secondary text-sm" data-proposal-image-insert="${window.RedSecUI.escapeHtml(img.id)}">Insert</button>
+          <button type="button" class="btn-danger text-sm" data-proposal-image-delete="${window.RedSecUI.escapeHtml(img.id)}">Delete</button>
         </div>
       </div>
     `).join("");
@@ -883,9 +877,9 @@
     list.innerHTML = state.notes.map((note) => `
       <div class="reporter-list-item">
         <div class="reporter-list-item-main">
-          <strong>${escapeHtml(note.title || "Untitled Note")}</strong>
-          <span class="text-sm text-muted ml-2">${escapeHtml(note.username || "unknown")} · ${formatDateTime(note.updatedAt || note.createdAt)}</span>
-          <p class="text-sm mt-2">${escapeHtml(note.content || "")}</p>
+          <strong>${window.RedSecUI.escapeHtml(note.title || "Untitled Note")}</strong>
+          <span class="text-sm text-muted ml-2">${window.RedSecUI.escapeHtml(note.username || "unknown")} · ${formatDateTime(note.updatedAt || note.createdAt)}</span>
+          <p class="text-sm mt-2">${window.RedSecUI.escapeHtml(note.content || "")}</p>
         </div>
       </div>
     `).join("");
@@ -928,9 +922,9 @@
     list.innerHTML = state.comments.map((comment) => `
       <div class="reporter-list-item">
         <div class="reporter-list-item-main">
-          <strong>${escapeHtml(comment.username || "unknown")}</strong>
+          <strong>${window.RedSecUI.escapeHtml(comment.username || "unknown")}</strong>
           <span class="text-sm text-muted ml-2">${formatDateTime(comment.updatedAt || comment.createdAt)}</span>
-          <p class="text-sm mt-2">${escapeHtml(comment.content || "")}</p>
+          <p class="text-sm mt-2">${window.RedSecUI.escapeHtml(comment.content || "")}</p>
         </div>
       </div>
     `).join("");
@@ -974,8 +968,8 @@
     list.innerHTML = state.history.map((item) => `
       <div class="reporter-list-item">
         <div class="reporter-list-item-main">
-          <strong>${escapeHtml(item.changeSummary || item.change_summary || "Change")}</strong>
-          <span class="text-sm text-muted ml-2">${escapeHtml(item.username || "system")} · ${formatDateTime(item.createdAt || item.created_at)}</span>
+          <strong>${window.RedSecUI.escapeHtml(item.changeSummary || item.change_summary || "Change")}</strong>
+          <span class="text-sm text-muted ml-2">${window.RedSecUI.escapeHtml(item.username || "system")} · ${formatDateTime(item.createdAt || item.created_at)}</span>
         </div>
       </div>
     `).join("");
@@ -1043,11 +1037,11 @@
 
     // Build the modal content using the reporter modal
     const templateOptions = templates
-      .map((t) => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.name)}</option>`)
+      .map((t) => `<option value="${window.RedSecUI.escapeHtml(t.id)}">${window.RedSecUI.escapeHtml(t.name)}</option>`)
       .join("");
 
     const typeChecks = testTypes
-      .map((t) => `<label class="reporter-type-checkbox"><input type="checkbox" value="${escapeHtml(t.test_type)}"> ${escapeHtml(t.name)}</label>`)
+      .map((t) => `<label class="reporter-type-checkbox"><input type="checkbox" value="${window.RedSecUI.escapeHtml(t.test_type)}"> ${window.RedSecUI.escapeHtml(t.name)}</label>`)
       .join("");
 
     const bodyHtml = `

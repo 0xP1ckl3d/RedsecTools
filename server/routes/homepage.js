@@ -5,10 +5,15 @@ const multer = require("multer");
 const sharp = require("sharp");
 const path = require("path");
 const fs = require("fs");
-const net = require("net");
-const dns = require("dns").promises;
 const { requireUser } = require("../middleware/auth");
 const { httpGetJSON } = require("../http-helper");
+const { logEvent, logWarn } = require("../core/logger");
+const { assertPublicHttpUrl } = require("../core/security/fetch-targets");
+const {
+  safeFetchPublicUrl,
+  readResponseBufferWithLimit,
+  readResponseTextWithLimit,
+} = require("../core/security/safe-fetch");
 const {
   getShortcutsByUser, createShortcut, updateShortcutById, deleteShortcutById, getShortcutById,
   getShortcutByIdAny,
@@ -61,115 +66,29 @@ const iconUpload = multer({
 
 const MAX_ICON_REDIRECTS = 3;
 const ALLOWED_ICON_PORTS = new Set(["", "80", "443"]);
-
-function isPrivateIpv4(address) {
-  const parts = address.split(".").map((part) => parseInt(part, 10));
-  if (parts.length !== 4 || parts.some((part) => Number.isNaN(part) || part < 0 || part > 255)) {
-    return true;
-  }
-
-  const [a, b] = parts;
-  if (a === 0 || a === 10 || a === 127) return true;
-  if (a === 169 && b === 254) return true;
-  if (a === 172 && b >= 16 && b <= 31) return true;
-  if (a === 192 && b === 168) return true;
-  if (a === 100 && b >= 64 && b <= 127) return true;
-  if (a === 198 && (b === 18 || b === 19)) return true;
-  if (a >= 224) return true;
-  return false;
-}
-
-function isPrivateIpv6(address) {
-  const normalized = address.toLowerCase();
-  if (normalized === "::" || normalized === "::1") return true;
-  if (normalized.startsWith("fc") || normalized.startsWith("fd")) return true;
-  if (normalized.startsWith("fe8") || normalized.startsWith("fe9") || normalized.startsWith("fea") || normalized.startsWith("feb")) return true;
-  if (normalized.startsWith("ff")) return true;
-
-  const mappedMatch = normalized.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  if (mappedMatch) {
-    return isPrivateIpv4(mappedMatch[1]);
-  }
-
-  return false;
-}
-
-function isReservedIp(address) {
-  const family = net.isIP(address);
-  if (family === 4) return isPrivateIpv4(address);
-  if (family === 6) return isPrivateIpv6(address);
-  return true;
-}
+const MAX_FAVICON_HTML_BYTES = 100 * 1024;
+const MAX_FAVICON_IMAGE_BYTES = 2 * 1024 * 1024;
 
 async function isPublicFetchTarget(targetUrl) {
-  let parsed;
   try {
-    parsed = new URL(targetUrl);
+    await assertPublicHttpUrl(targetUrl, { allowPorts: ALLOWED_ICON_PORTS });
+    return true;
   } catch {
     return false;
   }
-
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    return false;
-  }
-  if (parsed.username || parsed.password) {
-    return false;
-  }
-  if (!ALLOWED_ICON_PORTS.has(parsed.port)) {
-    return false;
-  }
-
-  const hostname = parsed.hostname.toLowerCase();
-  if (!hostname || hostname === "localhost") {
-    return false;
-  }
-  if (net.isIP(hostname)) {
-    return false;
-  }
-
-  let addresses;
-  try {
-    addresses = await dns.lookup(hostname, { all: true, verbatim: true });
-  } catch {
-    return false;
-  }
-
-  if (!addresses.length) {
-    return false;
-  }
-
-  return addresses.every((entry) => !isReservedIp(entry.address));
 }
 
 async function fetchWithValidatedRedirects(initialUrl, options = {}) {
-  let currentUrl = initialUrl;
+  return safeFetchPublicUrl(initialUrl, {
+    ...options,
+    allowPorts: ALLOWED_ICON_PORTS,
+    maxRedirects: MAX_ICON_REDIRECTS,
+  });
+}
 
-  for (let redirectCount = 0; redirectCount <= MAX_ICON_REDIRECTS; redirectCount++) {
-    if (!(await isPublicFetchTarget(currentUrl))) {
-      throw new Error("Blocked unsafe icon fetch target");
-    }
-
-    const response = await fetch(currentUrl, {
-      ...options,
-      redirect: "manual",
-    });
-
-    if (response.status >= 300 && response.status < 400) {
-      const location = response.headers.get("location");
-      if (!location) {
-        throw new Error("Redirect missing location");
-      }
-      if (redirectCount === MAX_ICON_REDIRECTS) {
-        throw new Error("Too many redirects");
-      }
-      currentUrl = new URL(location, currentUrl).href;
-      continue;
-    }
-
-    return { response, finalUrl: currentUrl };
-  }
-
-  throw new Error("Too many redirects");
+function logFavicon(action, metadata = {}, warn = false) {
+  if (warn) logWarn(action, metadata);
+  else logEvent(action, null, metadata);
 }
 
 // ============================================================
@@ -181,32 +100,27 @@ async function fetchFavicon(pageUrl) {
   try {
     if (!(await isPublicFetchTarget(pageUrl))) return null;
 
-    console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_fetch_start", url: pageUrl }));
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+    logFavicon("favicon_fetch_start", { url: pageUrl });
 
     const { response, finalUrl } = await fetchWithValidatedRedirects(pageUrl, {
-      signal: controller.signal,
+      timeoutMs: 8000,
       headers: { "User-Agent": "Mozilla/5.0 (compatible; RedSecTools/1.0)" },
     });
-    clearTimeout(timeout);
 
     if (!response.ok) {
-      console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_fetch_page_fail", url: pageUrl, status: response.status }));
+      logFavicon("favicon_fetch_page_fail", { url: pageUrl, status: response.status }, true);
       return null;
     }
 
-    // Read HTML — use text() for reliability across Node fetch implementations
-    const html = await response.text();
-    const trimmedHtml = html.substring(0, 100 * 1024);
+    const html = await readResponseTextWithLimit(response, MAX_FAVICON_HTML_BYTES);
+    const trimmedHtml = html.substring(0, MAX_FAVICON_HTML_BYTES);
 
-    console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_html_fetched", url: pageUrl, htmlLen: trimmedHtml.length }));
+    logFavicon("favicon_html_fetched", { url: pageUrl, htmlLen: trimmedHtml.length });
 
     // Extract favicon URLs from <link> tags
     const candidates = extractFaviconCandidates(trimmedHtml, finalUrl);
 
-    console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_candidates", url: pageUrl, count: candidates.length, urls: candidates.map((c) => c.url) }));
+    logFavicon("favicon_candidates", { url: pageUrl, count: candidates.length });
 
     // Also add /favicon.ico as last resort
     const parsed = new URL(finalUrl);
@@ -222,15 +136,15 @@ async function fetchFavicon(pageUrl) {
     for (const candidate of sortedCandidates) {
       const result = await tryFetchIcon(candidate);
       if (result) {
-        console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_fetch_success", url: pageUrl, faviconUrl: candidate.url }));
+        logFavicon("favicon_fetch_success", { url: pageUrl });
         return result;
       }
     }
 
-    console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_fetch_all_failed", url: pageUrl }));
+    logFavicon("favicon_fetch_all_failed", { url: pageUrl }, true);
     return null;
   } catch (err) {
-    console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_fetch_error", url: pageUrl, error: err.message, stack: err.stack }));
+    logFavicon("favicon_fetch_error", { url: pageUrl, error: err.message }, true);
     return null;
   }
 }
@@ -319,7 +233,7 @@ async function saveIconRaw(buf, ext) {
   const id = crypto.randomBytes(16).toString("base64url");
   const iconPath = path.join(SHORTCUT_ICONS_DIR, `${id}.${ext}`);
   fs.writeFileSync(iconPath, buf);
-  console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_saved_raw", id, ext, size: buf.length }));
+  logFavicon("favicon_saved_raw", { id, ext, size: buf.length });
   return `/api/homepage/shortcut-icon/${id}.${ext}`;
 }
 
@@ -329,30 +243,24 @@ async function tryFetchIcon(candidate) {
       return null;
     }
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-
     const { response: imgResponse } = await fetchWithValidatedRedirects(candidate.url, {
-      signal: controller.signal,
+      timeoutMs: 5000,
       headers: { "User-Agent": "Mozilla/5.0 (compatible; RedSecTools/1.0)" },
     });
-    clearTimeout(timeout);
 
     if (!imgResponse.ok) {
-      console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_icon_fail", url: candidate.url, status: imgResponse.status }));
+      logFavicon("favicon_icon_fail", { url: candidate.url, status: imgResponse.status }, true);
       return null;
     }
 
     const contentType = imgResponse.headers.get("content-type") || "";
-    console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_icon_response", url: candidate.url, contentType, isIco: !!candidate.isIco }));
+    logFavicon("favicon_icon_response", { url: candidate.url, contentType, isIco: !!candidate.isIco });
 
-    const arrayBuf = await imgResponse.arrayBuffer();
-    if (arrayBuf.byteLength < 10 || arrayBuf.byteLength > 2 * 1024 * 1024) {
-      console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_icon_size", url: candidate.url, size: arrayBuf.byteLength }));
+    const buf = await readResponseBufferWithLimit(imgResponse, MAX_FAVICON_IMAGE_BYTES);
+    if (buf.length < 10) {
+      logFavicon("favicon_icon_size", { url: candidate.url, size: buf.length }, true);
       return null;
     }
-
-    const buf = Buffer.from(arrayBuf);
 
     // Check actual file format via magic bytes (more reliable than content-type)
     // PNG: 89 50 4E 47
@@ -369,7 +277,7 @@ async function tryFetchIcon(candidate) {
     // SVG (text-based): starts with < or has <svg
     const isSvg = contentType.includes("svg") || (buf[0] === 0x3C && buf.toString("utf8", 0, 200).includes("<svg"));
 
-    console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_icon_format", url: candidate.url, isPng, isJpeg, isWebp, isGif, isIco, isSvg }));
+    logFavicon("favicon_icon_format", { url: candidate.url, isPng, isJpeg, isWebp, isGif, isIco, isSvg });
 
     // sharp can process: PNG, JPEG, WebP, GIF, SVG
     if (isPng || isJpeg || isWebp || isGif || isSvg) {
@@ -380,29 +288,29 @@ async function tryFetchIcon(candidate) {
     if (isIco) {
       const pngBuf = extractPngFromIco(buf);
       if (pngBuf) {
-        console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_ico_png_extracted", url: candidate.url, pngSize: pngBuf.length }));
+        logFavicon("favicon_ico_png_extracted", { url: candidate.url, pngSize: pngBuf.length });
         return await convertToWebpIcon(pngBuf);
       }
       // No PNG inside ICO — save ICO directly (browsers display ICO in <img>)
-      console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_ico_save_raw", url: candidate.url }));
+      logFavicon("favicon_ico_save_raw", { url: candidate.url });
       return await saveIconRaw(buf, "ico");
     }
 
     // Unknown format but looks like an image — try sharp anyway
     if (contentType.startsWith("image/")) {
-      console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_icon_unknown_try", url: candidate.url, contentType }));
+      logFavicon("favicon_icon_unknown_try", { url: candidate.url, contentType });
       try {
         return await convertToWebpIcon(buf);
       } catch (sharpErr) {
-        console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_icon_unknown_fail", url: candidate.url, error: sharpErr.message }));
+        logFavicon("favicon_icon_unknown_fail", { url: candidate.url, error: sharpErr.message }, true);
         return null;
       }
     }
 
-    console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_icon_not_image", url: candidate.url, contentType }));
+    logFavicon("favicon_icon_not_image", { url: candidate.url, contentType }, true);
     return null;
   } catch (err) {
-    console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_icon_error", url: candidate.url, error: err.message }));
+    logFavicon("favicon_icon_error", { url: candidate.url, error: err.message }, true);
     return null;
   }
 }
@@ -419,10 +327,10 @@ async function convertToWebpIcon(buffer) {
     const iconPath = path.join(SHORTCUT_ICONS_DIR, `${id}.webp`);
     fs.writeFileSync(iconPath, webpBuffer);
 
-    console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_converted", id, size: webpBuffer.length }));
+    logFavicon("favicon_converted", { id, size: webpBuffer.length });
     return `/api/homepage/shortcut-icon/${id}`;
   } catch (err) {
-    console.log(JSON.stringify({ ts: new Date().toISOString(), action: "favicon_convert_fail", id, error: err.message }));
+    logFavicon("favicon_convert_fail", { id, error: err.message }, true);
     throw err;
   }
 }

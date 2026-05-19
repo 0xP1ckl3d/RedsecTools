@@ -1,6 +1,6 @@
 # RedSecTools API Documentation
 
-This folder contains the repository-only API documentation for RedSecTools.
+This folder contains the source OpenAPI documentation for RedSecTools.
 
 Files:
 - `openapi.json` — OpenAPI 3.1 spec covering the HTTP API, auth requirements, request bodies, and common responses.
@@ -21,17 +21,21 @@ The current spec covers all HTTP routes across the platform:
 - RedSecShare upload/download routes plus live upload-config endpoints used by the app and extension
 
 Important:
-- These docs are **not** exposed by the live app.
-- The Express server only serves files from `public/` and explicit route mounts in `server/index.js`.
-- Nothing under `docs/` is mounted or reachable unless you separately publish it yourself.
+- These docs are exposed in-app only when an admin enables OpenAPI publishing in Admin > Security.
+- The interactive in-app documentation is `GET /admin/openapi`.
+- The machine-readable spec remains available at `GET /admin/api/openapi.json` for tooling.
+- Both endpoints require a valid admin session and linked user session; they are disabled by default.
+- The OpenAPI `servers` entry is relative to the current origin, so the interactive docs run against the host where RedSecTools is actually deployed rather than a hardcoded localhost URL.
 
 ## How to view the docs
 
-Any OpenAPI-compatible viewer will work. Common options:
+Preferred option:
 
-1. Open `docs/api/openapi.json` in [Swagger Editor](https://editor.swagger.io/)
-2. Import it into Postman, Insomnia, or Bruno
-3. Use any local OpenAPI viewer you already prefer
+1. Enable OpenAPI publishing in Admin > Security
+2. Open `GET /admin/openapi`
+3. Use Swagger UI with the current logged-in admin/user cookies, or authorize with a service-account bearer token for `/api/v1/*` routes
+
+The JSON spec can still be imported into Postman, Insomnia, Bruno, or Swagger Editor when an external workflow is needed.
 
 ## Auth overview
 

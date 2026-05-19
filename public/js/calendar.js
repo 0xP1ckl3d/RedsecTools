@@ -1,4 +1,5 @@
 import { showConfirmModal } from "./confirm-modal.js";
+import { escapeHtml, tableStateRow } from "./ui-components.js";
 
 const DAY_SECONDS = 24 * 60 * 60;
 const WEEK_SECONDS = 7 * DAY_SECONDS;
@@ -94,12 +95,6 @@ async function fetchJson(url, options) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || "Request failed");
   return data;
-}
-
-function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str == null ? "" : String(str);
-  return div.innerHTML;
 }
 
 function formatShortDate(unix) {
@@ -904,7 +899,7 @@ function renderProjectTable() {
 
   tbody.innerHTML = pageItems.length
     ? pageItems.map((project) => renderProjectRow(project)).join("")
-    : `<tr><td colspan="11" class="text-muted">${filtered.length ? "No projects on this page." : "No projects configured yet."}</td></tr>`;
+    : tableStateRow(11, filtered.length ? "No projects on this page." : "No projects configured yet.", "muted", "py-3");
 
   tbody.querySelectorAll(".calendar-project-edit-btn").forEach((button) => {
     button.addEventListener("click", () => {

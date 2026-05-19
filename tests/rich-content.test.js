@@ -34,7 +34,12 @@ test("sanitizeBulletinHtml handles malformed and namespace payloads without acti
     <template><img src=x onerror=alert(1)></template>
     <a href=//evil.example/path onmouseover=alert(1)>protocol relative</a>
     <a href="java&#x0A;script:alert(1)">encoded control</a>
+    <a href="jav&#x61;script:alert(1)">entity protocol</a>
+    <a href="data:text/html,<script>alert(1)</script>">data protocol</a>
     <img src="data:image/svg+xml;base64,PHN2Zy8+" alt="data">
+    <img srcset="/api/homepage/bulletin-assets/a 1x, https://evil.example/a.png 2x" src="/api/homepage/bulletin-assets/srcset_asset">
+    <form action="/admin"><button formaction="javascript:alert(1)">go</button></form>
+    <iframe srcdoc="<script>alert(1)</script>"></iframe>
     <img SRC="/api/homepage/bulletin-assets/good_asset" OnError="alert(1)" class="x">
     <div><strong>safe</strong></div>
   `);
@@ -47,6 +52,11 @@ test("sanitizeBulletinHtml handles malformed and namespace payloads without acti
   assert.ok(!html.includes("//evil.example"));
   assert.ok(!html.includes("javascript:"));
   assert.ok(!html.includes("data:image"));
+  assert.ok(!html.includes("srcset="));
+  assert.ok(!html.includes("<form"));
+  assert.ok(!html.includes("<iframe"));
+  assert.ok(!html.includes("formaction"));
+  assert.ok(!html.includes("srcdoc"));
   assert.ok(html.includes('/api/homepage/bulletin-assets/good_asset'));
   assert.ok(html.includes("<strong>safe</strong>"));
 });

@@ -3,12 +3,12 @@
   "info": {
     "title": "RedSecTools API",
     "version": "2.1.0",
-    "description": "Repository-only OpenAPI documentation for RedSecTools. This file is not served by the live application. It documents the current HTTP API, including auth requirements for main app, guest-link, extension, and admin routes. RedSecCal supports multi-day entry series with weekdays-only fan-out and series-level edit/delete. RedSecEngage includes full client, contact, opportunity, engagement, QA, team, activity, and cross-tool linking routes. RedSecReporter includes first-class proposals, proposal templates, and test-type write-ups alongside existing project, finding, design, and PDF generation routes."
+    "description": "OpenAPI documentation for RedSecTools. Admins can publish this spec in-app at /admin/api/openapi.json from Admin > Security. It documents the current HTTP API, including auth requirements for main app, guest-link, extension, admin, and scoped service-account routes."
   },
   "servers": [
     {
-      "url": "http://localhost:3000",
-      "description": "Local development server"
+      "url": "/",
+      "description": "Current RedSecTools origin"
     }
   ],
   "tags": [
@@ -75,6 +75,10 @@
     {
       "name": "RedSecAI",
       "description": "RedSecAI status, chat, and confirmation-gated action endpoints"
+    },
+    {
+      "name": "Professional API",
+      "description": "Scoped service-account API and integration endpoints"
     }
   ],
   "components": {
@@ -101,6 +105,11 @@
         "in": "cookie",
         "name": "redsec_admin",
         "description": "Signed admin session cookie created by POST /admin/login. Required for all routes under /admin/api. After initial bootstrap, admin API access also requires an active linked UserSessionCookie (redsec_session) — both cookies must be present. This two-step auth ensures admin actions are tied to a logged-in user session."
+      },
+      "ServiceAccountBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Scoped service-account API token with rst_sa_ prefix. Tokens are shown once and stored hashed."
       }
     },
     "schemas": {
@@ -5816,52 +5825,106 @@
     },
     "/admin/api/settings/theme": {
       "get": {
-        "tags": ["Admin"],
+        "tags": [
+          "Admin"
+        ],
         "summary": "Get site primary theme",
         "description": "Requires both redsec_admin cookie and active redsec_session.",
-        "security": [{"AdminCookie": [], "UserSessionCookie": []}],
+        "security": [
+          {
+            "AdminCookie": [],
+            "UserSessionCookie": []
+          }
+        ],
         "responses": {
-          "200": {"description": "Theme settings"},
-          "401": {"$ref": "#/components/responses/Unauthorized"},
-          "403": {"$ref": "#/components/responses/Forbidden"}
+          "200": {
+            "description": "Theme settings"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       },
       "post": {
-        "tags": ["Admin"],
+        "tags": [
+          "Admin"
+        ],
         "summary": "Update site primary theme",
         "description": "Requires both redsec_admin cookie and active redsec_session.",
-        "security": [{"AdminCookie": [], "UserSessionCookie": []}],
+        "security": [
+          {
+            "AdminCookie": [],
+            "UserSessionCookie": []
+          }
+        ],
         "responses": {
-          "200": {"description": "Theme updated"},
-          "400": {"$ref": "#/components/responses/BadRequest"},
-          "401": {"$ref": "#/components/responses/Unauthorized"},
-          "403": {"$ref": "#/components/responses/Forbidden"}
+          "200": {
+            "description": "Theme updated"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       }
     },
     "/admin/api/engage-activity": {
       "get": {
-        "tags": ["Admin"],
+        "tags": [
+          "Admin"
+        ],
         "summary": "List engage activity log with pagination",
         "description": "Requires both redsec_admin cookie and active redsec_session.",
-        "security": [{"AdminCookie": [], "UserSessionCookie": []}],
+        "security": [
+          {
+            "AdminCookie": [],
+            "UserSessionCookie": []
+          }
+        ],
         "responses": {
-          "200": {"description": "Activity log entries"},
-          "401": {"$ref": "#/components/responses/Unauthorized"},
-          "403": {"$ref": "#/components/responses/Forbidden"}
+          "200": {
+            "description": "Activity log entries"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       }
     },
     "/admin/api/engage-activity.csv": {
       "get": {
-        "tags": ["Admin"],
+        "tags": [
+          "Admin"
+        ],
         "summary": "Export engage activity log as CSV",
         "description": "Requires both redsec_admin cookie and active redsec_session.",
-        "security": [{"AdminCookie": [], "UserSessionCookie": []}],
+        "security": [
+          {
+            "AdminCookie": [],
+            "UserSessionCookie": []
+          }
+        ],
         "responses": {
-          "200": {"description": "CSV file download"},
-          "401": {"$ref": "#/components/responses/Unauthorized"},
-          "403": {"$ref": "#/components/responses/Forbidden"}
+          "200": {
+            "description": "CSV file download"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       }
     },
@@ -6332,570 +6395,1274 @@
     },
     "/api/engage/utilisation": {
       "get": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Get basic RedSecEngage utilisation from RedSecCal-derived data",
-        "security": [{"UserSessionCookie": []}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
         "responses": {
-          "200": {"description": "Utilisation summary, overallocated users, available capacity, and scheduling gaps"},
-          "403": {"description": "Missing Engage view permission"}
+          "200": {
+            "description": "Utilisation summary, overallocated users, available capacity, and scheduling gaps"
+          },
+          "403": {
+            "description": "Missing Engage view permission"
+          }
         }
       }
     },
     "/api/engage/dashboard": {
       "get": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Get dashboard statistics",
-        "security": [{"UserSessionCookie": []}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
         "responses": {
-          "200": {"description": "Dashboard stats"},
-          "403": {"description": "Missing Engage view permission"}
+          "200": {
+            "description": "Dashboard stats"
+          },
+          "403": {
+            "description": "Missing Engage view permission"
+          }
         }
       }
     },
     "/api/engage/pipeline-stats": {
       "get": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Get pipeline value and opportunity stage distribution",
-        "security": [{"UserSessionCookie": []}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
         "responses": {
-          "200": {"description": "Pipeline statistics"},
-          "403": {"description": "Missing Engage view permission"}
+          "200": {
+            "description": "Pipeline statistics"
+          },
+          "403": {
+            "description": "Missing Engage view permission"
+          }
         }
       }
     },
     "/api/engage/status-summary": {
       "get": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Get engagement status distribution, blocked and overdue lists",
-        "security": [{"UserSessionCookie": []}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
         "responses": {
-          "200": {"description": "Status summary"},
-          "403": {"description": "Missing Engage view permission"}
+          "200": {
+            "description": "Status summary"
+          },
+          "403": {
+            "description": "Missing Engage view permission"
+          }
         }
       }
     },
     "/api/engage/clients/{id}": {
       "get": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Get a single client by ID",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Client details"},
-          "404": {"description": "Client not found"}
+          "200": {
+            "description": "Client details"
+          },
+          "404": {
+            "description": "Client not found"
+          }
         }
       },
       "put": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Update a client",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Client updated"},
-          "400": {"description": "Invalid payload"},
-          "403": {"description": "Missing Engage client edit permission"},
-          "404": {"description": "Client not found"}
+          "200": {
+            "description": "Client updated"
+          },
+          "400": {
+            "description": "Invalid payload"
+          },
+          "403": {
+            "description": "Missing Engage client edit permission"
+          },
+          "404": {
+            "description": "Client not found"
+          }
         }
       }
     },
     "/api/engage/clients/{id}/archive": {
       "post": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Archive a client",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Client archived"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Client not found"}
+          "200": {
+            "description": "Client archived"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Client not found"
+          }
         }
       }
     },
     "/api/engage/clients/{id}/detail": {
       "get": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Get client detail with contacts, opportunities, engagements, notes, and activity",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Full client detail"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Client not found"}
+          "200": {
+            "description": "Full client detail"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Client not found"
+          }
         }
       }
     },
     "/api/engage/clients/{id}/contacts": {
       "get": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "List contacts for a client",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Contact list"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Client not found"}
+          "200": {
+            "description": "Contact list"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Client not found"
+          }
         }
       },
       "post": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Create a contact for a client",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "201": {"description": "Contact created"},
-          "400": {"description": "Invalid payload"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Client not found"}
+          "201": {
+            "description": "Contact created"
+          },
+          "400": {
+            "description": "Invalid payload"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Client not found"
+          }
         }
       }
     },
     "/api/engage/contacts/{id}": {
       "put": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Update a contact",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Contact updated"},
-          "400": {"description": "Invalid payload"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Contact not found"}
+          "200": {
+            "description": "Contact updated"
+          },
+          "400": {
+            "description": "Invalid payload"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Contact not found"
+          }
         }
       }
     },
     "/api/engage/contacts/{id}/archive": {
       "post": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Archive a contact",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Contact archived"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Contact not found"}
+          "200": {
+            "description": "Contact archived"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Contact not found"
+          }
         }
       }
     },
     "/api/engage/reporter/proposals": {
       "get": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Search reporter proposals for cross-tool picker",
-        "security": [{"UserSessionCookie": []}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
         "responses": {
-          "200": {"description": "Matching proposals"},
-          "403": {"description": "Missing permission"}
+          "200": {
+            "description": "Matching proposals"
+          },
+          "403": {
+            "description": "Missing permission"
+          }
         }
       }
     },
     "/api/engage/reporter/projects": {
       "get": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Search reporter projects for cross-tool picker",
-        "security": [{"UserSessionCookie": []}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
         "responses": {
-          "200": {"description": "Matching projects"},
-          "403": {"description": "Missing permission"}
+          "200": {
+            "description": "Matching projects"
+          },
+          "403": {
+            "description": "Missing permission"
+          }
         }
       }
     },
     "/api/engage/calendar/projects": {
       "get": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Search calendar projects for cross-tool picker",
-        "security": [{"UserSessionCookie": []}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
         "responses": {
-          "200": {"description": "Matching calendar projects"},
-          "403": {"description": "Missing permission"}
+          "200": {
+            "description": "Matching calendar projects"
+          },
+          "403": {
+            "description": "Missing permission"
+          }
         }
       }
     },
     "/api/engage/opportunities/{id}": {
       "get": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Get opportunity detail with notes and linked proposals",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Opportunity detail"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Opportunity not found"}
+          "200": {
+            "description": "Opportunity detail"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Opportunity not found"
+          }
         }
       },
       "put": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Update an opportunity",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Opportunity updated"},
-          "400": {"description": "Invalid payload"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Opportunity not found"}
+          "200": {
+            "description": "Opportunity updated"
+          },
+          "400": {
+            "description": "Invalid payload"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Opportunity not found"
+          }
         }
       }
     },
     "/api/engage/opportunities/{id}/stage": {
       "post": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Change opportunity stage",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Stage updated"},
-          "400": {"description": "Invalid stage"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Opportunity not found"}
+          "200": {
+            "description": "Stage updated"
+          },
+          "400": {
+            "description": "Invalid stage"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Opportunity not found"
+          }
         }
       }
     },
     "/api/engage/opportunities/{id}/notes": {
       "post": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Create a note on an opportunity",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "201": {"description": "Note created"},
-          "400": {"description": "Invalid payload"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Opportunity not found"}
+          "201": {
+            "description": "Note created"
+          },
+          "400": {
+            "description": "Invalid payload"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Opportunity not found"
+          }
         }
       }
     },
     "/api/engage/opportunities/{id}/link-proposal": {
       "post": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Link a reporter proposal to an opportunity",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Proposal linked"},
-          "400": {"description": "Invalid payload"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Opportunity not found"}
+          "200": {
+            "description": "Proposal linked"
+          },
+          "400": {
+            "description": "Invalid payload"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Opportunity not found"
+          }
         }
       }
     },
     "/api/engage/opportunities/{id}/create-proposal": {
       "post": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Create a reporter proposal from an opportunity",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "201": {"description": "Proposal created"},
-          "400": {"description": "Invalid payload"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Opportunity not found"}
+          "201": {
+            "description": "Proposal created"
+          },
+          "400": {
+            "description": "Invalid payload"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Opportunity not found"
+          }
         }
       }
     },
     "/api/engage/opportunities/{id}/generate-proposal-pdf": {
       "post": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Generate proposal PDF (redirects to Reporter UI)",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "PDF generation initiated"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Opportunity not found"}
+          "200": {
+            "description": "PDF generation initiated"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Opportunity not found"
+          }
         }
       }
     },
     "/api/engage/opportunities/{id}/convert-to-engagement": {
       "post": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Convert a won opportunity to an engagement",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "201": {"description": "Engagement created from opportunity"},
-          "400": {"description": "Opportunity not in won stage"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Opportunity not found"}
+          "201": {
+            "description": "Engagement created from opportunity"
+          },
+          "400": {
+            "description": "Opportunity not in won stage"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Opportunity not found"
+          }
         }
       }
     },
     "/api/engage/engagements/{id}": {
       "get": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Get engagement detail with linked Reporter/Calendar projects",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Engagement detail"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Engagement not found"}
+          "200": {
+            "description": "Engagement detail"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Engagement not found"
+          }
         }
       },
       "put": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Update an engagement",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Engagement updated"},
-          "400": {"description": "Invalid payload"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Engagement not found"}
+          "200": {
+            "description": "Engagement updated"
+          },
+          "400": {
+            "description": "Invalid payload"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Engagement not found"
+          }
         }
       }
     },
     "/api/engage/engagements/{id}/status": {
       "post": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Change engagement status (blocks if active QA exists)",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Status updated"},
-          "400": {"description": "Invalid status or active QA exists"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Engagement not found"}
+          "200": {
+            "description": "Status updated"
+          },
+          "400": {
+            "description": "Invalid status or active QA exists"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Engagement not found"
+          }
         }
       }
     },
     "/api/engage/engagements/{id}/archive": {
       "post": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Archive an engagement",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Engagement archived"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Engagement not found"}
+          "200": {
+            "description": "Engagement archived"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Engagement not found"
+          }
         }
       }
     },
     "/api/engage/engagements/{id}/detail": {
       "get": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Get engagement detail with team, activity, notes, QA reviews, linked projects, and PDFs",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Full engagement detail"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Engagement not found"}
+          "200": {
+            "description": "Full engagement detail"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Engagement not found"
+          }
         }
       }
     },
     "/api/engage/users": {
       "get": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "List users for team assignment",
-        "security": [{"UserSessionCookie": []}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
         "responses": {
-          "200": {"description": "User list with id and username"},
-          "403": {"description": "Missing permission"}
+          "200": {
+            "description": "User list with id and username"
+          },
+          "403": {
+            "description": "Missing permission"
+          }
         }
       }
     },
     "/api/engage/engagements/{id}/team": {
       "get": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "List team members for an engagement",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Team member list"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Engagement not found"}
+          "200": {
+            "description": "Team member list"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Engagement not found"
+          }
         }
       },
       "post": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Add a team member to an engagement",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "201": {"description": "Team member added"},
-          "400": {"description": "Invalid payload"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Engagement not found"}
+          "201": {
+            "description": "Team member added"
+          },
+          "400": {
+            "description": "Invalid payload"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Engagement not found"
+          }
         }
       }
     },
     "/api/engage/engagements/{id}/team/{memberId}": {
       "put": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Update a team member role or primary status",
-        "security": [{"UserSessionCookie": []}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
         "parameters": [
-          {"$ref": "#/components/parameters/IdPathParam"},
-          {"name": "memberId", "in": "path", "required": true, "schema": {"type": "string"}}
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          },
+          {
+            "name": "memberId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "responses": {
-          "200": {"description": "Team member updated"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Not found"}
+          "200": {
+            "description": "Team member updated"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Not found"
+          }
         }
       },
       "delete": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Remove a team member from an engagement",
-        "security": [{"UserSessionCookie": []}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
         "parameters": [
-          {"$ref": "#/components/parameters/IdPathParam"},
-          {"name": "memberId", "in": "path", "required": true, "schema": {"type": "string"}}
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          },
+          {
+            "name": "memberId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "responses": {
-          "200": {"description": "Team member removed"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Not found"}
+          "200": {
+            "description": "Team member removed"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Not found"
+          }
         }
       }
     },
     "/api/engage/engagements/{id}/qa/assign": {
       "post": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Assign a QA review to a user (creates new if no existing review)",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "QA review assigned"},
-          "400": {"description": "Invalid payload"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Engagement not found"}
+          "200": {
+            "description": "QA review assigned"
+          },
+          "400": {
+            "description": "Invalid payload"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Engagement not found"
+          }
         }
       }
     },
     "/api/engage/qa/{id}/status": {
       "post": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Update QA review status (manages engagement status for terminal states)",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "QA status updated"},
-          "400": {"description": "Invalid status transition"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "QA review not found"}
+          "200": {
+            "description": "QA status updated"
+          },
+          "400": {
+            "description": "Invalid status transition"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "QA review not found"
+          }
         }
       }
     },
     "/api/engage/qa/{id}": {
       "put": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Update a QA review (notes, links, status, assignee)",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "QA review updated"},
-          "400": {"description": "Invalid payload"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "QA review not found"}
+          "200": {
+            "description": "QA review updated"
+          },
+          "400": {
+            "description": "Invalid payload"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "QA review not found"
+          }
         }
       }
     },
     "/api/engage/engagements/{id}/activity": {
       "get": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Get activity log and notes for an engagement",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Activity log and notes"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Engagement not found"}
+          "200": {
+            "description": "Activity log and notes"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Engagement not found"
+          }
         }
       }
     },
     "/api/engage/engagements/{id}/notes": {
       "post": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Create a note on an engagement",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "201": {"description": "Note created"},
-          "400": {"description": "Invalid payload"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Engagement not found"}
+          "201": {
+            "description": "Note created"
+          },
+          "400": {
+            "description": "Invalid payload"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Engagement not found"
+          }
         }
       }
     },
     "/api/engage/clients/{id}/notes": {
       "post": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Create a note on a client",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "201": {"description": "Note created"},
-          "400": {"description": "Invalid payload"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Client not found"}
+          "201": {
+            "description": "Note created"
+          },
+          "400": {
+            "description": "Invalid payload"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Client not found"
+          }
         }
       }
     },
     "/api/engage/engagements/{id}/link-calendar": {
       "post": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Link a calendar project to an engagement",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Calendar project linked"},
-          "400": {"description": "Invalid payload"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Engagement not found"}
+          "200": {
+            "description": "Calendar project linked"
+          },
+          "400": {
+            "description": "Invalid payload"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Engagement not found"
+          }
         }
       }
     },
     "/api/engage/engagements/{id}/link-reporter": {
       "post": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Link reporter project(s) to an engagement",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Reporter project(s) linked"},
-          "400": {"description": "Invalid payload"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Engagement not found"}
+          "200": {
+            "description": "Reporter project(s) linked"
+          },
+          "400": {
+            "description": "Invalid payload"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Engagement not found"
+          }
         }
       }
     },
     "/api/engage/engagements/{id}/create-reporter-project": {
       "post": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Create a reporter project from an engagement",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "201": {"description": "Reporter project created"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Engagement not found"}
+          "201": {
+            "description": "Reporter project created"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Engagement not found"
+          }
         }
       }
     },
     "/api/engage/engagements/{id}/create-calendar-project": {
       "post": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Create a calendar project from an engagement",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "201": {"description": "Calendar project created"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Engagement not found"}
+          "201": {
+            "description": "Calendar project created"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Engagement not found"
+          }
         }
       }
     },
     "/api/engage/engagements/{id}/calendar-allocations": {
       "post": {
-        "tags": ["Engage"],
+        "tags": [
+          "Engage"
+        ],
         "summary": "Create calendar allocations for an engagement's linked calendar project",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Allocations created"},
-          "400": {"description": "Invalid payload or no linked calendar project"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Engagement not found"}
+          "200": {
+            "description": "Allocations created"
+          },
+          "400": {
+            "description": "Invalid payload or no linked calendar project"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Engagement not found"
+          }
         }
       }
     },
@@ -13312,510 +14079,1160 @@
     },
     "/api/reporter/users": {
       "get": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "List users available for project assignment",
-        "security": [{"UserSessionCookie": []}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
         "responses": {
-          "200": {"description": "Success"},
-          "401": {"description": "Not authenticated"},
-          "403": {"description": "Insufficient permissions"}
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          }
         }
       }
     },
     "/api/reporter/proposals": {
       "get": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "List proposals (filterable by active/archived)",
-        "security": [{"UserSessionCookie": []}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
         "responses": {
-          "200": {"description": "Proposal list"},
-          "403": {"description": "Missing Reporter view permission"}
+          "200": {
+            "description": "Proposal list"
+          },
+          "403": {
+            "description": "Missing Reporter view permission"
+          }
         }
       },
       "post": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "Create a proposal",
-        "security": [{"UserSessionCookie": []}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
         "responses": {
-          "201": {"description": "Proposal created"},
-          "400": {"description": "Invalid payload"},
-          "403": {"description": "Missing permission"}
+          "201": {
+            "description": "Proposal created"
+          },
+          "400": {
+            "description": "Invalid payload"
+          },
+          "403": {
+            "description": "Missing permission"
+          }
         }
       }
     },
     "/api/reporter/proposals/templates": {
       "get": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "List proposal templates with their sections",
-        "security": [{"UserSessionCookie": []}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
         "responses": {
-          "200": {"description": "Proposal template list"},
-          "403": {"description": "Missing permission"}
+          "200": {
+            "description": "Proposal template list"
+          },
+          "403": {
+            "description": "Missing permission"
+          }
         }
       }
     },
     "/api/reporter/proposals/test-types": {
       "get": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "List test type write-ups",
-        "security": [{"UserSessionCookie": []}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
         "responses": {
-          "200": {"description": "Test type write-up list"},
-          "403": {"description": "Missing permission"}
+          "200": {
+            "description": "Test type write-up list"
+          },
+          "403": {
+            "description": "Missing permission"
+          }
         }
       }
     },
     "/api/reporter/proposals/{id}": {
       "get": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "Get proposal detail with sections, generations, and linked opportunity",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Proposal detail"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Proposal not found"}
+          "200": {
+            "description": "Proposal detail"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Proposal not found"
+          }
         }
       },
       "put": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "Update proposal metadata",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Proposal updated"},
-          "400": {"description": "Invalid payload"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Proposal not found"}
+          "200": {
+            "description": "Proposal updated"
+          },
+          "400": {
+            "description": "Invalid payload"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Proposal not found"
+          }
         }
       }
     },
     "/api/reporter/proposals/{id}/status": {
       "put": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "Change proposal status",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Status updated"},
-          "400": {"description": "Invalid status"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Proposal not found"}
+          "200": {
+            "description": "Status updated"
+          },
+          "400": {
+            "description": "Invalid status"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Proposal not found"
+          }
         }
       }
     },
     "/api/reporter/proposals/{id}/archive": {
       "post": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "Archive a proposal",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Proposal archived"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Proposal not found"}
+          "200": {
+            "description": "Proposal archived"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Proposal not found"
+          }
         }
       }
     },
     "/api/reporter/proposals/{id}/unarchive": {
       "post": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "Unarchive a proposal",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Proposal unarchived"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Proposal not found"}
+          "200": {
+            "description": "Proposal unarchived"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Proposal not found"
+          }
         }
       }
     },
     "/api/reporter/proposals/{id}/sections": {
       "get": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "List proposal sections",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Section list"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Proposal not found"}
+          "200": {
+            "description": "Section list"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Proposal not found"
+          }
         }
       },
       "post": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "Create a proposal section",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "201": {"description": "Section created"},
-          "400": {"description": "Invalid payload"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Proposal not found"}
+          "201": {
+            "description": "Section created"
+          },
+          "400": {
+            "description": "Invalid payload"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Proposal not found"
+          }
         }
       }
     },
     "/api/reporter/proposals/sections/{sectionId}": {
       "put": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "Update a proposal section",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"name": "sectionId", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "sectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
-          "200": {"description": "Section updated"},
-          "400": {"description": "Invalid payload"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Section not found"}
+          "200": {
+            "description": "Section updated"
+          },
+          "400": {
+            "description": "Invalid payload"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Section not found"
+          }
         }
       },
       "delete": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "Delete a proposal section",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"name": "sectionId", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "sectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
-          "200": {"description": "Section deleted"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Section not found"}
+          "200": {
+            "description": "Section deleted"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Section not found"
+          }
         }
       }
     },
     "/api/reporter/proposals/{id}/sections/reorder": {
       "put": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "Reorder proposal sections",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Sections reordered"},
-          "400": {"description": "Invalid order"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Proposal not found"}
+          "200": {
+            "description": "Sections reordered"
+          },
+          "400": {
+            "description": "Invalid order"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Proposal not found"
+          }
         }
       }
     },
     "/api/reporter/proposals/{id}/generations": {
       "get": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "List PDF generations for a proposal",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Generation list"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Proposal not found"}
+          "200": {
+            "description": "Generation list"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Proposal not found"
+          }
         }
       }
     },
     "/api/reporter/proposals/{id}/render-pdf": {
       "post": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "Generate a proposal PDF",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "PDF generated"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Proposal not found"}
+          "200": {
+            "description": "PDF generated"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Proposal not found"
+          }
         }
       }
     },
     "/api/reporter/proposals/generations/{generationId}/download": {
       "get": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "Download a proposal PDF",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"name": "generationId", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "generationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
-          "200": {"description": "PDF file download"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Generation not found"}
+          "200": {
+            "description": "PDF file download"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Generation not found"
+          }
         }
       }
     },
     "/api/reporter/proposals/generations/{generationId}": {
       "delete": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "Delete a proposal PDF generation",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"name": "generationId", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "generationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
-          "200": {"description": "Generation deleted"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Generation not found"}
+          "200": {
+            "description": "Generation deleted"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Generation not found"
+          }
         }
       }
     },
     "/api/reporter/proposals/{id}/preview": {
       "get": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "Render HTML preview of a proposal",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "HTML preview"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Proposal not found"}
+          "200": {
+            "description": "HTML preview"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Proposal not found"
+          }
         }
       }
     },
     "/api/reporter/proposals/{id}/preview.pdf": {
       "get": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "Render PDF preview of a proposal",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "PDF preview"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Proposal not found"}
+          "200": {
+            "description": "PDF preview"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Proposal not found"
+          }
         }
       }
     },
     "/api/reporter/proposal-templates": {
       "get": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "List proposal templates",
-        "security": [{"UserSessionCookie": []}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
         "responses": {
-          "200": {"description": "Template list"},
-          "403": {"description": "Missing permission"}
+          "200": {
+            "description": "Template list"
+          },
+          "403": {
+            "description": "Missing permission"
+          }
         }
       },
       "post": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "Create a proposal template",
-        "security": [{"UserSessionCookie": []}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
         "responses": {
-          "201": {"description": "Template created"},
-          "400": {"description": "Invalid payload"},
-          "403": {"description": "Missing permission"}
+          "201": {
+            "description": "Template created"
+          },
+          "400": {
+            "description": "Invalid payload"
+          },
+          "403": {
+            "description": "Missing permission"
+          }
         }
       }
     },
     "/api/reporter/proposal-templates/{id}": {
       "get": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "Get proposal template with sections",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Template detail"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Template not found"}
+          "200": {
+            "description": "Template detail"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Template not found"
+          }
         }
       },
       "put": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "Update a proposal template",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Template updated"},
-          "400": {"description": "Invalid payload"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Template not found"}
+          "200": {
+            "description": "Template updated"
+          },
+          "400": {
+            "description": "Invalid payload"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Template not found"
+          }
         }
       }
     },
     "/api/reporter/proposal-templates/{id}/duplicate": {
       "post": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "Duplicate a proposal template",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "201": {"description": "Template duplicated"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Template not found"}
+          "201": {
+            "description": "Template duplicated"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Template not found"
+          }
         }
       }
     },
     "/api/reporter/proposal-templates/{id}/archive": {
       "post": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "Archive a proposal template",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Template archived"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Template not found"}
+          "200": {
+            "description": "Template archived"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Template not found"
+          }
         }
       }
     },
     "/api/reporter/proposal-templates/{id}/sections": {
       "get": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "List sections for a proposal template",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Section list"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Template not found"}
+          "200": {
+            "description": "Section list"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Template not found"
+          }
         }
       },
       "post": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "Create a section on a proposal template",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "201": {"description": "Section created"},
-          "400": {"description": "Invalid payload"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Template not found"}
+          "201": {
+            "description": "Section created"
+          },
+          "400": {
+            "description": "Invalid payload"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Template not found"
+          }
         }
       }
     },
     "/api/reporter/proposal-template-sections/{id}": {
       "put": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "Update a proposal template section",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Section updated"},
-          "400": {"description": "Invalid payload"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Section not found"}
+          "200": {
+            "description": "Section updated"
+          },
+          "400": {
+            "description": "Invalid payload"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Section not found"
+          }
         }
       },
       "delete": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "Delete a proposal template section",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Section deleted"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Section not found"}
+          "200": {
+            "description": "Section deleted"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Section not found"
+          }
         }
       }
     },
     "/api/reporter/proposal-templates/{id}/sections/reorder": {
       "post": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "Reorder proposal template sections",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Sections reordered"},
-          "400": {"description": "Invalid order"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Template not found"}
+          "200": {
+            "description": "Sections reordered"
+          },
+          "400": {
+            "description": "Invalid order"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Template not found"
+          }
         }
       }
     },
     "/api/reporter/proposal-templates/{id}/preview": {
       "get": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "Render HTML preview of a proposal template",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "HTML preview"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Template not found"}
+          "200": {
+            "description": "HTML preview"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Template not found"
+          }
         }
       }
     },
     "/api/reporter/proposal-templates/{id}/preview.pdf": {
       "get": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "Render PDF preview of a proposal template",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "PDF preview"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Template not found"}
+          "200": {
+            "description": "PDF preview"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Template not found"
+          }
         }
       }
     },
     "/api/reporter/proposal-templates/{id}/preview.css": {
       "get": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "Get CSS for proposal template preview",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Preview CSS"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Template not found"}
+          "200": {
+            "description": "Preview CSS"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Template not found"
+          }
         }
       }
     },
     "/api/reporter/test-type-writeups": {
       "get": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "List test type write-ups",
-        "security": [{"UserSessionCookie": []}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
         "responses": {
-          "200": {"description": "Test type write-up list"},
-          "403": {"description": "Missing permission"}
+          "200": {
+            "description": "Test type write-up list"
+          },
+          "403": {
+            "description": "Missing permission"
+          }
         }
       },
       "post": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "Create a test type write-up",
-        "security": [{"UserSessionCookie": []}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
         "responses": {
-          "201": {"description": "Write-up created"},
-          "400": {"description": "Invalid payload"},
-          "403": {"description": "Missing permission"}
+          "201": {
+            "description": "Write-up created"
+          },
+          "400": {
+            "description": "Invalid payload"
+          },
+          "403": {
+            "description": "Missing permission"
+          }
         }
       }
     },
     "/api/reporter/test-type-writeups/{id}": {
       "get": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "Get a single test type write-up",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Write-up detail"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Write-up not found"}
+          "200": {
+            "description": "Write-up detail"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Write-up not found"
+          }
         }
       },
       "put": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "Update a test type write-up",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Write-up updated"},
-          "400": {"description": "Invalid payload"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Write-up not found"}
+          "200": {
+            "description": "Write-up updated"
+          },
+          "400": {
+            "description": "Invalid payload"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Write-up not found"
+          }
         }
       }
     },
     "/api/reporter/test-type-writeups/{id}/duplicate": {
       "post": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "Duplicate a test type write-up",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "201": {"description": "Write-up duplicated"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Write-up not found"}
+          "201": {
+            "description": "Write-up duplicated"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Write-up not found"
+          }
         }
       }
     },
     "/api/reporter/test-type-writeups/{id}/archive": {
       "post": {
-        "tags": ["Reporter"],
+        "tags": [
+          "Reporter"
+        ],
         "summary": "Archive a test type write-up",
-        "security": [{"UserSessionCookie": []}],
-        "parameters": [{"$ref": "#/components/parameters/IdPathParam"}],
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdPathParam"
+          }
+        ],
         "responses": {
-          "200": {"description": "Write-up archived"},
-          "403": {"description": "Missing permission"},
-          "404": {"description": "Write-up not found"}
+          "200": {
+            "description": "Write-up archived"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "Write-up not found"
+          }
         }
       }
     },
@@ -18389,6 +19806,933 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/me": {
+      "get": {
+        "tags": [
+          "Professional API"
+        ],
+        "summary": "Inspect service-account API identity",
+        "security": [
+          {
+            "ServiceAccountBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current service account"
+          },
+          "401": {
+            "description": "Bearer token required or invalid"
+          },
+          "404": {
+            "description": "Service-account API disabled"
+          }
+        }
+      }
+    },
+    "/api/v1/audit-events": {
+      "get": {
+        "tags": [
+          "Professional API"
+        ],
+        "summary": "List audit events using audit.read scope",
+        "security": [
+          {
+            "ServiceAccountBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Audit event page"
+          },
+          "403": {
+            "description": "Missing audit.read scope"
+          }
+        }
+      }
+    },
+    "/api/v1/deployment/counts": {
+      "get": {
+        "tags": [
+          "Professional API"
+        ],
+        "summary": "Read deployment counts using deployment.read scope",
+        "security": [
+          {
+            "ServiceAccountBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deployment counts"
+          },
+          "403": {
+            "description": "Missing deployment.read scope"
+          }
+        }
+      }
+    },
+    "/api/v1/threat/alerts": {
+      "get": {
+        "tags": [
+          "Professional API"
+        ],
+        "summary": "List threat alerts using threat.read scope",
+        "security": [
+          {
+            "ServiceAccountBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "unreadOnly",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Threat alerts"
+          },
+          "403": {
+            "description": "Missing threat.read scope"
+          }
+        }
+      }
+    },
+    "/admin/api/openapi.json": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Download OpenAPI spec when enabled in Admin > Security",
+        "description": "Machine-readable OpenAPI document used by the in-app Swagger UI and external tooling. It is disabled by default and gated by admin authentication.",
+        "security": [
+          {
+            "AdminCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OpenAPI document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "OpenAPI publishing disabled or unavailable"
+          }
+        }
+      }
+    },
+    "/admin/openapi": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Open interactive Swagger UI API documentation",
+        "description": "Admin-only interactive API documentation. The page is available only when OpenAPI publishing is enabled in Admin > Security and uses the current deployment origin rather than a hardcoded host.",
+        "security": [
+          {
+            "AdminCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Swagger UI HTML shell",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "OpenAPI publishing disabled or unavailable"
+          }
+        }
+      }
+    },
+    "/admin/openapi/init.js": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Swagger UI bootstrap script",
+        "security": [
+          {
+            "AdminCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Swagger UI initialization script",
+            "content": {
+              "application/javascript": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "OpenAPI publishing disabled or unavailable"
+          }
+        }
+      }
+    },
+    "/admin/api/service-accounts/scopes": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List allowed service-account scopes",
+        "security": [
+          {
+            "AdminCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Allowed service-account scopes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/admin/api/service-accounts": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List service accounts",
+        "description": "Disabled unless service-account API access is enabled in Admin > Security.",
+        "security": [
+          {
+            "AdminCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Service account list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Service accounts disabled or unavailable"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Create service account",
+        "description": "High-risk admin write. Requires recent admin auth when that control is enabled.",
+        "security": [
+          {
+            "AdminCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "description": "Service account create request",
+                "type": "object",
+                "required": [
+                  "name",
+                  "scopes"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "scopes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "enabled": {
+                    "type": "boolean",
+                    "default": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created service account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Service accounts disabled or unavailable"
+          }
+        }
+      }
+    },
+    "/admin/api/service-accounts/{id}": {
+      "put": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Update service account",
+        "description": "High-risk admin write. Requires recent admin auth when that control is enabled.",
+        "security": [
+          {
+            "AdminCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "description": "Service account update request",
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "scopes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated service account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Service account disabled or unavailable"
+          }
+        }
+      }
+    },
+    "/admin/api/service-accounts/{id}/tokens": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Create service-account bearer token",
+        "description": "Returns the plaintext token once. The server stores only a hash. High-risk admin write.",
+        "security": [
+          {
+            "AdminCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "description": "Service account token create request",
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  "expiresAt": {
+                    "type": "integer",
+                    "nullable": true,
+                    "description": "Unix timestamp expiry, or null for no expiry"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created token with one-time plaintext value",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Service account disabled or unavailable"
+          }
+        }
+      }
+    },
+    "/admin/api/service-accounts/{id}/revoke-tokens": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Revoke all tokens for a service account",
+        "description": "High-risk admin write. Requires recent admin auth when that control is enabled.",
+        "security": [
+          {
+            "AdminCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revocation result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Service account disabled or unavailable"
+          }
+        }
+      }
+    },
+    "/admin/api/service-accounts/tokens/{tokenId}/revoke": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Revoke one service-account token",
+        "description": "High-risk admin write. Requires recent admin auth when that control is enabled.",
+        "security": [
+          {
+            "AdminCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tokenId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revocation result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Service-account token disabled or unavailable"
+          }
+        }
+      }
+    },
+    "/admin/api/webhooks/events": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List supported platform webhook events",
+        "security": [
+          {
+            "AdminCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Webhook event list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/admin/api/webhooks": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List platform webhooks",
+        "description": "Disabled unless platform webhook delivery is enabled in Admin > Security.",
+        "security": [
+          {
+            "AdminCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Webhook list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Platform webhooks disabled or unavailable"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Create platform webhook",
+        "description": "Validates target URLs with SSRF protections and stores encrypted webhook secrets. High-risk admin write.",
+        "security": [
+          {
+            "AdminCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "description": "Webhook create request",
+                "type": "object",
+                "required": [
+                  "name",
+                  "url",
+                  "events"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  "url": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "secret": {
+                    "type": "string",
+                    "minLength": 16
+                  },
+                  "events": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "enabled": {
+                    "type": "boolean",
+                    "default": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created webhook",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Platform webhooks disabled or unavailable"
+          }
+        }
+      }
+    },
+    "/admin/api/webhooks/{id}": {
+      "put": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Update platform webhook",
+        "description": "High-risk admin write. Requires recent admin auth when that control is enabled.",
+        "security": [
+          {
+            "AdminCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "description": "Webhook update request",
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  "url": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "secret": {
+                    "type": "string",
+                    "minLength": 16
+                  },
+                  "events": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated webhook",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Webhook disabled or unavailable"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Delete platform webhook",
+        "description": "High-risk admin write. Requires recent admin auth when that control is enabled.",
+        "security": [
+          {
+            "AdminCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deletion result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Webhook disabled or unavailable"
+          }
+        }
+      }
+    },
+    "/admin/api/webhooks/{id}/deliveries": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List platform webhook delivery history",
+        "security": [
+          {
+            "AdminCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Webhook delivery history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Webhook disabled or unavailable"
+          }
+        }
+      }
+    },
+    "/admin/api/webhooks/{id}/test": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Send a test platform webhook delivery",
+        "description": "Queues and attempts a signed test delivery using X-RedSec-Delivery, X-RedSec-Event, and X-RedSec-Signature headers. High-risk admin write.",
+        "security": [
+          {
+            "AdminCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Test delivery result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Webhook disabled or unavailable"
           }
         }
       }

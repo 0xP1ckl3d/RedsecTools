@@ -9,11 +9,7 @@ const EngageUtilisation = (() => {
     { label: "90d", days: 90 },
   ];
 
-  function esc(str) {
-    const d = document.createElement("div");
-    d.textContent = str || "";
-    return d.innerHTML;
-  }
+  const esc = (str) => window.RedSecUI.escapeHtml(str || "");
 
   async function init() {
     await refresh();

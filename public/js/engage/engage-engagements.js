@@ -44,11 +44,7 @@ const EngageEngagements = (() => {
   const TEAM_ROLES = ["manager", "technical_lead", "tester", "qa_reviewer", "observer"];
   const TEAM_ROLE_LABELS = { manager: "Manager", technical_lead: "Technical Lead", tester: "Tester", qa_reviewer: "QA Reviewer", observer: "Observer" };
 
-  function esc(str) {
-    const d = document.createElement("div");
-    d.textContent = str || "";
-    return d.innerHTML;
-  }
+  const esc = (str) => window.RedSecUI.escapeHtml(str || "");
 
   function formatDate(ts) {
     if (!ts) return "---";

@@ -19,11 +19,7 @@ const EngageClients = (() => {
     return types.map((t) => `<span class="engage-type-tag">${esc(OPP_TYPE_LABELS[t] || t)}</span>`).join("");
   }
 
-  function esc(str) {
-    const d = document.createElement("div");
-    d.textContent = str || "";
-    return d.innerHTML;
-  }
+  const esc = (str) => window.RedSecUI.escapeHtml(str || "");
 
   function formatDate(ts) {
     if (!ts) return "---";

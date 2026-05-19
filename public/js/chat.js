@@ -9,6 +9,10 @@
  * All functions are scoped inside an IIFE.
  */
 (async function () {
+  var sharedUi = await import("./ui-components.js");
+  var escapeHtml = sharedUi.escapeHtml;
+  var stateBlock = sharedUi.stateBlock;
+
   // ── DOM References ──────────────────────────────────────────────────────
 
   var elements = {
@@ -105,13 +109,6 @@
   var currentEmojiCategory = "Smileys";
 
   // ── Helper Functions ────────────────────────────────────────────────────
-
-  function escapeHtml(str) {
-    if (!str) return "";
-    var div = document.createElement("div");
-    div.textContent = str;
-    return div.innerHTML;
-  }
 
   function formatMessageText(text) {
     if (!text) return "";
@@ -579,8 +576,7 @@
     elements.messagesContainer.innerHTML = "";
 
     if (!msgs || msgs.length === 0) {
-      elements.messagesContainer.innerHTML =
-        '<div class="text-center text-muted text-sm p-8">No messages yet. Say hello!</div>';
+      elements.messagesContainer.innerHTML = stateBlock("No messages yet. Say hello!", "muted", "text-center p-8");
       return;
     }
 

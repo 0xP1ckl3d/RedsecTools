@@ -1,14 +1,9 @@
 import { showConfirmModal, showAlertModal } from "./confirm-modal.js";
+import { badge, escapeHtml } from "./ui-components.js";
 import "./burger-menu.js";
 import "./theme.js";
 
 // --- Helpers ---
-
-function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str == null ? "" : String(str);
-  return div.innerHTML;
-}
 
 function formatDateTime(ts) {
   if (!ts) return "-";
@@ -146,38 +141,38 @@ async function api(path, options = {}) {
 }
 
 function severityBadge(severity) {
-  const colors = { critical: "badge-red", high: "badge-amber", medium: "badge-amber", low: "badge-blue", info: "badge-gray" };
-  return `<span class="badge ${colors[severity] || "badge-gray"}">${escapeHtml(severity)}</span>`;
+  const tones = { critical: "red", high: "amber", medium: "amber", low: "blue", info: "gray" };
+  return badge(severity, tones[severity] || "gray");
 }
 
 function statusBadge(status) {
-  const colors = {
-    draft: "badge-gray", in_progress: "badge-blue", in_review: "badge-purple",
-    approved: "badge-green", delivered: "badge-green", archived: "badge-gray",
-    ready_for_review: "badge-purple", changes_requested: "badge-amber",
-    client_ready: "badge-green", retest: "badge-blue", closed: "badge-gray",
-    pending: "badge-amber", complete: "badge-green", failed: "badge-red",
+  const tones = {
+    draft: "gray", in_progress: "blue", in_review: "purple",
+    approved: "green", delivered: "green", archived: "gray",
+    ready_for_review: "purple", changes_requested: "amber",
+    client_ready: "green", retest: "blue", closed: "gray",
+    pending: "amber", complete: "green", failed: "red",
   };
-  return `<span class="badge ${colors[status] || "badge-gray"}">${escapeHtml(status.replace(/_/g, " "))}</span>`;
+  return badge(String(status || "").replace(/_/g, " "), tones[status] || "gray");
 }
 
 function setStatusBadgeElement(id, status) {
   const el = document.getElementById(id);
   if (!el) return;
-  const colors = {
-    draft: "badge-gray", in_progress: "badge-blue", in_review: "badge-purple",
-    approved: "badge-green", delivered: "badge-green", archived: "badge-gray",
-    ready_for_review: "badge-purple", changes_requested: "badge-amber",
-    client_ready: "badge-green", retest: "badge-blue", closed: "badge-gray",
-    pending: "badge-amber", complete: "badge-green", failed: "badge-red",
+  const tones = {
+    draft: "gray", in_progress: "blue", in_review: "purple",
+    approved: "green", delivered: "green", archived: "gray",
+    ready_for_review: "purple", changes_requested: "amber",
+    client_ready: "green", retest: "blue", closed: "gray",
+    pending: "amber", complete: "green", failed: "red",
   };
-  el.className = `badge ${colors[status] || "badge-gray"}`;
+  el.className = `badge badge-${tones[status] || "gray"}`;
   el.textContent = String(status || "").replace(/_/g, " ");
 }
 
 function roleBadge(role) {
-  const colors = { lead: "badge-red", pentester: "badge-blue", reviewer: "badge-purple" };
-  return `<span class="badge ${colors[role] || "badge-gray"}">${escapeHtml(role)}</span>`;
+  const tones = { lead: "red", pentester: "blue", reviewer: "purple" };
+  return badge(role, tones[role] || "gray");
 }
 
 const VALID_SEVERITIES = ["critical", "high", "medium", "low", "info"];

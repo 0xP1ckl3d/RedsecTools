@@ -1,5 +1,6 @@
 import { ensureHljs, highlightCode } from "./hljs-loader.js";
 import { showConfirmModal } from "./confirm-modal.js";
+import { escapeHtml, stateBlock } from "./ui-components.js";
 
 const state = {
   currentView: "team",
@@ -40,12 +41,6 @@ const state = {
   editorSelection: null,
   collapsedNodes: new Set(),
 };
-
-function escapeHtml(value) {
-  const div = document.createElement("div");
-  div.textContent = value == null ? "" : String(value);
-  return div.innerHTML;
-}
 
 async function fetchJson(url, options) {
   const res = await fetch(url, options);
@@ -215,7 +210,7 @@ function renderSearchResults() {
 
 function renderRecentList() {
   if (!state.recentPages.length) {
-    return '<div class="text-sm text-muted">No recent wiki activity yet.</div>';
+    return stateBlock("No recent wiki activity yet.");
   }
   return state.recentPages.map((page) => `
     <button type="button" class="wiki-result-card${page.id === state.selectedPageId ? " active" : ""}" data-wiki-page-id="${escapeHtml(page.id)}">
@@ -454,7 +449,7 @@ function renderRevisions() {
   const container = document.getElementById("wiki-revisions-list");
   if (!container) return;
   if (!state.revisions.length) {
-    container.innerHTML = '<div class="text-sm text-muted">No revisions yet.</div>';
+    container.innerHTML = stateBlock("No revisions yet.");
     return;
   }
   container.innerHTML = state.revisions.map((revision) => `

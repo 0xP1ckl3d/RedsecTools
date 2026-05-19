@@ -1,4 +1,5 @@
 import { showConfirmModal, showAlertModal } from "./confirm-modal.js";
+import { escapeHtml } from "./ui-components.js";
 
 // RedSecTools — Homepage shortcuts manager (with image + emoji icons)
 
@@ -403,12 +404,6 @@ export function initShortcutModal() {
 
   urlInput.addEventListener("keydown", (e) => { if (e.key === "Enter") saveBtn.click(); });
   titleInput.addEventListener("keydown", (e) => { if (e.key === "Enter") urlInput.focus(); });
-}
-
-function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str;
-  return div.innerHTML;
 }
 
 export function showFavLimitModal(message) {
