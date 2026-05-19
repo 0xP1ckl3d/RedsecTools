@@ -29,6 +29,7 @@ const {
   listAllSurveys, getSurveyStats, deleteSurveyById,
   createAuditEvent, listAuditEvents, listSchemaMigrations, getDeploymentCounts,
   getReporterGlobalStats, listReporterProjects, listReporterProjectMembers,
+  encryptValue, decryptValue,
   db, DB_PATH,
 } = require("../database");
 const { sendInviteEmail, sendPasswordResetEmail, sendTestEmail } = require("../email");
@@ -38,12 +39,15 @@ const { getCookieSecure } = require("../core/security/cookies");
 const { buildBasePosture } = require("../core/security/posture");
 const { logEvent, redactObject } = require("../core/logger");
 const { parseInteger } = require("../core/validation");
+const samlAuth = require("../core/auth/saml");
 const redsecAiProvider = require("../modules/redsecai/provider");
 
 const router = Router();
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const SITE_PRIMARY_THEMES = new Set(["red", "green", "blue", "orange", "purple"]);
+const ADMIN_REAUTH_WINDOW_SECONDS = 15 * 60;
+const SSO_PROVIDERS = new Set(["none", "saml"]);
 
 function adminCookieOptions() {
   return {
@@ -204,7 +208,28 @@ function requireAdmin(req, res, next) {
     }
     req.user = userSession;
   }
+  req.adminSession = adminResult.session;
   next();
+}
+
+function isAdminReauthRequired() {
+  const stored = getSetting("admin_reauth_required");
+  if (stored === "true" || stored === "false") return stored === "true";
+  return String(process.env.ADMIN_REAUTH_REQUIRED || "").trim().toLowerCase() === "true";
+}
+
+function requireRecentAdminAuth(req, res, next) {
+  if (!isAdminReauthRequired()) return next();
+  const createdAt = parseInt(req.adminSession?.created_at, 10) || 0;
+  const ageSeconds = Math.floor(Date.now() / 1000) - createdAt;
+  if (!createdAt || ageSeconds > ADMIN_REAUTH_WINDOW_SECONDS) {
+    return res.status(403).json({
+      error: "Recent admin authentication required",
+      code: "recent_admin_required",
+      maxAgeSeconds: ADMIN_REAUTH_WINDOW_SECONDS,
+    });
+  }
+  return next();
 }
 
 // Admin login rate limiter
@@ -222,6 +247,22 @@ function validateId(id, label = "ID") {
     return `${label} is invalid`;
   }
   return null;
+}
+
+function cleanOptionalText(value, maxLength) {
+  const text = typeof value === "string" ? value.trim() : "";
+  return text.length > maxLength ? text.slice(0, maxLength) : text;
+}
+
+function getSsoAdminSettings() {
+  const settings = samlAuth.getSamlSettings({ getSetting, decryptValue });
+  const normalizedProvider = SSO_PROVIDERS.has(settings.provider) ? settings.provider : "none";
+  return {
+    ...settings,
+    provider: normalizedProvider,
+    privateKey: "",
+    privateKeyConfigured: !!settings.privateKey,
+  };
 }
 
 function normalizeVaultPermission(rawPermission) {
@@ -344,13 +385,36 @@ router.get("/api/security-posture", requireAdmin, (req, res) => {
   const dbStat = (() => {
     try { return fs.statSync(DB_PATH); } catch { return null; }
   })();
+  const dbReady = (() => {
+    try {
+      db.prepare("SELECT 1 AS ok").get();
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+  const migrations = listSchemaMigrations();
+  const sso = getSsoAdminSettings();
   res.json({
     ...base,
     database: {
       path: path.relative(path.join(__dirname, "..", ".."), DB_PATH),
       sizeBytes: dbStat?.size || 0,
-      migrations: listSchemaMigrations(),
-      latestMigration: listSchemaMigrations().slice(-1)[0]?.id || null,
+      migrations,
+      latestMigration: migrations.slice(-1)[0]?.id || null,
+    },
+    readiness: {
+      status: dbReady ? "ready" : "degraded",
+      uptimeSeconds: Math.floor(process.uptime()),
+      checks: {
+        database: dbReady ? "ok" : "failed",
+      },
+    },
+    controls: {
+      adminReauthRequired: isAdminReauthRequired(),
+      adminReauthWindowSeconds: ADMIN_REAUTH_WINDOW_SECONDS,
+      ssoEnabled: sso.enabled,
+      ssoProvider: sso.provider,
     },
     counts: getDeploymentCounts(),
     storage: {
@@ -391,7 +455,7 @@ router.get("/api/audit-events.csv", requireAdmin, (req, res) => {
 });
 
 // POST /admin/api/backup/export
-router.post("/api/backup/export", requireAdmin, async (req, res) => {
+router.post("/api/backup/export", requireAdmin, requireRecentAdminAuth, async (req, res) => {
   const passphrase = req.body?.passphrase;
   try {
     const backup = await createEncryptedDatabaseBackup({ db, dbPath: DB_PATH, passphrase });
@@ -471,7 +535,7 @@ router.get("/api/settings/share", requireAdmin, (req, res) => {
 });
 
 // POST /admin/api/settings/share
-router.post("/api/settings/share", requireAdmin, (req, res) => {
+router.post("/api/settings/share", requireAdmin, requireRecentAdminAuth, (req, res) => {
   const maxFileSizeMb = parseInt(req.body?.maxFileSizeMb, 10);
   const maxFilesPerShare = parseInt(req.body?.maxFilesPerShare, 10);
 
@@ -542,7 +606,7 @@ router.post("/api/settings/redsecai/diagnostics", requireAdmin, async (req, res)
 });
 
 // POST /admin/api/settings/redsecai
-router.post("/api/settings/redsecai", requireAdmin, (req, res) => {
+router.post("/api/settings/redsecai", requireAdmin, requireRecentAdminAuth, (req, res) => {
   const enabled = req.body?.enabled !== false;
   const baseUrl = String(req.body?.baseUrl || "").trim().replace(/\/+$/, "");
   const model = String(req.body?.model || "").trim();
@@ -644,7 +708,7 @@ router.get("/api/surveys", requireAdmin, (req, res) => {
 });
 
 // DELETE /admin/api/paste/:id
-router.delete("/api/paste/:id", requireAdmin, (req, res) => {
+router.delete("/api/paste/:id", requireAdmin, requireRecentAdminAuth, (req, res) => {
   const { id } = req.params;
   if (typeof id !== "string" || !/^[A-Za-z0-9_-]{22}$/.test(id)) {
     return res.status(400).json({ error: "Invalid paste ID" });
@@ -659,7 +723,7 @@ router.delete("/api/paste/:id", requireAdmin, (req, res) => {
 });
 
 // DELETE /admin/api/file/:id
-router.delete("/api/file/:id", requireAdmin, (req, res) => {
+router.delete("/api/file/:id", requireAdmin, requireRecentAdminAuth, (req, res) => {
   const { id } = req.params;
   if (typeof id !== "string" || !/^[A-Za-z0-9_-]{22}$/.test(id)) {
     return res.status(400).json({ error: "Invalid file ID" });
@@ -671,7 +735,7 @@ router.delete("/api/file/:id", requireAdmin, (req, res) => {
 });
 
 // DELETE /admin/api/survey/:id
-router.delete("/api/survey/:id", requireAdmin, (req, res) => {
+router.delete("/api/survey/:id", requireAdmin, requireRecentAdminAuth, (req, res) => {
   const { id } = req.params;
   if (typeof id !== "string" || !/^[A-Za-z0-9_-]{22}$/.test(id)) {
     return res.status(400).json({ error: "Invalid survey ID" });
@@ -683,7 +747,7 @@ router.delete("/api/survey/:id", requireAdmin, (req, res) => {
 });
 
 // POST /admin/api/pastes/bulk-delete
-router.post("/api/pastes/bulk-delete", requireAdmin, (req, res) => {
+router.post("/api/pastes/bulk-delete", requireAdmin, requireRecentAdminAuth, (req, res) => {
   const { ids } = req.body;
   if (!Array.isArray(ids) || ids.length === 0) {
     return res.status(400).json({ error: "ids must be a non-empty array" });
@@ -704,7 +768,7 @@ router.post("/api/pastes/bulk-delete", requireAdmin, (req, res) => {
 });
 
 // POST /admin/api/files/bulk-delete
-router.post("/api/files/bulk-delete", requireAdmin, (req, res) => {
+router.post("/api/files/bulk-delete", requireAdmin, requireRecentAdminAuth, (req, res) => {
   const { ids } = req.body;
   if (!Array.isArray(ids) || ids.length === 0) {
     return res.status(400).json({ error: "ids must be a non-empty array" });
@@ -755,7 +819,7 @@ router.get("/api/users/:id", requireAdmin, (req, res) => {
 });
 
 // PUT /admin/api/users/:id
-router.put("/api/users/:id", requireAdmin, (req, res) => {
+router.put("/api/users/:id", requireAdmin, requireRecentAdminAuth, (req, res) => {
   const idErr = validateId(req.params.id, "User ID");
   if (idErr) return res.status(400).json({ error: idErr });
 
@@ -790,7 +854,7 @@ router.put("/api/users/:id", requireAdmin, (req, res) => {
 });
 
 // POST /admin/api/users/:id/suspend
-router.post("/api/users/:id/suspend", requireAdmin, (req, res) => {
+router.post("/api/users/:id/suspend", requireAdmin, requireRecentAdminAuth, (req, res) => {
   const idErr = validateId(req.params.id, "User ID");
   if (idErr) return res.status(400).json({ error: idErr });
 
@@ -804,7 +868,7 @@ router.post("/api/users/:id/suspend", requireAdmin, (req, res) => {
 });
 
 // POST /admin/api/users/:id/unsuspend
-router.post("/api/users/:id/unsuspend", requireAdmin, (req, res) => {
+router.post("/api/users/:id/unsuspend", requireAdmin, requireRecentAdminAuth, (req, res) => {
   const idErr = validateId(req.params.id, "User ID");
   if (idErr) return res.status(400).json({ error: idErr });
 
@@ -818,7 +882,7 @@ router.post("/api/users/:id/unsuspend", requireAdmin, (req, res) => {
 });
 
 // DELETE /admin/api/users/:id
-router.delete("/api/users/:id", requireAdmin, (req, res) => {
+router.delete("/api/users/:id", requireAdmin, requireRecentAdminAuth, (req, res) => {
   const idErr = validateId(req.params.id, "User ID");
   if (idErr) return res.status(400).json({ error: idErr });
 
@@ -842,7 +906,7 @@ router.delete("/api/users/:id", requireAdmin, (req, res) => {
 });
 
 // POST /admin/api/users/:id/reset-password
-router.post("/api/users/:id/reset-password", requireAdmin, async (req, res) => {
+router.post("/api/users/:id/reset-password", requireAdmin, requireRecentAdminAuth, async (req, res) => {
   const idErr = validateId(req.params.id, "User ID");
   if (idErr) return res.status(400).json({ error: idErr });
 
@@ -895,7 +959,7 @@ router.get("/api/invites", requireAdmin, (req, res) => {
 });
 
 // POST /admin/api/invites
-router.post("/api/invites", requireAdmin, async (req, res) => {
+router.post("/api/invites", requireAdmin, requireRecentAdminAuth, async (req, res) => {
   const { email, roleId } = req.body || {};
   if (!email || typeof email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return res.status(400).json({ error: "Valid email is required" });
@@ -952,7 +1016,7 @@ router.post("/api/invites", requireAdmin, async (req, res) => {
 });
 
 // DELETE /admin/api/invites/:id — Revoke invite
-router.delete("/api/invites/:id", requireAdmin, (req, res) => {
+router.delete("/api/invites/:id", requireAdmin, requireRecentAdminAuth, (req, res) => {
   const idErr = validateId(req.params.id, "Invite ID");
   if (idErr) return res.status(400).json({ error: idErr });
 
@@ -984,7 +1048,7 @@ router.get("/api/settings/smtp", requireAdmin, (req, res) => {
 });
 
 // POST /admin/api/settings/smtp
-router.post("/api/settings/smtp", requireAdmin, (req, res) => {
+router.post("/api/settings/smtp", requireAdmin, requireRecentAdminAuth, (req, res) => {
   const { host, port, user, pass, from, secure } = req.body || {};
 
   // If password is the placeholder, keep the existing one
@@ -1054,7 +1118,7 @@ router.get("/api/settings/calendar", requireAdmin, (req, res) => {
   });
 });
 
-router.post("/api/settings/calendar", requireAdmin, (req, res) => {
+router.post("/api/settings/calendar", requireAdmin, requireRecentAdminAuth, (req, res) => {
   const parsed = Number.parseFloat(req.body?.dailyHours);
   if (!Number.isFinite(parsed) || parsed < 1 || parsed > 24) {
     return res.status(400).json({ error: "Daily hours must be between 1 and 24" });
@@ -1110,7 +1174,7 @@ router.get("/api/settings/theme", requireAdmin, (req, res) => {
   res.json({ primaryTheme: theme, customHex: theme === "custom" ? customHex : "", brandPrefix, hasBrandLogo, brandLogoVersion });
 });
 
-router.post("/api/settings/theme", requireAdmin, (req, res) => {
+router.post("/api/settings/theme", requireAdmin, requireRecentAdminAuth, (req, res) => {
   const primaryTheme = String(req.body?.primaryTheme || "red").trim().toLowerCase();
   const customHex = String(req.body?.customHex || "").trim();
   const brandPrefix = String(req.body?.brandPrefix || "").trim();
@@ -1153,7 +1217,7 @@ const brandLogoUpload = multer({
 });
 
 // POST /admin/api/settings/brand-logo
-router.post("/api/settings/brand-logo", requireAdmin, brandLogoUpload.single("logo"), async (req, res) => {
+router.post("/api/settings/brand-logo", requireAdmin, requireRecentAdminAuth, brandLogoUpload.single("logo"), async (req, res) => {
   const file = req.file;
   if (!file) return res.status(400).json({ error: "No file uploaded" });
   if (!VALID_LOGO_MIMES.has(file.mimetype)) {
@@ -1204,7 +1268,7 @@ router.post("/api/settings/brand-logo", requireAdmin, brandLogoUpload.single("lo
 });
 
 // DELETE /admin/api/settings/brand-logo
-router.delete("/api/settings/brand-logo", requireAdmin, (req, res) => {
+router.delete("/api/settings/brand-logo", requireAdmin, requireRecentAdminAuth, (req, res) => {
   try {
     const logoPath = path.join(BRAND_DIR, "logo.webp");
     const faviconPath = path.join(BRAND_DIR, "favicon.png");
@@ -1244,7 +1308,7 @@ router.get("/api/conversations", requireAdmin, (req, res) => {
 });
 
 // DELETE /admin/api/conversations/:id
-router.delete("/api/conversations/:id", requireAdmin, (req, res) => {
+router.delete("/api/conversations/:id", requireAdmin, requireRecentAdminAuth, (req, res) => {
   const { id } = req.params;
   if (typeof id !== "string" || !/^[A-Za-z0-9_-]{22}$/.test(id)) {
     return res.status(400).json({ error: "Invalid conversation ID" });
@@ -1328,7 +1392,7 @@ router.get("/api/vaults/:id/members", requireAdmin, (req, res) => {
   });
 });
 
-router.put("/api/vaults/:id/members/:userId", requireAdmin, (req, res) => {
+router.put("/api/vaults/:id/members/:userId", requireAdmin, requireRecentAdminAuth, (req, res) => {
   const idErr = validateId(req.params.id, "Vault ID");
   if (idErr) return res.status(400).json({ error: idErr });
   const userIdErr = validateId(req.params.userId, "User ID");
@@ -1354,7 +1418,7 @@ router.put("/api/vaults/:id/members/:userId", requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
-router.delete("/api/vaults/:id/members/:userId", requireAdmin, (req, res) => {
+router.delete("/api/vaults/:id/members/:userId", requireAdmin, requireRecentAdminAuth, (req, res) => {
   const idErr = validateId(req.params.id, "Vault ID");
   if (idErr) return res.status(400).json({ error: idErr });
   const userIdErr = validateId(req.params.userId, "User ID");
@@ -1371,7 +1435,7 @@ router.delete("/api/vaults/:id/members/:userId", requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
-router.delete("/api/vaults/:id", requireAdmin, (req, res) => {
+router.delete("/api/vaults/:id", requireAdmin, requireRecentAdminAuth, (req, res) => {
   const { deleteVault, getVault } = require("../database");
   const { id } = req.params;
   const vault = getVault(id);
@@ -1398,12 +1462,14 @@ router.get("/api/settings/security", requireAdmin, (req, res) => {
     sessionTTLExtended: parseInt(getSetting("session_ttl_extended"), 10) || 604800,
     mfaRememberDays: parseInt(getSetting("mfa_remember_days"), 10) || 30,
     mfaRequired: getSetting("mfa_required") === "true",
+    adminReauthRequired: isAdminReauthRequired(),
+    adminReauthWindowSeconds: ADMIN_REAUTH_WINDOW_SECONDS,
   });
 });
 
 // POST /admin/api/settings/security
-router.post("/api/settings/security", requireAdmin, (req, res) => {
-  const { sessionTTL, sessionTTLExtended, mfaRememberDays, mfaRequired } = req.body || {};
+router.post("/api/settings/security", requireAdmin, requireRecentAdminAuth, (req, res) => {
+  const { sessionTTL, sessionTTLExtended, mfaRememberDays, mfaRequired, adminReauthRequired } = req.body || {};
 
   const VALID_SESSION_TTL = [1800, 3600, 7200, 14400, 43200, 86400];
   const VALID_EXTENDED_TTL = [86400, 172800, 604800, 1209600, 2592000];
@@ -1437,6 +1503,10 @@ router.post("/api/settings/security", requireAdmin, (req, res) => {
     setSetting("mfa_required", mfaRequired ? "true" : "false");
   }
 
+  if (adminReauthRequired !== undefined) {
+    setSetting("admin_reauth_required", adminReauthRequired ? "true" : "false");
+  }
+
   auditAdmin(req, {
     category: "settings",
     action: "security_update",
@@ -1446,14 +1516,120 @@ router.post("/api/settings/security", requireAdmin, (req, res) => {
       sessionTTLExtended,
       mfaRememberDays,
       mfaRequired: mfaRequired !== undefined ? !!mfaRequired : undefined,
+      adminReauthRequired: adminReauthRequired !== undefined ? !!adminReauthRequired : undefined,
     },
   });
   console.log(JSON.stringify({ ts: new Date().toISOString(), action: "admin:update_security", ip: req.ip }));
   res.json({ success: true });
 });
 
+// GET /admin/api/settings/sso
+router.get("/api/settings/sso", requireAdmin, (req, res) => {
+  res.json(getSsoAdminSettings());
+});
+
+// POST /admin/api/settings/sso
+router.post("/api/settings/sso", requireAdmin, requireRecentAdminAuth, (req, res) => {
+  const body = req.body || {};
+  const enabled = !!body.enabled;
+  const provider = String(body.provider || "none").trim().toLowerCase();
+  const requireForLogin = !!body.requireForLogin;
+  const autoProvision = !!body.autoProvision;
+  const loginPath = samlAuth.DEFAULT_LOGIN_PATH;
+  const acsPath = samlAuth.DEFAULT_ACS_PATH;
+  const metadataPath = samlAuth.DEFAULT_METADATA_PATH;
+  const entityId = cleanOptionalText(body.entityId, 300);
+  const idpEntityId = cleanOptionalText(body.idpEntityId, 300);
+  const idpMetadataUrl = cleanOptionalText(body.idpMetadataUrl, 500);
+  const entryPoint = cleanOptionalText(body.entryPoint, 500);
+  const idpCert = cleanOptionalText(body.idpCert, 20000);
+  const emailAttribute = cleanOptionalText(body.emailAttribute || samlAuth.DEFAULT_EMAIL_ATTRIBUTE, 180);
+  const usernameAttribute = cleanOptionalText(body.usernameAttribute || samlAuth.DEFAULT_USERNAME_ATTRIBUTE, 180);
+  const fullNameAttribute = cleanOptionalText(body.fullNameAttribute || samlAuth.DEFAULT_FULL_NAME_ATTRIBUTE, 180);
+  const defaultRoleId = cleanOptionalText(body.defaultRoleId, 80);
+  const signRequests = !!body.signRequests;
+  const publicCert = cleanOptionalText(body.publicCert, 20000);
+  const privateKey = cleanOptionalText(body.privateKey, 20000);
+  const forceAuthn = !!body.forceAuthn;
+  const currentPrivateKey = decryptValue(getSetting("sso_sp_private_key") || "");
+
+  if (!SSO_PROVIDERS.has(provider)) {
+    return res.status(400).json({ error: "Invalid SSO provider" });
+  }
+  if (enabled && provider === "none") {
+    return res.status(400).json({ error: "Select a provider before enabling SSO" });
+  }
+  if (requireForLogin && !enabled) {
+    return res.status(400).json({ error: "SSO must be enabled before requiring it for login" });
+  }
+  if (enabled && provider === "saml") {
+    if (!entryPoint) return res.status(400).json({ error: "SAML IdP SSO URL is required" });
+    if (!/^https:\/\//i.test(entryPoint)) return res.status(400).json({ error: "SAML IdP SSO URL must use HTTPS" });
+    if (!idpCert) return res.status(400).json({ error: "SAML IdP signing certificate is required" });
+    if (!entityId) return res.status(400).json({ error: "SAML SP Entity ID is required" });
+  }
+  if (defaultRoleId && !getRoleById(defaultRoleId)) {
+    return res.status(400).json({ error: "Selected SSO default role does not exist" });
+  }
+  if (enabled && provider === "saml" && signRequests && (!publicCert || !(privateKey || currentPrivateKey))) {
+    return res.status(400).json({ error: "Signed SAML requests require an SP public certificate and private key" });
+  }
+
+  setSetting("sso_enabled", enabled ? "true" : "false");
+  setSetting("sso_provider", provider);
+  setSetting("sso_require_for_login", requireForLogin ? "true" : "false");
+  setSetting("sso_auto_provision", autoProvision ? "true" : "false");
+  setSetting("sso_login_path", loginPath);
+  setSetting("sso_acs_path", acsPath);
+  setSetting("sso_metadata_path", metadataPath);
+  setSetting("sso_entity_id", entityId);
+  setSetting("sso_idp_entity_id", idpEntityId);
+  setSetting("sso_idp_metadata_url", idpMetadataUrl);
+  setSetting("sso_saml_entry_point", entryPoint);
+  setSetting("sso_idp_cert", idpCert);
+  setSetting("sso_email_attribute", emailAttribute);
+  setSetting("sso_username_attribute", usernameAttribute);
+  setSetting("sso_full_name_attribute", fullNameAttribute);
+  setSetting("sso_default_role_id", defaultRoleId);
+  setSetting("sso_sign_requests", signRequests ? "true" : "false");
+  setSetting("sso_sp_public_cert", publicCert);
+  if (privateKey) {
+    setSetting("sso_sp_private_key", encryptValue(privateKey));
+  } else if (!signRequests) {
+    setSetting("sso_sp_private_key", "");
+  }
+  setSetting("sso_force_authn", forceAuthn ? "true" : "false");
+
+  auditAdmin(req, {
+    category: "identity",
+    action: "sso_settings_update",
+    targetType: "sso_settings",
+    metadata: {
+      enabled,
+      provider,
+      requireForLogin,
+      autoProvision,
+      loginPath,
+      acsPath,
+      metadataPath,
+      entityIdConfigured: !!entityId,
+      idpEntityIdConfigured: !!idpEntityId,
+      idpMetadataUrlConfigured: !!idpMetadataUrl,
+      entryPointConfigured: !!entryPoint,
+      idpCertConfigured: !!idpCert,
+      defaultRoleId: defaultRoleId || null,
+      signRequests,
+      publicCertConfigured: !!publicCert,
+      privateKeyConfigured: !!(privateKey || currentPrivateKey),
+      forceAuthn,
+    },
+  });
+
+  res.json({ success: true });
+});
+
 // POST /admin/api/users/:id/reset-mfa — admin resets user's MFA (account recovery)
-router.post("/api/users/:id/reset-mfa", requireAdmin, (req, res) => {
+router.post("/api/users/:id/reset-mfa", requireAdmin, requireRecentAdminAuth, (req, res) => {
   const idErr = validateId(req.params.id, "User ID");
   if (idErr) return res.status(400).json({ error: idErr });
 
@@ -1488,7 +1664,7 @@ router.get("/api/settings/weather", requireAdmin, (req, res) => {
 });
 
 // POST /admin/api/settings/weather
-router.post("/api/settings/weather", requireAdmin, (req, res) => {
+router.post("/api/settings/weather", requireAdmin, requireRecentAdminAuth, (req, res) => {
   const { locations } = req.body || {};
 
   if (!Array.isArray(locations) || locations.length > 5) {
@@ -1559,7 +1735,7 @@ router.get("/api/shortcuts/team", requireAdmin, (req, res) => {
 });
 
 // POST /admin/api/shortcuts/team
-router.post("/api/shortcuts/team", requireAdmin, async (req, res) => {
+router.post("/api/shortcuts/team", requireAdmin, requireRecentAdminAuth, async (req, res) => {
   const { title, url, icon, icon_url, description } = req.body || {};
 
   if (!title || typeof title !== "string" || title.length > 100) {
@@ -1602,7 +1778,7 @@ router.post("/api/shortcuts/team", requireAdmin, async (req, res) => {
 });
 
 // PUT /admin/api/shortcuts/team/:id
-router.put("/api/shortcuts/team/:id", requireAdmin, async (req, res) => {
+router.put("/api/shortcuts/team/:id", requireAdmin, requireRecentAdminAuth, async (req, res) => {
   const { id } = req.params;
   const { title, url, icon, icon_url, description } = req.body || {};
 
@@ -1656,7 +1832,7 @@ router.put("/api/shortcuts/team/:id", requireAdmin, async (req, res) => {
   console.log(JSON.stringify({ ts: new Date().toISOString(), action: "admin:team_shortcut_update", ip: req.ip, id }));
   res.json({ success: true });
 });
-router.delete("/api/shortcuts/team/:id", requireAdmin, (req, res) => {
+router.delete("/api/shortcuts/team/:id", requireAdmin, requireRecentAdminAuth, (req, res) => {
   const existing = getShortcutByIdAny(req.params.id);
   if (!existing || existing.category !== "team") {
     return res.status(404).json({ error: "Team shortcut not found" });
@@ -1676,7 +1852,7 @@ const teamIconUpload = multer({
   limits: { fileSize: 2 * 1024 * 1024 },
 });
 
-router.post("/api/shortcuts/team/upload-icon", requireAdmin, teamIconUpload.single("image"), async (req, res) => {
+router.post("/api/shortcuts/team/upload-icon", requireAdmin, requireRecentAdminAuth, teamIconUpload.single("image"), async (req, res) => {
   const file = req.file;
   if (!file) return res.status(400).json({ error: "No file uploaded" });
   if (!file.mimetype.startsWith("image/")) return res.status(400).json({ error: "Only image files" });
@@ -1784,4 +1960,5 @@ router.get("/api/engage-activity.csv", requireAdmin, (req, res) => {
 module.exports = {
   router,
   requireAdmin,
+  requireRecentAdminAuth,
 };

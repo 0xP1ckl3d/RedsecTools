@@ -10,6 +10,7 @@
     "test": "node --test --experimental-test-isolation=none"
   },
   "dependencies": {
+    "@node-saml/node-saml": "^5.1.0",
     "bcrypt": "^6.0.0",
     "better-sqlite3": "^11.0.0",
     "cheerio": "^1.2.0",

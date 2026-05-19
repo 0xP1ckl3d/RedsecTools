@@ -1,7 +1,7 @@
 const { Router } = require("express");
 const crypto = require("crypto");
 const rateLimit = require("express-rate-limit");
-const { requireAdmin } = require("./admin");
+const { requireAdmin, requireRecentAdminAuth } = require("./admin");
 const {
   listRoles,
   getRoleById,
@@ -79,7 +79,7 @@ router.get("/api/roles", requireAdmin, (req, res) => {
   res.json({ roles: listRoles(), permissions: ALL_PERMISSIONS, permissionDefinitions: PERMISSION_DEFINITIONS });
 });
 
-router.post("/api/roles", writeLimiter, requireAdmin, (req, res) => {
+router.post("/api/roles", writeLimiter, requireAdmin, requireRecentAdminAuth, (req, res) => {
   const { name, description, permissions } = req.body || {};
   if (!name || typeof name !== "string") {
     return res.status(400).json({ error: "Role name is required" });
@@ -95,7 +95,7 @@ router.post("/api/roles", writeLimiter, requireAdmin, (req, res) => {
   res.json({ success: true, id });
 });
 
-router.put("/api/roles/:id", writeLimiter, requireAdmin, (req, res) => {
+router.put("/api/roles/:id", writeLimiter, requireAdmin, requireRecentAdminAuth, (req, res) => {
   const role = getRoleById(req.params.id);
   if (!role) return res.status(404).json({ error: "Role not found" });
   updateRole({
@@ -108,7 +108,7 @@ router.put("/api/roles/:id", writeLimiter, requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
-router.delete("/api/roles/:id", writeLimiter, requireAdmin, (req, res) => {
+router.delete("/api/roles/:id", writeLimiter, requireAdmin, requireRecentAdminAuth, (req, res) => {
   const deleted = deleteRoleById(req.params.id);
   if (!deleted) {
     return res.status(400).json({ error: "Role could not be deleted" });
@@ -117,7 +117,7 @@ router.delete("/api/roles/:id", writeLimiter, requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
-router.put("/api/users/:id/role", writeLimiter, requireAdmin, (req, res) => {
+router.put("/api/users/:id/role", writeLimiter, requireAdmin, requireRecentAdminAuth, (req, res) => {
   const user = getUserById(req.params.id);
   if (!user) return res.status(404).json({ error: "User not found" });
   const role = getRoleById(req.body?.roleId);
@@ -143,12 +143,12 @@ router.get("/api/bulletins", requireAdmin, (req, res) => {
   });
 });
 
-router.put("/api/bulletins/settings", writeLimiter, requireAdmin, (req, res) => {
+router.put("/api/bulletins/settings", writeLimiter, requireAdmin, requireRecentAdminAuth, (req, res) => {
   const retention = updateBulletinRetentionSettings(req.body || {});
   res.json({ success: true, retention });
 });
 
-router.delete("/api/bulletins/:id", writeLimiter, requireAdmin, (req, res) => {
+router.delete("/api/bulletins/:id", writeLimiter, requireAdmin, requireRecentAdminAuth, (req, res) => {
   const deleted = deleteBulletinWithAssets(req.params.id);
   if (!deleted) {
     return res.status(404).json({ error: "Bulletin not found" });
@@ -156,14 +156,14 @@ router.delete("/api/bulletins/:id", writeLimiter, requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
-router.post("/api/bulletins/purge-user", writeLimiter, requireAdmin, (req, res) => {
+router.post("/api/bulletins/purge-user", writeLimiter, requireAdmin, requireRecentAdminAuth, (req, res) => {
   const user = getUserById(req.body?.userId);
   if (!user) return res.status(400).json({ error: "User not found" });
   const deleted = purgeBulletinsByAuthor(user.id);
   res.json({ success: true, deleted });
 });
 
-router.post("/api/bulletins/purge-all", writeLimiter, requireAdmin, (req, res) => {
+router.post("/api/bulletins/purge-all", writeLimiter, requireAdmin, requireRecentAdminAuth, (req, res) => {
   const confirm = String(req.body?.confirm || "");
   if (confirm !== "PURGE ALL") {
     return res.status(400).json({ error: "Confirmation text must be PURGE ALL" });
@@ -194,7 +194,7 @@ router.get("/api/wiki/settings", requireAdmin, (req, res) => {
   });
 });
 
-router.put("/api/wiki/settings", writeLimiter, requireAdmin, (req, res) => {
+router.put("/api/wiki/settings", writeLimiter, requireAdmin, requireRecentAdminAuth, (req, res) => {
   const personalSpacesEnabled = req.body?.personalSpacesEnabled !== false;
   const searchResultLimit = Math.min(50, Math.max(5, parseInt(req.body?.searchResultLimit, 10) || 20));
   const teamHomePageId = String(req.body?.teamHomePageId || "");
@@ -236,7 +236,7 @@ router.get("/api/threat/feeds", requireAdmin, (req, res) => {
   res.json({ feeds: listThreatFeeds() });
 });
 
-router.post("/api/threat/feeds", writeLimiter, requireAdmin, (req, res) => {
+router.post("/api/threat/feeds", writeLimiter, requireAdmin, requireRecentAdminAuth, (req, res) => {
   const { name, url, feedType, enabled, isDefault, fetchInterval, feedMetadata } = req.body || {};
   if (!url || !feedType) {
     return res.status(400).json({ error: "URL and feed type are required" });
@@ -259,7 +259,7 @@ router.post("/api/threat/feeds", writeLimiter, requireAdmin, (req, res) => {
   res.json({ success: true, feed });
 });
 
-router.put("/api/threat/feeds/:id", writeLimiter, requireAdmin, (req, res) => {
+router.put("/api/threat/feeds/:id", writeLimiter, requireAdmin, requireRecentAdminAuth, (req, res) => {
   const feedId = req.params.id;
   const validTypes = ["rss", "website", "api", "onion"];
   const updates = {};
@@ -281,7 +281,7 @@ router.put("/api/threat/feeds/:id", writeLimiter, requireAdmin, (req, res) => {
   res.json({ success: true, feed: updated });
 });
 
-router.post("/api/threat/feeds/refresh-all", writeLimiter, requireAdmin, async (req, res) => {
+router.post("/api/threat/feeds/refresh-all", writeLimiter, requireAdmin, requireRecentAdminAuth, async (req, res) => {
   try {
     const results = await forceRefreshAllFeeds({ forceKeywordScan: true });
     res.json({ success: true, checked: results.length, results });
@@ -290,7 +290,7 @@ router.post("/api/threat/feeds/refresh-all", writeLimiter, requireAdmin, async (
   }
 });
 
-router.delete("/api/threat/feeds/:id", writeLimiter, requireAdmin, (req, res) => {
+router.delete("/api/threat/feeds/:id", writeLimiter, requireAdmin, requireRecentAdminAuth, (req, res) => {
   const deleted = deleteThreatFeedById(req.params.id);
   if (!deleted) return res.status(404).json({ error: "Feed not found" });
   auditAdmin(req, { category: "threat", action: "feed_delete", targetType: "threat_feed", targetId: req.params.id });
@@ -301,7 +301,7 @@ router.get("/api/threat/templates", requireAdmin, (req, res) => {
   res.json({ templates: listThreatApiTemplates() });
 });
 
-router.post("/api/threat/templates", writeLimiter, requireAdmin, (req, res) => {
+router.post("/api/threat/templates", writeLimiter, requireAdmin, requireRecentAdminAuth, (req, res) => {
   const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
   if (!name) {
     return res.status(400).json({ error: "Template name is required" });
@@ -316,7 +316,7 @@ router.post("/api/threat/templates", writeLimiter, requireAdmin, (req, res) => {
   res.json({ success: true, template });
 });
 
-router.put("/api/threat/templates/:id", writeLimiter, requireAdmin, (req, res) => {
+router.put("/api/threat/templates/:id", writeLimiter, requireAdmin, requireRecentAdminAuth, (req, res) => {
   const template = updateThreatApiTemplate(req.params.id, {
     name: typeof req.body?.name === "string" ? req.body.name.trim() : undefined,
     description: typeof req.body?.description === "string" ? req.body.description.trim() : undefined,
@@ -328,7 +328,7 @@ router.put("/api/threat/templates/:id", writeLimiter, requireAdmin, (req, res) =
   res.json({ success: true, template });
 });
 
-router.delete("/api/threat/templates/:id", writeLimiter, requireAdmin, (req, res) => {
+router.delete("/api/threat/templates/:id", writeLimiter, requireAdmin, requireRecentAdminAuth, (req, res) => {
   const template = getThreatApiTemplateById(req.params.id);
   if (!template) return res.status(404).json({ error: "Template not found" });
   if (template.isSystem) return res.status(403).json({ error: "System templates cannot be deleted." });
@@ -337,7 +337,7 @@ router.delete("/api/threat/templates/:id", writeLimiter, requireAdmin, (req, res
   res.json({ success: true });
 });
 
-router.post("/api/threat/templates/:id/test", writeLimiter, requireAdmin, async (req, res) => {
+router.post("/api/threat/templates/:id/test", writeLimiter, requireAdmin, requireRecentAdminAuth, async (req, res) => {
   const template = getThreatApiTemplateById(req.params.id);
   if (!template) return res.status(404).json({ error: "Template not found" });
 
@@ -364,7 +364,7 @@ router.get("/api/threat/settings", requireAdmin, (req, res) => {
   });
 });
 
-router.put("/api/threat/settings", writeLimiter, requireAdmin, (req, res) => {
+router.put("/api/threat/settings", writeLimiter, requireAdmin, requireRecentAdminAuth, (req, res) => {
   const autoFetch = req.body?.autoFetch === true;
   const fetchIntervalMinutes = Math.min(1440, Math.max(1, parseInt(req.body?.fetchInterval, 10) || 30));
   const fetchIntervalSeconds = fetchIntervalMinutes * 60;
@@ -408,7 +408,7 @@ router.get("/api/threat/notifications", requireAdmin, (req, res) => {
   res.json({ notifications: listThreatNotificationConfigs() });
 });
 
-router.post("/api/threat/notifications", writeLimiter, requireAdmin, (req, res) => {
+router.post("/api/threat/notifications", writeLimiter, requireAdmin, requireRecentAdminAuth, (req, res) => {
   const { name, channelType, destination, enabled } = req.body || {};
   if (!name || !channelType || !destination) {
     return res.status(400).json({ error: "Name, channel type, and destination are required" });
@@ -427,7 +427,7 @@ router.post("/api/threat/notifications", writeLimiter, requireAdmin, (req, res) 
   res.json({ success: true, notification });
 });
 
-router.put("/api/threat/notifications/:id", writeLimiter, requireAdmin, (req, res) => {
+router.put("/api/threat/notifications/:id", writeLimiter, requireAdmin, requireRecentAdminAuth, (req, res) => {
   const updated = updateThreatNotificationConfig(req.params.id, {
     name: typeof req.body?.name === "string" ? req.body.name.trim() : undefined,
     destination: typeof req.body?.destination === "string" ? req.body.destination.trim() : undefined,
@@ -438,7 +438,7 @@ router.put("/api/threat/notifications/:id", writeLimiter, requireAdmin, (req, re
   res.json({ success: true, notification: updated });
 });
 
-router.delete("/api/threat/notifications/:id", writeLimiter, requireAdmin, (req, res) => {
+router.delete("/api/threat/notifications/:id", writeLimiter, requireAdmin, requireRecentAdminAuth, (req, res) => {
   const deleted = deleteThreatNotificationConfigById(req.params.id);
   if (!deleted) return res.status(404).json({ error: "Notification config not found" });
   auditAdmin(req, { category: "threat", action: "notification_delete", targetType: "threat_notification", targetId: req.params.id });

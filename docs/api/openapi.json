@@ -38,7 +38,7 @@
     },
     {
       "name": "Survey",
-      "description": "RedSecSurvey placeholder routes and public response flows under active development"
+      "description": "RedSecSurvey survey builder and public response flows"
     },
     {
       "name": "Wiki",

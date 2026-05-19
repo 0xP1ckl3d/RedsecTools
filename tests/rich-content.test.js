@@ -26,6 +26,31 @@ test("sanitizeBulletinHtml strips unsafe tags, attributes, and external image so
   assert.ok(html.includes('href="/wiki"'));
 });
 
+test("sanitizeBulletinHtml handles malformed and namespace payloads without active content", () => {
+  const html = sanitizeBulletinHtml(`
+    <ScRiPt>alert(1)</sCrIpT>
+    <svg><a xlink:href="javascript:alert(1)">x</a></svg>
+    <math><mi//xlink:href="data:x,<script>alert(1)</script>"></math>
+    <template><img src=x onerror=alert(1)></template>
+    <a href=//evil.example/path onmouseover=alert(1)>protocol relative</a>
+    <a href="java&#x0A;script:alert(1)">encoded control</a>
+    <img src="data:image/svg+xml;base64,PHN2Zy8+" alt="data">
+    <img SRC="/api/homepage/bulletin-assets/good_asset" OnError="alert(1)" class="x">
+    <div><strong>safe</strong></div>
+  `);
+
+  assert.ok(!/script/i.test(html));
+  assert.ok(!/svg/i.test(html));
+  assert.ok(!/math/i.test(html));
+  assert.ok(!/template/i.test(html));
+  assert.ok(!/onmouseover|onerror|style=|class=/i.test(html));
+  assert.ok(!html.includes("//evil.example"));
+  assert.ok(!html.includes("javascript:"));
+  assert.ok(!html.includes("data:image"));
+  assert.ok(html.includes('/api/homepage/bulletin-assets/good_asset'));
+  assert.ok(html.includes("<strong>safe</strong>"));
+});
+
 test("extractBulletinAssetIds returns unique internal asset identifiers", () => {
   const ids = extractBulletinAssetIds(`
     <img src="/api/homepage/bulletin-assets/abc123">

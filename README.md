@@ -548,7 +548,7 @@ RedSecWiki is the internal knowledge hub for RedSecTools. It now provides:
 - Search across visible spaces
 - Role-aware creation and editing rules for personal and team pages
 
-The Wiki interface uses the same shell pattern as the homepage and admin surfaces: a persistent sidebar, focused content region, and tool-specific management instead of the smaller floating layout used by earlier placeholder tools.
+The Wiki interface uses the same shell pattern as the homepage and admin surfaces: a persistent sidebar, focused content region, and tool-specific management.
 
 Wiki is intended for runbooks, methodology notes, onboarding docs, internal references, project knowledge, and personal working pages, all within the same permission-aware platform shell as the other RedSecTools apps.
 
@@ -575,6 +575,21 @@ Users can enable TOTP-based MFA from the homepage Profile view. Supports:
 - Admin can enforce MFA for all users, or reset a user's MFA for account recovery
 
 When MFA is required by admin policy, new registrations must complete MFA setup before they receive a normal authenticated session.
+
+### SAML SSO
+
+Admins can enable SAML SSO from **Admin > Server Settings > Session Security**. The SAML option provides:
+
+- SP-initiated login at `/api/auth/sso/saml/login`
+- SP metadata at `/api/auth/sso/saml/metadata`
+- ACS response handling at `/api/auth/sso/saml/acs`
+- IdP signing certificate validation via `@node-saml/node-saml`
+- Attribute mapping for email, username, and full name
+- Optional auto-provisioning with a selected default role
+- Optional signed AuthnRequests with an SP keypair
+- Optional "Require SSO for login" policy
+
+Keep `TRUSTED_PUBLIC_ORIGINS` set to the public HTTPS origin before enabling SAML so metadata and ACS URLs match what the IdP expects.
 
 ---
 

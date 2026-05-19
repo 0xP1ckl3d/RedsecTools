@@ -29,6 +29,7 @@ const totp = require("../totp");
 const { buildAbsoluteUrl, isTrustedAbsoluteUrl } = require("../public-origin");
 const { getCookieSecure } = require("../core/security/cookies");
 const { logEvent, redactObject } = require("../core/logger");
+const samlAuth = require("../core/auth/saml");
 
 const router = Router();
 
@@ -293,6 +294,67 @@ function clearLoginThrottle(email) {
   clearAuthLoginState(email);
 }
 
+function getConfiguredSamlSettings() {
+  return samlAuth.getSamlSettings({ getSetting, decryptValue });
+}
+
+function safeLocalReturnTo(value) {
+  if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//")) return "/";
+  if (/[\u0000-\u001F\u007F]/.test(value)) return "/";
+  return value.length <= 300 ? value : "/";
+}
+
+function redirectWithSsoError(res, message) {
+  const url = new URL("/login", "http://redsectools.local");
+  url.searchParams.set("ssoError", message || "SSO login failed");
+  return res.redirect(`${url.pathname}${url.search}`);
+}
+
+function uniqueUsernameFromSaml(usernameValue, email) {
+  const base = samlAuth.sanitizeUsername(usernameValue, email);
+  let candidate = base;
+  let suffix = 1;
+  while (getUserByUsername(candidate)) {
+    const ending = `_${suffix++}`;
+    candidate = `${base.slice(0, Math.max(3, 30 - ending.length))}${ending}`;
+  }
+  return candidate;
+}
+
+async function resolveSamlUser(profile, settings) {
+  const email = samlAuth.getProfileEmail(profile, settings);
+  if (!email || validateEmail(email)) {
+    return { error: "SAML response did not include a valid email address" };
+  }
+
+  const existing = getUserByEmail(email);
+  if (existing) {
+    if (existing.suspended) return { error: "Account suspended", status: 403 };
+    const fullName = samlAuth.getProfileFullName(profile, settings);
+    if (fullName) updateUserProfile({ id: existing.id, fullName });
+    return { user: existing, provisioned: false };
+  }
+
+  if (!settings.autoProvision) {
+    return { error: "No RedSecTools account is linked to this SSO identity", status: 403 };
+  }
+
+  const userId = crypto.randomBytes(16).toString("base64url");
+  const username = uniqueUsernameFromSaml(samlAuth.getProfileUsername(profile, settings), email);
+  const randomPassword = crypto.randomBytes(48).toString("base64url");
+  const passwordHash = await bcrypt.hash(randomPassword, BCRYPT_ROUNDS);
+  createUser({
+    id: userId,
+    email,
+    username,
+    passwordHash,
+    roleId: settings.defaultRoleId || null,
+  });
+  const fullName = samlAuth.getProfileFullName(profile, settings);
+  if (fullName) updateUserProfile({ id: userId, fullName });
+  return { user: getUserById(userId), provisioned: true };
+}
+
 function checkEmailSendThrottle(email, { limit, windowSeconds, blockSeconds }) {
   const now = Math.floor(Date.now() / 1000);
   const state = getEmailSendState(email);
@@ -369,6 +431,93 @@ function checkTrustedDevice(req, userId) {
 
 // --- Routes ---
 
+// GET /api/auth/sso/config
+router.get("/auth/sso/config", (req, res) => {
+  const settings = getConfiguredSamlSettings();
+  res.json({
+    enabled: samlAuth.isSamlEnabled(settings),
+    provider: settings.provider,
+    requireForLogin: settings.requireForLogin,
+    loginPath: settings.loginPath,
+  });
+});
+
+// GET /api/auth/sso/saml/metadata
+router.get("/auth/sso/saml/metadata", (req, res) => {
+  const settings = getConfiguredSamlSettings();
+  try {
+    const metadata = samlAuth.getServiceProviderMetadata(settings, req);
+    res.setHeader("Content-Type", "application/samlmetadata+xml; charset=utf-8");
+    res.send(metadata);
+  } catch (error) {
+    auditAuth(req, { action: "sso_metadata", outcome: "failure", metadata: { error: error.message } });
+    res.status(400).json({ error: error.message || "SAML metadata is not available" });
+  }
+});
+
+// GET /api/auth/sso/saml/login
+router.get("/auth/sso/saml/login", loginLimiter, async (req, res) => {
+  const settings = getConfiguredSamlSettings();
+  try {
+    const saml = samlAuth.createSamlClient(settings, req);
+    const relayState = safeLocalReturnTo(req.query.returnTo);
+    const redirectUrl = await saml.getAuthorizeUrlAsync(relayState, undefined, {});
+    auditAuth(req, { action: "sso_login_start", outcome: "pending", metadata: { provider: "saml" } });
+    res.redirect(redirectUrl);
+  } catch (error) {
+    auditAuth(req, { action: "sso_login_start", outcome: "failure", metadata: { provider: "saml", error: error.message } });
+    redirectWithSsoError(res, error.message || "SAML is not configured");
+  }
+});
+
+// POST /api/auth/sso/saml/acs
+router.post("/auth/sso/saml/acs", loginLimiter, async (req, res) => {
+  const settings = getConfiguredSamlSettings();
+  try {
+    const saml = samlAuth.createSamlClient(settings, req);
+    const { profile } = await saml.validatePostResponseAsync(req.body || {});
+    if (!profile) {
+      auditAuth(req, { action: "sso_login", outcome: "failure", metadata: { provider: "saml", reason: "missing_profile" } });
+      return redirectWithSsoError(res, "SAML response did not include a user profile");
+    }
+
+    const resolved = await resolveSamlUser(profile, settings);
+    if (resolved.error) {
+      auditAuth(req, {
+        action: "sso_login",
+        outcome: "failure",
+        metadata: { provider: "saml", reason: resolved.error },
+      });
+      return redirectWithSsoError(res, resolved.error);
+    }
+
+    const ttl = getSessionTTL(false);
+    createAuthenticatedSession(res, resolved.user.id, ttl, {
+      ipAddress: req.ip,
+      userAgent: req.get("user-agent"),
+    });
+    clearLoginThrottle(resolved.user.email);
+    auditAuth(req, {
+      action: "sso_login",
+      actorUser: resolved.user,
+      outcome: "success",
+      metadata: {
+        provider: "saml",
+        provisioned: !!resolved.provisioned,
+        issuer: profile.issuer || null,
+      },
+    });
+    res.redirect(safeLocalReturnTo(req.body?.RelayState));
+  } catch (error) {
+    auditAuth(req, {
+      action: "sso_login",
+      outcome: "failure",
+      metadata: { provider: "saml", error: error.message },
+    });
+    redirectWithSsoError(res, "SAML login failed");
+  }
+});
+
 // POST /api/auth/login (modified for MFA)
 router.post("/auth/login", loginLimiter, async (req, res) => {
   const { email, password, keepSignedIn, rememberBrowser } = req.body || {};
@@ -376,6 +525,11 @@ router.post("/auth/login", loginLimiter, async (req, res) => {
 
   if (!normalizedEmail || !password) {
     return res.status(400).json({ error: "Email and password are required" });
+  }
+
+  const ssoSettings = getConfiguredSamlSettings();
+  if (samlAuth.isSamlEnabled(ssoSettings) && ssoSettings.requireForLogin) {
+    return res.status(403).json({ error: "Single sign-on is required for this deployment" });
   }
 
   const throttle = getLoginThrottleStatus(normalizedEmail);

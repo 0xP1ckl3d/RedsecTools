@@ -526,10 +526,137 @@
               <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
               <span class="text-sm">Require MFA for all users</span>
             </label>
+            <label class="custom-checkbox gap-2">
+              <input type="checkbox" id="security-admin-reauth-required">
+              <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+              <span class="text-sm">Require fresh admin authentication for high-risk changes</span>
+            </label>
+            <p class="text-xs text-muted -mt-3">When enabled, high-risk admin writes require the admin session to be 15 minutes old or newer.</p>
             <div class="flex gap-3">
               <button type="button" id="save-security-btn" class="btn-primary">Save Security Settings</button>
             </div>
             <p id="security-result" class="text-sm hidden"></p>
+          </div>
+        </div>
+        <div class="card admin-section-card">
+          <div class="admin-card-header">
+            <div>
+              <p class="admin-card-kicker">Identity Readiness</p>
+              <h2 class="admin-card-title">Single Sign-On</h2>
+              <p class="admin-card-copy">Manage SAML SSO login, metadata, IdP certificates, and user provisioning.</p>
+            </div>
+          </div>
+          <div class="space-y-5">
+            <div class="grid gap-4 md:grid-cols-2">
+              <label class="block space-y-1">
+                <span class="text-sm font-medium">Provider</span>
+                <select id="sso-provider" class="input-field">
+                  <option value="none">None</option>
+                  <option value="saml">SAML</option>
+                </select>
+              </label>
+              <label class="block space-y-1">
+                <span class="text-sm font-medium">Entity ID</span>
+                <input type="text" id="sso-entity-id" class="input-field" placeholder="https://tools.example.com/saml" maxlength="300">
+              </label>
+            </div>
+            <div class="grid gap-4 md:grid-cols-2">
+              <label class="block space-y-1">
+                <span class="text-sm font-medium">SAML IdP SSO URL</span>
+                <input type="url" id="sso-entry-point" class="input-field" placeholder="https://idp.example.com/saml/sso" maxlength="500">
+              </label>
+              <label class="block space-y-1">
+                <span class="text-sm font-medium">Auto-provision Role</span>
+                <select id="sso-default-role" class="input-field">
+                  <option value="">Default member role</option>
+                </select>
+              </label>
+            </div>
+            <div class="grid gap-4 md:grid-cols-3">
+              <label class="block space-y-1">
+                <span class="text-sm font-medium">Login Path</span>
+                <input type="text" id="sso-login-path" class="input-field" placeholder="/api/auth/sso/saml/login" maxlength="160" readonly>
+              </label>
+              <label class="block space-y-1">
+                <span class="text-sm font-medium">ACS Path</span>
+                <input type="text" id="sso-acs-path" class="input-field" placeholder="/api/auth/sso/saml/acs" maxlength="160" readonly>
+              </label>
+              <label class="block space-y-1">
+                <span class="text-sm font-medium">Metadata Path</span>
+                <input type="text" id="sso-metadata-path" class="input-field" placeholder="/api/auth/sso/saml/metadata" maxlength="160" readonly>
+              </label>
+            </div>
+            <div class="grid gap-4 md:grid-cols-2">
+              <label class="block space-y-1">
+                <span class="text-sm font-medium">IdP Entity ID</span>
+                <input type="text" id="sso-idp-entity-id" class="input-field" placeholder="https://idp.example.com/entity" maxlength="300">
+              </label>
+              <label class="block space-y-1">
+                <span class="text-sm font-medium">IdP Metadata URL</span>
+                <input type="url" id="sso-idp-metadata-url" class="input-field" placeholder="https://idp.example.com/metadata" maxlength="500">
+              </label>
+            </div>
+            <div class="grid gap-4 md:grid-cols-3">
+              <label class="block space-y-1">
+                <span class="text-sm font-medium">Email Attribute</span>
+                <input type="text" id="sso-email-attribute" class="input-field" placeholder="email" maxlength="180">
+              </label>
+              <label class="block space-y-1">
+                <span class="text-sm font-medium">Username Attribute</span>
+                <input type="text" id="sso-username-attribute" class="input-field" placeholder="username" maxlength="180">
+              </label>
+              <label class="block space-y-1">
+                <span class="text-sm font-medium">Full Name Attribute</span>
+                <input type="text" id="sso-full-name-attribute" class="input-field" placeholder="displayName" maxlength="180">
+              </label>
+            </div>
+            <label class="block space-y-1">
+              <span class="text-sm font-medium">IdP Signing Certificate</span>
+              <textarea id="sso-idp-cert" class="input-field font-mono text-xs" rows="5" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"></textarea>
+            </label>
+            <div class="grid gap-4 md:grid-cols-2">
+              <label class="block space-y-1">
+                <span class="text-sm font-medium">SP Public Certificate</span>
+                <textarea id="sso-public-cert" class="input-field font-mono text-xs" rows="5" placeholder="Optional unless signing AuthnRequests"></textarea>
+              </label>
+              <label class="block space-y-1">
+                <span class="text-sm font-medium">SP Private Key</span>
+                <textarea id="sso-private-key" class="input-field font-mono text-xs" rows="5" placeholder="Leave blank to keep existing key"></textarea>
+                <span id="sso-private-key-status" class="text-xs text-muted"></span>
+              </label>
+            </div>
+            <div class="grid gap-3 md:grid-cols-4">
+              <label class="custom-checkbox gap-2">
+                <input type="checkbox" id="sso-enabled">
+                <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+                <span class="text-sm">Enable SAML SSO</span>
+              </label>
+              <label class="custom-checkbox gap-2">
+                <input type="checkbox" id="sso-require-login">
+                <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+                <span class="text-sm">Require SSO for login</span>
+              </label>
+              <label class="custom-checkbox gap-2">
+                <input type="checkbox" id="sso-auto-provision">
+                <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+                <span class="text-sm">Auto-provision users</span>
+              </label>
+              <label class="custom-checkbox gap-2">
+                <input type="checkbox" id="sso-sign-requests">
+                <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+                <span class="text-sm">Sign AuthnRequests</span>
+              </label>
+              <label class="custom-checkbox gap-2">
+                <input type="checkbox" id="sso-force-authn">
+                <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+                <span class="text-sm">Force IdP re-auth</span>
+              </label>
+            </div>
+            <div class="flex gap-3">
+              <button type="button" id="save-sso-btn" class="btn-primary">Save SSO Settings</button>
+              <a href="/api/auth/sso/saml/metadata" id="sso-metadata-link" class="btn-secondary" target="_blank" rel="noopener noreferrer">View SP Metadata</a>
+            </div>
+            <p id="sso-result" class="text-sm hidden"></p>
           </div>
         </div>
       </div>
@@ -1489,7 +1616,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/admin.js?v=20260429-admin-deployment"></script>
+  <script type="module" src="/js/admin.js?v=20260519-admin-identity"></script>
   <script type="module" src="/js/burger-menu.js"></script>
   <script src="/js/notifications.js"></script>
   <script type="module" src="/js/theme.js?v=20260507-ai-calendar"></script>

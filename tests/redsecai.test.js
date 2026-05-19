@@ -1842,74 +1842,76 @@ test("RedSecAI schedules a named calendar project and allocation in one confirme
   const originalFetch = global.fetch;
   const requests = [];
   try {
-    provider.chat = async (messages, options = {}) => {
-      if (options.phase === "tool_router") {
-        return JSON.stringify({
-          useTools: true,
-          selectedTools: ["calendar.project.schedule"],
-          toolCalls: [],
-        });
-      }
-      if (options.phase === "tool_planner") {
-        return JSON.stringify({
-          toolCalls: [{
-            tool: "calendar.project.schedule",
-            args: {
-              body: {
-                projectName: "CV web app test",
-                startDate: "2026-05-04",
-                endDate: "2026-05-13",
-                title: "CV web app test",
-                billableRate: 2500,
+    await withMockedDate("2026-04-20T02:00:00.000Z", async () => {
+      provider.chat = async (messages, options = {}) => {
+        if (options.phase === "tool_router") {
+          return JSON.stringify({
+            useTools: true,
+            selectedTools: ["calendar.project.schedule"],
+            toolCalls: [],
+          });
+        }
+        if (options.phase === "tool_planner") {
+          return JSON.stringify({
+            toolCalls: [{
+              tool: "calendar.project.schedule",
+              args: {
+                body: {
+                  projectName: "CV web app test",
+                  startDate: "2026-05-04",
+                  endDate: "2026-05-13",
+                  title: "CV web app test",
+                  billableRate: 2500,
+                },
               },
-            },
-          }],
-        });
-      }
-      return "";
-    };
-    global.fetch = async (url, init = {}) => {
-      requests.push({ url: String(url), method: init.method, body: init.body ? JSON.parse(init.body) : null });
-      if (init.method === "POST" && String(url).includes("/api/calendar/projects")) {
-        assert.equal(requests.at(-1).body.name, "CV web app test");
-        assert.equal(requests.at(-1).body.billableRate, 2500);
-        return new Response(JSON.stringify({
-          success: true,
-          project: { id: "project-cv", name: "CV web app test" },
-        }), { status: 200, headers: { "content-type": "application/json" } });
-      }
-      if (init.method === "POST" && String(url).includes("/api/calendar/allocations")) {
-        const body = requests.at(-1).body;
-        assert.equal(body.projectId, "project-cv");
-        assert.equal(body.startDate, "2026-05-04");
-        assert.equal(body.endDate, "2026-05-13");
-        assert.equal(body.allocationMode, "daily");
-        return new Response(JSON.stringify({ success: true, createdCount: 8 }), { status: 200, headers: { "content-type": "application/json" } });
-      }
-      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 404, headers: { "content-type": "application/json" } });
-    };
+            }],
+          });
+        }
+        return "";
+      };
+      global.fetch = async (url, init = {}) => {
+        requests.push({ url: String(url), method: init.method, body: init.body ? JSON.parse(init.body) : null });
+        if (init.method === "POST" && String(url).includes("/api/calendar/projects")) {
+          assert.equal(requests.at(-1).body.name, "CV web app test");
+          assert.equal(requests.at(-1).body.billableRate, 2500);
+          return new Response(JSON.stringify({
+            success: true,
+            project: { id: "project-cv", name: "CV web app test" },
+          }), { status: 200, headers: { "content-type": "application/json" } });
+        }
+        if (init.method === "POST" && String(url).includes("/api/calendar/allocations")) {
+          const body = requests.at(-1).body;
+          assert.equal(body.projectId, "project-cv");
+          assert.equal(body.startDate, "2026-05-04");
+          assert.equal(body.endDate, "2026-05-13");
+          assert.equal(body.allocationMode, "daily");
+          return new Response(JSON.stringify({ success: true, createdCount: 8 }), { status: 200, headers: { "content-type": "application/json" } });
+        }
+        return new Response(JSON.stringify({ error: "unexpected request" }), { status: 404, headers: { "content-type": "application/json" } });
+      };
 
-    const req = {
-      user: { id: "project-user", username: "alice" },
-      access: { permissionSet: new Set(["calendar.create", "calendar.manage"]) },
-      headers: { cookie: "redsec_session=s%3Atest.sig" },
-      get: () => "/calendar",
-    };
-    const turn = await orchestrator.prepareRedSecAiTurn(req, [
-      { role: "user", content: "Assign the CV web app test project to me and put it in my calendar" },
-      { role: "user", content: "Runs from 4 May - 13 May" },
-    ], {
-      path: "/calendar",
-      timeZone: "Australia/Sydney",
+      const req = {
+        user: { id: "project-user", username: "alice" },
+        access: { permissionSet: new Set(["calendar.create", "calendar.manage"]) },
+        headers: { cookie: "redsec_session=s%3Atest.sig" },
+        get: () => "/calendar",
+      };
+      const turn = await orchestrator.prepareRedSecAiTurn(req, [
+        { role: "user", content: "Assign the CV web app test project to me and put it in my calendar" },
+        { role: "user", content: "Runs from 4 May - 13 May" },
+      ], {
+        path: "/calendar",
+        timeZone: "Australia/Sydney",
+      });
+
+      assert.equal(turn.pendingActions.length, 1);
+      assert.equal(turn.pendingActions[0].tool, "calendar.project.schedule");
+      assert.equal(turn.pendingActions[0].args.body.projectName, "CV web app test");
+
+      const confirmed = await confirmPendingAction(req, turn.pendingActions[0].id);
+      assert.equal(confirmed.result.ok, true);
+      assert.deepEqual(requests.filter((request) => request.method === "POST").map((request) => request.method), ["POST", "POST"]);
     });
-
-    assert.equal(turn.pendingActions.length, 1);
-    assert.equal(turn.pendingActions[0].tool, "calendar.project.schedule");
-    assert.equal(turn.pendingActions[0].args.body.projectName, "CV web app test");
-
-    const confirmed = await confirmPendingAction(req, turn.pendingActions[0].id);
-    assert.equal(confirmed.result.ok, true);
-    assert.deepEqual(requests.filter((request) => request.method === "POST").map((request) => request.method), ["POST", "POST"]);
   } finally {
     provider.chat = originalChat;
     global.fetch = originalFetch;

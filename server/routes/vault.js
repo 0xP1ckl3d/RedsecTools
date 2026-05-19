@@ -12,6 +12,7 @@ const {
 } = require("../database");
 const { requireUser } = require("../middleware/auth");
 const { decodeBase64Strict } = require("../base64");
+const { logEvent } = require("../core/logger");
 
 const router = Router();
 
@@ -64,8 +65,7 @@ function validateBase64(value, name, requiredLength) {
 }
 
 function logAction(action, req, extra = {}) {
-  const ip = req.ip || req.connection?.remoteAddress;
-  console.log(JSON.stringify({ ts: new Date().toISOString(), action, ip, userId: req.user?.id, ...extra }));
+  logEvent(action, req, extra);
 }
 
 function generateId() {

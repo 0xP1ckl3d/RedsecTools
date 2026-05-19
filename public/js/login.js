@@ -22,6 +22,7 @@ const togglePwBtn = document.getElementById("toggle-password");
 const loginBtn = document.getElementById("login-btn");
 const loginError = document.getElementById("login-error");
 const keepSignedInCb = document.getElementById("keep-signed-in");
+const ssoLoginBtn = document.getElementById("sso-login-btn");
 
 // MFA elements
 const loginSection = document.getElementById("login-section");
@@ -60,6 +61,29 @@ togglePwBtn.addEventListener("click", () => {
 let pendingTempToken = null;
 let pendingPassword = "";
 let pendingRegistration = false;
+
+(async function loadSsoConfig() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const ssoError = params.get("ssoError");
+    if (ssoError) showError(ssoError);
+
+    const res = await fetch("/api/auth/sso/config");
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.enabled || data.provider !== "saml") return;
+    const returnTo = params.get("returnTo") || "/";
+    const loginPath = data.loginPath || "/api/auth/sso/saml/login";
+    ssoLoginBtn.href = `${loginPath}?returnTo=${encodeURIComponent(returnTo)}`;
+    ssoLoginBtn.classList.remove("hidden");
+    if (data.requireForLogin) {
+      emailInput.disabled = true;
+      passwordInput.disabled = true;
+      keepSignedInCb.disabled = true;
+      loginBtn.classList.add("hidden");
+    }
+  } catch {}
+})();
 
 // Login
 loginBtn.addEventListener("click", async () => {

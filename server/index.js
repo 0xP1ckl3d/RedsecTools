@@ -39,6 +39,8 @@ const {
   closeExpiredSurveys, cleanupOldThreatAlerts, cleanupOldThreatArticles, getSetting,
   deleteExpiredNotifications,
   BRAND_DIR,
+  db,
+  listSchemaMigrations,
 } = require("./database");
 const { pageRequireUser, pageRequireGuestOrUser } = require("./middleware/auth");
 const { pageRequirePermission, pageRequireAnyPermission } = require("./middleware/permissions");
@@ -104,9 +106,43 @@ app.use(
 
 // --- Middleware ---
 app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ extended: false, limit: "1mb" }));
 app.use(cookieParser(COOKIE_SECRET));
 
 const page = (file) => path.join(__dirname, "..", "public", file);
+
+function readinessChecks() {
+  const checks = {};
+  try {
+    db.prepare("SELECT 1 AS ok").get();
+    checks.database = "ok";
+  } catch {
+    checks.database = "failed";
+  }
+  return checks;
+}
+
+app.get("/healthz", (req, res) => {
+  res.json({
+    status: "ok",
+    name: "RedSecTools",
+    uptimeSeconds: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.get("/readyz", (req, res) => {
+  const checks = readinessChecks();
+  const ready = Object.values(checks).every((status) => status === "ok");
+  res.status(ready ? 200 : 503).json({
+    status: ready ? "ready" : "degraded",
+    checks,
+    migrations: {
+      latest: listSchemaMigrations().slice(-1)[0]?.id || null,
+    },
+    timestamp: new Date().toISOString(),
+  });
+});
 
 function pageRequireRedSecAiEnabled(req, res, next) {
   if (redsecAiProvider.getConfig().enabled) return next();
@@ -114,6 +150,48 @@ function pageRequireRedSecAiEnabled(req, res, next) {
 }
 
 app.get("/ai/index.html", pageRequireUser, pageRequireRedSecAiEnabled, (req, res) => res.sendFile(page("ai/index.html")));
+
+function runPageMiddlewares(middlewares) {
+  return (req, res, next) => {
+    let index = 0;
+    function run(err) {
+      if (err) return next(err);
+      const middleware = middlewares[index++];
+      if (!middleware) return next();
+      return middleware(req, res, run);
+    }
+    return run();
+  };
+}
+
+const protectedStaticPageRoutes = new Map([
+  ["/index.html", runPageMiddlewares([pageRequireUser])],
+  ["/paste/index.html", runPageMiddlewares([pageRequireGuestOrUser("paste")])],
+  ["/share/index.html", runPageMiddlewares([pageRequireGuestOrUser("share")])],
+  ["/chat/index.html", runPageMiddlewares([pageRequireUser])],
+  ["/vault/index.html", runPageMiddlewares([pageRequireUser])],
+  ["/calendar/index.html", runPageMiddlewares([pageRequireUser, pageRequireAnyPermission(["calendar.view", "calendar.view_team", "calendar.manage"])])],
+  ["/survey/index.html", runPageMiddlewares([pageRequireUser, pageRequireAnyPermission(["survey.create", "survey.manage_any", "survey.view_results_any"])])],
+  ["/survey/results.html", runPageMiddlewares([pageRequireUser, pageRequireAnyPermission(["survey.create", "survey.manage_any", "survey.view_results_any"])])],
+  ["/wiki/index.html", runPageMiddlewares([pageRequireUser, pageRequireAnyPermission(["wiki.view", "wiki.create_personal", "wiki.create_team", "wiki.edit_team", "wiki.manage"])])],
+  ["/threat/index.html", runPageMiddlewares([pageRequireUser, pageRequireAnyPermission(["threat.view", "threat.manage"])])],
+  ["/reporter/index.html", runPageMiddlewares([pageRequireUser, pageRequireAnyPermission(["reporter.view", "reporter.create", "reporter.edit_own", "reporter.edit_assigned", "reporter.review", "reporter.approve", "reporter.manage_templates", "reporter.manage_all"])])],
+  ["/ai/index.html", runPageMiddlewares([pageRequireUser, pageRequireRedSecAiEnabled])],
+  ["/engage/index.html", runPageMiddlewares([pageRequireUser, pageRequireAnyPermission(["engage.view_own", "engage.view_team", "engage.view_all", "engage.manage_all"])])],
+]);
+
+app.use((req, res, next) => {
+  const pathname = (() => {
+    try {
+      return decodeURIComponent(new URL(req.originalUrl || req.url, "http://redsectools.local").pathname);
+    } catch {
+      return req.path;
+    }
+  })();
+  const protect = protectedStaticPageRoutes.get(pathname);
+  if (!protect) return next();
+  return protect(req, res, next);
+});
 
 // --- Custom brand logo / favicon override (before static middleware) ---
 const BRAND_FAVICON_PATH = path.join(BRAND_DIR, "favicon.png");

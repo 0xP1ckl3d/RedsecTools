@@ -5,6 +5,7 @@ const sharp = require("sharp");
 const path = require("path");
 const fs = require("fs");
 const { requireUser } = require("../middleware/auth");
+const { logEvent } = require("../core/logger");
 const { AVATARS_DIR, updateAvatarTimestamp, clearAvatarTimestamp } = require("../database");
 
 const router = Router();
@@ -35,8 +36,7 @@ const upload = multer({
 // --- Logging ---
 
 function logAction(action, req, extra = {}) {
-  const ip = req.ip || req.connection?.remoteAddress;
-  console.log(JSON.stringify({ ts: new Date().toISOString(), action, ip, ...extra }));
+  logEvent(action, req, extra);
 }
 
 // --- Routes ---

@@ -2,6 +2,7 @@ const { Router } = require("express");
 const rateLimit = require("express-rate-limit");
 const crypto = require("crypto");
 const { requireUser } = require("../middleware/auth");
+const { logEvent } = require("../core/logger");
 const { broadcastToConversation, broadcastToUser } = require("../chat-ws");
 const {
   createUserKey,
@@ -69,8 +70,7 @@ function isValidId(id) {
 // --- Logging ---
 
 function logAction(action, req, extra = {}) {
-  const ip = req.ip || req.connection?.remoteAddress;
-  console.log(JSON.stringify({ ts: new Date().toISOString(), action, ip, ...extra }));
+  logEvent(action, req, extra);
 }
 
 // ============================================================

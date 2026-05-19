@@ -1,4 +1,5 @@
 const { isValidBulletinAnimationPreset, isValidBulletinStylePreset } = require("./access");
+const cheerio = require("cheerio");
 
 const ALLOWED_TAGS = new Set([
   "p",
@@ -35,72 +36,58 @@ function escapeHtml(value) {
 function stripUnsafeUrl(url) {
   const trimmed = String(url || "").trim();
   if (!trimmed) return "";
+  if (/[\u0000-\u001f\u007f]/.test(trimmed)) return "";
+  if (/^\/\//.test(trimmed)) return "";
   if (trimmed.startsWith("/")) return trimmed;
   if (/^https?:\/\//i.test(trimmed)) return trimmed;
   return "";
 }
 
-function sanitizeAttrs(tagName, attrSource) {
-  const attrs = [];
-  const attrRegex = /([a-zA-Z0-9:_-]+)\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g;
-  let match;
-
-  while ((match = attrRegex.exec(attrSource)) !== null) {
-    const rawName = String(match[1] || "").toLowerCase();
-    const rawValue = match[3] ?? match[4] ?? match[5] ?? "";
-    if (rawName.startsWith("on") || rawName === "style" || rawName === "class") continue;
-
-    if (tagName === "a" && rawName === "href") {
-      const href = stripUnsafeUrl(rawValue);
-      if (href) attrs.push(`href="${escapeHtml(href)}"`);
-      continue;
-    }
-
-    if (tagName === "img" && rawName === "src") {
-      if (/^\/api\/homepage\/bulletin-assets\//.test(rawValue)) {
-        attrs.push(`src="${escapeHtml(rawValue)}"`);
-      }
-      continue;
-    }
-
-    if ((tagName === "img" || tagName === "a") && (rawName === "title" || rawName === "alt")) {
-      attrs.push(`${rawName}="${escapeHtml(rawValue)}"`);
-      continue;
-    }
-  }
-
-  if (tagName === "a") {
-    attrs.push('rel="noopener noreferrer"');
-    attrs.push('target="_blank"');
-  }
-
-  if (tagName === "img") {
-    attrs.push('loading="lazy"');
-    attrs.push('decoding="async"');
-  }
-
-  return attrs.length ? ` ${attrs.join(" ")}` : "";
-}
-
 function sanitizeBulletinHtml(input) {
   const source = String(input || "");
   const withoutComments = source.replace(/<!--[\s\S]*?-->/g, "");
-  const withoutDangerousBlocks = withoutComments
-    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
-    .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, "")
-    .replace(/<iframe[\s\S]*?>[\s\S]*?<\/iframe>/gi, "");
+  const $ = cheerio.load(withoutComments, { decodeEntities: false }, false);
 
-  return withoutDangerousBlocks.replace(/<\/?([a-zA-Z0-9]+)([^>]*)>/g, (full, rawTagName, rawAttrs) => {
-    const tagName = String(rawTagName || "").toLowerCase();
-    const isClosing = full.startsWith("</");
-    if (!ALLOWED_TAGS.has(tagName)) return "";
-    if (isClosing) return `</${tagName}>`;
-    const attrs = sanitizeAttrs(tagName, rawAttrs || "");
-    if (tagName === "br" || full.endsWith("/>")) {
-      return `<${tagName}${attrs}>`;
+  $("script, style, iframe, object, embed, svg, math, template").remove();
+
+  function sanitizeElement(_index, element) {
+    if (element.type !== "tag") return;
+    const tagName = String(element.name || "").toLowerCase();
+    const node = $(element);
+
+    if (!ALLOWED_TAGS.has(tagName)) {
+      node.replaceWith(node.contents());
+      return;
     }
-    return `<${tagName}${attrs}>`;
-  });
+
+    const originalAttrs = { ...(element.attribs || {}) };
+    for (const attrName of Object.keys(originalAttrs)) {
+      node.removeAttr(attrName);
+    }
+
+    if (tagName === "a") {
+      const href = stripUnsafeUrl(originalAttrs.href);
+      if (href) node.attr("href", href);
+      if (originalAttrs.title) node.attr("title", originalAttrs.title);
+      node.attr("rel", "noopener noreferrer");
+      node.attr("target", "_blank");
+    }
+
+    if (tagName === "img") {
+      const src = String(originalAttrs.src || "").trim();
+      if (/^\/api\/homepage\/bulletin-assets\/[A-Za-z0-9_-]+$/.test(src)) {
+        node.attr("src", src);
+      }
+      if (originalAttrs.alt) node.attr("alt", originalAttrs.alt);
+      if (originalAttrs.title) node.attr("title", originalAttrs.title);
+      node.attr("loading", "lazy");
+      node.attr("decoding", "async");
+    }
+  }
+
+  $("*").each(sanitizeElement);
+
+  return $.root().html() || "";
 }
 
 function extractBulletinAssetIds(html) {

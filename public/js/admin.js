@@ -20,6 +20,10 @@ async function api(path, options = {}) {
     throw new Error("Not authenticated");
   }
   if (res.status === 403) {
+    const data = await res.clone().json().catch(() => null);
+    if (data?.code === "recent_admin_required") {
+      return res;
+    }
     showLogin();
     loginError.textContent = "Admin access requires an active user session. Please log in to your account first.";
     loginError.classList.remove("hidden");
@@ -228,6 +232,7 @@ function updateAdminVisibleTabs() {
   }
   if (visibleTabs.has("security")) {
     loadSecuritySettings();
+    loadSsoSettings();
   }
   if (visibleTabs.has("deployment")) {
     loadDeploymentQuality();
@@ -704,6 +709,18 @@ function populateInviteRoleSelect() {
   if (!select) return;
   const currentValue = select.value;
   select.innerHTML = '<option value="">Default role</option>' + cachedRoles.map((role) => (
+    `<option value="${escapeHtml(role.id)}">${escapeHtml(role.name)}</option>`
+  )).join("");
+  if (currentValue && cachedRoles.some((role) => role.id === currentValue)) {
+    select.value = currentValue;
+  }
+}
+
+function populateSsoDefaultRoleSelect() {
+  const select = document.getElementById("sso-default-role");
+  if (!select) return;
+  const currentValue = select.value;
+  select.innerHTML = '<option value="">Default member role</option>' + cachedRoles.map((role) => (
     `<option value="${escapeHtml(role.id)}">${escapeHtml(role.name)}</option>`
   )).join("");
   if (currentValue && cachedRoles.some((role) => role.id === currentValue)) {
@@ -1729,8 +1746,33 @@ const securitySessionTTL = document.getElementById("security-session-ttl");
 const securitySessionTTLExtended = document.getElementById("security-session-ttl-extended");
 const securityMfaRememberDays = document.getElementById("security-mfa-remember-days");
 const securityMfaRequired = document.getElementById("security-mfa-required");
+const securityAdminReauthRequired = document.getElementById("security-admin-reauth-required");
 const saveSecurityBtn = document.getElementById("save-security-btn");
 const securityResult = document.getElementById("security-result");
+const ssoEnabled = document.getElementById("sso-enabled");
+const ssoProvider = document.getElementById("sso-provider");
+const ssoRequireLogin = document.getElementById("sso-require-login");
+const ssoAutoProvision = document.getElementById("sso-auto-provision");
+const ssoLoginPath = document.getElementById("sso-login-path");
+const ssoAcsPath = document.getElementById("sso-acs-path");
+const ssoMetadataPath = document.getElementById("sso-metadata-path");
+const ssoEntityId = document.getElementById("sso-entity-id");
+const ssoIdpEntityId = document.getElementById("sso-idp-entity-id");
+const ssoIdpMetadataUrl = document.getElementById("sso-idp-metadata-url");
+const ssoEntryPoint = document.getElementById("sso-entry-point");
+const ssoDefaultRole = document.getElementById("sso-default-role");
+const ssoEmailAttribute = document.getElementById("sso-email-attribute");
+const ssoUsernameAttribute = document.getElementById("sso-username-attribute");
+const ssoFullNameAttribute = document.getElementById("sso-full-name-attribute");
+const ssoIdpCert = document.getElementById("sso-idp-cert");
+const ssoPublicCert = document.getElementById("sso-public-cert");
+const ssoPrivateKey = document.getElementById("sso-private-key");
+const ssoPrivateKeyStatus = document.getElementById("sso-private-key-status");
+const ssoSignRequests = document.getElementById("sso-sign-requests");
+const ssoForceAuthn = document.getElementById("sso-force-authn");
+const ssoMetadataLink = document.getElementById("sso-metadata-link");
+const saveSsoBtn = document.getElementById("save-sso-btn");
+const ssoResult = document.getElementById("sso-result");
 
 async function loadSecuritySettings() {
   try {
@@ -1741,6 +1783,7 @@ async function loadSecuritySettings() {
     securitySessionTTLExtended.value = data.sessionTTLExtended || 604800;
     securityMfaRememberDays.value = data.mfaRememberDays || 30;
     securityMfaRequired.checked = data.mfaRequired || false;
+    securityAdminReauthRequired.checked = data.adminReauthRequired || false;
   } catch {}
 }
 
@@ -1756,6 +1799,7 @@ saveSecurityBtn.addEventListener("click", async () => {
         sessionTTLExtended: parseInt(securitySessionTTLExtended.value, 10),
         mfaRememberDays: parseInt(securityMfaRememberDays.value, 10),
         mfaRequired: securityMfaRequired.checked,
+        adminReauthRequired: securityAdminReauthRequired.checked,
       }),
     });
 
@@ -1775,6 +1819,86 @@ saveSecurityBtn.addEventListener("click", async () => {
     securityResult.classList.remove("hidden");
   } finally {
     saveSecurityBtn.disabled = false;
+  }
+});
+
+async function loadSsoSettings() {
+  try {
+    const res = await api("/api/settings/sso");
+    if (!res.ok) return;
+    const data = await res.json();
+    ssoEnabled.checked = data.enabled || false;
+    ssoProvider.value = data.provider || "none";
+    ssoRequireLogin.checked = data.requireForLogin || false;
+    ssoAutoProvision.checked = data.autoProvision || false;
+    ssoLoginPath.value = data.loginPath || "/api/auth/sso/saml/login";
+    ssoAcsPath.value = data.acsPath || "/api/auth/sso/saml/acs";
+    ssoMetadataPath.value = data.metadataPath || "/api/auth/sso/saml/metadata";
+    ssoEntityId.value = data.entityId || "";
+    ssoIdpEntityId.value = data.idpEntityId || "";
+    ssoIdpMetadataUrl.value = data.idpMetadataUrl || "";
+    ssoEntryPoint.value = data.entryPoint || "";
+    ssoDefaultRole.value = data.defaultRoleId || "";
+    ssoEmailAttribute.value = data.emailAttribute || "email";
+    ssoUsernameAttribute.value = data.usernameAttribute || "username";
+    ssoFullNameAttribute.value = data.fullNameAttribute || "displayName";
+    ssoIdpCert.value = data.idpCert || "";
+    ssoPublicCert.value = data.publicCert || "";
+    ssoPrivateKey.value = "";
+    ssoPrivateKeyStatus.textContent = data.privateKeyConfigured ? "Private key is stored. Leave blank to keep it." : "No private key stored.";
+    ssoSignRequests.checked = data.signRequests || false;
+    ssoForceAuthn.checked = data.forceAuthn || false;
+    if (ssoMetadataLink) ssoMetadataLink.href = data.metadataPath || "/api/auth/sso/saml/metadata";
+  } catch {}
+}
+
+saveSsoBtn?.addEventListener("click", async () => {
+  saveSsoBtn.disabled = true;
+  ssoResult.classList.add("hidden");
+
+  try {
+    const res = await api("/api/settings/sso", {
+      method: "POST",
+      body: JSON.stringify({
+        enabled: ssoEnabled.checked,
+        provider: ssoProvider.value,
+        requireForLogin: ssoRequireLogin.checked,
+        autoProvision: ssoAutoProvision.checked,
+        loginPath: ssoLoginPath.value,
+        acsPath: ssoAcsPath.value,
+        metadataPath: ssoMetadataPath.value,
+        entityId: ssoEntityId.value,
+        idpEntityId: ssoIdpEntityId.value,
+        idpMetadataUrl: ssoIdpMetadataUrl.value,
+        entryPoint: ssoEntryPoint.value,
+        defaultRoleId: ssoDefaultRole.value,
+        emailAttribute: ssoEmailAttribute.value,
+        usernameAttribute: ssoUsernameAttribute.value,
+        fullNameAttribute: ssoFullNameAttribute.value,
+        idpCert: ssoIdpCert.value,
+        publicCert: ssoPublicCert.value,
+        privateKey: ssoPrivateKey.value,
+        signRequests: ssoSignRequests.checked,
+        forceAuthn: ssoForceAuthn.checked,
+      }),
+    });
+
+    if (res.ok) {
+      ssoResult.textContent = "SSO settings saved";
+      ssoResult.className = "text-sm text-accent";
+      ssoResult.classList.remove("hidden");
+    } else {
+      const data = await res.json();
+      ssoResult.textContent = data.error || "Failed to save";
+      ssoResult.className = "text-sm text-error";
+      ssoResult.classList.remove("hidden");
+    }
+  } catch {
+    ssoResult.textContent = "Network error";
+    ssoResult.className = "text-sm text-error";
+    ssoResult.classList.remove("hidden");
+  } finally {
+    saveSsoBtn.disabled = false;
   }
 });
 
@@ -1837,6 +1961,9 @@ function renderDeploymentSummary(data) {
     deploymentMetric("Environment", data.app?.environment || "development", `Node ${data.app?.node || ""}`),
     deploymentMetric("Version", data.app?.version || "local", data.app?.commit ? `Commit ${data.app.commit}` : data.app?.platform || ""),
     deploymentMetric("Cookie Secure", data.deployment?.cookieSecure ? "Enabled" : "Disabled", data.deployment?.cookieSecureSource || ""),
+    deploymentMetric("Readiness", data.readiness?.status || "unknown", `Database ${data.readiness?.checks?.database || "unknown"}`),
+    deploymentMetric("Admin Re-auth", data.controls?.adminReauthRequired ? "Enabled" : "Disabled", data.controls?.adminReauthWindowSeconds ? `${Math.floor(data.controls.adminReauthWindowSeconds / 60)} minute freshness window` : ""),
+    deploymentMetric("SSO", data.controls?.ssoEnabled ? "Configured" : "Disabled", data.controls?.ssoProvider || "none"),
     deploymentMetric("Database", formatBytes(data.database?.sizeBytes), data.database?.path || ""),
     deploymentMetric("Data Storage", formatBytes(data.storage?.dataBytes), `${data.counts?.recentAuditEvents || 0} audit events in the last hour`),
     deploymentMetric("Users Without MFA", data.counts?.usersWithoutMfa || 0, `${data.counts?.users || 0} total users`),
@@ -2586,6 +2713,7 @@ async function loadRoles() {
     cachedRoles = data.roles || [];
     permissionDefinitions = data.permissionDefinitions || [];
     populateInviteRoleSelect();
+    populateSsoDefaultRoleSelect();
     renderRolePermissions(data.permissions || []);
     const list = document.getElementById("roles-list");
     if (!list) return;
