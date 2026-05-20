@@ -7,6 +7,7 @@ import {
   updateCvssBuilderScorebox,
   buildCvssVectorFromScope,
 } from "./cvss-calculator.js";
+import { initCyberChef } from "./cyberchef-lite.js";
 
 const state = { currentView: "cvss" };
 
@@ -1352,7 +1353,7 @@ function showFirstEnabledView(excludeTool) {
 
 async function init() {
   // Load bootstrap to determine which tools are enabled
-  let enabledTools = { cvss: true, breach: true, azure: true, securitytrails: true, "security-headers": true, "tls-check": true, leakradar: true };
+  let enabledTools = { cvss: true, breach: true, azure: true, securitytrails: true, "security-headers": true, "tls-check": true, leakradar: true, cyberchef: true };
   try {
     const data = await api("/minitools/bootstrap");
     enabledTools = {
@@ -1363,6 +1364,7 @@ async function init() {
       "security-headers": !!data.tools?.securityHeaders?.enabled,
       "tls-check": !!data.tools?.tlsCheck?.enabled,
       leakradar: !!data.tools?.leakradar?.enabled,
+      cyberchef: !!data.tools?.cyberchef?.enabled,
     };
     const st = data.tools?.securitytrails;
     if (st) {
@@ -1384,7 +1386,7 @@ async function init() {
   } catch (_) { /* bootstrap optional */ }
 
   // Hide disabled tools from sidebar, mobile tabs, and view sections
-  const allTools = ["cvss", "breach", "azure", "securitytrails", "security-headers", "tls-check", "leakradar"];
+  const allTools = ["cvss", "breach", "azure", "securitytrails", "security-headers", "tls-check", "leakradar", "cyberchef"];
   for (const tool of allTools) {
     if (!enabledTools[tool]) {
       hideMinitool(tool);
@@ -1404,6 +1406,7 @@ async function init() {
   if (enabledTools.securitytrails) initSecurityTrails();
   if (enabledTools["security-headers"]) initSecurityHeaders();
   if (enabledTools["tls-check"]) initTlsCheck();
+  if (enabledTools.cyberchef) initCyberChef();
   if (enabledTools.leakradar) initLeakRadar();
 }
 

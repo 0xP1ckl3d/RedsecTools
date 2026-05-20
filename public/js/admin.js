@@ -1633,6 +1633,7 @@ const minitoolSecuritytrailsEnabled = document.getElementById("minitool-security
 const minitoolSecurityHeadersEnabled = document.getElementById("minitool-security-headers-enabled");
 const minitoolTlsCheckEnabled = document.getElementById("minitool-tls-check-enabled");
 const minitoolLeakRadarEnabled = document.getElementById("minitool-leakradar-enabled");
+const minitoolCyberChefEnabled = document.getElementById("minitool-cyberchef-enabled");
 const minitoolsSaveBtn = document.getElementById("minitools-save-btn");
 const minitoolsResult = document.getElementById("minitools-result");
 
@@ -1647,6 +1648,7 @@ async function loadMinitoolsSettings() {
     if (minitoolSecurityHeadersEnabled) minitoolSecurityHeadersEnabled.checked = data.securityHeaders;
     if (minitoolTlsCheckEnabled) minitoolTlsCheckEnabled.checked = data.tlsCheck;
     if (minitoolLeakRadarEnabled) minitoolLeakRadarEnabled.checked = data.leakradar;
+    if (minitoolCyberChefEnabled) minitoolCyberChefEnabled.checked = data.cyberchef;
   } catch (err) {
     if (minitoolsResult) {
       minitoolsResult.textContent = err.message || "Failed to load settings";
@@ -1673,6 +1675,7 @@ minitoolsSaveBtn?.addEventListener("click", async () => {
         securityHeadersEnabled: !!minitoolSecurityHeadersEnabled?.checked,
         tlsCheckEnabled: !!minitoolTlsCheckEnabled?.checked,
         leakradarEnabled: !!minitoolLeakRadarEnabled?.checked,
+        cyberchefEnabled: !!minitoolCyberChefEnabled?.checked,
       }),
     });
     const data = await res.json().catch(() => ({}));

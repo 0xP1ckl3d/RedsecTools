@@ -1428,12 +1428,13 @@ router.get("/api/settings/minitools", requireAdmin, (req, res) => {
     securityHeaders: parseEnabled("minitool_security_headers_enabled"),
     tlsCheck: parseEnabled("minitool_tls_check_enabled"),
     leakradar: parseEnabled("minitool_leakradar_enabled"),
+    cyberchef: parseEnabled("minitool_cyberchef_enabled"),
   });
 });
 
 // POST /admin/api/settings/minitools
 router.post("/api/settings/minitools", requireAdmin, requireRecentAdminAuth, (req, res) => {
-  const { cvssEnabled, breachEnabled, azureEnabled, securitytrailsEnabled, securityHeadersEnabled, tlsCheckEnabled, leakradarEnabled } = req.body || {};
+  const { cvssEnabled, breachEnabled, azureEnabled, securitytrailsEnabled, securityHeadersEnabled, tlsCheckEnabled, leakradarEnabled, cyberchefEnabled } = req.body || {};
   if (cvssEnabled !== undefined) {
     setSetting("minitool_cvss_enabled", cvssEnabled ? "true" : "false");
   }
@@ -1455,11 +1456,14 @@ router.post("/api/settings/minitools", requireAdmin, requireRecentAdminAuth, (re
   if (leakradarEnabled !== undefined) {
     setSetting("minitool_leakradar_enabled", leakradarEnabled ? "true" : "false");
   }
+  if (cyberchefEnabled !== undefined) {
+    setSetting("minitool_cyberchef_enabled", cyberchefEnabled ? "true" : "false");
+  }
   auditAdmin(req, {
     category: "settings",
     action: "minitools_update",
     targetType: "minitools_settings",
-    metadata: { cvssEnabled, breachEnabled, azureEnabled, securitytrailsEnabled, securityHeadersEnabled, tlsCheckEnabled, leakradarEnabled },
+    metadata: { cvssEnabled, breachEnabled, azureEnabled, securitytrailsEnabled, securityHeadersEnabled, tlsCheckEnabled, leakradarEnabled, cyberchefEnabled },
   });
   res.json({ success: true });
 });

@@ -46,6 +46,10 @@
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11a4 4 0 118 0c0 4-4 6-4 6s-4-2-4-6zm4 0h.01M4 19h16"/></svg>
           <span class="sidebar-nav-text">LeakRadar</span>
         </button>
+        <button type="button" class="sidebar-nav-item" data-minitools-view="cyberchef">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+          <span class="sidebar-nav-text">CyberChef</span>
+        </button>
       </nav>
     </aside>
 
@@ -81,6 +85,7 @@
         <button type="button" class="mobile-tab" data-minitools-view="security-headers">Security Headers</button>
         <button type="button" class="mobile-tab" data-minitools-view="tls-check">TLS Check</button>
         <button type="button" class="mobile-tab" data-minitools-view="leakradar">LeakRadar</button>
+        <button type="button" class="mobile-tab" data-minitools-view="cyberchef">CyberChef</button>
       </div>
 
       <div class="dashboard-main">
@@ -239,6 +244,52 @@
             <button type="button" id="leakradar-load-more-btn" class="btn-secondary hidden">Load Next Page</button>
           </div>
         </section>
+
+        <section id="minitools-view-cyberchef" class="hidden">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <h2 class="text-lg font-bold">CyberChef</h2>
+              <p class="text-sm text-muted">Encode, decode, hash, extract, and transform with chained operations. All processing runs in your browser.</p>
+            </div>
+          </div>
+
+          <div class="cyberchef-layout">
+            <!-- LEFT: Operations -->
+            <div class="cyberchef-ops-panel card">
+              <input type="text" id="cyberchef-search" class="input-field mb-2" placeholder="Search operations...">
+              <div id="cyberchef-cat-filter" class="flex flex-wrap gap-1 mb-2"></div>
+              <div id="cyberchef-ops-list" class="cyberchef-ops-scroll"></div>
+            </div>
+
+            <!-- CENTER: Recipe -->
+            <div class="cyberchef-recipe-panel card">
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="font-bold text-sm">Recipe</h3>
+                <button type="button" id="cyberchef-clear-recipe" class="btn-secondary text-xs">Clear</button>
+              </div>
+              <div id="cyberchef-recipe" class="cyberchef-recipe-scroll"></div>
+              <div class="flex gap-2 mt-3 pt-3 border-t border-border">
+                <button type="button" id="cyberchef-bake" class="btn-primary flex-1">Bake</button>
+                <button type="button" id="cyberchef-copy" class="btn-secondary text-xs">Copy</button>
+                <button type="button" id="cyberchef-swap" class="btn-secondary text-xs">Swap</button>
+              </div>
+            </div>
+
+            <!-- RIGHT: Input / Output -->
+            <div class="cyberchef-io-panel">
+              <div class="cyberchef-io-split">
+                <div class="card">
+                  <label class="text-xs text-muted font-semibold uppercase mb-1 block">Input <span class="font-normal">(Ctrl+Enter)</span></label>
+                  <textarea id="cyberchef-input" class="cyberchef-textarea" placeholder="Enter data to transform..."></textarea>
+                </div>
+                <div class="card">
+                  <label class="text-xs text-muted font-semibold uppercase mb-1 block">Output</label>
+                  <textarea id="cyberchef-output" class="cyberchef-textarea" readonly placeholder="Results appear here..."></textarea>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
     </div>
   </div>
@@ -247,6 +298,7 @@
   <script src="/js/theme.js?v=20260520-minitools"></script>
   <script type="module" src="/js/burger-menu.js?v=20260520-minitools"></script>
   <script src="/js/notifications.js?v=20260520-minitools"></script>
+  <script type="module" src="/js/cyberchef-lite.js?v=20260520-minitools"></script>
   <script type="module" src="/js/minitools.js?v=20260520-minitools"></script>
 </body>
 </html>

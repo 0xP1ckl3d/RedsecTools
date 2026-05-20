@@ -8700,3 +8700,176 @@ html.light[data-primary-theme="purple"] {
     width: 100%;
   }
 }
+
+/* --- CyberChef 3-panel layout --- */
+.cyberchef-layout {
+  display: grid;
+  grid-template-columns: 220px 260px 1fr;
+  gap: 0.75rem;
+  height: calc(100vh - 10rem);
+  min-height: 420px;
+}
+.cyberchef-ops-panel {
+  display: flex;
+  flex-direction: column;
+  padding: 0.75rem;
+  overflow: hidden;
+}
+.cyberchef-ops-scroll {
+  flex: 1;
+  overflow-y: auto;
+}
+.cyberchef-recipe-panel {
+  display: flex;
+  flex-direction: column;
+  padding: 0.75rem;
+  overflow: hidden;
+}
+.cyberchef-recipe-scroll {
+  flex: 1;
+  overflow-y: auto;
+}
+.cyberchef-io-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.cyberchef-io-split {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 0.75rem;
+}
+.cyberchef-io-split .card {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.cyberchef-textarea {
+  flex: 1;
+  width: 100%;
+  padding: 0.625rem 0.875rem;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  line-height: 1.6;
+  outline: none;
+  resize: none;
+}
+.cyberchef-textarea::placeholder {
+  color: var(--text-muted);
+}
+.cyberchef-step {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.375rem;
+  padding: 0.375rem 0.5rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  margin-bottom: 0.375rem;
+}
+.cyberchef-step-num {
+  font-size: 0.625rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  min-width: 1.25rem;
+}
+.cyberchef-step-name {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.cyberchef-step input,
+.cyberchef-step select {
+  font-size: 0.6875rem;
+  padding: 0.125rem 0.375rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  color: var(--text-primary);
+  min-width: 0;
+  flex: 1 1 100%;
+  max-width: 100%;
+}
+.cyberchef-step-remove {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.cyberchef-step-remove:hover {
+  color: var(--accent);
+}
+.cyberchef-op-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  border: 1px solid transparent;
+  color: var(--text-primary);
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+.cyberchef-op-btn:hover {
+  background: var(--bg-elevated);
+  border-color: var(--border);
+}
+.cyberchef-cat-btn {
+  font-size: 0.6875rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+.cyberchef-cat-btn:hover {
+  background: var(--bg-elevated);
+}
+.cyberchef-cat-btn.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+@media (max-width: 1023px) {
+  .cyberchef-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+    height: auto;
+    min-height: 0;
+  }
+  .cyberchef-ops-scroll {
+    max-height: 200px;
+    overflow-y: auto;
+  }
+  .cyberchef-recipe-scroll {
+    max-height: 160px;
+    overflow-y: auto;
+  }
+  .cyberchef-io-split .card {
+    min-height: 160px;
+  }
+  .cyberchef-textarea {
+    resize: vertical;
+    min-height: 120px;
+  }
+}
+@media (min-width: 640px) and (max-width: 1023px) {
+  .cyberchef-io-split {
+    flex-direction: row;
+  }
+  .cyberchef-io-split .card {
+    min-height: 200px;
+  }
+}
