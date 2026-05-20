@@ -132,7 +132,11 @@ const { createRouteHarness, signedCookieValue } = require("../helpers/route-harn
     assert.ok(res.body.paths["/admin/openapi"]);
     assert.ok(res.body.paths["/admin/api/settings/minitools"]);
     assert.ok(res.body.paths["/admin/api/settings/securitytrails"]);
+    assert.ok(res.body.paths["/admin/api/settings/leakradar"]);
     assert.ok(res.body.paths["/api/minitools/tls-check/analyze"]);
+    assert.ok(res.body.paths["/api/minitools/leakradar/search"]);
+    assert.ok(res.body.paths["/api/minitools/leakradar/unlock"]);
+    assert.ok(res.body.paths["/api/minitools/leakradar/unlocked"]);
     assert.ok(res.body.paths["/admin/api/service-accounts"]);
     assert.ok(res.body.paths["/admin/api/webhooks"]);
     assert.ok(res.body.paths["/api/v1/engage/opportunities"]);

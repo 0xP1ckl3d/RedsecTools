@@ -1278,7 +1278,7 @@
             <div>
               <p class="admin-card-kicker">Tool Settings</p>
               <h2 class="admin-card-title"><span data-bp>RedSec</span>MiniTools</h2>
-              <p class="admin-card-copy">Configure integrations for RedSecMiniTools. The SecurityTrails API key is stored server-side and never exposed to the browser. Per-user daily request limits control quota usage.</p>
+              <p class="admin-card-copy">Configure integrations for RedSecMiniTools. API keys are stored server-side and never exposed to the browser. Per-user daily request limits control SecurityTrails quota usage.</p>
             </div>
           </div>
 
@@ -1301,6 +1301,25 @@
           <div class="flex items-center gap-3 mt-4">
             <button type="button" id="securitytrails-save-btn" class="btn-primary">Save SecurityTrails Settings</button>
             <p id="securitytrails-result" class="text-sm hidden"></p>
+          </div>
+
+          <hr class="my-6 border-border">
+
+          <div>
+            <h3 class="text-sm font-bold mb-2">LeakRadar</h3>
+            <p class="text-sm text-muted mb-4">Configure the server-side LeakRadar bearer token used by the LeakRadar MiniTool for domain leak searches, unlocks, and unlocked-history lookups.</p>
+            <label class="space-y-1 block">
+              <span class="text-xs font-semibold uppercase tracking-wide text-muted">API Key</span>
+              <div class="flex gap-2">
+                <input id="leakradar-api-key" type="password" class="input-field flex-1" placeholder="Enter LeakRadar API key" autocomplete="off">
+                <button type="button" id="leakradar-toggle-key" class="btn-secondary text-sm px-3" title="Show/hide key">Show</button>
+              </div>
+              <span class="text-xs text-muted">Bearer token from LeakRadar. Leave blank to keep the current key.</span>
+            </label>
+            <div class="flex items-center gap-3 mt-4">
+              <button type="button" id="leakradar-save-btn" class="btn-primary">Save LeakRadar Settings</button>
+              <p id="leakradar-result" class="text-sm hidden"></p>
+            </div>
           </div>
 
           <hr class="my-6 border-border" id="minitools-toggles-divider">
@@ -1339,6 +1358,11 @@
                 <input type="checkbox" id="minitool-tls-check-enabled">
                 <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
                 <span class="text-sm">TLS Check</span>
+              </label>
+              <label class="custom-checkbox gap-2">
+                <input type="checkbox" id="minitool-leakradar-enabled">
+                <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+                <span class="text-sm">LeakRadar</span>
               </label>
             </div>
 

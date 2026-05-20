@@ -260,6 +260,7 @@ function updateAdminVisibleTabs() {
   }
   if (visibleTabs.has("minitools-tool-settings")) {
     loadSecurityTrailsSettings();
+    loadLeakRadarSettings();
     loadMinitoolsSettings();
   }
   if (visibleTabs.has("survey-tool-settings")) {
@@ -1619,6 +1620,10 @@ const securityTrailsDailyLimitInput = document.getElementById("securitytrails-da
 const securityTrailsSaveBtn = document.getElementById("securitytrails-save-btn");
 const securityTrailsToggleKeyBtn = document.getElementById("securitytrails-toggle-key");
 const securityTrailsResult = document.getElementById("securitytrails-result");
+const leakRadarApiKeyInput = document.getElementById("leakradar-api-key");
+const leakRadarSaveBtn = document.getElementById("leakradar-save-btn");
+const leakRadarToggleKeyBtn = document.getElementById("leakradar-toggle-key");
+const leakRadarResult = document.getElementById("leakradar-result");
 
 // MiniTools settings
 const minitoolCvssEnabled = document.getElementById("minitool-cvss-enabled");
@@ -1627,6 +1632,7 @@ const minitoolAzureEnabled = document.getElementById("minitool-azure-enabled");
 const minitoolSecuritytrailsEnabled = document.getElementById("minitool-securitytrails-enabled");
 const minitoolSecurityHeadersEnabled = document.getElementById("minitool-security-headers-enabled");
 const minitoolTlsCheckEnabled = document.getElementById("minitool-tls-check-enabled");
+const minitoolLeakRadarEnabled = document.getElementById("minitool-leakradar-enabled");
 const minitoolsSaveBtn = document.getElementById("minitools-save-btn");
 const minitoolsResult = document.getElementById("minitools-result");
 
@@ -1640,6 +1646,7 @@ async function loadMinitoolsSettings() {
     if (minitoolSecuritytrailsEnabled) minitoolSecuritytrailsEnabled.checked = data.securitytrails;
     if (minitoolSecurityHeadersEnabled) minitoolSecurityHeadersEnabled.checked = data.securityHeaders;
     if (minitoolTlsCheckEnabled) minitoolTlsCheckEnabled.checked = data.tlsCheck;
+    if (minitoolLeakRadarEnabled) minitoolLeakRadarEnabled.checked = data.leakradar;
   } catch (err) {
     if (minitoolsResult) {
       minitoolsResult.textContent = err.message || "Failed to load settings";
@@ -1665,6 +1672,7 @@ minitoolsSaveBtn?.addEventListener("click", async () => {
         securitytrailsEnabled: !!minitoolSecuritytrailsEnabled?.checked,
         securityHeadersEnabled: !!minitoolSecurityHeadersEnabled?.checked,
         tlsCheckEnabled: !!minitoolTlsCheckEnabled?.checked,
+        leakradarEnabled: !!minitoolLeakRadarEnabled?.checked,
       }),
     });
     const data = await res.json().catch(() => ({}));
@@ -1745,6 +1753,62 @@ securityTrailsSaveBtn?.addEventListener("click", async () => {
     }
   } finally {
     securityTrailsSaveBtn.disabled = false;
+  }
+});
+
+async function loadLeakRadarSettings() {
+  try {
+    const res = await api("/api/settings/leakradar");
+    const data = await res.json();
+    if (leakRadarApiKeyInput) {
+      leakRadarApiKeyInput.value = "";
+      leakRadarApiKeyInput.placeholder = data.apiKeyConfigured ? `Current: ${data.apiKeyPreview}` : "Enter LeakRadar API key";
+    }
+  } catch (err) {
+    if (leakRadarResult) {
+      leakRadarResult.textContent = err.message || "Failed to load settings";
+      leakRadarResult.className = "text-sm text-error";
+      leakRadarResult.classList.remove("hidden");
+    }
+  }
+}
+
+leakRadarToggleKeyBtn?.addEventListener("click", () => {
+  if (!leakRadarApiKeyInput) return;
+  const showing = leakRadarApiKeyInput.type === "text";
+  leakRadarApiKeyInput.type = showing ? "password" : "text";
+  leakRadarToggleKeyBtn.textContent = showing ? "Show" : "Hide";
+});
+
+leakRadarSaveBtn?.addEventListener("click", async () => {
+  leakRadarSaveBtn.disabled = true;
+  if (leakRadarResult) {
+    leakRadarResult.textContent = "";
+    leakRadarResult.className = "text-sm hidden";
+  }
+  try {
+    const res = await api("/api/settings/leakradar", {
+      method: "POST",
+      body: JSON.stringify({ apiKey: leakRadarApiKeyInput?.value || "" }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || "Save failed");
+    }
+    if (leakRadarResult) {
+      leakRadarResult.textContent = data.apiKeyConfigured ? "Settings saved." : "No LeakRadar key configured.";
+      leakRadarResult.className = "text-sm text-accent";
+      leakRadarResult.classList.remove("hidden");
+    }
+    loadLeakRadarSettings();
+  } catch (err) {
+    if (leakRadarResult) {
+      leakRadarResult.textContent = err.message || "Save failed";
+      leakRadarResult.className = "text-sm text-error";
+      leakRadarResult.classList.remove("hidden");
+    }
+  } finally {
+    leakRadarSaveBtn.disabled = false;
   }
 });
 

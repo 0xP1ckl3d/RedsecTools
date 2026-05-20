@@ -1370,6 +1370,49 @@ router.post("/api/settings/securitytrails", requireAdmin, requireRecentAdminAuth
   res.json({ success: true });
 });
 
+function getLeakRadarStoredApiKey() {
+  const encrypted = getSetting("leakradar_api_key_encrypted") || "";
+  const legacy = getSetting("leakradar_api_key") || "";
+  return (decryptValue(encrypted || legacy) || "").trim();
+}
+
+// GET /admin/api/settings/leakradar
+router.get("/api/settings/leakradar", requireAdmin, (req, res) => {
+  const apiKey = getLeakRadarStoredApiKey();
+  res.json({
+    apiKeyConfigured: apiKey.length > 0,
+    apiKeyPreview: apiKey.length > 0 ? apiKey.slice(0, 4) + "..." + apiKey.slice(-4) : "",
+  });
+});
+
+// POST /admin/api/settings/leakradar
+router.post("/api/settings/leakradar", requireAdmin, requireRecentAdminAuth, (req, res) => {
+  const apiKey = String(req.body?.apiKey || "").trim();
+  const clearApiKey = !!req.body?.clearApiKey;
+
+  if (apiKey && (apiKey.length < 8 || apiKey.length > 512)) {
+    return res.status(400).json({ error: "API key must be between 8 and 512 characters" });
+  }
+
+  if (clearApiKey) {
+    setSetting("leakradar_api_key_encrypted", "");
+    setSetting("leakradar_api_key", "");
+  } else if (apiKey) {
+    setSetting("leakradar_api_key_encrypted", encryptValue(apiKey));
+    setSetting("leakradar_api_key", "");
+  }
+
+  const configured = clearApiKey ? false : (apiKey.length > 0 || getLeakRadarStoredApiKey().length > 0);
+  auditAdmin(req, {
+    category: "settings",
+    action: "leakradar_update",
+    targetType: "leakradar_settings",
+    metadata: { apiKeyConfigured: configured },
+  });
+
+  res.json({ success: true, apiKeyConfigured: configured });
+});
+
 // GET /admin/api/settings/minitools
 router.get("/api/settings/minitools", requireAdmin, (req, res) => {
   const parseEnabled = (key) => {
@@ -1384,12 +1427,13 @@ router.get("/api/settings/minitools", requireAdmin, (req, res) => {
     securitytrails: parseEnabled("minitool_securitytrails_enabled"),
     securityHeaders: parseEnabled("minitool_security_headers_enabled"),
     tlsCheck: parseEnabled("minitool_tls_check_enabled"),
+    leakradar: parseEnabled("minitool_leakradar_enabled"),
   });
 });
 
 // POST /admin/api/settings/minitools
 router.post("/api/settings/minitools", requireAdmin, requireRecentAdminAuth, (req, res) => {
-  const { cvssEnabled, breachEnabled, azureEnabled, securitytrailsEnabled, securityHeadersEnabled, tlsCheckEnabled } = req.body || {};
+  const { cvssEnabled, breachEnabled, azureEnabled, securitytrailsEnabled, securityHeadersEnabled, tlsCheckEnabled, leakradarEnabled } = req.body || {};
   if (cvssEnabled !== undefined) {
     setSetting("minitool_cvss_enabled", cvssEnabled ? "true" : "false");
   }
@@ -1408,11 +1452,14 @@ router.post("/api/settings/minitools", requireAdmin, requireRecentAdminAuth, (re
   if (tlsCheckEnabled !== undefined) {
     setSetting("minitool_tls_check_enabled", tlsCheckEnabled ? "true" : "false");
   }
+  if (leakradarEnabled !== undefined) {
+    setSetting("minitool_leakradar_enabled", leakradarEnabled ? "true" : "false");
+  }
   auditAdmin(req, {
     category: "settings",
     action: "minitools_update",
     targetType: "minitools_settings",
-    metadata: { cvssEnabled, breachEnabled, azureEnabled, securitytrailsEnabled, securityHeadersEnabled, tlsCheckEnabled },
+    metadata: { cvssEnabled, breachEnabled, azureEnabled, securitytrailsEnabled, securityHeadersEnabled, tlsCheckEnabled, leakradarEnabled },
   });
   res.json({ success: true });
 });

@@ -1,5 +1,4 @@
-import { showAlertModal } from "./confirm-modal.js";
-import { escapeHtml, badge, setInlineResult, clearInlineResult } from "./ui-components.js";
+import { escapeHtml, safeAttr, badge, setInlineResult, clearInlineResult } from "./ui-components.js";
 import {
   cvssSeverity,
   calculateCvssScore,
@@ -526,6 +525,323 @@ function renderSecurityTrailsResults(data, container) {
   });
 }
 
+function initLeakRadar() {
+  const input = document.getElementById("leakradar-domain");
+  const typeGroup = document.getElementById("leakradar-type-group");
+  const searchBtn = document.getElementById("leakradar-search-btn");
+  const unlockedBtn = document.getElementById("leakradar-unlocked-btn");
+  const loadMoreBtn = document.getElementById("leakradar-load-more-btn");
+  const resultsEl = document.getElementById("leakradar-results");
+  const inlineEl = document.getElementById("leakradar-inline-result");
+  if (!input || !searchBtn || !resultsEl) return;
+
+  const leakState = { mode: "search", type: "employees", domain: "", page: 1, nextPage: null };
+
+  typeGroup?.addEventListener("click", (event) => {
+    const clicked = event.target.closest("[data-leakradar-type]");
+    if (!clicked) return;
+    typeGroup.querySelectorAll("[data-leakradar-type]").forEach((button) => button.classList.remove("active"));
+    clicked.classList.add("active");
+  });
+
+  const run = async ({ mode = "search", page = 1, append = false } = {}) => {
+    const domain = input.value.trim();
+    if (!domain && mode !== "unlocked") return;
+    const activeType = typeGroup?.querySelector("[data-leakradar-type].active")?.dataset.leakradarType || "employees";
+    const type = mode === "unlocked" ? "unlocked" : activeType;
+    const button = mode === "unlocked" ? unlockedBtn : searchBtn;
+    const originalLabel = button?.textContent;
+
+    leakState.mode = mode;
+    leakState.type = type;
+    leakState.domain = domain;
+    leakState.page = page;
+    clearInlineResult(inlineEl);
+    if (button) {
+      button.disabled = true;
+      button.textContent = append ? "Loading..." : "Querying...";
+    }
+    if (loadMoreBtn) loadMoreBtn.classList.add("hidden");
+    if (!append) {
+      resultsEl.innerHTML = '<div class="text-sm text-muted">Querying LeakRadar...</div>';
+    }
+
+    try {
+      const endpoint = mode === "unlocked" ? "/minitools/leakradar/unlocked" : "/minitools/leakradar/search";
+      const params = new URLSearchParams({ page: String(page) });
+      if (domain) params.set("domain", domain);
+      if (mode !== "unlocked") params.set("type", type);
+      const data = await api(`${endpoint}?${params.toString()}`);
+      leakState.nextPage = data.nextPage || null;
+      leakState.page = data.page || page;
+      renderLeakRadarResults(data, resultsEl, { append, mode, type });
+      if (loadMoreBtn) {
+        loadMoreBtn.classList.toggle("hidden", !data.hasMore);
+        loadMoreBtn.textContent = "Load Next Page";
+      }
+    } catch (err) {
+      if (append) {
+        setInlineResult(inlineEl, err.message || "LeakRadar request failed", false);
+      } else {
+        resultsEl.innerHTML = `<div class="text-sm text-error">${escapeHtml(err.message)}</div>`;
+      }
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalLabel;
+      }
+    }
+  };
+
+  searchBtn.addEventListener("click", () => run({ mode: "search", page: 1 }));
+  unlockedBtn?.addEventListener("click", () => run({ mode: "unlocked", page: 1 }));
+  loadMoreBtn?.addEventListener("click", () => {
+    if (!leakState.nextPage) return;
+    run({ mode: leakState.mode, page: leakState.nextPage, append: true });
+  });
+  input.addEventListener("keydown", (event) => { if (event.key === "Enter") run({ mode: "search", page: 1 }); });
+
+  resultsEl.addEventListener("click", async (event) => {
+    const pageBtn = event.target.closest("[data-leakradar-page]");
+    if (pageBtn) {
+      const page = Number(pageBtn.dataset.leakradarPage || 1);
+      if (Number.isFinite(page) && page >= 1) {
+        run({ mode: leakState.mode, page, append: false });
+      }
+      return;
+    }
+
+    const unlockBtn = event.target.closest("[data-leakradar-unlock]");
+    if (!unlockBtn) return;
+    const leakId = unlockBtn.dataset.leakradarUnlock;
+    unlockBtn.disabled = true;
+    const original = unlockBtn.textContent;
+    unlockBtn.textContent = "Unlocking...";
+    try {
+      const unlockResponse = await api("/minitools/leakradar/unlock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leakId, domain: leakState.domain }),
+      });
+      updateLeakRadarUnlockedRow(resultsEl, leakId, unlockResponse.unlockedRecord || unlockResponse.data);
+      unlockBtn.textContent = "Unlocked";
+      unlockBtn.classList.remove("btn-primary");
+      unlockBtn.classList.add("btn-secondary");
+    } catch (err) {
+      unlockBtn.disabled = false;
+      unlockBtn.textContent = original;
+      setInlineResult(inlineEl, err.message || "Unlock failed", false);
+    }
+  });
+}
+
+function leakRadarArrayFromPayload(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== "object") return [];
+  const candidates = [
+    payload.items,
+    payload.data,
+    payload.results,
+    payload.leaks,
+    payload.unlocked,
+    payload.records,
+    payload.data?.items,
+    payload.data?.results,
+    payload.data?.leaks,
+    payload.data?.unlocked,
+  ];
+  return candidates.find(Array.isArray) || [];
+}
+
+function extractLeakRadarUnlockedItem(payload, leakId) {
+  if (!payload || typeof payload !== "object") return null;
+  const items = leakRadarArrayFromPayload(payload);
+  if (items.length) {
+    return items.find((item) => getLeakRadarItemId(item) === leakId) || items[0];
+  }
+  if (getLeakRadarItemId(payload) === leakId || Object.keys(payload).length) return payload;
+  return null;
+}
+
+function leakRadarUnlockedPassword(item) {
+  const direct = leakRadarFirstValue(item, LEAKRADAR_PASSWORD_KEYS);
+  if (direct) return direct;
+  if (!item || typeof item !== "object") return "";
+  for (const value of Object.values(item)) {
+    if (value && typeof value === "object") {
+      const nested = leakRadarUnlockedPassword(value);
+      if (nested) return nested;
+    }
+  }
+  return "";
+}
+
+function updateLeakRadarUnlockedRow(container, leakId, payload) {
+  const row = container?.querySelector(`[data-leakradar-row="${CSS.escape(leakId)}"]`);
+  if (!row) return;
+  const unlockedItem = extractLeakRadarUnlockedItem(payload, leakId);
+  const password = leakRadarUnlockedPassword(unlockedItem);
+  const passwordCell = row.querySelector("[data-leakradar-password-cell]");
+  if (passwordCell && password) {
+    passwordCell.innerHTML = leakRadarCompactValue(password);
+  }
+  const metaCell = row.querySelector("[data-leakradar-meta-cell]");
+  if (metaCell && unlockedItem) {
+    const meta = leakRadarMetaValue(unlockedItem);
+    if (meta) metaCell.innerHTML = leakRadarCompactValue(meta);
+  }
+}
+
+function getLeakRadarItemId(item) {
+  if (!item || typeof item !== "object") return "";
+  return String(item.id || item.leak_id || item.leakId || item.uuid || item._id || item.hash || "").trim();
+}
+
+const LEAKRADAR_ACCOUNT_KEYS = [
+  "username_masked", "usernameMasked", "masked_username", "maskedUsername",
+  "email", "email_address", "emailAddress", "mail", "username", "user_name", "userName",
+  "user", "login", "account", "account_name", "accountName", "credential_username",
+  "credential_email", "employee_email", "customer_email", "third_party_email", "identifier",
+];
+const LEAKRADAR_DOMAIN_URL_KEYS = ["url", "uri", "domain", "url_domain", "url_host", "host", "hostname", "subdomain", "email_domain", "email_host"];
+const LEAKRADAR_SOURCE_KEYS = ["source", "breach", "breach_name", "breachName", "database", "collection", "leak_name", "leakName", "dataset", "compromise"];
+const LEAKRADAR_PASSWORD_KEYS = ["password", "password_plain", "plaintext_password", "cleartext_password", "secret", "credential", "password_hash", "hash", "password_type", "hash_type"];
+const LEAKRADAR_META_KEYS = [
+  "added_at", "addedAt", "date", "leaked_at", "leakedAt", "breach_date", "breachDate", "compromised_at", "compromisedAt",
+  "created_at", "createdAt", "updated_at", "updatedAt", "unlocked_at", "unlockedAt",
+  "last_seen", "lastSeen", "indexed_at", "indexedAt", "published_at", "publishedAt",
+  "list", "comment", "status", "type", "category", "severity", "confidence", "malware_family", "malwareFamily",
+];
+const LEAKRADAR_META_EXTRA_KEYS = ["password_strength", "passwordStrength", "status", "category", "is_email", "isEmail", "unlocked"];
+
+function renderLeakRadarResults(data, container, { append = false, mode = "search", type = "employees" } = {}) {
+  const items = Array.isArray(data.items) ? data.items : [];
+  const header = `
+    <div class="card p-4 mb-4">
+      <div class="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <div class="text-xs text-muted">LeakRadar ${mode === "unlocked" ? "Unlocked History" : prettyLabel(type)}</div>
+          <h3 class="font-bold text-sm mt-1">${escapeHtml(data.domain || (mode === "unlocked" ? "All unlocked records" : ""))}</h3>
+        </div>
+        <div class="flex gap-2 flex-wrap">
+          ${badge(`${items.length} loaded`, "gray")}
+          ${data.total != null ? badge(`${Number(data.total).toLocaleString()} total`, "blue") : ""}
+          ${badge(`Page ${data.page || 1}`, "gray")}
+          ${Number(data.page || 1) > 1 ? `<button type="button" class="btn-secondary text-xs px-2 py-1" data-leakradar-page="${Number(data.page || 1) - 1}">Prev</button>` : ""}
+          ${data.nextPage ? `<button type="button" class="btn-secondary text-xs px-2 py-1" data-leakradar-page="${Number(data.nextPage)}">Next</button>` : ""}
+        </div>
+      </div>
+    </div>
+  `;
+  if (!append && items.length === 0) {
+    container.innerHTML = header + '<div class="card p-4 text-sm text-muted">No LeakRadar results returned for this query.</div>';
+    return;
+  }
+
+  const unlockedById = data.unlockedById || {};
+  const itemHtml = items.map((item) => renderLeakRadarTableRow(item, { mode, type, unlockedById })).join("");
+  if (append) {
+    const tbody = container.querySelector("#leakradar-result-body");
+    if (tbody) tbody.insertAdjacentHTML("beforeend", itemHtml);
+    else container.insertAdjacentHTML("beforeend", leakRadarTableHtml(itemHtml));
+  } else {
+    container.innerHTML = header + leakRadarTableHtml(itemHtml);
+  }
+}
+
+function leakRadarTableHtml(rowsHtml) {
+  return `
+    <div class="card p-0 overflow-hidden">
+      <div class="threat-table-wrap">
+        <table class="threat-table">
+          <thead>
+            <tr>
+              <th>Account</th>
+              <th>Domain / URL</th>
+              <th>Source</th>
+              <th>Password / Hash</th>
+              <th>Meta</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="leakradar-result-body">${rowsHtml}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function leakRadarFirstValue(item, keys, seen = new WeakSet()) {
+  if (!item || typeof item !== "object") return "";
+  if (seen.has(item)) return "";
+  seen.add(item);
+  for (const key of keys) {
+    if (item[key] !== null && item[key] !== undefined && item[key] !== "") return item[key];
+  }
+  for (const value of Object.values(item)) {
+    if (value && typeof value === "object") {
+      const nested = leakRadarFirstValue(value, keys, seen);
+      if (nested !== null && nested !== undefined && nested !== "") return nested;
+    }
+  }
+  return "";
+}
+
+function leakRadarCompactValue(value) {
+  if (value === null || value === undefined || value === "") return '<span class="text-muted">-</span>';
+  if (Array.isArray(value)) return value.length ? escapeHtml(value.slice(0, 4).map((item) => typeof item === "object" ? JSON.stringify(item) : String(item)).join(", ")) : '<span class="text-muted">-</span>';
+  if (typeof value === "object") return escapeHtml(JSON.stringify(value));
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  return escapeHtml(String(value));
+}
+
+function leakRadarDisplayDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toISOString().replace("T", " ").replace(/\.\d{3}Z$/, " UTC");
+}
+
+function leakRadarMetaValue(item) {
+  const date = leakRadarFirstValue(item, LEAKRADAR_META_KEYS);
+  const parts = [];
+  if (date) parts.push(leakRadarDisplayDate(date));
+  for (const key of LEAKRADAR_META_EXTRA_KEYS) {
+    const value = leakRadarFirstValue(item, [key]);
+    if (value === null || value === undefined || value === "" || value === date) continue;
+    parts.push(`${prettyLabel(key)}: ${typeof value === "boolean" ? (value ? "Yes" : "No") : String(value)}`);
+  }
+  return parts.join(" | ");
+}
+
+function renderLeakRadarTableRow(item, { mode, type, unlockedById = {} }) {
+  if (typeof item === "string") {
+    const stringCell = `<span class="text-xs font-mono break-all">${escapeHtml(item)}</span>`;
+    return type === "subdomains"
+      ? `<tr><td class="text-xs text-muted">-</td><td>${stringCell}</td><td colspan="3"></td><td class="text-xs text-muted">-</td></tr>`
+      : `<tr><td>${stringCell}</td><td colspan="4"></td><td class="text-xs text-muted">-</td></tr>`;
+  }
+  const id = getLeakRadarItemId(item);
+  const cachedItem = id && unlockedById && typeof unlockedById === "object" ? unlockedById[id] : null;
+  const displayItem = cachedItem ? { ...(item || {}), ...cachedItem } : item;
+  const account = leakRadarFirstValue(displayItem, LEAKRADAR_ACCOUNT_KEYS);
+  const canUnlock = mode !== "unlocked" && type !== "subdomains" && id && !cachedItem;
+  const domainOrUrl = leakRadarFirstValue(displayItem, LEAKRADAR_DOMAIN_URL_KEYS);
+  const source = leakRadarFirstValue(displayItem, LEAKRADAR_SOURCE_KEYS);
+  const password = leakRadarFirstValue(displayItem, LEAKRADAR_PASSWORD_KEYS);
+  const meta = leakRadarMetaValue(displayItem);
+  return `
+    <tr ${id ? `data-leakradar-row="${safeAttr(id)}"` : ""}>
+      <td class="text-xs break-all">${leakRadarCompactValue(account)}</td>
+      <td class="text-xs break-all">${leakRadarCompactValue(domainOrUrl)}</td>
+      <td class="text-xs break-all">${leakRadarCompactValue(source)}</td>
+      <td class="text-xs break-all" data-leakradar-password-cell>${leakRadarCompactValue(password)}</td>
+      <td class="text-xs break-all" data-leakradar-meta-cell>${leakRadarCompactValue(meta)}</td>
+      <td class="text-xs whitespace-nowrap">${canUnlock ? `<button type="button" class="btn-primary text-sm whitespace-nowrap" data-leakradar-unlock="${safeAttr(id)}">Unlock</button>` : cachedItem || mode === "unlocked" ? '<span class="badge badge-green text-xs">Unlocked</span>' : '<span class="text-muted">-</span>'}</td>
+    </tr>
+  `;
+}
+
 function renderScalar(val) {
   if (val == null || val === "") return '<span class="text-muted">-</span>';
   if (Array.isArray(val)) {
@@ -1036,7 +1352,7 @@ function showFirstEnabledView(excludeTool) {
 
 async function init() {
   // Load bootstrap to determine which tools are enabled
-  let enabledTools = { cvss: true, breach: true, azure: true, securitytrails: true, "security-headers": true, "tls-check": true };
+  let enabledTools = { cvss: true, breach: true, azure: true, securitytrails: true, "security-headers": true, "tls-check": true, leakradar: true };
   try {
     const data = await api("/minitools/bootstrap");
     enabledTools = {
@@ -1046,6 +1362,7 @@ async function init() {
       securitytrails: !!data.tools?.securitytrails?.enabled,
       "security-headers": !!data.tools?.securityHeaders?.enabled,
       "tls-check": !!data.tools?.tlsCheck?.enabled,
+      leakradar: !!data.tools?.leakradar?.enabled,
     };
     const st = data.tools?.securitytrails;
     if (st) {
@@ -1057,10 +1374,17 @@ async function init() {
         }
       }
     }
+    const lr = data.tools?.leakradar;
+    if (lr && !lr.enabled) {
+      const results = document.getElementById("leakradar-results");
+      if (results) {
+        results.innerHTML = '<div class="info-box text-sm mt-2">LeakRadar is not configured. Ask an admin to add an API key in Admin > Tools > LeakRadar.</div>';
+      }
+    }
   } catch (_) { /* bootstrap optional */ }
 
   // Hide disabled tools from sidebar, mobile tabs, and view sections
-  const allTools = ["cvss", "breach", "azure", "securitytrails", "security-headers", "tls-check"];
+  const allTools = ["cvss", "breach", "azure", "securitytrails", "security-headers", "tls-check", "leakradar"];
   for (const tool of allTools) {
     if (!enabledTools[tool]) {
       hideMinitool(tool);
@@ -1080,6 +1404,7 @@ async function init() {
   if (enabledTools.securitytrails) initSecurityTrails();
   if (enabledTools["security-headers"]) initSecurityHeaders();
   if (enabledTools["tls-check"]) initTlsCheck();
+  if (enabledTools.leakradar) initLeakRadar();
 }
 
 init();

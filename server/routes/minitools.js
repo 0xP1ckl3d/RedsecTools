@@ -2,6 +2,7 @@ const { Router } = require("express");
 const rateLimit = require("express-rate-limit");
 const { requireUser } = require("../middleware/auth");
 const { attachUserAccess } = require("../middleware/permissions");
+const { logEvent, redactObject } = require("../core/logger");
 const {
   safeFetchPublicUrl,
   readResponseTextWithLimit,
@@ -13,6 +14,16 @@ const {
 } = require("../core/minitools/security-headers");
 const { normalizeSecurityHeadersTargetUrl } = require("../core/minitools/security-headers-url");
 const { analyzeTlsTarget } = require("../core/minitools/tls-check");
+const {
+  LEAKRADAR_PAGE_SIZE,
+  normalizeLeakRadarDomain,
+  normalizeLeakRadarSearchType,
+  normalizeLeakRadarPage,
+  normalizeLeakRadarLeakId,
+  buildLeakRadarEnvelope,
+  filterLeakRadarItemsByDomain,
+  sortLeakRadarItemsByMostRecent,
+} = require("../core/minitools/leakradar");
 
 const router = Router();
 
@@ -78,6 +89,22 @@ const tlsCheckLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+const leakRadarLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  message: { error: "LeakRadar lookup rate limit reached. Try again later." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const leakRadarUnlockLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: { error: "LeakRadar unlock rate limit reached. Try again later." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 function canViewMiniTools(req, res, next) {
   if (!req.access?.permissionSet?.has("minitools.view")) {
     return res.status(403).json({ error: "MiniTools access denied" });
@@ -112,6 +139,34 @@ function getSecurityTrailsApiKey() {
   return (getSetting("securitytrails_api_key") || "").trim();
 }
 
+function getLeakRadarApiKey() {
+  const { getSetting, decryptValue } = require("../database");
+  const encrypted = getSetting("leakradar_api_key_encrypted") || "";
+  const legacy = getSetting("leakradar_api_key") || "";
+  return (decryptValue(encrypted || legacy) || "").trim();
+}
+
+function auditMiniTool(req, { action, targetType = "minitool", targetId = null, outcome = "success", metadata = {} }) {
+  try {
+    const { createAuditEvent } = require("../database");
+    createAuditEvent({
+      actorUserId: req.user?.id || null,
+      actorUsername: req.user?.username || null,
+      actorType: req.user ? "user" : "anonymous",
+      ipAddress: req.ip || null,
+      userAgent: req.get("user-agent") || null,
+      category: "minitools",
+      action,
+      targetType,
+      targetId,
+      outcome,
+      metadata: redactObject(metadata),
+    });
+  } catch (error) {
+    logEvent("audit:write_failed", req, { action, error: error.message });
+  }
+}
+
 async function fetchSecurityHeaders(targetUrl) {
   const fetchOptions = {
     headers: { "user-agent": "RedSecTools-MiniTools/1.0" },
@@ -140,6 +195,7 @@ async function fetchSecurityHeaders(targetUrl) {
 
 router.get("/minitools/bootstrap", readLimiter, requireUser, attachUserAccess, canViewMiniTools, (req, res) => {
   const apiKeyConfigured = getSecurityTrailsApiKey().length > 0;
+  const leakRadarApiKeyConfigured = getLeakRadarApiKey().length > 0;
   const dailyLimit = getSecurityTrailsDailyLimit();
   const usedToday = getSecurityTrailsUsage(req.user.id);
   const tools = {
@@ -149,6 +205,7 @@ router.get("/minitools/bootstrap", readLimiter, requireUser, attachUserAccess, c
     securitytrails: { enabled: isMinitoolEnabled("minitool_securitytrails_enabled") && apiKeyConfigured, apiKeyConfigured, dailyLimit, usedToday },
     securityHeaders: { enabled: isMinitoolEnabled("minitool_security_headers_enabled") },
     tlsCheck: { enabled: isMinitoolEnabled("minitool_tls_check_enabled") },
+    leakradar: { enabled: isMinitoolEnabled("minitool_leakradar_enabled") && leakRadarApiKeyConfigured, apiKeyConfigured: leakRadarApiKeyConfigured, pageSize: LEAKRADAR_PAGE_SIZE },
   };
   const anyEnabled = Object.values(tools).some((t) => t.enabled);
   res.json({
@@ -340,6 +397,195 @@ router.get("/minitools/securitytrails/lookup", securityTrailsLimiter, requireUse
     });
   } catch (err) {
     res.status(502).json({ error: "Failed to reach SecurityTrails API", detail: err.message });
+  }
+});
+
+// --- LeakRadar proxy ---
+
+async function leakRadarApi(endpointPath, { method = "GET", query = {}, body = null } = {}) {
+  const apiKey = getLeakRadarApiKey();
+  if (!apiKey) return { error: "LeakRadar API key not configured" };
+
+  const url = new URL(`https://api.leakradar.io${endpointPath}`);
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== null && value !== "") {
+      url.searchParams.set(key, String(value));
+    }
+  }
+  const headers = {
+    authorization: `Bearer ${apiKey}`,
+    accept: "application/json",
+    "user-agent": "RedSecTools-MiniTools/1.0",
+  };
+  const options = { method, headers, timeoutMs: 12000, maxRedirects: 0 };
+  if (body !== null) {
+    headers["content-type"] = "application/json";
+    options.body = JSON.stringify(body);
+  }
+
+  const { response } = await safeFetchPublicUrl(url.href, options);
+  const text = await readResponseTextWithLimit(response, 2 * 1024 * 1024);
+  let payload = null;
+  if (text) {
+    try {
+      payload = JSON.parse(text);
+    } catch (_) {
+      payload = { raw: text.substring(0, 10000), format: "raw" };
+    }
+  }
+  return { status: response.status, ok: response.ok, data: payload || {} };
+}
+
+function sendLeakRadarUpstreamError(res, result) {
+  const data = result?.data || {};
+  const detail = data.error || data.message || data.detail || data.raw || "LeakRadar API request failed";
+  const status = result?.status === 401 || result?.status === 403 ? 502 : result?.status || 502;
+  return res.status(status).json({
+    error: "LeakRadar API request failed",
+    status: result?.status || null,
+    detail,
+  });
+}
+
+function leakRadarItemsFromPayload(payload, leakId = null) {
+  const envelope = buildLeakRadarEnvelope(payload || {}, { page: 1, limit: LEAKRADAR_PAGE_SIZE });
+  if (envelope.items.length) return envelope.items;
+  if (payload && typeof payload === "object") return [leakId ? { id: leakId, ...payload } : payload];
+  return leakId ? [{ id: leakId }] : [];
+}
+
+function cacheLeakRadarUnlockedItems(items, domain, unlockedBy) {
+  const { upsertLeakRadarUnlockedRecord } = require("../database");
+  const cached = {};
+  for (const item of Array.isArray(items) ? items : []) {
+    const leakId = normalizeLeakRadarLeakId(item?.id || item?.leak_id || item?.leakId || item?.uuid || item?._id || item?.hash);
+    if (!leakId.ok) continue;
+    const record = upsertLeakRadarUnlockedRecord({
+      leakId: leakId.leakId,
+      domain,
+      payload: item,
+      unlockedBy,
+    });
+    if (record?.payload) cached[leakId.leakId] = record.payload;
+  }
+  return cached;
+}
+
+function cachedLeakRadarUnlockedById(items) {
+  const { listLeakRadarUnlockedRecordsByIds } = require("../database");
+  const ids = (Array.isArray(items) ? items : [])
+    .map((item) => item?.id || item?.leak_id || item?.leakId || item?.uuid || item?._id || item?.hash)
+    .map((id) => String(id || "").trim())
+    .filter(Boolean);
+  return listLeakRadarUnlockedRecordsByIds(ids);
+}
+
+router.get("/minitools/leakradar/search", leakRadarLimiter, requireUser, attachUserAccess, canViewMiniTools, requireMinitoolEnabled("minitool_leakradar_enabled"), async (req, res) => {
+  if (!getLeakRadarApiKey()) {
+    return res.status(403).json({ error: "LeakRadar API key not configured. Ask an admin to configure it in Admin > Tools > LeakRadar." });
+  }
+  const normalizedDomain = normalizeLeakRadarDomain(req.query.domain);
+  if (!normalizedDomain.ok) return res.status(400).json({ error: normalizedDomain.error });
+  const normalizedType = normalizeLeakRadarSearchType(req.query.type);
+  if (!normalizedType.ok) return res.status(400).json({ error: normalizedType.error });
+  const page = normalizeLeakRadarPage(req.query.page);
+
+  try {
+    const result = await leakRadarApi(`/search/domain/${encodeURIComponent(normalizedDomain.domain)}/${normalizedType.type}`, {
+      query: { page, page_size: LEAKRADAR_PAGE_SIZE },
+    });
+    if (result.error) return res.status(403).json({ error: result.error });
+    if (!result.ok) return sendLeakRadarUpstreamError(res, result);
+    const envelope = buildLeakRadarEnvelope(result.data, { page, limit: LEAKRADAR_PAGE_SIZE });
+    const sortedItems = sortLeakRadarItemsByMostRecent(envelope.items);
+    return res.json({
+      domain: normalizedDomain.domain,
+      type: normalizedType.type,
+      ...envelope,
+      items: sortedItems,
+      unlockedById: cachedLeakRadarUnlockedById(sortedItems),
+    });
+  } catch (err) {
+    return res.status(502).json({ error: "Failed to reach LeakRadar API", detail: err.message });
+  }
+});
+
+router.post("/minitools/leakradar/unlock", leakRadarUnlockLimiter, requireUser, attachUserAccess, canViewMiniTools, requireMinitoolEnabled("minitool_leakradar_enabled"), async (req, res) => {
+  if (!getLeakRadarApiKey()) {
+    return res.status(403).json({ error: "LeakRadar API key not configured. Ask an admin to configure it in Admin > Tools > LeakRadar." });
+  }
+  const normalizedId = normalizeLeakRadarLeakId(req.body?.leakId || req.body?.id);
+  if (!normalizedId.ok) return res.status(400).json({ error: normalizedId.error });
+  const normalizedDomain = req.body?.domain ? normalizeLeakRadarDomain(req.body.domain) : null;
+  if (normalizedDomain && !normalizedDomain.ok) return res.status(400).json({ error: normalizedDomain.error });
+
+  try {
+    const result = await leakRadarApi("/unlock", {
+      method: "POST",
+      body: { leak_ids: [normalizedId.leakId] },
+    });
+    if (result.error) return res.status(403).json({ error: result.error });
+    if (!result.ok) {
+      auditMiniTool(req, {
+        action: "leakradar_unlock",
+        targetType: "leakradar_leak",
+        targetId: normalizedId.leakId,
+        outcome: "failure",
+        metadata: { status: result.status },
+      });
+      return sendLeakRadarUpstreamError(res, result);
+    }
+    const unlockedItems = leakRadarItemsFromPayload(result.data, normalizedId.leakId);
+    const unlockedById = cacheLeakRadarUnlockedItems(unlockedItems, normalizedDomain?.domain || "", req.user?.id || null);
+    auditMiniTool(req, {
+      action: "leakradar_unlock",
+      targetType: "leakradar_leak",
+      targetId: normalizedId.leakId,
+      metadata: { status: result.status },
+    });
+    return res.json({ success: true, leakId: normalizedId.leakId, data: result.data, unlockedRecord: unlockedById[normalizedId.leakId] || null });
+  } catch (err) {
+    auditMiniTool(req, {
+      action: "leakradar_unlock",
+      targetType: "leakradar_leak",
+      targetId: normalizedId.leakId,
+      outcome: "failure",
+      metadata: { error: err.message },
+    });
+    return res.status(502).json({ error: "Failed to reach LeakRadar API", detail: err.message });
+  }
+});
+
+router.get("/minitools/leakradar/unlocked", leakRadarLimiter, requireUser, attachUserAccess, canViewMiniTools, requireMinitoolEnabled("minitool_leakradar_enabled"), async (req, res) => {
+  if (!getLeakRadarApiKey()) {
+    return res.status(403).json({ error: "LeakRadar API key not configured. Ask an admin to configure it in Admin > Tools > LeakRadar." });
+  }
+  const hasDomainFilter = String(req.query.domain || "").trim() !== "";
+  const normalizedDomain = hasDomainFilter ? normalizeLeakRadarDomain(req.query.domain) : { ok: true, domain: "" };
+  if (!normalizedDomain.ok) return res.status(400).json({ error: normalizedDomain.error });
+  const page = normalizeLeakRadarPage(req.query.page);
+
+  try {
+    const query = { page, page_size: LEAKRADAR_PAGE_SIZE };
+    if (normalizedDomain.domain) query.search = normalizedDomain.domain;
+    const result = await leakRadarApi("/profile/unlocked/advanced", {
+      query,
+    });
+    if (result.error) return res.status(403).json({ error: result.error });
+    if (!result.ok) return sendLeakRadarUpstreamError(res, result);
+    const envelope = buildLeakRadarEnvelope(result.data, { page, limit: LEAKRADAR_PAGE_SIZE });
+    const filteredItems = sortLeakRadarItemsByMostRecent(filterLeakRadarItemsByDomain(envelope.items, normalizedDomain.domain));
+    const unlockedById = cacheLeakRadarUnlockedItems(filteredItems, normalizedDomain.domain, req.user?.id || null);
+    return res.json({
+      domain: normalizedDomain.domain,
+      type: "unlocked",
+      ...envelope,
+      items: filteredItems,
+      unlockedById,
+      filterApplied: normalizedDomain.domain ? "search" : "none",
+    });
+  } catch (err) {
+    return res.status(502).json({ error: "Failed to reach LeakRadar API", detail: err.message });
   }
 });
 

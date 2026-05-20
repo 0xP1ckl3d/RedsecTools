@@ -80,6 +80,34 @@ test("MiniTools TLS check route uses public target validation and shared analyze
   assert.ok(frontendSource.includes("initTlsCheck"), "Frontend must initialize the TLS Check tab");
 });
 
+test("MiniTools LeakRadar routes keep the API key server-side and page at 100 records", () => {
+  assert.match(source, /\/minitools\/leakradar\/search/);
+  assert.match(source, /\/minitools\/leakradar\/unlock/);
+  assert.match(source, /\/minitools\/leakradar\/unlocked/);
+  assert.ok(source.includes("getLeakRadarApiKey"), "LeakRadar must load the API key server-side");
+  assert.ok(source.includes("LEAKRADAR_PAGE_SIZE"), "LeakRadar must use the shared page-size limit");
+  assert.ok(source.includes("page_size: LEAKRADAR_PAGE_SIZE"), "LeakRadar must use the API-supported page_size query parameter");
+  assert.ok(source.includes("body: { leak_ids: [normalizedId.leakId] }"), "LeakRadar unlock must use the API-supported leak_ids payload");
+  assert.ok(source.includes("if (normalizedDomain.domain) query.search = normalizedDomain.domain"), "Unlocked history must support optional domain filtering");
+  assert.ok(source.includes("filterLeakRadarItemsByDomain"), "Unlocked history must apply a server-side domain filter fallback");
+  assert.ok(source.includes("sortLeakRadarItemsByMostRecent"), "Unlocked history must be ordered by most recent unlock metadata when available");
+  assert.ok(source.includes("upsertLeakRadarUnlockedRecord"), "Unlocked records must be persisted in the database");
+  assert.ok(source.includes("listLeakRadarUnlockedRecordsByIds"), "Searches must hydrate cached unlocked records from the database");
+  assert.ok(source.includes("const sortedItems = sortLeakRadarItemsByMostRecent(envelope.items)"), "Search results must be ordered newest first before rendering");
+  assert.ok(source.includes("Authorization") || source.includes("authorization"), "LeakRadar must use bearer auth server-side");
+  assert.ok(source.includes("leakradar_unlock"), "Unlocks must be audited");
+  assert.ok(frontendSource.includes("initLeakRadar"), "Frontend must initialize the LeakRadar tab");
+  assert.ok(frontendSource.includes("Load Next Page"), "Frontend must expose upstream-aligned pagination");
+  assert.ok(frontendSource.includes("data-leakradar-page"), "Frontend must expose inline LeakRadar page navigation");
+  assert.ok(frontendSource.includes("updateLeakRadarUnlockedRow"), "Unlocks must update the currently displayed row");
+  assert.ok(frontendSource.includes("data-leakradar-password-cell"), "LeakRadar rows must expose a compact password cell for unlock replacement");
+  assert.ok(!frontendSource.includes("<th>ID</th>"), "LeakRadar rows must not render backend IDs as a visible column");
+  assert.ok(frontendSource.includes("LEAKRADAR_ACCOUNT_KEYS"), "LeakRadar account cells must use account-specific fields");
+  assert.ok(frontendSource.includes("username_masked"), "LeakRadar account cells must use the documented masked username before unlock");
+  assert.ok(frontendSource.includes("added_at"), "LeakRadar meta cells must use the documented added_at date before unlock");
+  assert.ok(frontendSource.includes("LEAKRADAR_DOMAIN_URL_KEYS"), "LeakRadar URL/domain cells must stay separate from account cells");
+});
+
 test("MiniTools security header badges use supported tones and readable labels", () => {
   assert.match(frontendSource, /C:\s*"amber"/);
   assert.match(frontendSource, /warn:\s*"amber"/);

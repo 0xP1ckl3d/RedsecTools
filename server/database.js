@@ -1426,6 +1426,16 @@ const stmts = {
         response_body = @responseBody, error = @error, updated_at = unixepoch()
     WHERE id = @id
   `),
+  upsertLeakRadarUnlockedRecord: db.prepare(`
+    INSERT INTO leakradar_unlocked_records (leak_id, domains_json, payload_encrypted, unlocked_by)
+    VALUES (@leakId, @domainsJson, @payloadEncrypted, @unlockedBy)
+    ON CONFLICT(leak_id) DO UPDATE SET
+      domains_json = @domainsJson,
+      payload_encrypted = @payloadEncrypted,
+      unlocked_by = COALESCE(@unlockedBy, leakradar_unlocked_records.unlocked_by),
+      last_seen_at = unixepoch()
+  `),
+  getLeakRadarUnlockedRecordById: db.prepare("SELECT * FROM leakradar_unlocked_records WHERE leak_id = ?"),
 
   // --- Reporter: Designs ---
   createReporterDesign: db.prepare(`
@@ -5703,6 +5713,59 @@ function touchServiceAccountToken(id) {
   stmts.touchServiceAccountToken.run(id);
 }
 
+function normalizeLeakRadarDomains(existingDomains, domain) {
+  const domains = new Set(Array.isArray(existingDomains) ? existingDomains : []);
+  const normalized = String(domain || "").trim().toLowerCase();
+  if (normalized) domains.add(normalized);
+  return Array.from(domains).sort();
+}
+
+function mapLeakRadarUnlockedRecord(row) {
+  if (!row) return null;
+  let payload = {};
+  try {
+    payload = JSON.parse(decryptValue(row.payload_encrypted) || "{}");
+  } catch (_) {
+    payload = {};
+  }
+  return {
+    leakId: row.leak_id,
+    domains: parseJsonList(row.domains_json),
+    payload,
+    unlockedBy: row.unlocked_by || null,
+    firstSeenAt: row.first_seen_at,
+    lastSeenAt: row.last_seen_at,
+  };
+}
+
+function upsertLeakRadarUnlockedRecord({ leakId, domain = "", payload = {}, unlockedBy = null }) {
+  const id = String(leakId || "").trim();
+  if (!id) return null;
+  const existing = mapLeakRadarUnlockedRecord(stmts.getLeakRadarUnlockedRecordById.get(id));
+  const domains = normalizeLeakRadarDomains(existing?.domains || [], domain);
+  const mergedPayload = { ...(existing?.payload || {}), ...(payload || {}), id };
+  stmts.upsertLeakRadarUnlockedRecord.run({
+    leakId: id,
+    domainsJson: JSON.stringify(domains),
+    payloadEncrypted: encryptValue(JSON.stringify(mergedPayload)),
+    unlockedBy,
+  });
+  return getLeakRadarUnlockedRecordById(id);
+}
+
+function getLeakRadarUnlockedRecordById(leakId) {
+  return mapLeakRadarUnlockedRecord(stmts.getLeakRadarUnlockedRecordById.get(leakId));
+}
+
+function listLeakRadarUnlockedRecordsByIds(leakIds = []) {
+  const out = {};
+  for (const leakId of Array.from(new Set((leakIds || []).map((id) => String(id || "").trim()).filter(Boolean)))) {
+    const record = getLeakRadarUnlockedRecordById(leakId);
+    if (record) out[leakId] = record.payload;
+  }
+  return out;
+}
+
 function mapPlatformWebhook(row) {
   if (!row) return null;
   return {
@@ -8097,6 +8160,9 @@ module.exports = {
   listPendingPlatformWebhookDeliveries,
   listPlatformWebhookDeliveries,
   updatePlatformWebhookDelivery,
+  upsertLeakRadarUnlockedRecord,
+  getLeakRadarUnlockedRecordById,
+  listLeakRadarUnlockedRecordsByIds,
   getDeploymentCounts,
   // Reporter
   createReporterDesignRow,

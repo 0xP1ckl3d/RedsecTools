@@ -3790,6 +3790,100 @@
         }
       }
     },
+    "/admin/api/settings/leakradar": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get LeakRadar MiniTools settings",
+        "description": "Returns LeakRadar API key configuration status. The API key itself is never returned to the browser.",
+        "security": [
+          {
+            "AdminCookie": [],
+            "UserSessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "LeakRadar settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "apiKeyConfigured": {
+                      "type": "boolean"
+                    },
+                    "apiKeyPreview": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "503": {
+            "description": "Admin password is not configured"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Update LeakRadar MiniTools settings",
+        "description": "Stores the LeakRadar bearer token server-side for the LeakRadar MiniTool. This is a high-risk admin write and may require fresh admin authentication when enabled.",
+        "security": [
+          {
+            "AdminCookie": [],
+            "UserSessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "apiKey": {
+                    "type": "string",
+                    "description": "LeakRadar API key. Omit or send an empty string to keep the current key."
+                  },
+                  "clearApiKey": {
+                    "type": "boolean",
+                    "description": "When true, clears the stored LeakRadar API key."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "503": {
+            "description": "Admin password is not configured"
+          }
+        }
+      }
+    },
     "/admin/api/settings/minitools": {
       "get": {
         "tags": [
@@ -3828,6 +3922,9 @@
                     },
                     "tlsCheck": {
                       "type": "boolean"
+                    },
+                    "leakradar": {
+                      "type": "boolean"
                     }
                   }
                 }
@@ -3850,7 +3947,7 @@
           "Admin"
         ],
         "summary": "Update RedSecMiniTools visibility settings",
-        "description": "Updates admin-controlled visibility toggles for CVSS, breach lookup, Azure tenant mapping, SecurityTrails, and Security Headers. This is a high-risk admin write and may require fresh admin authentication when enabled.",
+        "description": "Updates admin-controlled visibility toggles for CVSS, breach lookup, Azure tenant mapping, SecurityTrails, Security Headers, TLS Check, and LeakRadar. This is a high-risk admin write and may require fresh admin authentication when enabled.",
         "security": [
           {
             "AdminCookie": [],
@@ -3880,6 +3977,9 @@
                     "type": "boolean"
                   },
                   "tlsCheckEnabled": {
+                    "type": "boolean"
+                  },
+                  "leakradarEnabled": {
                     "type": "boolean"
                   }
                 }
@@ -22011,7 +22111,8 @@
                         "azure": { "type": "object", "properties": { "enabled": { "type": "boolean" } } },
                         "securitytrails": { "type": "object", "properties": { "enabled": { "type": "boolean" }, "apiKeyConfigured": { "type": "boolean" }, "dailyLimit": { "type": "integer" }, "usedToday": { "type": "integer" } } },
                         "securityHeaders": { "type": "object", "properties": { "enabled": { "type": "boolean" } } },
-                        "tlsCheck": { "type": "object", "properties": { "enabled": { "type": "boolean" } } }
+                        "tlsCheck": { "type": "object", "properties": { "enabled": { "type": "boolean" } } },
+                        "leakradar": { "type": "object", "properties": { "enabled": { "type": "boolean" }, "apiKeyConfigured": { "type": "boolean" }, "pageSize": { "type": "integer" } } }
                       }
                     }
                   }
@@ -22251,6 +22352,77 @@
           "403": { "description": "Missing minitools.view permission or API key not configured" },
           "429": { "description": "User daily API limit reached" },
           "502": { "description": "Upstream SecurityTrails API unavailable" }
+        }
+      }
+    },
+    "/api/minitools/leakradar/search": {
+      "get": {
+        "tags": ["MiniTools"],
+        "summary": "Search LeakRadar domain leak intelligence",
+        "description": "Proxies a LeakRadar domain search for employees, customers, third parties, or subdomains. Requires an admin-configured LeakRadar bearer token. Results are normalized into a RedSecTools envelope and requested 100 records at a time.",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "domain", "in": "query", "required": true, "schema": { "type": "string" }, "description": "Domain name or URL whose hostname should be searched." },
+          { "name": "type", "in": "query", "required": false, "schema": { "type": "string", "enum": ["employees", "customers", "third_parties", "subdomains"], "default": "employees" } },
+          { "name": "page", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "default": 1 } }
+        ],
+        "responses": {
+          "200": { "description": "LeakRadar search results", "content": { "application/json": { "schema": { "type": "object", "properties": { "domain": { "type": "string" }, "type": { "type": "string" }, "page": { "type": "integer" }, "limit": { "type": "integer", "example": 100 }, "items": { "type": "array", "items": { "type": "object" } }, "unlockedById": { "type": "object", "description": "Previously unlocked records from the encrypted local database cache keyed by LeakRadar ID." }, "total": { "type": "integer", "nullable": true }, "hasMore": { "type": "boolean" }, "nextPage": { "type": "integer", "nullable": true }, "raw": { "type": "object" } } } } } },
+          "400": { "description": "Invalid domain or search type" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "description": "Missing minitools.view permission, tool disabled, or API key not configured" },
+          "429": { "description": "LeakRadar lookup rate limit reached" },
+          "502": { "description": "Upstream LeakRadar API unavailable" }
+        }
+      }
+    },
+    "/api/minitools/leakradar/unlock": {
+      "post": {
+        "tags": ["MiniTools"],
+        "summary": "Unlock a selected LeakRadar leak",
+        "description": "Unlocks a selected LeakRadar leak by ID through the server-side LeakRadar bearer token. The browser never receives the configured API key. Unlock attempts are audit logged.",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "leakId": { "type": "string" }
+                },
+                "required": ["leakId"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Leak unlocked", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "leakId": { "type": "string" }, "data": { "type": "object" }, "unlockedRecord": { "type": "object", "description": "Cached unlocked record payload for immediate row hydration." } } } } } },
+          "400": { "description": "Invalid leak ID" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "description": "Missing minitools.view permission, tool disabled, or API key not configured" },
+          "429": { "description": "LeakRadar unlock rate limit reached" },
+          "502": { "description": "Upstream LeakRadar API unavailable or rejected the unlock" }
+        }
+      }
+    },
+    "/api/minitools/leakradar/unlocked": {
+      "get": {
+        "tags": ["MiniTools"],
+        "summary": "List previously unlocked LeakRadar leaks",
+        "description": "Lists previously unlocked LeakRadar records. When a domain is supplied, the server applies it through LeakRadar's search query and a defensive local domain filter. Without a domain, the server requests all previously unlocked records and orders returned rows by most recent unlock metadata when available. Results are normalized into a RedSecTools envelope and requested 100 records at a time.",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "domain", "in": "query", "required": false, "schema": { "type": "string" }, "description": "Optional domain filter for unlocked records. Omit to list all previous unlocks." },
+          { "name": "page", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "default": 1 } }
+        ],
+        "responses": {
+          "200": { "description": "Unlocked LeakRadar records", "content": { "application/json": { "schema": { "type": "object", "properties": { "domain": { "type": "string" }, "type": { "type": "string", "enum": ["unlocked"] }, "page": { "type": "integer" }, "limit": { "type": "integer", "example": 100 }, "items": { "type": "array", "items": { "type": "object" } }, "unlockedById": { "type": "object", "description": "Records persisted to the encrypted local database cache keyed by LeakRadar ID." }, "total": { "type": "integer", "nullable": true }, "hasMore": { "type": "boolean" }, "nextPage": { "type": "integer", "nullable": true }, "raw": { "type": "object" } } } } } },
+          "400": { "description": "Invalid domain" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "description": "Missing minitools.view permission, tool disabled, or API key not configured" },
+          "429": { "description": "LeakRadar lookup rate limit reached" },
+          "502": { "description": "Upstream LeakRadar API unavailable" }
         }
       }
     }
