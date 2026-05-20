@@ -19,6 +19,7 @@ The current spec covers all HTTP routes across the platform:
 - RedSecEngage bootstrap, client/contact/opportunity/engagement/team/QA/note/activity/linking routes, role-aware dashboard statistics, and RedSecCal/Reporter integration endpoints
 - RedSecAI status, chat, and confirmation-gated action confirm/reject routes
 - RedSecShare upload/download routes plus live upload-config endpoints used by the app and extension
+- RedSecMiniTools bootstrap, breach lookup (xposedornot proxy), Azure tenant mapping (azmap.dev proxy), SecurityTrails, security-header analysis, and TLS certificate/recon analysis routes
 
 Important:
 - These docs are exposed in-app only when an admin enables OpenAPI publishing in Admin > Security.
@@ -34,6 +35,8 @@ Preferred option:
 1. Enable OpenAPI publishing in Admin > Security
 2. Open `GET /admin/openapi`
 3. Use Swagger UI with the current logged-in admin/user cookies, or authorize with a service-account bearer token for `/api/v1/*` routes
+
+Swagger UI requests are sent through an admin-only test proxy. Use the cookie mode control to test with current browser cookies, no cookies, or Swagger Authorize-only requests; use Authorize to add a service-account bearer token for /api/v1/* RBAC testing.
 
 The JSON spec can still be imported into Postman, Insomnia, Bruno, or Swagger Editor when an external workflow is needed.
 
@@ -73,6 +76,16 @@ Every API route requires authentication except public survey response endpoints 
 - Created by `POST /admin/login`
 - Required for all admin routes under `/admin/api`
 - **Two-step auth**: after initial bootstrap, admin API access also requires an active linked `redsec_session`. Both cookies must be present. This ensures admin actions are tied to a logged-in user session.
+
+### ServiceAccountBearer — professional API (`/api/v1/*`)
+
+- `Authorization: Bearer <rst_sa_...>` header
+- Tokens are created in Admin > Security, shown once, stored as hashes, revocable, expirable, and audited
+- Service accounts are disabled by default through the service-account feature flag/admin setting
+- `/api/v1` routes are separate professional API contracts, not aliases for browser routes
+- Scopes include operational API scopes (`audit.read`, `deployment.read`, `webhooks.manage`) plus the same RBAC permission keys used by the app (`calendar.view_team`, `survey.view_results_any`, `wiki.view`, `reporter.manage_all`, `engage.view_team`, and so on)
+- Engage commercial values are returned only when the token also has `engage.manage_commercials`, `engage.view_all`, or `engage.manage_all`
+- Paste/share/chat/vault plaintext is not exposed through service-account APIs
 
 ## RedSecAI route details
 

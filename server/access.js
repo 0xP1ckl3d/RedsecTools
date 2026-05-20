@@ -260,6 +260,12 @@ const PERMISSION_DEFINITIONS = [
     label: "Manage All",
     description: "Full administrative access to all Engage features including archiving and deletion.",
   },
+  {
+    key: "minitools.view",
+    category: "MiniTools",
+    label: "View",
+    description: "Access MiniTools: CVSS calculator, breach lookup, and Azure tenant mapping.",
+  },
 ];
 
 const ALL_PERMISSIONS = PERMISSION_DEFINITIONS.map((permission) => permission.key);
@@ -275,6 +281,7 @@ const SYSTEM_ROLE_DEFINITIONS = [
       "wiki.view",
       "reporter.view",
       "engage.view_own",
+      "minitools.view",
     ],
   },
   {
@@ -297,6 +304,7 @@ const SYSTEM_ROLE_DEFINITIONS = [
       "reporter.edit_own",
       "engage.view_own",
       "engage.perform_qa",
+      "minitools.view",
     ],
   },
   {
@@ -342,6 +350,7 @@ const SYSTEM_ROLE_DEFINITIONS = [
       "engage.assign_team",
       "engage.manage_qa",
       "engage.perform_qa",
+      "minitools.view",
     ],
   },
 ];
@@ -357,6 +366,7 @@ const TOOL_DEFINITIONS = [
   { key: "threat", name: "RedSecThreat", href: "/threat", permissionsAny: ["threat.view", "threat.manage"] },
   { key: "reporter", name: "RedSecReporter", href: "/reporter", permissionsAny: ["reporter.view", "reporter.create", "reporter.edit_own", "reporter.edit_assigned", "reporter.review", "reporter.approve", "reporter.manage_templates", "reporter.manage_all"] },
   { key: "engage", name: "RedSecEngage", href: "/engage", permissionsAny: ["engage.view_own", "engage.view_team", "engage.view_all"] },
+  { key: "minitools", name: "RedSecMiniTools", href: "/minitools", permissionsAny: ["minitools.view"] },
 ];
 
 function canonicalizePermission(permission) {

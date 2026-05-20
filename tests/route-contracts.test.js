@@ -27,6 +27,7 @@ const ROUTE_MOUNTS = {
   "threat.js": "/api",
   "vault.js": "/api",
   "wiki.js": "/api",
+  "minitools.js": "/api",
 };
 
 function joinRoute(prefix, routePath) {

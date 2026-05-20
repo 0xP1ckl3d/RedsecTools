@@ -13,6 +13,7 @@ const TOOL_LINKS = [
   { href: "/threat", label: "RedSecThreat", key: "threat" },
   { href: "/reporter", label: "RedSecReporter", key: "reporter" },
   { href: "/engage", label: "RedSecEngage", key: "engage" },
+  { href: "/minitools", label: "RedSecMiniTools", key: "minitools" },
   { href: "/ai", label: "RedSecAI", aiOnly: true },
 ];
 
@@ -168,6 +169,7 @@ initBurgerMenu();
     "/threat": "RedSecThreat",
     "/reporter": "RedSecReporter",
     "/engage": "RedSecEngage",
+    "/minitools": "RedSecMiniTools",
     "/ai": "RedSecAI",
   };
 

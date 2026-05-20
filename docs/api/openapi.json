@@ -79,6 +79,10 @@
     {
       "name": "Professional API",
       "description": "Scoped service-account API and integration endpoints"
+    },
+    {
+      "name": "MiniTools",
+      "description": "Lightweight security utilities: CVSS scoring, breach lookup, Azure tenant mapping"
     }
   ],
   "components": {
@@ -109,7 +113,7 @@
       "ServiceAccountBearer": {
         "type": "http",
         "scheme": "bearer",
-        "description": "Scoped service-account API token with rst_sa_ prefix. Tokens are shown once and stored hashed."
+        "description": "Scoped service-account API token with rst_sa_ prefix. Tokens are shown once and stored hashed. In Swagger UI, Authorize adds this bearer token to proxied requests; use the cookie mode control to choose current browser cookies, no cookies, or Swagger Authorize-only requests for live RBAC testing."
       }
     },
     "schemas": {
@@ -3681,6 +3685,223 @@
                 "type": "object"
               }
             }
+          }
+        }
+      }
+    },
+    "/admin/api/settings/securitytrails": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get SecurityTrails MiniTools settings",
+        "description": "Returns SecurityTrails API key configuration status and the per-user daily query limit used by RedSecMiniTools.",
+        "security": [
+          {
+            "AdminCookie": [],
+            "UserSessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SecurityTrails settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "apiKeyConfigured": {
+                      "type": "boolean"
+                    },
+                    "apiKeyPreview": {
+                      "type": "string"
+                    },
+                    "dailyLimit": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "503": {
+            "description": "Admin password is not configured"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Update SecurityTrails MiniTools settings",
+        "description": "Stores the SecurityTrails API key and daily per-user query limit. This is a high-risk admin write and may require fresh admin authentication when enabled.",
+        "security": [
+          {
+            "AdminCookie": [],
+            "UserSessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "apiKey": {
+                    "type": "string",
+                    "description": "SecurityTrails API key. Send an empty string to clear."
+                  },
+                  "dailyLimit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10000
+                  }
+                },
+                "required": [
+                  "dailyLimit"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "503": {
+            "description": "Admin password is not configured"
+          }
+        }
+      }
+    },
+    "/admin/api/settings/minitools": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get RedSecMiniTools visibility settings",
+        "description": "Returns admin-controlled visibility toggles for each RedSecMiniTools utility.",
+        "security": [
+          {
+            "AdminCookie": [],
+            "UserSessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "MiniTools visibility settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "cvss": {
+                      "type": "boolean"
+                    },
+                    "breach": {
+                      "type": "boolean"
+                    },
+                    "azure": {
+                      "type": "boolean"
+                    },
+                    "securitytrails": {
+                      "type": "boolean"
+                    },
+                    "securityHeaders": {
+                      "type": "boolean"
+                    },
+                    "tlsCheck": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "503": {
+            "description": "Admin password is not configured"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Update RedSecMiniTools visibility settings",
+        "description": "Updates admin-controlled visibility toggles for CVSS, breach lookup, Azure tenant mapping, SecurityTrails, and Security Headers. This is a high-risk admin write and may require fresh admin authentication when enabled.",
+        "security": [
+          {
+            "AdminCookie": [],
+            "UserSessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "cvssEnabled": {
+                    "type": "boolean"
+                  },
+                  "breachEnabled": {
+                    "type": "boolean"
+                  },
+                  "azureEnabled": {
+                    "type": "boolean"
+                  },
+                  "securitytrailsEnabled": {
+                    "type": "boolean"
+                  },
+                  "securityHeadersEnabled": {
+                    "type": "boolean"
+                  },
+                  "tlsCheckEnabled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "503": {
+            "description": "Admin password is not configured"
           }
         }
       }
@@ -19914,7 +20135,7 @@
         "tags": [
           "Professional API"
         ],
-        "summary": "List threat alerts using threat.read scope",
+        "summary": "List threat alerts using threat.view, threat.manage, or legacy threat.read scope",
         "security": [
           {
             "ServiceAccountBearer": []
@@ -19951,9 +20172,10 @@
             "description": "Threat alerts"
           },
           "403": {
-            "description": "Missing threat.read scope"
+            "description": "Missing threat.view, threat.manage, or threat.read scope"
           }
-        }
+        },
+        "description": "Lists threat alerts through the professional API. Requires service-account bearer auth and one of: threat.view, threat.manage, threat.read. The legacy threat.read scope remains accepted for existing service accounts."
       }
     },
     "/admin/api/openapi.json": {
@@ -20047,6 +20269,114 @@
           },
           "404": {
             "description": "OpenAPI publishing disabled or unavailable"
+          }
+        }
+      }
+    },
+    "/admin/openapi/controls.css": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Swagger UI auth-control stylesheet",
+        "security": [
+          {
+            "AdminCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Swagger auth-control stylesheet",
+            "content": {
+              "text/css": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "OpenAPI publishing disabled or unavailable"
+          }
+        }
+      }
+    },
+    "/admin/openapi/proxy": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Proxy Swagger UI test requests with explicit auth mode",
+        "description": "Admin-only Swagger test proxy. It lets an authenticated admin execute API requests using current browser cookies, no cookies, or Swagger Authorize-only auth headers without changing the browser session.",
+        "security": [
+          {
+            "AdminCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "method",
+                  "target"
+                ],
+                "properties": {
+                  "method": {
+                    "type": "string",
+                    "enum": [
+                      "GET",
+                      "POST",
+                      "PUT",
+                      "PATCH",
+                      "DELETE"
+                    ]
+                  },
+                  "target": {
+                    "type": "string",
+                    "description": "Same-origin /api/* or /admin/api/* path."
+                  },
+                  "headers": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "cookieMode": {
+                    "type": "string",
+                    "enum": [
+                      "current",
+                      "none",
+                      "authorize"
+                    ]
+                  },
+                  "body": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Proxied response"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "OpenAPI publishing disabled or unavailable"
+          },
+          "502": {
+            "description": "Proxy request failed"
           }
         }
       }
@@ -20734,6 +21064,1193 @@
           "404": {
             "description": "Webhook disabled or unavailable"
           }
+        }
+      }
+    },
+    "/api/v1/threat/feeds": {
+      "get": {
+        "tags": [
+          "Professional API"
+        ],
+        "summary": "List threat feeds",
+        "description": "List threat feeds. Requires service-account bearer auth and one of: threat.view, threat.manage, threat.read. Swagger UI sends requests through the admin-only test proxy; choose no cookies or Swagger Authorize-only mode when testing RBAC boundaries.",
+        "security": [
+          {
+            "ServiceAccountBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "enabledOnly",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer token required or invalid"
+          },
+          "403": {
+            "description": "Missing required service-account scope"
+          }
+        }
+      }
+    },
+    "/api/v1/threat/keywords": {
+      "get": {
+        "tags": [
+          "Professional API"
+        ],
+        "summary": "List threat keywords",
+        "description": "List threat keywords. Requires service-account bearer auth and one of: threat.view, threat.manage, threat.read. Swagger UI sends requests through the admin-only test proxy; choose no cookies or Swagger Authorize-only mode when testing RBAC boundaries.",
+        "security": [
+          {
+            "ServiceAccountBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "enabledOnly",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer token required or invalid"
+          },
+          "403": {
+            "description": "Missing required service-account scope"
+          }
+        }
+      }
+    },
+    "/api/v1/calendar/projects": {
+      "get": {
+        "tags": [
+          "Professional API"
+        ],
+        "summary": "List calendar projects",
+        "description": "List calendar projects. Requires service-account bearer auth and one of: calendar.view_team, calendar.manage. Swagger UI sends requests through the admin-only test proxy; choose no cookies or Swagger Authorize-only mode when testing RBAC boundaries.",
+        "security": [
+          {
+            "ServiceAccountBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer token required or invalid"
+          },
+          "403": {
+            "description": "Missing required service-account scope"
+          }
+        }
+      }
+    },
+    "/api/v1/calendar/entries": {
+      "get": {
+        "tags": [
+          "Professional API"
+        ],
+        "summary": "List calendar entries",
+        "description": "List calendar entries. Requires service-account bearer auth and one of: calendar.view_team, calendar.manage. Swagger UI sends requests through the admin-only test proxy; choose no cookies or Swagger Authorize-only mode when testing RBAC boundaries.",
+        "security": [
+          {
+            "ServiceAccountBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "projectId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "startsAfter",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "endsBefore",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer token required or invalid"
+          },
+          "403": {
+            "description": "Missing required service-account scope"
+          }
+        }
+      }
+    },
+    "/api/v1/surveys": {
+      "get": {
+        "tags": [
+          "Professional API"
+        ],
+        "summary": "List surveys",
+        "description": "List surveys. Requires service-account bearer auth and one of: survey.manage_any, survey.view_results_any. Swagger UI sends requests through the admin-only test proxy; choose no cookies or Swagger Authorize-only mode when testing RBAC boundaries.",
+        "security": [
+          {
+            "ServiceAccountBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer token required or invalid"
+          },
+          "403": {
+            "description": "Missing required service-account scope"
+          }
+        }
+      }
+    },
+    "/api/v1/surveys/{id}": {
+      "get": {
+        "tags": [
+          "Professional API"
+        ],
+        "summary": "Get survey definition and stats",
+        "description": "Get survey definition and stats. Requires service-account bearer auth and one of: survey.manage_any, survey.view_results_any. Swagger UI sends requests through the admin-only test proxy; choose no cookies or Swagger Authorize-only mode when testing RBAC boundaries.",
+        "security": [
+          {
+            "ServiceAccountBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer token required or invalid"
+          },
+          "403": {
+            "description": "Missing required service-account scope"
+          },
+          "404": {
+            "description": "Survey not found"
+          }
+        }
+      }
+    },
+    "/api/v1/surveys/{id}/results": {
+      "get": {
+        "tags": [
+          "Professional API"
+        ],
+        "summary": "Get survey responses and answers",
+        "description": "Get survey responses and answers. Requires service-account bearer auth and one of: survey.manage_any, survey.view_results_any. Swagger UI sends requests through the admin-only test proxy; choose no cookies or Swagger Authorize-only mode when testing RBAC boundaries.",
+        "security": [
+          {
+            "ServiceAccountBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer token required or invalid"
+          },
+          "403": {
+            "description": "Missing required service-account scope"
+          },
+          "404": {
+            "description": "Survey not found"
+          }
+        }
+      }
+    },
+    "/api/v1/wiki/pages": {
+      "get": {
+        "tags": [
+          "Professional API"
+        ],
+        "summary": "List wiki pages",
+        "description": "List wiki pages. Requires service-account bearer auth and one of: wiki.view, wiki.manage. Swagger UI sends requests through the admin-only test proxy; choose no cookies or Swagger Authorize-only mode when testing RBAC boundaries.",
+        "security": [
+          {
+            "ServiceAccountBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "team",
+                "personal"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer token required or invalid"
+          },
+          "403": {
+            "description": "Missing required service-account scope"
+          }
+        }
+      }
+    },
+    "/api/v1/wiki/pages/{id}": {
+      "get": {
+        "tags": [
+          "Professional API"
+        ],
+        "summary": "Get wiki page",
+        "description": "Get wiki page. Requires service-account bearer auth and one of: wiki.view, wiki.manage. Swagger UI sends requests through the admin-only test proxy; choose no cookies or Swagger Authorize-only mode when testing RBAC boundaries.",
+        "security": [
+          {
+            "ServiceAccountBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer token required or invalid"
+          },
+          "403": {
+            "description": "Missing required service-account scope"
+          },
+          "404": {
+            "description": "Wiki page not found"
+          }
+        }
+      }
+    },
+    "/api/v1/reporter/projects": {
+      "get": {
+        "tags": [
+          "Professional API"
+        ],
+        "summary": "List Reporter projects",
+        "description": "List Reporter projects. Requires service-account bearer auth and one of: reporter.manage_all. Swagger UI sends requests through the admin-only test proxy; choose no cookies or Swagger Authorize-only mode when testing RBAC boundaries.",
+        "security": [
+          {
+            "ServiceAccountBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer token required or invalid"
+          },
+          "403": {
+            "description": "Missing required service-account scope"
+          }
+        }
+      }
+    },
+    "/api/v1/reporter/projects/{id}": {
+      "get": {
+        "tags": [
+          "Professional API"
+        ],
+        "summary": "Get Reporter project with members, findings, and sections",
+        "description": "Get Reporter project with members, findings, and sections. Requires service-account bearer auth and one of: reporter.manage_all. Swagger UI sends requests through the admin-only test proxy; choose no cookies or Swagger Authorize-only mode when testing RBAC boundaries.",
+        "security": [
+          {
+            "ServiceAccountBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer token required or invalid"
+          },
+          "403": {
+            "description": "Missing required service-account scope"
+          },
+          "404": {
+            "description": "Reporter project not found"
+          }
+        }
+      }
+    },
+    "/api/v1/engage/clients": {
+      "get": {
+        "tags": [
+          "Professional API"
+        ],
+        "summary": "List Engage clients",
+        "description": "List Engage clients. Requires service-account bearer auth and one of: engage.view_team, engage.view_all, engage.manage_all. Swagger UI sends requests through the admin-only test proxy; choose no cookies or Swagger Authorize-only mode when testing RBAC boundaries.",
+        "security": [
+          {
+            "ServiceAccountBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer token required or invalid"
+          },
+          "403": {
+            "description": "Missing required service-account scope"
+          }
+        }
+      }
+    },
+    "/api/v1/engage/clients/{id}": {
+      "get": {
+        "tags": [
+          "Professional API"
+        ],
+        "summary": "Get Engage client",
+        "description": "Get Engage client. Requires service-account bearer auth and one of: engage.view_team, engage.view_all, engage.manage_all. Swagger UI sends requests through the admin-only test proxy; choose no cookies or Swagger Authorize-only mode when testing RBAC boundaries.",
+        "security": [
+          {
+            "ServiceAccountBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer token required or invalid"
+          },
+          "403": {
+            "description": "Missing required service-account scope"
+          },
+          "404": {
+            "description": "Client not found"
+          }
+        }
+      }
+    },
+    "/api/v1/engage/opportunities": {
+      "get": {
+        "tags": [
+          "Professional API"
+        ],
+        "summary": "List Engage opportunities",
+        "description": "List Engage opportunities. Requires service-account bearer auth and one of: engage.view_team, engage.view_all, engage.manage_all. Swagger UI sends requests through the admin-only test proxy; choose no cookies or Swagger Authorize-only mode when testing RBAC boundaries.",
+        "security": [
+          {
+            "ServiceAccountBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Commercial fields are null unless the service account also has engage.manage_commercials, engage.view_all, or engage.manage_all.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer token required or invalid"
+          },
+          "403": {
+            "description": "Missing required service-account scope"
+          }
+        }
+      }
+    },
+    "/api/v1/engage/opportunities/{id}": {
+      "get": {
+        "tags": [
+          "Professional API"
+        ],
+        "summary": "Get Engage opportunity",
+        "description": "Get Engage opportunity. Requires service-account bearer auth and one of: engage.view_team, engage.view_all, engage.manage_all. Swagger UI sends requests through the admin-only test proxy; choose no cookies or Swagger Authorize-only mode when testing RBAC boundaries.",
+        "security": [
+          {
+            "ServiceAccountBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Commercial fields are null unless the service account also has engage.manage_commercials, engage.view_all, or engage.manage_all.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer token required or invalid"
+          },
+          "403": {
+            "description": "Missing required service-account scope"
+          },
+          "404": {
+            "description": "Opportunity not found"
+          }
+        }
+      }
+    },
+    "/api/v1/engage/engagements": {
+      "get": {
+        "tags": [
+          "Professional API"
+        ],
+        "summary": "List Engage engagements",
+        "description": "List Engage engagements. Requires service-account bearer auth and one of: engage.view_team, engage.view_all, engage.manage_all. Swagger UI sends requests through the admin-only test proxy; choose no cookies or Swagger Authorize-only mode when testing RBAC boundaries.",
+        "security": [
+          {
+            "ServiceAccountBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Commercial fields are null unless the service account also has engage.manage_commercials, engage.view_all, or engage.manage_all.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer token required or invalid"
+          },
+          "403": {
+            "description": "Missing required service-account scope"
+          }
+        }
+      }
+    },
+    "/api/v1/engage/engagements/{id}": {
+      "get": {
+        "tags": [
+          "Professional API"
+        ],
+        "summary": "Get Engage engagement",
+        "description": "Get Engage engagement. Requires service-account bearer auth and one of: engage.view_team, engage.view_all, engage.manage_all. Swagger UI sends requests through the admin-only test proxy; choose no cookies or Swagger Authorize-only mode when testing RBAC boundaries.",
+        "security": [
+          {
+            "ServiceAccountBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Commercial fields are null unless the service account also has engage.manage_commercials, engage.view_all, or engage.manage_all.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer token required or invalid"
+          },
+          "403": {
+            "description": "Missing required service-account scope"
+          },
+          "404": {
+            "description": "Engagement not found"
+          }
+        }
+      }
+    },
+    "/api/v1/webhooks": {
+      "get": {
+        "tags": [
+          "Professional API"
+        ],
+        "summary": "List platform webhooks",
+        "description": "List platform webhooks. Requires service-account bearer auth and one of: webhooks.manage. Swagger UI sends requests through the admin-only test proxy; choose no cookies or Swagger Authorize-only mode when testing RBAC boundaries.",
+        "security": [
+          {
+            "ServiceAccountBearer": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer token required or invalid"
+          },
+          "403": {
+            "description": "Missing required service-account scope"
+          }
+        }
+      }
+    },
+    "/api/v1/webhooks/{id}/deliveries": {
+      "get": {
+        "tags": [
+          "Professional API"
+        ],
+        "summary": "List webhook delivery history",
+        "description": "List webhook delivery history. Requires service-account bearer auth and one of: webhooks.manage. Swagger UI sends requests through the admin-only test proxy; choose no cookies or Swagger Authorize-only mode when testing RBAC boundaries.",
+        "security": [
+          {
+            "ServiceAccountBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer token required or invalid"
+          },
+          "403": {
+            "description": "Missing required service-account scope"
+          }
+        }
+      }
+    },
+    "/api/minitools/bootstrap": {
+      "get": {
+        "tags": ["MiniTools"],
+        "summary": "Get MiniTools bootstrap data",
+        "description": "Returns available MiniTools capabilities. Requires minitools.view permission.",
+        "security": [{ "UserSessionCookie": [] }],
+        "responses": {
+          "200": {
+            "description": "Bootstrap data with tool availability flags",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "canView": { "type": "boolean" },
+                    "tools": {
+                      "type": "object",
+                      "properties": {
+                        "cvss": { "type": "object", "properties": { "enabled": { "type": "boolean" } } },
+                        "breach": { "type": "object", "properties": { "enabled": { "type": "boolean" } } },
+                        "azure": { "type": "object", "properties": { "enabled": { "type": "boolean" } } },
+                        "securitytrails": { "type": "object", "properties": { "enabled": { "type": "boolean" }, "apiKeyConfigured": { "type": "boolean" }, "dailyLimit": { "type": "integer" }, "usedToday": { "type": "integer" } } },
+                        "securityHeaders": { "type": "object", "properties": { "enabled": { "type": "boolean" } } },
+                        "tlsCheck": { "type": "object", "properties": { "enabled": { "type": "boolean" } } }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "description": "Missing minitools.view permission" }
+        }
+      }
+    },
+    "/api/minitools/breach-check": {
+      "get": {
+        "tags": ["MiniTools"],
+        "summary": "Check email against breach databases",
+        "description": "Proxies a breach lookup to xposedornot.com. Returns breach list and analytics. Rate limited to 30 requests per 15 minutes.",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "email",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "format": "email" },
+            "description": "Email address to check"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Breach check results with analytics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "breaches": { "type": "object", "description": "Breach check response from xposedornot" },
+                    "analytics": { "type": "object", "description": "Breach analytics from xposedornot, null if unavailable" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid email address", "content": { "application/json": { "schema": { "type": "object", "properties": { "error": { "type": "string" } } } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "description": "Missing minitools.view permission" },
+          "502": { "description": "Upstream breach lookup service unavailable" }
+        }
+      }
+    },
+    "/api/minitools/azure-tenant": {
+      "get": {
+        "tags": ["MiniTools"],
+        "summary": "Look up Azure tenant for a domain",
+        "description": "Proxies an Azure tenant lookup to azmap.dev. Returns tenant info, brand name, and related domains. Rate limited to 30 requests per 15 minutes.",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "domain",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "Domain name to look up"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Azure tenant data (structured or raw format)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "tenant_id": { "type": "string" },
+                            "tenant_name": { "type": "string" },
+                            "brand_name": { "type": "string" },
+                            "domain": { "type": "string" },
+                            "related_domains": { "type": "array", "items": { "type": "string" } },
+                            "related_count": { "type": "integer" }
+                          }
+                        },
+                        "format": { "type": "string", "enum": ["structured"] }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "raw": { "type": "string" },
+                        "format": { "type": "string", "enum": ["raw", "unknown"] }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid domain", "content": { "application/json": { "schema": { "type": "object", "properties": { "error": { "type": "string" } } } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "description": "Missing minitools.view permission" },
+          "502": { "description": "Upstream Azure mapping service unavailable" }
+        }
+      }
+    },
+    "/api/minitools/security-headers/analyze": {
+      "post": {
+        "tags": ["MiniTools"],
+        "summary": "Analyze HTTP security response headers",
+        "description": "Analyzes pasted raw response headers or fetches headers from a public URL through the SSRF-safe fetch guard. URL mode accepts explicit http(s) URLs and normalizes bare hosts such as example.com to https://example.com before validation. Returns a grade, score, findings, observed headers, and remediation snippets.",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "mode": { "type": "string", "enum": ["raw", "url"] },
+                  "rawHeaders": { "type": "string", "description": "Raw HTTP response headers when mode is raw." },
+                  "url": { "type": "string", "description": "Public http(s) URL or bare host when mode is url. Bare hosts are normalized to https:// before validation." }
+                },
+                "required": ["mode"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Security header analysis",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "mode": { "type": "string" },
+                    "source": { "type": "string" },
+                    "status": { "type": "integer" },
+                    "analysis": {
+                      "type": "object",
+                      "properties": {
+                        "grade": { "type": "string" },
+                        "score": { "type": "integer" },
+                        "counts": { "type": "object" },
+                        "findings": { "type": "array", "items": { "type": "object" } },
+                        "observedHeaders": { "type": "object" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid input" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "description": "Missing minitools.view permission or tool disabled" },
+          "429": { "description": "Security headers rate limit reached" },
+          "502": { "description": "Failed to fetch target headers" }
+        }
+      }
+    },
+    "/api/minitools/tls-check/analyze": {
+      "post": {
+        "tags": ["MiniTools"],
+        "summary": "Analyze TLS certificate, DNS, CT, and cipher posture",
+        "description": "Runs a server-side TLS certificate and recon check for a public target. Bare hosts default to port 443, host:port is supported, and targets are validated through the public-target guard before any outbound TLS or DNS consistency probes are made. Optional DNS, Certificate Transparency, and cipher checks provide the same categories of output as the standalone TLS recon tool: certificate attributes, SAN expansion, chain, negotiated TLS context, DNS security records, per-IP certificate consistency, findings, and export-ready structured data.",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "target": { "type": "string", "description": "Public hostname, host:port, or http(s) URL." },
+                  "includeDns": { "type": "boolean", "description": "Resolve A/AAAA, NS, MX, CAA, SPF, DMARC, DNSSEC, wildcard DNS, AXFR probe, and per-IP cert consistency." },
+                  "includeCt": { "type": "boolean", "description": "Query crt.sh Certificate Transparency names for the host." },
+                  "includeCiphers": { "type": "boolean", "description": "Run slower TLS protocol/cipher probes using server runtime TLS capabilities." },
+                  "timeoutMs": { "type": "integer", "minimum": 2000, "maximum": 15000 }
+                },
+                "required": ["target"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "TLS analysis result", "content": { "application/json": { "schema": { "type": "object" } } } },
+          "400": { "description": "Invalid or blocked target" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "description": "Missing minitools.view permission or tool disabled" },
+          "429": { "description": "TLS check rate limit reached" },
+          "502": { "description": "TLS analysis failed" }
+        }
+      }
+    },
+    "/api/minitools/securitytrails/lookup": {
+      "get": {
+        "tags": ["MiniTools"],
+        "summary": "Look up domain intelligence via SecurityTrails",
+        "description": "Proxies domain details and subdomain enumeration to the SecurityTrails API. Requires an admin-configured API key. Per-user daily request quota enforced. Rate limited to 60 requests per 15 minutes.",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          {
+            "name": "domain",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "Domain name to look up"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SecurityTrails domain details and subdomains",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "details": { "type": "object", "description": "Domain details from SecurityTrails" },
+                    "subdomains": { "type": "object", "description": "Subdomain list from SecurityTrails" },
+                    "quota": {
+                      "type": "object",
+                      "properties": {
+                        "used": { "type": "integer" },
+                        "limit": { "type": "integer" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid domain" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "description": "Missing minitools.view permission or API key not configured" },
+          "429": { "description": "User daily API limit reached" },
+          "502": { "description": "Upstream SecurityTrails API unavailable" }
         }
       }
     }

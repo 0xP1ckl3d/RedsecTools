@@ -1,5 +1,5 @@
 import { showConfirmModal, showAlertModal } from "./confirm-modal.js";
-import { badge, booleanBadge, escapeHtml, setInlineResult, setTableState } from "./ui-components.js";
+import { badge, booleanBadge, escapeHtml, safeAttr, setInlineResult, setTableState } from "./ui-components.js";
 
 const adminLoginShell = document.getElementById("admin-login-shell");
 const loginSection = document.getElementById("login-section");
@@ -158,12 +158,12 @@ logoutBtn.addEventListener("click", async () => {
 // --- Tabs ---
 
 const tabBtns = document.querySelectorAll(".admin-tab[data-tab]");
-const childTabs = ["theme", "settings", "security", "deployment", "roles", "bulletins", "weather", "team-shortcuts", "users", "invites", "calendar-tool-settings", "engage-tool-settings", "reporter-tool-settings", "survey-tool-settings", "wiki-tool-settings", "chat", "vaults", "pastes", "files", "threat-tool-settings", "redsecai-tool-settings"];
+const childTabs = ["theme", "settings", "security", "deployment", "roles", "bulletins", "weather", "team-shortcuts", "users", "invites", "calendar-tool-settings", "engage-tool-settings", "reporter-tool-settings", "survey-tool-settings", "wiki-tool-settings", "chat", "vaults", "pastes", "files", "threat-tool-settings", "redsecai-tool-settings", "minitools-tool-settings"];
 const adminTabGroups = {
   server: ["theme", "settings", "security", "deployment", "roles"],
   homepage: ["weather", "bulletins", "team-shortcuts"],
   "users-admin": ["users", "invites"],
-  tools: ["calendar-tool-settings", "engage-tool-settings", "reporter-tool-settings", "survey-tool-settings", "wiki-tool-settings", "chat", "vaults", "pastes", "files", "threat-tool-settings", "redsecai-tool-settings"],
+  tools: ["calendar-tool-settings", "engage-tool-settings", "reporter-tool-settings", "survey-tool-settings", "wiki-tool-settings", "chat", "vaults", "pastes", "files", "threat-tool-settings", "redsecai-tool-settings", "minitools-tool-settings"],
 };
 const adminSubtabLabels = {
   theme: "Branding",
@@ -179,6 +179,7 @@ const adminSubtabLabels = {
   "calendar-tool-settings": window.brandName("Cal"),
   "wiki-tool-settings": window.brandName("Wiki"),
   "redsecai-tool-settings": window.brandName("AI"),
+  "minitools-tool-settings": window.brandName("MiniTools"),
   chat: window.brandName("Team"),
   pastes: window.brandName("Paste"),
   files: window.brandName("Share"),
@@ -232,10 +233,7 @@ function updateAdminVisibleTabs() {
     loadVaultsAdmin();
   }
   if (visibleTabs.has("security")) {
-    loadSecuritySettings();
-    loadSsoSettings();
-    loadServiceAccountControls();
-    loadWebhookControls();
+    loadSecurityPanel();
   }
   if (visibleTabs.has("deployment")) {
     loadDeploymentQuality();
@@ -259,6 +257,10 @@ function updateAdminVisibleTabs() {
   }
   if (visibleTabs.has("redsecai-tool-settings")) {
     loadRedSecAiSettings();
+  }
+  if (visibleTabs.has("minitools-tool-settings")) {
+    loadSecurityTrailsSettings();
+    loadMinitoolsSettings();
   }
   if (visibleTabs.has("survey-tool-settings")) {
     loadSurveyAdminStats();
@@ -1609,6 +1611,144 @@ redsecAiDiagnosticsBtn?.addEventListener("click", async () => {
 document.getElementById("redsecai-refresh-btn")?.addEventListener("click", loadRedSecAiSettings);
 
 // ============================================================
+// SECURITYTRAILS TOOL SETTINGS
+// ============================================================
+
+const securityTrailsApiKeyInput = document.getElementById("securitytrails-api-key");
+const securityTrailsDailyLimitInput = document.getElementById("securitytrails-daily-limit");
+const securityTrailsSaveBtn = document.getElementById("securitytrails-save-btn");
+const securityTrailsToggleKeyBtn = document.getElementById("securitytrails-toggle-key");
+const securityTrailsResult = document.getElementById("securitytrails-result");
+
+// MiniTools settings
+const minitoolCvssEnabled = document.getElementById("minitool-cvss-enabled");
+const minitoolBreachEnabled = document.getElementById("minitool-breach-enabled");
+const minitoolAzureEnabled = document.getElementById("minitool-azure-enabled");
+const minitoolSecuritytrailsEnabled = document.getElementById("minitool-securitytrails-enabled");
+const minitoolSecurityHeadersEnabled = document.getElementById("minitool-security-headers-enabled");
+const minitoolTlsCheckEnabled = document.getElementById("minitool-tls-check-enabled");
+const minitoolsSaveBtn = document.getElementById("minitools-save-btn");
+const minitoolsResult = document.getElementById("minitools-result");
+
+async function loadMinitoolsSettings() {
+  try {
+    const res = await api("/api/settings/minitools");
+    const data = await res.json();
+    if (minitoolCvssEnabled) minitoolCvssEnabled.checked = data.cvss;
+    if (minitoolBreachEnabled) minitoolBreachEnabled.checked = data.breach;
+    if (minitoolAzureEnabled) minitoolAzureEnabled.checked = data.azure;
+    if (minitoolSecuritytrailsEnabled) minitoolSecuritytrailsEnabled.checked = data.securitytrails;
+    if (minitoolSecurityHeadersEnabled) minitoolSecurityHeadersEnabled.checked = data.securityHeaders;
+    if (minitoolTlsCheckEnabled) minitoolTlsCheckEnabled.checked = data.tlsCheck;
+  } catch (err) {
+    if (minitoolsResult) {
+      minitoolsResult.textContent = err.message || "Failed to load settings";
+      minitoolsResult.className = "text-sm text-error";
+      minitoolsResult.classList.remove("hidden");
+    }
+  }
+}
+
+minitoolsSaveBtn?.addEventListener("click", async () => {
+  minitoolsSaveBtn.disabled = true;
+  if (minitoolsResult) {
+    minitoolsResult.textContent = "";
+    minitoolsResult.className = "text-sm hidden";
+  }
+  try {
+    const res = await api("/api/settings/minitools", {
+      method: "POST",
+      body: JSON.stringify({
+        cvssEnabled: !!minitoolCvssEnabled?.checked,
+        breachEnabled: !!minitoolBreachEnabled?.checked,
+        azureEnabled: !!minitoolAzureEnabled?.checked,
+        securitytrailsEnabled: !!minitoolSecuritytrailsEnabled?.checked,
+        securityHeadersEnabled: !!minitoolSecurityHeadersEnabled?.checked,
+        tlsCheckEnabled: !!minitoolTlsCheckEnabled?.checked,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || "Save failed");
+    }
+    if (minitoolsResult) {
+      minitoolsResult.textContent = "Settings saved.";
+      minitoolsResult.className = "text-sm text-accent";
+      minitoolsResult.classList.remove("hidden");
+    }
+    await loadMinitoolsSettings();
+  } catch (err) {
+    if (minitoolsResult) {
+      minitoolsResult.textContent = err.message || "Save failed";
+      minitoolsResult.className = "text-sm text-error";
+      minitoolsResult.classList.remove("hidden");
+    }
+  } finally {
+    minitoolsSaveBtn.disabled = false;
+  }
+});
+
+async function loadSecurityTrailsSettings() {
+  try {
+    const res = await api("/api/settings/securitytrails");
+    const data = await res.json();
+    if (securityTrailsApiKeyInput) {
+      securityTrailsApiKeyInput.value = "";
+      securityTrailsApiKeyInput.placeholder = data.apiKeyConfigured ? `Current: ${data.apiKeyPreview}` : "Enter API key";
+    }
+    if (securityTrailsDailyLimitInput) {
+      securityTrailsDailyLimitInput.value = data.dailyLimit;
+    }
+  } catch (err) {
+    if (securityTrailsResult) {
+      securityTrailsResult.textContent = err.message || "Failed to load settings";
+      securityTrailsResult.className = "text-sm text-error";
+    }
+  }
+}
+
+securityTrailsToggleKeyBtn?.addEventListener("click", () => {
+  if (!securityTrailsApiKeyInput) return;
+  const showing = securityTrailsApiKeyInput.type === "text";
+  securityTrailsApiKeyInput.type = showing ? "password" : "text";
+  securityTrailsToggleKeyBtn.textContent = showing ? "Show" : "Hide";
+});
+
+securityTrailsSaveBtn?.addEventListener("click", async () => {
+  securityTrailsSaveBtn.disabled = true;
+  if (securityTrailsResult) {
+    securityTrailsResult.textContent = "";
+    securityTrailsResult.className = "text-sm";
+  }
+  try {
+    const body = {
+      apiKey: securityTrailsApiKeyInput?.value || "",
+      dailyLimit: parseInt(securityTrailsDailyLimitInput?.value, 10) || 50,
+    };
+    const res = await api("/api/settings/securitytrails", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || "Save failed");
+    }
+    if (securityTrailsResult) {
+      securityTrailsResult.textContent = "Settings saved.";
+      securityTrailsResult.className = "text-sm text-accent";
+    }
+    loadSecurityTrailsSettings();
+  } catch (err) {
+    if (securityTrailsResult) {
+      securityTrailsResult.textContent = err.message || "Save failed";
+      securityTrailsResult.className = "text-sm text-error";
+    }
+  } finally {
+    securityTrailsSaveBtn.disabled = false;
+  }
+});
+
+// ============================================================
 // CHAT
 // ============================================================
 
@@ -1799,7 +1939,17 @@ const webhooksBody = document.getElementById("webhooks-body");
 const webhooksResult = document.getElementById("webhooks-result");
 
 let serviceAccountScopeOptions = [];
+let serviceAccountScopeDefinitions = [];
 let webhookEventOptions = [];
+
+async function loadSecurityPanel() {
+  await loadSecuritySettings();
+  await Promise.all([
+    loadSsoSettings(),
+    loadServiceAccountControls(),
+    loadWebhookControls(),
+  ]);
+}
 
 async function loadSecuritySettings() {
   try {
@@ -1951,8 +2101,78 @@ function renderCheckboxGroup(container, options, prefix) {
   `).join("");
 }
 
+function buildServiceAccountScopesHtml(scopes, definitions = [], selectedScopes = []) {
+  const definitionByKey = new Map((definitions || []).map((definition) => [definition.key, definition]));
+  const keys = [...new Set(scopes || [])];
+  const selected = new Set(selectedScopes || []);
+  const grouped = new Map();
+
+  keys.forEach((key) => {
+    const definition = definitionByKey.get(key) || {
+      key,
+      category: key === "*" ? "Global" : "Other",
+      label: key,
+      description: "",
+    };
+    const category = definition.category || "Other";
+    if (!grouped.has(category)) grouped.set(category, []);
+    grouped.get(category).push(definition);
+  });
+
+  return `
+    <div class="flex flex-wrap gap-2">
+      <button type="button" class="btn-secondary text-xs" data-scope-action="select-all">Select all scopes</button>
+      <button type="button" class="btn-secondary text-xs" data-scope-action="clear-all">Clear all</button>
+    </div>
+    ${[...grouped.entries()].map(([category, items]) => `
+      <details class="border rounded-lg p-3" data-scope-category open>
+        <summary class="cursor-pointer font-medium">${escapeHtml(category)} <span class="text-xs text-muted">(${items.length})</span></summary>
+        <div class="flex flex-wrap gap-2 mt-3 mb-3">
+          <button type="button" class="btn-secondary text-xs" data-scope-action="select-category">Select group</button>
+          <button type="button" class="btn-secondary text-xs" data-scope-action="clear-category">Clear group</button>
+        </div>
+        <div class="grid gap-2 md:grid-cols-2">
+          ${items.map((definition) => `
+            <label class="custom-checkbox gap-2 items-start">
+              <input type="checkbox" data-group="scope" data-value="${safeAttr(definition.key)}"${selected.has(definition.key) ? " checked" : ""}>
+              <span class="checkmark mt-0.5"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+              <span class="text-sm">
+                <span class="block font-medium">${escapeHtml(definition.label || definition.key)}</span>
+                <span class="block text-xs text-muted">${escapeHtml(definition.key)}</span>
+                ${definition.description ? `<span class="block text-xs text-muted">${escapeHtml(definition.description)}</span>` : ""}
+              </span>
+            </label>
+          `).join("")}
+        </div>
+      </details>
+    `).join("")}
+  `;
+}
+
+function renderServiceAccountScopes(container, scopes, definitions = [], selectedScopes = []) {
+  if (!container) return;
+  container.className = "space-y-3";
+  container.innerHTML = buildServiceAccountScopesHtml(scopes, definitions, selectedScopes);
+}
+
 function selectedDatasetValues(container, key) {
   return [...(container?.querySelectorAll(`input[data-group="${key}"]:checked`) || [])].map((input) => input.dataset.value);
+}
+
+function getServiceAccountEditRow(id) {
+  return [...(serviceAccountsBody?.querySelectorAll("[data-edit-row]") || [])].find((row) => row.dataset.editRow === id) || null;
+}
+
+function handleServiceScopeAction(button, fallbackRoot) {
+  const action = button?.dataset.scopeAction;
+  if (!action) return false;
+  const scopeRoot = action.endsWith("category")
+    ? button.closest("[data-scope-category]")
+    : fallbackRoot;
+  const inputs = [...(scopeRoot?.querySelectorAll('input[data-group="scope"]') || [])];
+  const checked = action === "select-all" || action === "select-category";
+  inputs.forEach((input) => { input.checked = checked; });
+  return true;
 }
 
 async function loadServiceAccountControls() {
@@ -1963,8 +2183,10 @@ async function loadServiceAccountControls() {
   if (!serviceAccountScopeOptions.length) {
     const scopesRes = await api("/api/service-accounts/scopes").catch(() => null);
     if (scopesRes?.ok) {
-      serviceAccountScopeOptions = (await scopesRes.json()).scopes || [];
-      renderCheckboxGroup(serviceAccountScopes, serviceAccountScopeOptions, "scope");
+      const scopeData = await scopesRes.json();
+      serviceAccountScopeOptions = scopeData.scopes || [];
+      serviceAccountScopeDefinitions = scopeData.scopeDefinitions || [];
+      renderServiceAccountScopes(serviceAccountScopes, serviceAccountScopeOptions, serviceAccountScopeDefinitions);
     }
   }
   if (!enabled) {
@@ -1994,8 +2216,23 @@ async function loadServiceAccountControls() {
         <td>${activeTokens.length} active</td>
         <td>${badge(account.enabled ? "Enabled" : "Disabled", account.enabled ? "green" : "gray")}</td>
         <td class="space-x-2">
+          <button type="button" class="btn-secondary text-xs service-edit-btn" data-id="${escapeHtml(account.id)}">Edit Scopes</button>
           <button type="button" class="btn-secondary text-xs service-token-btn" data-id="${escapeHtml(account.id)}">New Token</button>
           <button type="button" class="btn-danger text-xs service-revoke-btn" data-id="${escapeHtml(account.id)}">Revoke Tokens</button>
+        </td>
+      </tr>
+      <tr class="service-account-edit-row hidden" data-edit-row="${safeAttr(account.id)}" data-service-name="${safeAttr(account.name)}" data-service-description="${safeAttr(account.description || "")}" data-service-enabled="${account.enabled ? "true" : "false"}">
+        <td colspan="5">
+          <div class="info-box space-y-4">
+            <p class="text-sm text-muted">Update scopes for ${escapeHtml(account.name)}. Existing tokens keep their token value and use the new scopes immediately.</p>
+            <div class="service-account-edit-scopes space-y-3" data-service-edit-scopes>
+              ${buildServiceAccountScopesHtml(serviceAccountScopeOptions, serviceAccountScopeDefinitions, account.scopes || [])}
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <button type="button" class="btn-primary text-xs service-save-btn" data-id="${escapeHtml(account.id)}">Save Scopes</button>
+              <button type="button" class="btn-secondary text-xs service-cancel-edit-btn" data-id="${escapeHtml(account.id)}">Cancel</button>
+            </div>
+          </div>
         </td>
       </tr>
     `;
@@ -2022,10 +2259,43 @@ createServiceAccountBtn?.addEventListener("click", async () => {
   await loadServiceAccountControls();
 });
 
+serviceAccountScopes?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-scope-action]");
+  handleServiceScopeAction(button, serviceAccountScopes);
+});
+
 serviceAccountsBody?.addEventListener("click", async (event) => {
   const button = event.target.closest("button");
   if (!button) return;
+  if (handleServiceScopeAction(button, button.closest("[data-service-edit-scopes]"))) return;
   const id = button.dataset.id;
+  if (button.classList.contains("service-edit-btn")) {
+    getServiceAccountEditRow(id)?.classList.toggle("hidden");
+    return;
+  }
+  if (button.classList.contains("service-cancel-edit-btn")) {
+    getServiceAccountEditRow(id)?.classList.add("hidden");
+    return;
+  }
+  if (button.classList.contains("service-save-btn")) {
+    const row = button.closest("[data-edit-row]");
+    const scopesRoot = row?.querySelector("[data-service-edit-scopes]");
+    const scopes = selectedDatasetValues(scopesRoot, "scope");
+    const res = await api(`/api/service-accounts/${id}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        name: row?.dataset.serviceName || "",
+        description: row?.dataset.serviceDescription || "",
+        enabled: row?.dataset.serviceEnabled === "true",
+        scopes,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return setInlineResult(serviceAccountsResult, data.error || "Failed to update service account", false);
+    setInlineResult(serviceAccountsResult, "Service account updated");
+    await loadServiceAccountControls();
+    return;
+  }
   if (button.classList.contains("service-token-btn")) {
     const label = prompt("Token label", "API token");
     if (label === null) return;

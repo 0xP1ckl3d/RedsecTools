@@ -7,6 +7,7 @@ const {
 } = require("../database");
 const { getFeatureFlag } = require("../core/config/feature-flags");
 const { redactObject } = require("../core/logger");
+const { expandScopeAliases, hasServiceScope } = require("../core/integrations/service-account-scopes");
 
 const TOKEN_PREFIX = "rst_sa";
 
@@ -70,12 +71,11 @@ function requireServiceAccount(scopes = []) {
       return res.status(403).json({ error: "Service account disabled" });
     }
 
-    const granted = new Set(record.serviceAccount.scopes || []);
-    const hasScope = requiredScopes.length === 0 || requiredScopes.some((scope) => granted.has(scope) || granted.has("*"));
-    if (!hasScope) {
+    record.serviceAccount.scopes = expandScopeAliases(record.serviceAccount.scopes || []);
+    if (!hasServiceScope(record.serviceAccount.scopes, requiredScopes)) {
       req.serviceAccount = record.serviceAccount;
       auditServiceAuth(req, "failure", { reason: "missing_scope", requiredScopes });
-      return res.status(403).json({ error: "Insufficient API token scope", requiredScopes });
+      return res.status(403).json({ error: "Insufficient API token scope", code: "insufficient_scope", requiredScopes });
     }
 
     req.serviceAccount = record.serviceAccount;

@@ -2297,6 +2297,8 @@ const DEFAULTS = {
   redsecai_autostart: process.env.REDSECAI_AUTOSTART || "true",
   redsecai_auto_pull: process.env.REDSECAI_AUTO_PULL || "true",
   redsecai_action_ttl_seconds: process.env.REDSECAI_ACTION_TTL_SECONDS || "7200",
+  securitytrails_api_key: "",
+  securitytrails_daily_limit: "50",
 };
 for (const [key, value] of Object.entries(DEFAULTS)) {
   if (!getSetting(key)) setSetting(key, value);

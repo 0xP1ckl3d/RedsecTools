@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <title>RedSecMiniTools</title>
+  <link rel="icon" href="/assets/favicon.ico" type="image/x-icon">
+  <script src="/js/theme-init.js?v=20260520-minitools"></script>
+  <link rel="stylesheet" href="/css/style.css?v=20260520-minitools">
+  <link rel="stylesheet" href="/css/notifications.css">
+</head>
+<body>
+  <div class="dashboard-layout minitools-dashboard-shell">
+    <aside id="minitools-sidebar" class="dashboard-sidebar collapsed">
+      <button type="button" id="minitools-sidebar-collapse-btn" class="sidebar-collapse-btn" title="Collapse sidebar">
+        <svg class="sidebar-collapse-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+      </button>
+
+      <nav class="sidebar-nav">
+        <button type="button" class="sidebar-nav-item active" data-minitools-view="cvss">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+          <span class="sidebar-nav-text">CVSS Calculator</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-minitools-view="breach">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+          <span class="sidebar-nav-text">Breach Lookup</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-minitools-view="azure">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"/></svg>
+          <span class="sidebar-nav-text">Azure Mapping</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-minitools-view="securitytrails">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/></svg>
+          <span class="sidebar-nav-text">SecurityTrails</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-minitools-view="security-headers">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-5m5-3v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6l8-3 8 3z"/></svg>
+          <span class="sidebar-nav-text">Security Headers</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-minitools-view="tls-check">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2h-1V8a5 5 0 00-10 0v3H6a2 2 0 00-2 2v6a2 2 0 002 2zm3-10V8a3 3 0 116 0v3"/></svg>
+          <span class="sidebar-nav-text">TLS Check</span>
+        </button>
+      </nav>
+    </aside>
+
+    <div class="dashboard-content">
+      <header class="dashboard-header">
+        <div>
+          <h1 class="text-xl font-bold">
+            <a href="/" class="hover:underline transition-colors">
+              <span class="text-accent" data-bp>RedSec</span><span class="text-secondary">MiniTools</span>
+            </a>
+          </h1>
+          <p class="text-sm text-muted mt-1">Quick-reference security utilities.</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <div class="relative">
+            <button id="burger-btn" class="burger-btn" aria-label="Menu" aria-expanded="false">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+            <nav id="burger-nav" class="burger-nav hidden"></nav>
+          </div>
+          <button type="button" class="theme-toggle" id="theme-toggle" title="Toggle theme">
+            <svg class="w-5 h-5 dark-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+            <svg class="w-5 h-5 light-icon hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="mobile-tabs">
+        <button type="button" class="mobile-tab active" data-minitools-view="cvss">CVSS Calculator</button>
+        <button type="button" class="mobile-tab" data-minitools-view="breach">Breach Lookup</button>
+        <button type="button" class="mobile-tab" data-minitools-view="azure">Azure Mapping</button>
+        <button type="button" class="mobile-tab" data-minitools-view="securitytrails">SecurityTrails</button>
+        <button type="button" class="mobile-tab" data-minitools-view="security-headers">Security Headers</button>
+        <button type="button" class="mobile-tab" data-minitools-view="tls-check">TLS Check</button>
+      </div>
+
+      <div class="dashboard-main">
+        <section id="minitools-view-cvss">
+          <h2 class="text-lg font-bold mb-4">CVSS Calculator</h2>
+          <p class="text-sm text-muted mb-4">Interactive CVSS 3.1 and 4.0 score calculator. Select metrics to generate a vector string and severity rating.</p>
+          <div id="minitools-cvss-container"></div>
+          <div id="minitools-cvss-result" class="minitools-cvss-result mt-4"></div>
+        </section>
+
+        <section id="minitools-view-breach" class="hidden">
+          <h2 class="text-lg font-bold mb-4">Breach Lookup</h2>
+          <p class="text-sm text-muted mb-4">Check an email address against known breach databases via xposedornot.com.</p>
+          <div class="minitools-lookup-form">
+            <div class="flex gap-2 items-end">
+              <div class="flex-1">
+                <label for="breach-email" class="block text-sm font-medium text-muted mb-1">Email Address</label>
+                <input type="email" id="breach-email" class="input-field" placeholder="user@example.com" autocomplete="off">
+              </div>
+              <button type="button" id="breach-check-btn" class="btn-primary">Check</button>
+            </div>
+            <div id="breach-inline-result" class="mt-2"></div>
+          </div>
+          <div id="breach-results" class="mt-4"></div>
+        </section>
+
+        <section id="minitools-view-azure" class="hidden">
+          <h2 class="text-lg font-bold mb-4">Azure Mapping</h2>
+          <p class="text-sm text-muted mb-4">Look up Azure tenant information for a domain via azmap.dev. Click a domain to copy it.</p>
+          <div class="minitools-lookup-form">
+            <div class="flex gap-2 items-end">
+              <div class="flex-1">
+                <label for="azure-domain" class="block text-sm font-medium text-muted mb-1">Domain</label>
+                <input type="text" id="azure-domain" class="input-field" placeholder="example.com" autocomplete="off">
+              </div>
+              <button type="button" id="azure-lookup-btn" class="btn-primary">Lookup</button>
+            </div>
+            <div id="azure-inline-result" class="mt-2"></div>
+          </div>
+          <div id="azure-results" class="mt-4"></div>
+        </section>
+
+        <section id="minitools-view-securitytrails" class="hidden">
+          <h2 class="text-lg font-bold mb-4">SecurityTrails</h2>
+          <p class="text-sm text-muted mb-2">Domain intelligence: subdomain enumeration, DNS records, WHOIS, and associated data.</p>
+          <div id="securitytrails-quota" class="mb-4"></div>
+          <div class="minitools-lookup-form">
+            <div class="flex gap-2 items-end">
+              <div class="flex-1">
+                <label for="securitytrails-domain" class="block text-sm font-medium text-muted mb-1">Domain</label>
+                <input type="text" id="securitytrails-domain" class="input-field" placeholder="example.com" autocomplete="off">
+              </div>
+              <button type="button" id="securitytrails-lookup-btn" class="btn-primary whitespace-nowrap">Lookup</button>
+            </div>
+            <div class="mt-2">
+              <div class="reporter-cvss-options" id="st-type-group">
+                <button type="button" class="reporter-cvss-option active" data-st-type="both">Both (2 queries)</button>
+                <button type="button" class="reporter-cvss-option" data-st-type="details">Details (1)</button>
+                <button type="button" class="reporter-cvss-option" data-st-type="subdomains">Subdomains (1)</button>
+              </div>
+            </div>
+            <div id="securitytrails-inline-result" class="mt-2"></div>
+          </div>
+          <div id="securitytrails-results" class="mt-4"></div>
+        </section>
+
+        <section id="minitools-view-security-headers" class="hidden">
+          <h2 class="text-lg font-bold mb-4">Security Headers</h2>
+          <p class="text-sm text-muted mb-4">Analyze HTTP response headers for browser security controls, missing protections, weak policies, and copy-ready remediation snippets.</p>
+          <div class="grid gap-4 lg:grid-cols-2">
+            <div class="card p-4">
+              <h3 class="text-sm font-bold mb-3">Fetch From URL</h3>
+              <div class="flex gap-2 items-end">
+                <div class="flex-1">
+                  <label for="security-headers-url" class="block text-sm font-medium text-muted mb-1">URL</label>
+                  <input type="url" id="security-headers-url" class="input-field" placeholder="example.com or https://example.com" autocomplete="off">
+                </div>
+                <button type="button" id="security-headers-fetch-btn" class="btn-primary whitespace-nowrap">Fetch</button>
+              </div>
+            </div>
+            <div class="card p-4">
+              <h3 class="text-sm font-bold mb-3">Paste Raw Headers</h3>
+              <label for="security-headers-raw" class="block text-sm font-medium text-muted mb-1">HTTP response headers</label>
+              <textarea id="security-headers-raw" class="input-field min-h-[12rem] font-mono text-xs" placeholder="HTTP/2 200&#10;strict-transport-security: max-age=31536000; includeSubDomains&#10;content-security-policy: default-src 'self'"></textarea>
+              <div class="flex flex-wrap gap-2 mt-3">
+                <button type="button" id="security-headers-analyze-btn" class="btn-primary">Analyze</button>
+                <button type="button" id="security-headers-sample-btn" class="btn-secondary">Load Sample</button>
+                <button type="button" id="security-headers-clear-btn" class="btn-secondary">Clear</button>
+              </div>
+            </div>
+          </div>
+          <div id="security-headers-inline-result" class="mt-2"></div>
+          <div id="security-headers-results" class="mt-4"></div>
+        </section>
+
+        <section id="minitools-view-tls-check" class="hidden">
+          <h2 class="text-lg font-bold mb-4">TLS Check</h2>
+          <p class="text-sm text-muted mb-4">Enumerate certificate attributes, negotiated TLS context, DNS posture, CT names, certificate consistency, and optional cipher support for a public target.</p>
+          <div class="card p-4">
+            <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+              <div>
+                <label for="tls-check-target" class="block text-sm font-medium text-muted mb-1">Target</label>
+                <input type="text" id="tls-check-target" class="input-field" placeholder="example.com or example.com:8443" autocomplete="off">
+              </div>
+              <button type="button" id="tls-check-run-btn" class="btn-primary whitespace-nowrap">Run TLS Check</button>
+            </div>
+            <div class="flex flex-wrap gap-4 mt-4">
+              <label class="custom-checkbox gap-2">
+                <input type="checkbox" id="tls-check-dns" checked>
+                <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+                <span class="text-sm">DNS checks</span>
+              </label>
+              <label class="custom-checkbox gap-2">
+                <input type="checkbox" id="tls-check-ct" checked>
+                <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+                <span class="text-sm">Certificate Transparency</span>
+              </label>
+              <label class="custom-checkbox gap-2">
+                <input type="checkbox" id="tls-check-ciphers">
+                <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+                <span class="text-sm">Cipher scan</span>
+              </label>
+            </div>
+            <p class="text-xs text-muted mt-3">Cipher scan is slower and depends on the server-side Node/OpenSSL runtime for protocol and cipher support.</p>
+            <div id="tls-check-inline-result" class="mt-2"></div>
+          </div>
+          <div id="tls-check-results" class="mt-4"></div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/tool-shell.js?v=20260520-minitools"></script>
+  <script src="/js/theme.js?v=20260520-minitools"></script>
+  <script type="module" src="/js/burger-menu.js?v=20260520-minitools"></script>
+  <script src="/js/notifications.js?v=20260520-minitools"></script>
+  <script type="module" src="/js/minitools.js?v=20260520-minitools"></script>
+</body>
+</html>

@@ -32,8 +32,11 @@
     { "id": "admin-login", "routePattern": "/admin/login", "methods": ["POST"], "auth": "admin-password-plus-user-session-after-bootstrap", "permission": "admin", "publicLink": false, "rateLimit": "admin-login", "audit": "auth", "freshAdminAuth": false },
     { "id": "admin-openapi-ui", "routePattern": "/admin/openapi", "methods": ["GET"], "auth": "admin-cookie-and-linked-user-session", "permission": "admin", "publicLink": false, "rateLimit": "admin", "audit": "none", "freshAdminAuth": false },
     { "id": "admin-openapi-init", "routePattern": "/admin/openapi/init.js", "methods": ["GET"], "auth": "admin-cookie-and-linked-user-session", "permission": "admin", "publicLink": false, "rateLimit": "admin", "audit": "none", "freshAdminAuth": false },
+    { "id": "admin-openapi-controls-css", "routePattern": "/admin/openapi/controls.css", "methods": ["GET"], "auth": "admin-cookie-and-linked-user-session", "permission": "admin", "publicLink": false, "rateLimit": "admin", "audit": "none", "freshAdminAuth": false },
+    { "id": "admin-openapi-proxy", "routePattern": "/admin/openapi/proxy", "methods": ["POST"], "auth": "admin-cookie-and-linked-user-session", "permission": "admin", "publicLink": false, "rateLimit": "admin", "audit": "api", "freshAdminAuth": false },
     { "id": "admin-api-read", "routePattern": "/admin/api/**", "methods": ["GET"], "auth": "admin-cookie-and-linked-user-session", "permission": "admin", "publicLink": false, "rateLimit": "admin", "audit": "admin/audit", "freshAdminAuth": false },
     { "id": "admin-api-write", "routePattern": "/admin/api/**", "methods": ["POST", "PUT", "PATCH", "DELETE"], "auth": "admin-cookie-and-linked-user-session", "permission": "admin", "publicLink": false, "rateLimit": "admin-write", "audit": "admin/audit", "freshAdminAuth": "high-risk writes" },
-    { "id": "admin-logout", "routePattern": "/admin/logout", "methods": ["POST"], "auth": "admin-cookie", "permission": "admin", "publicLink": false, "rateLimit": "none", "audit": "auth", "freshAdminAuth": false }
+    { "id": "admin-logout", "routePattern": "/admin/logout", "methods": ["POST"], "auth": "admin-cookie", "permission": "admin", "publicLink": false, "rateLimit": "none", "audit": "auth", "freshAdminAuth": false },
+    { "id": "minitools-api", "routePattern": "/api/minitools/**", "methods": ["GET", "POST"], "auth": "user-session", "permission": "minitools.view", "publicLink": false, "rateLimit": "minitools", "audit": "event-log", "freshAdminAuth": false }
   ]
 }

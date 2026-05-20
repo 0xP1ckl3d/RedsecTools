@@ -82,6 +82,8 @@ async function createRouteHarness(options = {}) {
     engage: () => require("../../server/routes/engage"),
     integrations: () => require("../../server/routes/integrations"),
     admin: () => require("../../server/routes/admin").router,
+    auth: () => require("../../server/routes/auth"),
+    minitools: () => require("../../server/routes/minitools"),
   };
   for (const routeName of options.routes || []) {
     const routerFactory = routers[routeName];

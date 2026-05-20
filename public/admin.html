@@ -1271,6 +1271,85 @@
         </div>
       </div>
 
+      <!-- MiniTools Tool Settings Tab -->
+      <div id="minitools-tool-settings-tab" class="hidden admin-page-stack">
+        <div class="card admin-section-card">
+          <div class="admin-card-header">
+            <div>
+              <p class="admin-card-kicker">Tool Settings</p>
+              <h2 class="admin-card-title"><span data-bp>RedSec</span>MiniTools</h2>
+              <p class="admin-card-copy">Configure integrations for RedSecMiniTools. The SecurityTrails API key is stored server-side and never exposed to the browser. Per-user daily request limits control quota usage.</p>
+            </div>
+          </div>
+
+          <div class="grid gap-4 md:grid-cols-2 mt-4">
+            <label class="space-y-1">
+              <span class="text-xs font-semibold uppercase tracking-wide text-muted">API Key</span>
+              <div class="flex gap-2">
+                <input id="securitytrails-api-key" type="password" class="input-field flex-1" placeholder="Enter SecurityTrails API key" autocomplete="off">
+                <button type="button" id="securitytrails-toggle-key" class="btn-secondary text-sm px-3" title="Show/hide key">Show</button>
+              </div>
+              <span class="text-xs text-muted">API key from your SecurityTrails account settings. Leave blank to keep the current key.</span>
+            </label>
+            <label class="space-y-1">
+              <span class="text-xs font-semibold uppercase tracking-wide text-muted">Daily API Limit (per user)</span>
+              <input id="securitytrails-daily-limit" type="number" min="1" max="10000" step="1" class="input-field">
+              <span class="text-xs text-muted">Maximum SecurityTrails API requests each user can make per day.</span>
+            </label>
+          </div>
+
+          <div class="flex items-center gap-3 mt-4">
+            <button type="button" id="securitytrails-save-btn" class="btn-primary">Save SecurityTrails Settings</button>
+            <p id="securitytrails-result" class="text-sm hidden"></p>
+          </div>
+
+          <hr class="my-6 border-border" id="minitools-toggles-divider">
+
+          <div id="minitools-toggles-section">
+            <h3 class="text-sm font-bold mb-2">MiniTool Visibility</h3>
+            <p class="text-sm text-muted mb-4">Enable or disable individual minitools. Disabled tools will be hidden from the RedSecMiniTools page.</p>
+
+            <div class="grid gap-3 md:grid-cols-2 mt-4">
+              <label class="custom-checkbox gap-2">
+                <input type="checkbox" id="minitool-cvss-enabled">
+                <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+                <span class="text-sm">CVSS Calculator</span>
+              </label>
+              <label class="custom-checkbox gap-2">
+                <input type="checkbox" id="minitool-breach-enabled">
+                <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+                <span class="text-sm">Breach Lookup</span>
+              </label>
+              <label class="custom-checkbox gap-2">
+                <input type="checkbox" id="minitool-azure-enabled">
+                <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+                <span class="text-sm">Azure Mapping</span>
+              </label>
+              <label class="custom-checkbox gap-2">
+                <input type="checkbox" id="minitool-securitytrails-enabled">
+                <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+                <span class="text-sm">SecurityTrails</span>
+              </label>
+              <label class="custom-checkbox gap-2">
+                <input type="checkbox" id="minitool-security-headers-enabled">
+                <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+                <span class="text-sm">Security Headers</span>
+              </label>
+              <label class="custom-checkbox gap-2">
+                <input type="checkbox" id="minitool-tls-check-enabled">
+                <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+                <span class="text-sm">TLS Check</span>
+              </label>
+            </div>
+
+            <div class="flex items-center gap-3 mt-4">
+              <button type="button" id="minitools-save-btn" class="btn-primary">Save MiniTool Settings</button>
+              <p id="minitools-result" class="text-sm hidden"></p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Reporter Tool Settings Tab -->
       <div id="reporter-tool-settings-tab" class="hidden admin-page-stack">
         <div class="admin-stat-grid admin-stat-grid-4">

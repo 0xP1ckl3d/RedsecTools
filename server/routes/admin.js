@@ -2,6 +2,7 @@ const express = require("express");
 const { Router } = express;
 const rateLimit = require("express-rate-limit");
 const crypto = require("crypto");
+const http = require("http");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
@@ -46,6 +47,8 @@ const { logEvent, redactObject } = require("../core/logger");
 const { parseInteger } = require("../core/validation");
 const { getFeatureFlag, listFeatureFlags } = require("../core/config/feature-flags");
 const { createPlainApiToken, hashApiToken, tokenDisplayPrefix } = require("../middleware/service-auth");
+const { SERVICE_ACCOUNT_SCOPES, isValidServiceAccountScope } = require("../core/integrations/service-account-scopes");
+const { PERMISSION_DEFINITIONS } = require("../access");
 const { assertPublicHttpUrl } = require("../core/security/fetch-targets");
 const { deliverPendingWebhooks, enqueueWebhookEvent } = require("../core/integrations/webhooks");
 const samlAuth = require("../core/auth/saml");
@@ -58,12 +61,6 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const SITE_PRIMARY_THEMES = new Set(["red", "green", "blue", "orange", "purple"]);
 const ADMIN_REAUTH_WINDOW_SECONDS = 15 * 60;
 const SSO_PROVIDERS = new Set(["none", "saml"]);
-const SERVICE_ACCOUNT_SCOPES = Object.freeze([
-  "audit.read",
-  "deployment.read",
-  "threat.read",
-  "webhooks.manage",
-]);
 const WEBHOOK_EVENTS = Object.freeze([
   "*",
   "service_account.created",
@@ -502,8 +499,23 @@ router.get("/openapi", requireAdmin, requireOpenApiPublished, (req, res) => {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>RedSecTools API Docs</title>
   <link rel="stylesheet" href="/admin/openapi/assets/swagger-ui.css">
+  <link rel="stylesheet" href="/admin/openapi/controls.css">
 </head>
 <body>
+  <section class="redsec-swagger-auth-panel" aria-label="Swagger request authentication controls">
+    <div class="redsec-swagger-auth-copy">
+      <h1>RedSecTools API Docs</h1>
+      <p>Requests are sent through an admin-only test proxy so Swagger can test current browser cookies, no cookies, or Swagger Authorize-only requests without changing the browser session.</p>
+    </div>
+    <label class="redsec-swagger-auth-field" for="swagger-cookie-mode">
+      <span>Cookie mode</span>
+      <select id="swagger-cookie-mode">
+        <option value="current">Use my current browser cookies</option>
+        <option value="none">Send no cookies</option>
+        <option value="authorize">Override cookies with Swagger Authorize</option>
+      </select>
+    </label>
+  </section>
   <div id="swagger-ui"></div>
   <script src="/admin/openapi/assets/swagger-ui-bundle.js"></script>
   <script src="/admin/openapi/assets/swagger-ui-standalone-preset.js"></script>
@@ -512,18 +524,136 @@ router.get("/openapi", requireAdmin, requireOpenApiPublished, (req, res) => {
 </html>`);
 });
 
+router.get("/openapi/controls.css", requireAdmin, requireOpenApiPublished, (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.type("text/css").send(`
+.redsec-swagger-auth-panel {
+  box-sizing: border-box;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  max-width: 1460px;
+  margin: 16px auto 0;
+  padding: 14px 20px;
+  border: 1px solid #d8dde7;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #3b4151;
+  font-family: sans-serif;
+}
+.redsec-swagger-auth-panel * {
+  box-sizing: border-box;
+}
+.redsec-swagger-auth-copy {
+  min-width: 0;
+}
+.redsec-swagger-auth-copy h1 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.redsec-swagger-auth-copy p {
+  max-width: 900px;
+  margin: 0;
+  color: #59636e;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.redsec-swagger-auth-field {
+  display: grid;
+  flex: 0 0 min(460px, 100%);
+  gap: 6px;
+  color: #3b4151;
+  font-size: 12px;
+  font-weight: 700;
+}
+.redsec-swagger-auth-field select {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 32px 0 10px;
+  border: 1px solid #d8dde7;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #3b4151;
+  font: 400 13px/1.4 sans-serif;
+}
+.redsec-swagger-auth-field select:focus {
+  outline: 2px solid #61affe;
+  outline-offset: 1px;
+}
+html.dark-mode .redsec-swagger-auth-panel {
+  border-color: #30363d;
+  background: #161b22;
+  color: #f0f6fc;
+}
+html.dark-mode .redsec-swagger-auth-copy p {
+  color: #8b949e;
+}
+html.dark-mode .redsec-swagger-auth-field,
+html.dark-mode .redsec-swagger-auth-field select {
+  color: #f0f6fc;
+}
+html.dark-mode .redsec-swagger-auth-field select {
+  border-color: #30363d;
+  background: #0d1117;
+}
+@media (max-width: 760px) {
+  .redsec-swagger-auth-panel {
+    align-items: stretch;
+    flex-direction: column;
+    margin: 8px;
+  }
+  .redsec-swagger-auth-field {
+    flex-basis: auto;
+  }
+}`);
+});
+
 router.get("/openapi/init.js", requireAdmin, requireOpenApiPublished, (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   res.type("application/javascript").send(`(() => {
   const target = document.getElementById("swagger-ui");
   if (!target || typeof window.SwaggerUIBundle !== "function") return;
+  const cookieModeInput = document.getElementById("swagger-cookie-mode");
+
+  function isApiRequest(url) {
+    const parsed = new URL(url, window.location.origin);
+    return parsed.origin === window.location.origin
+      && (parsed.pathname.startsWith("/api/") || parsed.pathname.startsWith("/admin/api/"));
+  }
+
+  function bodyEnvelope(body) {
+    if (body === undefined || body === null) return { kind: "none", value: null };
+    if (typeof body === "string") return { kind: "text", value: body };
+    return { kind: "json", value: body };
+  }
+
   window.ui = window.SwaggerUIBundle({
     url: "/admin/api/openapi.json",
     dom_id: "#swagger-ui",
     deepLinking: true,
     persistAuthorization: false,
     requestInterceptor: (request) => {
+      if (!isApiRequest(request.url)) {
+        request.credentials = "same-origin";
+        return request;
+      }
+      const originalMethod = request.method || "GET";
+      const originalUrl = new URL(request.url, window.location.origin);
+      const originalHeaders = request.headers || {};
+      request.url = "/admin/openapi/proxy";
+      request.method = "POST";
       request.credentials = "same-origin";
+      request.headers = { "content-type": "application/json" };
+      request.body = JSON.stringify({
+        method: originalMethod,
+        target: originalUrl.pathname + originalUrl.search,
+        headers: originalHeaders,
+        body: bodyEnvelope(request.body),
+        cookieMode: cookieModeInput?.value || "current"
+      });
       return request;
     },
     presets: [
@@ -533,6 +663,119 @@ router.get("/openapi/init.js", requireAdmin, requireOpenApiPublished, (req, res)
     layout: "StandaloneLayout"
   });
 })();`);
+});
+
+const OPENAPI_PROXY_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
+const OPENAPI_PROXY_STRIPPED_HEADERS = new Set([
+  "connection",
+  "content-length",
+  "cookie",
+  "host",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "set-cookie",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+]);
+
+function cleanProxyHeaders(rawHeaders, { allowCookieHeader = false } = {}) {
+  const headers = {};
+  if (!rawHeaders || typeof rawHeaders !== "object" || Array.isArray(rawHeaders)) return headers;
+  for (const [name, value] of Object.entries(rawHeaders)) {
+    const lower = String(name || "").toLowerCase();
+    if (!lower || lower.startsWith("x-redsec-swagger")) continue;
+    if (OPENAPI_PROXY_STRIPPED_HEADERS.has(lower) && !(allowCookieHeader && lower === "cookie")) continue;
+    if (Array.isArray(value)) {
+      headers[lower] = value.map((item) => String(item)).join(", ");
+    } else if (value !== undefined && value !== null) {
+      headers[lower] = String(value);
+    }
+  }
+  return headers;
+}
+
+function getProxyBody(envelope) {
+  if (!envelope || envelope.kind === "none") return null;
+  if (envelope.kind === "json") return Buffer.from(JSON.stringify(envelope.value ?? null));
+  return Buffer.from(String(envelope.value ?? ""));
+}
+
+function cleanProxyTarget(target) {
+  const value = String(target || "");
+  if (!value.startsWith("/") || value.startsWith("//")) return null;
+  const parsed = new URL(value, "http://redsectools.local");
+  if (!parsed.pathname.startsWith("/api/") && !parsed.pathname.startsWith("/admin/api/")) return null;
+  return parsed.pathname + parsed.search;
+}
+
+function filterCurrentCookiesForProxy(cookieHeader, targetPath) {
+  const value = String(cookieHeader || "");
+  if (!value || targetPath.startsWith("/admin/")) return value;
+  return value
+    .split(";")
+    .map((part) => part.trim())
+    .filter((part) => part && !part.toLowerCase().startsWith("redsec_admin="))
+    .join("; ");
+}
+
+router.post("/openapi/proxy", requireAdmin, requireOpenApiPublished, (req, res) => {
+  const method = String(req.body?.method || "GET").toUpperCase();
+  const targetPath = cleanProxyTarget(req.body?.target);
+  const cookieMode = ["current", "none", "authorize"].includes(req.body?.cookieMode) ? req.body.cookieMode : "current";
+  if (!OPENAPI_PROXY_METHODS.has(method)) return res.status(400).json({ error: "Unsupported proxy method" });
+  if (!targetPath) return res.status(400).json({ error: "Unsupported proxy target" });
+
+  const headers = cleanProxyHeaders(req.body?.headers, { allowCookieHeader: cookieMode === "authorize" });
+  const body = getProxyBody(req.body?.body);
+  if (body) headers["content-length"] = String(body.length);
+  if (body && !headers["content-type"]) headers["content-type"] = "application/json";
+  if (cookieMode === "none") {
+    delete headers.authorization;
+    delete headers.cookie;
+  }
+  if (cookieMode === "current") {
+    const currentCookie = filterCurrentCookiesForProxy(req.get("cookie"), targetPath);
+    if (currentCookie) headers.cookie = currentCookie;
+  }
+
+  auditAdmin(req, {
+    category: "api",
+    action: "openapi_proxy_request",
+    targetType: "route",
+    targetId: targetPath.split("?")[0],
+    metadata: {
+      method,
+      cookieMode,
+      hasQuery: targetPath.includes("?"),
+      hasAuthorization: !!headers.authorization,
+    },
+  });
+
+  const proxyReq = http.request({
+    hostname: "127.0.0.1",
+    port: req.socket.localPort,
+    method,
+    path: targetPath,
+    headers,
+  }, (proxyRes) => {
+    const chunks = [];
+    proxyRes.on("data", (chunk) => chunks.push(chunk));
+    proxyRes.on("end", () => {
+      const responseHeaders = {};
+      for (const [name, value] of Object.entries(proxyRes.headers || {})) {
+        const lower = String(name).toLowerCase();
+        if (OPENAPI_PROXY_STRIPPED_HEADERS.has(lower)) continue;
+        responseHeaders[name] = value;
+      }
+      res.status(proxyRes.statusCode || 502).set(responseHeaders).send(Buffer.concat(chunks));
+    });
+  });
+  proxyReq.on("error", () => res.status(502).json({ error: "OpenAPI proxy request failed" }));
+  if (body) proxyReq.write(body);
+  proxyReq.end();
 });
 
 router.use(
@@ -558,8 +801,58 @@ function normalizeScopes(rawScopes) {
 }
 
 function validateScopes(scopes) {
-  const allowed = new Set(["*", ...SERVICE_ACCOUNT_SCOPES]);
-  return scopes.every((scope) => allowed.has(scope));
+  return scopes.every(isValidServiceAccountScope);
+}
+
+const SERVICE_ACCOUNT_SCOPE_DEFINITION_OVERRIDES = Object.freeze([
+  {
+    key: "*",
+    category: "Global",
+    label: "All Service Account Scopes",
+    description: "Allow this service account to satisfy every current and future service-account scope.",
+  },
+  {
+    key: "audit.read",
+    category: "Operational API",
+    label: "Audit Read",
+    description: "Read audit events and export audit datasets through API routes.",
+  },
+  {
+    key: "deployment.read",
+    category: "Operational API",
+    label: "Deployment Read",
+    description: "Read deployment quality and migration status through API routes.",
+  },
+  {
+    key: "webhooks.manage",
+    category: "Integrations",
+    label: "Manage Webhooks",
+    description: "Manage platform webhook endpoints, tests, secrets, and delivery history.",
+  },
+  {
+    key: "threat.read",
+    category: "Legacy Compatibility",
+    label: "Threat Read",
+    description: "Compatibility alias for threat.view used by earlier API clients.",
+  },
+]);
+
+function listServiceAccountScopeDefinitions() {
+  const definitionsByKey = new Map();
+  for (const definition of SERVICE_ACCOUNT_SCOPE_DEFINITION_OVERRIDES) {
+    definitionsByKey.set(definition.key, definition);
+  }
+  for (const definition of PERMISSION_DEFINITIONS) {
+    if (SERVICE_ACCOUNT_SCOPES.includes(definition.key) && !definitionsByKey.has(definition.key)) {
+      definitionsByKey.set(definition.key, definition);
+    }
+  }
+  return ["*", ...SERVICE_ACCOUNT_SCOPES].map((scope) => definitionsByKey.get(scope) || {
+    key: scope,
+    category: "Other",
+    label: scope,
+    description: "",
+  });
 }
 
 function serviceAccountsAvailable(res) {
@@ -569,7 +862,10 @@ function serviceAccountsAvailable(res) {
 }
 
 router.get("/api/service-accounts/scopes", requireAdmin, (req, res) => {
-  res.json({ scopes: SERVICE_ACCOUNT_SCOPES });
+  res.json({
+    scopes: ["*", ...SERVICE_ACCOUNT_SCOPES],
+    scopeDefinitions: listServiceAccountScopeDefinitions(),
+  });
 });
 
 router.get("/api/service-accounts", requireAdmin, (req, res) => {
@@ -1035,6 +1331,89 @@ router.post("/api/settings/redsecai", requireAdmin, requireRecentAdminAuth, (req
     },
   });
 
+  res.json({ success: true });
+});
+
+// GET /admin/api/settings/securitytrails
+router.get("/api/settings/securitytrails", requireAdmin, (req, res) => {
+  const apiKey = getSetting("securitytrails_api_key") || "";
+  const dailyLimit = parseInt(getSetting("securitytrails_daily_limit"), 10) || 50;
+  res.json({
+    apiKeyConfigured: apiKey.length > 0,
+    apiKeyPreview: apiKey.length > 0 ? apiKey.slice(0, 4) + "..." + apiKey.slice(-4) : "",
+    dailyLimit,
+  });
+});
+
+// POST /admin/api/settings/securitytrails
+router.post("/api/settings/securitytrails", requireAdmin, requireRecentAdminAuth, (req, res) => {
+  const apiKey = String(req.body?.apiKey || "").trim();
+  const dailyLimit = parseInt(req.body?.dailyLimit, 10);
+
+  if (apiKey && (apiKey.length < 8 || apiKey.length > 256)) {
+    return res.status(400).json({ error: "API key must be between 8 and 256 characters" });
+  }
+  if (!Number.isInteger(dailyLimit) || dailyLimit < 1 || dailyLimit > 10000) {
+    return res.status(400).json({ error: "Daily limit must be between 1 and 10000" });
+  }
+
+  setSetting("securitytrails_api_key", apiKey);
+  setSetting("securitytrails_daily_limit", String(dailyLimit));
+
+  auditAdmin(req, {
+    category: "settings",
+    action: "securitytrails_update",
+    targetType: "securitytrails_settings",
+    metadata: { apiKeyConfigured: apiKey.length > 0, dailyLimit },
+  });
+
+  res.json({ success: true });
+});
+
+// GET /admin/api/settings/minitools
+router.get("/api/settings/minitools", requireAdmin, (req, res) => {
+  const parseEnabled = (key) => {
+    const val = getSetting(key);
+    if (val === "false") return false;
+    return true;
+  };
+  res.json({
+    cvss: parseEnabled("minitool_cvss_enabled"),
+    breach: parseEnabled("minitool_breach_enabled"),
+    azure: parseEnabled("minitool_azure_enabled"),
+    securitytrails: parseEnabled("minitool_securitytrails_enabled"),
+    securityHeaders: parseEnabled("minitool_security_headers_enabled"),
+    tlsCheck: parseEnabled("minitool_tls_check_enabled"),
+  });
+});
+
+// POST /admin/api/settings/minitools
+router.post("/api/settings/minitools", requireAdmin, requireRecentAdminAuth, (req, res) => {
+  const { cvssEnabled, breachEnabled, azureEnabled, securitytrailsEnabled, securityHeadersEnabled, tlsCheckEnabled } = req.body || {};
+  if (cvssEnabled !== undefined) {
+    setSetting("minitool_cvss_enabled", cvssEnabled ? "true" : "false");
+  }
+  if (breachEnabled !== undefined) {
+    setSetting("minitool_breach_enabled", breachEnabled ? "true" : "false");
+  }
+  if (azureEnabled !== undefined) {
+    setSetting("minitool_azure_enabled", azureEnabled ? "true" : "false");
+  }
+  if (securitytrailsEnabled !== undefined) {
+    setSetting("minitool_securitytrails_enabled", securitytrailsEnabled ? "true" : "false");
+  }
+  if (securityHeadersEnabled !== undefined) {
+    setSetting("minitool_security_headers_enabled", securityHeadersEnabled ? "true" : "false");
+  }
+  if (tlsCheckEnabled !== undefined) {
+    setSetting("minitool_tls_check_enabled", tlsCheckEnabled ? "true" : "false");
+  }
+  auditAdmin(req, {
+    category: "settings",
+    action: "minitools_update",
+    targetType: "minitools_settings",
+    metadata: { cvssEnabled, breachEnabled, azureEnabled, securitytrailsEnabled, securityHeadersEnabled, tlsCheckEnabled },
+  });
   res.json({ success: true });
 });
 

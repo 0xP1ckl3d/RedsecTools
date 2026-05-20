@@ -26,6 +26,7 @@ const redsecAiRouter = require("./routes/redsecai");
 const notificationRouter = require("./routes/notifications");
 const engageRouter = require("./routes/engage");
 const integrationsRouter = require("./routes/integrations");
+const minitoolsRouter = require("./routes/minitools");
 const { runBulletinAutoPurge } = require("./bulletin-service");
 const { startFeedFetchInterval, seedDefaults: seedThreatDefaults } = require("./threat-feed-service");
 const { initWebSocket } = require("./chat-ws");
@@ -181,6 +182,7 @@ const protectedStaticPageRoutes = new Map([
   ["/reporter/index.html", runPageMiddlewares([pageRequireUser, pageRequireAnyPermission(["reporter.view", "reporter.create", "reporter.edit_own", "reporter.edit_assigned", "reporter.review", "reporter.approve", "reporter.manage_templates", "reporter.manage_all"])])],
   ["/ai/index.html", runPageMiddlewares([pageRequireUser, pageRequireRedSecAiEnabled])],
   ["/engage/index.html", runPageMiddlewares([pageRequireUser, pageRequireAnyPermission(["engage.view_own", "engage.view_team", "engage.view_all", "engage.manage_all"])])],
+  ["/minitools/index.html", runPageMiddlewares([pageRequireUser, pageRequireAnyPermission(["minitools.view"])])],
 ]);
 
 app.use((req, res, next) => {
@@ -258,6 +260,7 @@ app.use("/api", redsecAiRouter);
 app.use("/api", notificationRouter);
 app.use("/api", engageRouter);
 app.use("/api", integrationsRouter);
+app.use("/api", minitoolsRouter);
 app.use("/api/ext", extensionRouter);
 app.use("/api/homepage", homepageRouter);
 app.use("/api/homepage", homepageDashboardRouter);
@@ -291,6 +294,7 @@ app.get("/threat", pageRequireUser, pageRequireAnyPermission(["threat.view", "th
 app.get("/reporter", pageRequireUser, pageRequireAnyPermission(["reporter.view", "reporter.create", "reporter.edit_own", "reporter.edit_assigned", "reporter.review", "reporter.approve", "reporter.manage_templates", "reporter.manage_all"]), (req, res) => res.sendFile(page("reporter/index.html")));
 app.get(["/ai", "/ai/"], pageRequireUser, pageRequireRedSecAiEnabled, (req, res) => res.sendFile(page("ai/index.html")));
 app.get("/engage", pageRequireUser, pageRequireAnyPermission(["engage.view_own", "engage.view_team", "engage.view_all", "engage.manage_all"]), (req, res) => res.sendFile(page("engage/index.html")));
+app.get("/minitools", pageRequireUser, pageRequireAnyPermission(["minitools.view"]), (req, res) => res.sendFile(page("minitools/index.html")));
 app.get("/admin", (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   res.sendFile(page("admin.html"));
