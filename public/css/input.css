@@ -8764,14 +8764,61 @@ html.light[data-primary-theme="purple"] {
 }
 .cyberchef-step {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.25rem 0.375rem;
+  flex-direction: column;
+  gap: 0.25rem;
   padding: 0.375rem 0.5rem;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
+  background: color-mix(in srgb, #22c55e 10%, var(--bg-elevated));
+  border: 1px solid color-mix(in srgb, #22c55e 25%, var(--border));
   border-radius: 0.375rem;
   margin-bottom: 0.375rem;
+  cursor: grab;
+  transition: background 0.2s, border-color 0.2s, opacity 0.15s, box-shadow 0.15s;
+}
+.cyberchef-step-header {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+}
+.cyberchef-step-args {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.375rem;
+}
+.cyberchef-step-name {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  flex: 1 1 0;
+  min-width: 0;
+}
+.cyberchef-step.cyberchef-step-disabled {
+  background: color-mix(in srgb, #f97316 10%, var(--bg-elevated));
+  border-color: color-mix(in srgb, #f97316 25%, var(--border));
+}
+.cyberchef-step.cyberchef-step-disabled .cyberchef-step-name {
+  text-decoration: line-through;
+}
+.cyberchef-step.cyberchef-drag-over {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.cyberchef-step.cyberchef-dragging {
+  opacity: 0.35;
+}
+.cyberchef-step-toggle {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.125rem 0.25rem;
+  user-select: none;
+  flex-shrink: 0;
+}
+.cyberchef-step-toggle:hover {
+  color: var(--accent);
+}
+.cyberchef-step-toggle.cyberchef-step-toggle-off {
+  color: var(--text-muted);
+  opacity: 0.5;
 }
 .cyberchef-step-num {
   font-size: 0.625rem;
@@ -8779,13 +8826,8 @@ html.light[data-primary-theme="purple"] {
   color: var(--text-muted);
   min-width: 1.25rem;
 }
-.cyberchef-step-name {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-.cyberchef-step input,
-.cyberchef-step select {
+.cyberchef-step-args input,
+.cyberchef-step-args select {
   font-size: 0.6875rem;
   padding: 0.125rem 0.375rem;
   background: var(--bg-input);
@@ -8797,10 +8839,9 @@ html.light[data-primary-theme="purple"] {
   max-width: 100%;
 }
 .cyberchef-step-remove {
-  font-size: 0.875rem;
+  font-size: 1rem;
   color: var(--text-muted);
   cursor: pointer;
-  margin-left: auto;
   flex-shrink: 0;
 }
 .cyberchef-step-remove:hover {

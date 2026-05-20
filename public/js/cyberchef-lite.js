@@ -99,6 +99,134 @@ async function shaHash(algo, input) {
   return bytesToHex(new Uint8Array(hash));
 }
 
+// --- CRC32 (ISO 3309 / ITU-T V.42) ---
+const CRC32_TABLE = new Uint32Array(256);
+for (let i = 0; i < 256; i++) {
+  let c = i;
+  for (let j = 0; j < 8; j++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+  CRC32_TABLE[i] = c;
+}
+function crc32(input) {
+  const bytes = textToBytes(input);
+  let crc = 0xFFFFFFFF;
+  for (const b of bytes) crc = CRC32_TABLE[(crc ^ b) & 0xFF] ^ (crc >>> 8);
+  return ((crc ^ 0xFFFFFFFF) >>> 0).toString(16).padStart(8, "0").toUpperCase();
+}
+
+// --- Shannon entropy ---
+function shannonEntropy(input) {
+  const bytes = textToBytes(input);
+  if (!bytes.length) return "0";
+  const freq = new Float64Array(256);
+  for (const b of bytes) freq[b]++;
+  let entropy = 0;
+  for (let i = 0; i < 256; i++) {
+    if (freq[i] === 0) continue;
+    const p = freq[i] / bytes.length;
+    entropy -= p * Math.log2(p);
+  }
+  const pct = ((entropy / 8) * 100).toFixed(1);
+  let rating = "Low";
+  if (entropy >= 7.5) rating = "Very High (encrypted/compressed)";
+  else if (entropy >= 6) rating = "High";
+  else if (entropy >= 4) rating = "Moderate";
+  return `${entropy.toFixed(4)} bits/byte (${pct}%)\nRating: ${rating}\nSize: ${bytes.length} bytes`;
+}
+
+// --- RC4 stream cipher ---
+function rc4(input, key) {
+  const keyBytes = textToBytes(key);
+  if (!keyBytes.length) throw new Error("RC4 key is required");
+  const S = new Uint8Array(256);
+  for (let i = 0; i < 256; i++) S[i] = i;
+  let j = 0;
+  for (let i = 0; i < 256; i++) { j = (j + S[i] + keyBytes[i % keyBytes.length]) & 0xFF; [S[i], S[j]] = [S[j], S[i]]; }
+  const inputBytes = textToBytes(input);
+  const out = new Uint8Array(inputBytes.length);
+  let si = 0, sj = 0;
+  for (let n = 0; n < inputBytes.length; n++) {
+    si = (si + 1) & 0xFF; sj = (sj + S[si]) & 0xFF; [S[si], S[sj]] = [S[sj], S[si]];
+    out[n] = inputBytes[n] ^ S[(S[si] + S[sj]) & 0xFF];
+  }
+  return new TextDecoder().decode(out);
+}
+
+// --- AES encrypt/decrypt (Web Crypto API) ---
+async function aesOp(input, keyHex, ivHex, mode, encrypt) {
+  const keyBytes = hexToBytes(keyHex);
+  if (![16, 24, 32].includes(keyBytes.length)) throw new Error("Key must be 16, 24, or 32 bytes (AES-128/192/256)");
+  const ivBytes = ivHex ? hexToBytes(ivHex) : new Uint8Array(mode === "GCM" ? 12 : 16);
+  const inputBytes = textToBytes(input);
+  const algoName = mode === "CTR" ? "AES-CTR" : mode === "GCM" ? "AES-GCM" : `AES-${mode}`;
+  const algoParams = mode === "CTR"
+    ? { name: "AES-CTR", counter: ivBytes, length: 64 }
+    : { name: algoName, iv: ivBytes };
+  const cryptoKey = await crypto.subtle.importKey("raw", keyBytes, { name: algoName }, false, [encrypt ? "encrypt" : "decrypt"]);
+  const result = encrypt
+    ? await crypto.subtle.encrypt(algoParams, cryptoKey, inputBytes)
+    : await crypto.subtle.decrypt(algoParams, cryptoKey, inputBytes);
+  return bytesToHex(new Uint8Array(result));
+}
+
+// --- Magic autodetect ---
+function magicDetect(input) {
+  const findings = [];
+  const trimmed = input.trim();
+
+  // Base64 detection
+  if (/^[A-Za-z0-9+/\r\n]+=*$/m.test(trimmed) && trimmed.length > 4 && trimmed.length % 4 <= 1) {
+    try { const d = atob(trimmed.replace(/\s/g, "")); if (d.length > 0) findings.push("Base64 — try Base64 Decode"); } catch {}
+  }
+  if (/^[A-Za-z0-9_-]+$/m.test(trimmed) && trimmed.length > 8) {
+    try { const pad = trimmed.length % 4; const p = pad ? "=".repeat(4 - pad) : ""; const d = atob((trimmed + p).replace(/-/g, "+").replace(/_/g, "/")); if (d.length > 0) findings.push("Base64URL — try Base64 Decode with URL-safe alphabet"); } catch {}
+  }
+  // Hex detection
+  if (/^(0x)?[0-9a-fA-F\s:]+$/.test(trimmed) && trimmed.replace(/[\s:0x]/g, "").length % 2 === 0 && trimmed.replace(/[\s:0x]/g, "").length >= 4) {
+    findings.push("Hex — try From Hex");
+  }
+  // URL encoding
+  if (/%[0-9A-Fa-f]{2}/.test(trimmed)) findings.push("URL encoded — try URL Decode");
+  // HTML entities
+  if (/&#[0-9]+;|&[a-zA-Z]+;/.test(trimmed)) findings.push("HTML entities — try HTML Decode");
+  // JWT
+  if (/^eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(trimmed)) findings.push("JWT — try JWT Decode");
+  // Hash identification
+  const hexOnly = trimmed.replace(/[\s:]/g, "").toLowerCase();
+  if (/^[0-9a-f]+$/.test(hexOnly)) {
+    if (hexOnly.length === 32) findings.push("MD5 hash (32 hex chars)");
+    if (hexOnly.length === 40) findings.push("SHA-1 hash (40 hex chars)");
+    if (hexOnly.length === 56) findings.push("SHA-224 or SHA3-224 (56 hex chars)");
+    if (hexOnly.length === 64) findings.push("SHA-256 or SHA3-256 (64 hex chars)");
+    if (hexOnly.length === 96) findings.push("SHA-384 or SHA3-384 (96 hex chars)");
+    if (hexOnly.length === 128) findings.push("SHA-512 or SHA3-512 (128 hex chars)");
+  }
+  // JSON
+  if (/^\s*[\[{]/.test(trimmed)) {
+    try { JSON.parse(trimmed); findings.push("JSON — try JSON Pretty Print"); } catch {}
+  }
+  // Defanged IOCs
+  if (/\[\.\]|\[@\]/.test(trimmed)) findings.push("Defanged — try Fang (Refang)");
+  // ROT13
+  const rotTest = trimmed.replace(/[a-zA-Z]/g, (c) => { const b = c <= "Z" ? 65 : 97; return String.fromCharCode((c.charCodeAt(0) - b + 13) % 26 + b); });
+  if (/[a-zA-Z]/.test(trimmed) && rotTest !== trimmed && /[a-zA-Z]{4,}/.test(rotTest)) findings.push("Possibly ROT13 encoded");
+  // Binary
+  if (/^[01\s]+$/.test(trimmed) && trimmed.replace(/\s/g, "").length % 8 === 0) findings.push("Binary — convert from binary");
+  // Decimal numbers
+  if (/^\d[\d\s]+$/.test(trimmed) && trimmed.length > 3) findings.push("Decimal — may be decimal-encoded bytes");
+
+  if (!findings.length) return "No patterns detected. Try manual operation selection.";
+  return findings.map((f, i) => `${i + 1}. ${f}`).join("\n");
+}
+
+// Parse key from various formats into hex
+function parseKeyToHex(keyStr, format) {
+  if (!keyStr) return "";
+  const f = (format || "utf8").toLowerCase();
+  if (f === "hex") { const h = keyStr.replace(/[\s:]/g, ""); if (!/^[0-9a-f]*$/i.test(h)) throw new Error("Invalid hex key"); return h; }
+  if (f === "base64") { const bytes = Uint8Array.from(atob(keyStr), (c) => c.charCodeAt(0)); return bytesToHex(bytes); }
+  return bytesToHex(textToBytes(keyStr));
+}
+
 // --- Operation definitions ---
 
 const OPERATIONS = [
@@ -106,13 +234,38 @@ const OPERATIONS = [
   { id: "base64-encode", name: "Base64 Encode", cat: "Encode/Decode",
     run: async (input) => btoa(unescape(encodeURIComponent(input))) },
   { id: "base64-decode", name: "Base64 Decode", cat: "Encode/Decode",
-    run: async (input) => decodeURIComponent(escape(atob(input.replace(/\s/g, "")))) },
+    args: [{ id: "alphabet", label: "Alphabet", type: "select", options: ["standard", "url-safe"], default: "standard" }],
+    run: async (input, args) => {
+      const clean = input.replace(/\s/g, "");
+      if (args.alphabet === "url-safe") {
+        const std = clean.replace(/-/g, "+").replace(/_/g, "/");
+        const pad = std.length % 4;
+        return decodeURIComponent(escape(atob(pad ? std + "=".repeat(4 - pad) : std)));
+      }
+      return decodeURIComponent(escape(atob(clean)));
+    } },
+  { id: "base64url-encode", name: "Base64 URL-safe Encode", cat: "Encode/Decode",
+    run: async (input) => btoa(unescape(encodeURIComponent(input))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "") },
+  { id: "base64url-decode", name: "Base64 URL-safe Decode", cat: "Encode/Decode",
+    run: async (input) => {
+      const std = input.replace(/-/g, "+").replace(/_/g, "/");
+      const pad = std.length % 4;
+      return decodeURIComponent(escape(atob(pad ? std + "=".repeat(4 - pad) : std)));
+    } },
   { id: "base32-encode", name: "Base32 Encode", cat: "Encode/Decode",
     run: async (input) => base32Encode(input) },
   { id: "base32-decode", name: "Base32 Decode", cat: "Encode/Decode",
     run: async (input) => base32Decode(input) },
   { id: "hex-encode", name: "To Hex", cat: "Encode/Decode",
-    run: async (input) => bytesToHex(textToBytes(input)) },
+    args: [{ id: "delimiter", label: "Delimiter", type: "select", options: ["none", "space", "colon", "0x"], default: "none" }],
+    run: async (input, args) => {
+      const hex = bytesToHex(textToBytes(input));
+      const d = args.delimiter || "none";
+      if (d === "space") return hex.match(/.{2}/g).join(" ");
+      if (d === "colon") return hex.match(/.{2}/g).join(":");
+      if (d === "0x") return hex.match(/.{2}/g).map(b => "0x" + b).join(" ");
+      return hex;
+    } },
   { id: "hex-decode", name: "From Hex", cat: "Encode/Decode",
     run: async (input) => new TextDecoder().decode(hexToBytes(input)) },
   { id: "url-encode", name: "URL Encode", cat: "Encode/Decode",
@@ -135,12 +288,22 @@ const OPERATIONS = [
     run: async (input) => shaHash("SHA-384", input) },
   { id: "sha512", name: "SHA-512", cat: "Hashing",
     run: async (input) => shaHash("SHA-512", input) },
-  { id: "hmac-sha256", name: "HMAC-SHA256", cat: "Hashing",
-    args: [{ id: "key", label: "Key", type: "text", default: "" }],
+  { id: "crc32", name: "CRC32", cat: "Hashing",
+    run: async (input) => crc32(input) },
+  { id: "entropy", name: "Entropy", cat: "Hashing",
+    run: async (input) => shannonEntropy(input) },
+  { id: "hmac", name: "HMAC", cat: "Hashing",
+    args: [
+      { id: "key", label: "Key", type: "text", default: "" },
+      { id: "hash", label: "Hash", type: "select", options: ["SHA-1", "SHA-256", "SHA-384", "SHA-512"], default: "SHA-256" },
+      { id: "outputFormat", label: "Output", type: "select", options: ["hex", "base64"], default: "hex" }
+    ],
     run: async (input, args) => {
-      const key = await crypto.subtle.importKey("raw", textToBytes(args.key || ""), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+      const hashAlgo = args.hash || "SHA-256";
+      const key = await crypto.subtle.importKey("raw", textToBytes(args.key || ""), { name: "HMAC", hash: hashAlgo }, false, ["sign"]);
       const sig = await crypto.subtle.sign("HMAC", key, textToBytes(input));
-      return bytesToHex(new Uint8Array(sig));
+      const bytes = new Uint8Array(sig);
+      return args.outputFormat === "base64" ? btoa(String.fromCharCode(...bytes)) : bytesToHex(bytes);
     } },
 
   // Ciphers
@@ -150,23 +313,31 @@ const OPERATIONS = [
       return String.fromCharCode((c.charCodeAt(0) - base + 13) % 26 + base);
     }) },
   { id: "xor", name: "XOR", cat: "Ciphers",
-    args: [{ id: "key", label: "Key", type: "text", default: "secret" }],
+    args: [
+      { id: "key", label: "Key", type: "text", default: "secret" },
+      { id: "keyFormat", label: "Key format", type: "select", options: ["utf8", "hex", "base64"], default: "utf8" },
+      { id: "outputFormat", label: "Output", type: "select", options: ["hex", "base64"], default: "hex" }
+    ],
     run: async (input, args) => {
-      const key = args.key || "secret";
-      if (!key) throw new Error("XOR key is required");
+      const keyHex = parseKeyToHex(args.key, args.keyFormat || "utf8");
+      if (!keyHex) throw new Error("XOR key is required");
+      const keyBytes = hexToBytes(keyHex);
       const inputBytes = textToBytes(input);
-      const keyBytes = textToBytes(key);
       const out = new Uint8Array(inputBytes.length);
       for (let i = 0; i < inputBytes.length; i++) out[i] = inputBytes[i] ^ keyBytes[i % keyBytes.length];
-      return bytesToHex(out);
+      return args.outputFormat === "base64" ? btoa(String.fromCharCode(...out)) : bytesToHex(out);
     } },
   { id: "xor-decode", name: "XOR Decode", cat: "Ciphers",
-    args: [{ id: "key", label: "Key", type: "text", default: "secret" }, { id: "inputFormat", label: "Input format", type: "select", options: ["hex", "base64"], default: "hex" }],
+    args: [
+      { id: "key", label: "Key", type: "text", default: "secret" },
+      { id: "keyFormat", label: "Key format", type: "select", options: ["utf8", "hex", "base64"], default: "utf8" },
+      { id: "inputFormat", label: "Input format", type: "select", options: ["hex", "base64"], default: "hex" }
+    ],
     run: async (input, args) => {
-      const key = args.key || "secret";
-      if (!key) throw new Error("XOR key is required");
+      const keyHex = parseKeyToHex(args.key, args.keyFormat || "utf8");
+      if (!keyHex) throw new Error("XOR key is required");
+      const keyBytes = hexToBytes(keyHex);
       const inputBytes = args.inputFormat === "base64" ? Uint8Array.from(atob(input.trim()), (c) => c.charCodeAt(0)) : hexToBytes(input);
-      const keyBytes = textToBytes(key);
       const out = new Uint8Array(inputBytes.length);
       for (let i = 0; i < inputBytes.length; i++) out[i] = inputBytes[i] ^ keyBytes[i % keyBytes.length];
       return new TextDecoder().decode(out);
@@ -182,6 +353,42 @@ const OPERATIONS = [
     } },
   { id: "reverse", name: "Reverse", cat: "Ciphers",
     run: async (input) => input.split("").reverse().join("") },
+  { id: "aes-encrypt", name: "AES Encrypt", cat: "Ciphers",
+    args: [
+      { id: "key", label: "Key (hex)", type: "text", default: "" },
+      { id: "iv", label: "IV (hex)", type: "text", default: "" },
+      { id: "mode", label: "Mode", type: "select", options: ["CBC", "CTR", "GCM"], default: "CBC" }
+    ],
+    run: async (input, args) => aesOp(input, args.key, args.iv, args.mode || "CBC", true) },
+  { id: "aes-decrypt", name: "AES Decrypt", cat: "Ciphers",
+    args: [
+      { id: "key", label: "Key (hex)", type: "text", default: "" },
+      { id: "iv", label: "IV (hex)", type: "text", default: "" },
+      { id: "mode", label: "Mode", type: "select", options: ["CBC", "CTR", "GCM"], default: "CBC" }
+    ],
+    run: async (input, args) => {
+      const keyBytes = hexToBytes(args.key);
+      if (![16, 24, 32].includes(keyBytes.length)) throw new Error("Key must be 16, 24, or 32 bytes (AES-128/192/256)");
+      const mode = args.mode || "CBC";
+      const ivBytes = args.iv ? hexToBytes(args.iv) : new Uint8Array(mode === "GCM" ? 12 : 16);
+      const inputBytes = hexToBytes(input.trim());
+      const algoName = mode === "CTR" ? "AES-CTR" : mode === "GCM" ? "AES-GCM" : `AES-${mode}`;
+      const algoParams = mode === "CTR"
+        ? { name: "AES-CTR", counter: ivBytes, length: 64 }
+        : { name: algoName, iv: ivBytes };
+      const cryptoKey = await crypto.subtle.importKey("raw", keyBytes, { name: algoName }, false, ["decrypt"]);
+      const result = await crypto.subtle.decrypt(algoParams, cryptoKey, inputBytes);
+      return new TextDecoder().decode(new Uint8Array(result));
+    } },
+  { id: "rc4", name: "RC4", cat: "Ciphers",
+    args: [{ id: "key", label: "Key", type: "text", default: "" }],
+    run: async (input, args) => {
+      const result = rc4(input, args.key);
+      return bytesToHex(textToBytes(result));
+    } },
+  { id: "rc4-decode", name: "RC4 Decode", cat: "Ciphers",
+    args: [{ id: "key", label: "Key", type: "text", default: "" }],
+    run: async (input, args) => rc4(new TextDecoder().decode(hexToBytes(input.trim())), args.key) },
 
   // Data Format
   { id: "json-pretty", name: "JSON Pretty Print", cat: "Data Format",
@@ -194,12 +401,22 @@ const OPERATIONS = [
       if (parts.length < 2) throw new Error("Invalid JWT format");
       const header = JSON.parse(atob(parts[0].replace(/-/g, "+").replace(/_/g, "/")));
       const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
-      return JSON.stringify({ header, payload }, null, 2);
+      const result = { header, payload };
+      if (payload.exp) {
+        const expDate = new Date(payload.exp * 1000);
+        result.expired = Date.now() > payload.exp * 1000;
+        result.expiresAt = expDate.toISOString();
+      }
+      if (payload.iat) result.issuedAt = new Date(payload.iat * 1000).toISOString();
+      if (payload.nbf) result.notBefore = new Date(payload.nbf * 1000).toISOString();
+      return JSON.stringify(result, null, 2);
     } },
   { id: "url-parse", name: "Parse URL", cat: "Data Format",
     run: async (input) => {
       const u = new URL(input.trim());
-      return JSON.stringify({ protocol: u.protocol, host: u.host, hostname: u.hostname, port: u.port || null, pathname: u.pathname, search: u.search || null, hash: u.hash || null, origin: u.origin }, null, 2);
+      const params = {};
+      u.searchParams.forEach((v, k) => { params[k] = params[k] ? (Array.isArray(params[k]) ? [...params[k], v] : [params[k], v]) : v; });
+      return JSON.stringify({ protocol: u.protocol, host: u.host, hostname: u.hostname, port: u.port || null, pathname: u.pathname, search: u.search || null, hash: u.hash || null, origin: u.origin, params: Object.keys(params).length ? params : null }, null, 2);
     } },
 
   // Defang / Fang
@@ -220,7 +437,25 @@ const OPERATIONS = [
   { id: "extract-domains", name: "Extract Domains", cat: "Extract",
     run: async (input) => { const m = input.match(/\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}\b/g); return m ? [...new Set(m)].join("\n") : "No domains found"; } },
   { id: "extract-hashes", name: "Extract Hashes", cat: "Extract",
-    run: async (input) => { const m = input.match(/\b[a-fA-F0-9]{32,64}\b/g); return m ? [...new Set(m)].join("\n") : "No hashes found"; } },
+    run: async (input) => {
+      const m = input.match(/\b[a-fA-F0-9]{32,128}\b/g);
+      if (!m) return "No hashes found";
+      return [...new Set(m)].map(h => {
+        const len = h.length;
+        let type = "Unknown";
+        if (len === 32) type = "MD5";
+        else if (len === 40) type = "SHA-1";
+        else if (len === 56) type = "SHA-224/SHA3-224";
+        else if (len === 64) type = "SHA-256/SHA3-256";
+        else if (len === 96) type = "SHA-384/SHA3-384";
+        else if (len === 128) type = "SHA-512/SHA3-512";
+        return `${h}  [${type}]`;
+      }).join("\n");
+    } },
+
+  // Analysis
+  { id: "magic", name: "Magic (Autodetect)", cat: "Analysis",
+    run: async (input) => magicDetect(input) },
 
   // Text
   { id: "uppercase", name: "Uppercase", cat: "Text",
@@ -242,14 +477,39 @@ const OPERATIONS = [
       return m.length ? m.map((match, i) => `${i + 1}. ${match[0]}${match[1] !== undefined ? " (groups: " + match.slice(1).join(", ") + ")" : ""}`).join("\n") : "No matches";
     } },
   { id: "find-replace", name: "Find / Replace", cat: "Text",
-    args: [{ id: "find", label: "Find", type: "text", default: "" }, { id: "replace", label: "Replace with", type: "text", default: "" }, { id: "isRegex", label: "Regex", type: "select", options: ["no", "yes"], default: "no" }],
+    args: [
+      { id: "find", label: "Find", type: "text", default: "" },
+      { id: "replace", label: "Replace with", type: "text", default: "" },
+      { id: "isRegex", label: "Regex", type: "select", options: ["no", "yes"], default: "no" },
+      { id: "caseSensitive", label: "Case sensitive", type: "select", options: ["yes", "no"], default: "yes" },
+      { id: "multiline", label: "Multiline", type: "select", options: ["no", "yes"], default: "no" }
+    ],
     run: async (input, args) => {
       if (!args.find) return input;
-      const re = args.isRegex === "yes" ? new RegExp(args.find, "g") : new RegExp(args.find.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g");
-      return input.replace(re, args.replace || "");
+      let flags = "g";
+      if (args.caseSensitive !== "yes") flags += "i";
+      if (args.multiline === "yes") flags += "m";
+      const pattern = args.isRegex === "yes" ? args.find : args.find.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return input.replace(new RegExp(pattern, flags), args.replace || "");
     } },
   { id: "sort-lines", name: "Sort Lines", cat: "Text",
-    run: async (input) => input.split("\n").sort().join("\n") },
+    args: [
+      { id: "order", label: "Order", type: "select", options: ["ascending", "descending"], default: "ascending" },
+      { id: "mode", label: "Mode", type: "select", options: ["alphabetical", "numeric", "length"], default: "alphabetical" }
+    ],
+    run: async (input, args) => {
+      const lines = input.split("\n");
+      const reverse = args.order === "descending";
+      const mode = args.mode || "alphabetical";
+      const sorted = lines.sort((a, b) => {
+        let cmp = 0;
+        if (mode === "numeric") cmp = parseFloat(a) - parseFloat(b);
+        else if (mode === "length") cmp = a.length - b.length;
+        else cmp = a.localeCompare(b);
+        return reverse ? -cmp : cmp;
+      });
+      return sorted.join("\n");
+    } },
   { id: "unique-lines", name: "Unique Lines", cat: "Text",
     run: async (input) => [...new Set(input.split("\n"))].join("\n") },
 ];
@@ -262,14 +522,17 @@ const CATEGORIES = [...new Set(OPERATIONS.map((op) => op.cat))];
 
 async function executeRecipe(input, recipe) {
   let current = input;
+  let stepNum = 0;
   for (let i = 0; i < recipe.length; i++) {
     const step = recipe[i];
+    if (step.disabled) continue;
+    stepNum++;
     const op = OP_MAP[step.opId];
     if (!op) throw new Error(`Unknown operation: ${step.opId}`);
     try {
       current = await op.run(current, step.args || {});
     } catch (e) {
-      throw new Error(`Step ${i + 1} (${op.name}) failed: ${e.message}`);
+      throw new Error(`Step ${stepNum} (${op.name}) failed: ${e.message}`);
     }
   }
   return current;
@@ -326,13 +589,16 @@ function initCyberChef() {
     }
     recipeEl.innerHTML = recipe.map((step, i) => {
       const op = OP_MAP[step.opId];
+      const disCls = step.disabled ? " cyberchef-step-disabled" : "";
+      const toggleIcon = step.disabled ? "▶" : "⏸";
+      const toggleCls = step.disabled ? "cyberchef-step-toggle cyberchef-step-toggle-off" : "cyberchef-step-toggle";
       const argsHtml = (op.args || []).map((arg) => {
         if (arg.type === "select") {
           return `<select data-step="${i}" data-arg="${escapeHtml(arg.id)}">${(arg.options || []).map((o) => `<option value="${escapeHtml(o)}" ${step.args[arg.id] === o ? "selected" : ""}>${escapeHtml(o)}</option>`).join("")}</select>`;
         }
         return `<input type="${arg.type}" data-step="${i}" data-arg="${escapeHtml(arg.id)}" value="${escapeHtml(String(step.args[arg.id] ?? arg.default ?? ""))}" placeholder="${escapeHtml(arg.label)}">`;
       }).join("");
-      return `<div class="cyberchef-step"><span class="cyberchef-step-num">${i + 1}.</span><span class="cyberchef-step-name">${escapeHtml(op.name)}</span>${argsHtml}<span class="cyberchef-step-remove" data-cyberchef-remove="${i}" title="Remove">&times;</span></div>`;
+      return `<div class="cyberchef-step${disCls}" draggable="true" data-cyberchef-step-idx="${i}"><div class="cyberchef-step-header"><span class="cyberchef-step-num">${i + 1}.</span><span class="cyberchef-step-name">${escapeHtml(op.name)}</span><span class="${toggleCls}" data-cyberchef-toggle="${i}" title="${step.disabled ? "Enable step" : "Disable step"}">${toggleIcon}</span><span class="cyberchef-step-remove" data-cyberchef-remove="${i}" title="Remove">&times;</span></div>${argsHtml ? `<div class="cyberchef-step-args">${argsHtml}</div>` : ""}</div>`;
     }).join("");
   }
 
@@ -382,9 +648,65 @@ function initCyberChef() {
   });
 
   recipeEl.addEventListener("click", (e) => {
-    const btn = e.target.closest("[data-cyberchef-remove]");
-    if (!btn) return;
-    recipe.splice(Number(btn.dataset.cyberchefRemove), 1);
+    const removeBtn = e.target.closest("[data-cyberchef-remove]");
+    if (removeBtn) {
+      recipe.splice(Number(removeBtn.dataset.cyberchefRemove), 1);
+      renderRecipe();
+      scheduleAutoBake();
+      return;
+    }
+    const toggleBtn = e.target.closest("[data-cyberchef-toggle]");
+    if (toggleBtn) {
+      const idx = Number(toggleBtn.dataset.cyberchefToggle);
+      recipe[idx].disabled = !recipe[idx].disabled;
+      renderRecipe();
+      scheduleAutoBake();
+    }
+  });
+
+  // --- Drag-and-drop reorder ---
+  let dragSrcIdx = null;
+
+  recipeEl.addEventListener("dragstart", (e) => {
+    const step = e.target.closest("[data-cyberchef-step-idx]");
+    if (!step) return;
+    dragSrcIdx = Number(step.dataset.cyberchefStepIdx);
+    step.classList.add("cyberchef-dragging");
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", String(dragSrcIdx));
+  });
+
+  recipeEl.addEventListener("dragend", (e) => {
+    const step = e.target.closest("[data-cyberchef-step-idx]");
+    if (step) step.classList.remove("cyberchef-dragging");
+    dragSrcIdx = null;
+    recipeEl.querySelectorAll(".cyberchef-drag-over").forEach(el => el.classList.remove("cyberchef-drag-over"));
+  });
+
+  recipeEl.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    const step = e.target.closest("[data-cyberchef-step-idx]");
+    recipeEl.querySelectorAll(".cyberchef-drag-over").forEach(el => el.classList.remove("cyberchef-drag-over"));
+    if (step && Number(step.dataset.cyberchefStepIdx) !== dragSrcIdx) {
+      step.classList.add("cyberchef-drag-over");
+    }
+  });
+
+  recipeEl.addEventListener("dragleave", (e) => {
+    const step = e.target.closest("[data-cyberchef-step-idx]");
+    if (step) step.classList.remove("cyberchef-drag-over");
+  });
+
+  recipeEl.addEventListener("drop", (e) => {
+    e.preventDefault();
+    recipeEl.querySelectorAll(".cyberchef-drag-over").forEach(el => el.classList.remove("cyberchef-drag-over"));
+    const targetStep = e.target.closest("[data-cyberchef-step-idx]");
+    if (!targetStep || dragSrcIdx === null) return;
+    const targetIdx = Number(targetStep.dataset.cyberchefStepIdx);
+    if (targetIdx === dragSrcIdx) return;
+    const [moved] = recipe.splice(dragSrcIdx, 1);
+    recipe.splice(targetIdx, 0, moved);
     renderRecipe();
     scheduleAutoBake();
   });
