@@ -1427,6 +1427,7 @@ router.get("/api/settings/minitools", requireAdmin, (req, res) => {
     securitytrails: parseEnabled("minitool_securitytrails_enabled"),
     securityHeaders: parseEnabled("minitool_security_headers_enabled"),
     tlsCheck: parseEnabled("minitool_tls_check_enabled"),
+    dnsLookup: parseEnabled("minitool_dns_lookup_enabled"),
     leakradar: parseEnabled("minitool_leakradar_enabled"),
     cyberchef: parseEnabled("minitool_cyberchef_enabled"),
   });
@@ -1434,7 +1435,7 @@ router.get("/api/settings/minitools", requireAdmin, (req, res) => {
 
 // POST /admin/api/settings/minitools
 router.post("/api/settings/minitools", requireAdmin, requireRecentAdminAuth, (req, res) => {
-  const { cvssEnabled, breachEnabled, azureEnabled, securitytrailsEnabled, securityHeadersEnabled, tlsCheckEnabled, leakradarEnabled, cyberchefEnabled } = req.body || {};
+  const { cvssEnabled, breachEnabled, azureEnabled, securitytrailsEnabled, securityHeadersEnabled, tlsCheckEnabled, dnsLookupEnabled, leakradarEnabled, cyberchefEnabled } = req.body || {};
   if (cvssEnabled !== undefined) {
     setSetting("minitool_cvss_enabled", cvssEnabled ? "true" : "false");
   }
@@ -1453,6 +1454,9 @@ router.post("/api/settings/minitools", requireAdmin, requireRecentAdminAuth, (re
   if (tlsCheckEnabled !== undefined) {
     setSetting("minitool_tls_check_enabled", tlsCheckEnabled ? "true" : "false");
   }
+  if (dnsLookupEnabled !== undefined) {
+    setSetting("minitool_dns_lookup_enabled", dnsLookupEnabled ? "true" : "false");
+  }
   if (leakradarEnabled !== undefined) {
     setSetting("minitool_leakradar_enabled", leakradarEnabled ? "true" : "false");
   }
@@ -1463,7 +1467,7 @@ router.post("/api/settings/minitools", requireAdmin, requireRecentAdminAuth, (re
     category: "settings",
     action: "minitools_update",
     targetType: "minitools_settings",
-    metadata: { cvssEnabled, breachEnabled, azureEnabled, securitytrailsEnabled, securityHeadersEnabled, tlsCheckEnabled, leakradarEnabled, cyberchefEnabled },
+    metadata: { cvssEnabled, breachEnabled, azureEnabled, securitytrailsEnabled, securityHeadersEnabled, tlsCheckEnabled, dnsLookupEnabled, leakradarEnabled, cyberchefEnabled },
   });
   res.json({ success: true });
 });

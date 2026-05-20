@@ -80,6 +80,19 @@ test("MiniTools TLS check route uses public target validation and shared analyze
   assert.ok(frontendSource.includes("initTlsCheck"), "Frontend must initialize the TLS Check tab");
 });
 
+test("MiniTools DNS Intelligence route uses registry-driven server-side execution", () => {
+  assert.match(source, /\/minitools\/dns-lookup/);
+  assert.ok(source.includes("runDnsMiniTool"), "DNS Intelligence must execute through the shared backend registry");
+  assert.ok(source.includes("publicToolRegistry"), "DNS Intelligence registry metadata must be exposed through bootstrap");
+  assert.ok(source.includes("minitool_dns_lookup_enabled"), "DNS Intelligence must support per-tool enablement");
+  assert.ok(source.includes("dns_lookup"), "DNS lookups must be audit logged");
+  assert.ok(frontendSource.includes("initDnsLookup"), "Frontend must initialize the DNS Intelligence tab");
+  assert.ok(frontendSource.includes("data-dns-option"), "Frontend must render dynamic advanced options");
+  assert.ok(frontendSource.includes("showDnsLookupInfo"), "Frontend must expose per-tool information");
+  assert.ok(frontendSource.includes('toolSelect.value = "security_dns_report"'), "Security DNS Report must be selected by default");
+  assert.ok(frontendSource.includes("renderDnsLookupGroupedChecks"), "Frontend must render grouped check results");
+});
+
 test("MiniTools LeakRadar routes keep the API key server-side and page at 100 records", () => {
   assert.match(source, /\/minitools\/leakradar\/search/);
   assert.match(source, /\/minitools\/leakradar\/unlock/);

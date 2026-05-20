@@ -24,6 +24,10 @@ const {
   filterLeakRadarItemsByDomain,
   sortLeakRadarItemsByMostRecent,
 } = require("../core/minitools/leakradar");
+const {
+  publicToolRegistry,
+  runDnsMiniTool,
+} = require("../core/minitools/dns-lookup");
 
 const router = Router();
 
@@ -101,6 +105,14 @@ const leakRadarUnlockLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 30,
   message: { error: "LeakRadar unlock rate limit reached. Try again later." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const dnsLookupLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 120,
+  message: { error: "DNS Intelligence rate limit reached. Try again later." },
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -205,6 +217,7 @@ router.get("/minitools/bootstrap", readLimiter, requireUser, attachUserAccess, c
     securitytrails: { enabled: isMinitoolEnabled("minitool_securitytrails_enabled") && apiKeyConfigured, apiKeyConfigured, dailyLimit, usedToday },
     securityHeaders: { enabled: isMinitoolEnabled("minitool_security_headers_enabled") },
     tlsCheck: { enabled: isMinitoolEnabled("minitool_tls_check_enabled") },
+    dnsLookup: { enabled: isMinitoolEnabled("minitool_dns_lookup_enabled"), tools: publicToolRegistry() },
     leakradar: { enabled: isMinitoolEnabled("minitool_leakradar_enabled") && leakRadarApiKeyConfigured, apiKeyConfigured: leakRadarApiKeyConfigured, pageSize: LEAKRADAR_PAGE_SIZE },
     cyberchef: { enabled: isMinitoolEnabled("minitool_cyberchef_enabled") },
   };
@@ -322,6 +335,30 @@ router.post("/minitools/tls-check/analyze", tlsCheckLimiter, requireUser, attach
     }
     return res.status(502).json({ success: false, error: message });
   }
+});
+
+router.post("/minitools/dns-lookup", dnsLookupLimiter, requireUser, attachUserAccess, canViewMiniTools, requireMinitoolEnabled("minitool_dns_lookup_enabled"), async (req, res) => {
+  const started = Date.now();
+  const result = await runDnsMiniTool({
+    toolId: req.body?.toolId,
+    target: req.body?.target,
+    options: req.body?.options || {},
+    userId: req.user?.id || null,
+  });
+  const body = result.body || {};
+  auditMiniTool(req, {
+    action: "dns_lookup",
+    targetType: "dns_lookup",
+    targetId: body.toolId || req.body?.toolId || null,
+    outcome: result.statusCode >= 400 ? "failure" : "success",
+    metadata: {
+      toolId: body.toolId || req.body?.toolId || null,
+      target: body.target || req.body?.target || null,
+      status: body.status || null,
+      durationMs: body.meta?.durationMs || Date.now() - started,
+    },
+  });
+  return res.status(result.statusCode).json(body);
 });
 
 // --- SecurityTrails proxy ---

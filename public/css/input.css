@@ -8694,6 +8694,16 @@ html.light[data-primary-theme="purple"] {
   justify-content: center;
 }
 
+.minitools-info-btn {
+  min-width: 2.5rem;
+  min-height: 2.5rem;
+  padding-inline: 0.65rem;
+}
+
+.minitools-info-btn svg {
+  flex-shrink: 0;
+}
+
 @media (max-width: 640px) {
   .minitools-security-counts {
     justify-content: flex-start;

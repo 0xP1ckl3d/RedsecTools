@@ -3923,6 +3923,9 @@
                     "tlsCheck": {
                       "type": "boolean"
                     },
+                    "dnsLookup": {
+                      "type": "boolean"
+                    },
                     "leakradar": {
                       "type": "boolean"
                     }
@@ -3947,7 +3950,7 @@
           "Admin"
         ],
         "summary": "Update RedSecMiniTools visibility settings",
-        "description": "Updates admin-controlled visibility toggles for CVSS, breach lookup, Azure tenant mapping, SecurityTrails, Security Headers, TLS Check, and LeakRadar. This is a high-risk admin write and may require fresh admin authentication when enabled.",
+        "description": "Updates admin-controlled visibility toggles for CVSS, breach lookup, Azure tenant mapping, SecurityTrails, Security Headers, TLS Check, DNS Intelligence, and LeakRadar. This is a high-risk admin write and may require fresh admin authentication when enabled.",
         "security": [
           {
             "AdminCookie": [],
@@ -3977,6 +3980,9 @@
                     "type": "boolean"
                   },
                   "tlsCheckEnabled": {
+                    "type": "boolean"
+                  },
+                  "dnsLookupEnabled": {
                     "type": "boolean"
                   },
                   "leakradarEnabled": {
@@ -22307,6 +22313,51 @@
           "403": { "description": "Missing minitools.view permission or tool disabled" },
           "429": { "description": "TLS check rate limit reached" },
           "502": { "description": "TLS analysis failed" }
+        }
+      }
+    },
+    "/api/minitools/dns-lookup": {
+      "post": {
+        "tags": ["MiniTools"],
+        "summary": "Run a DNS Intelligence MiniTool lookup",
+        "description": "Runs one of the local/free DNS Intelligence tools through a registry-driven server-side executor. Supports DNS records, security DNS report, DNSSEC, reverse DNS, mail DNS health, resolver consistency, HTTP headers, site availability, fixed-list light port checks, DNSBL checks, and URL decode. DNS lookups use selectable public recursive resolvers with Cloudflare as the default, not the host server's system DNS settings. The route enforces user auth, minitools.view, per-tool enablement, validation, per-tool rate limits, explicit timeouts, fixed port lists, and audit logging.",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "toolId": {
+                    "type": "string",
+                    "enum": ["dns_records", "security_dns_report", "dnssec_test", "reverse_dns", "mail_dns_health", "resolver_consistency", "http_headers", "site_availability", "light_port_check", "dnsbl_check", "url_decode"]
+                  },
+                  "target": { "type": "string", "description": "Domain, hostname, IP, URL, or encoded string depending on the selected tool." },
+                  "options": {
+                    "type": "object",
+                    "properties": {
+                      "recordType": { "type": "string", "description": "DNS record type for DNS record and resolver consistency lookups." },
+                      "resolverProfile": { "type": "string", "enum": ["cloudflare", "google", "quad9", "opendns"], "description": "Public recursive resolver profile. Defaults to cloudflare." },
+                      "dkimSelector": { "type": "string", "description": "Optional DKIM selector for mail DNS health and security DNS report." },
+                      "plusToSpace": { "type": "boolean", "description": "URL Decode option to convert plus characters to spaces." },
+                      "repeatDecode": { "type": "boolean", "description": "URL Decode option to repeat decoding up to three passes." }
+                    },
+                    "additionalProperties": true
+                  }
+                },
+                "required": ["toolId", "target"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Lookup result envelope", "content": { "application/json": { "schema": { "type": "object", "properties": { "toolId": { "type": "string" }, "toolLabel": { "type": "string" }, "target": { "type": "string" }, "status": { "type": "string" }, "summary": { "type": "string" }, "renderer": { "type": "string", "enum": ["table", "keyValue", "groupedChecks", "statusMatrix", "rawText"] }, "data": { "type": "object" }, "raw": { "type": "object" }, "meta": { "type": "object" } } } } } },
+          "400": { "description": "Invalid input or blocked target" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "description": "Missing minitools.view permission or tool disabled" },
+          "429": { "description": "DNS Intelligence route or per-tool rate limit reached" },
+          "502": { "description": "Lookup failed or timed out" }
         }
       }
     },

@@ -1632,6 +1632,7 @@ const minitoolAzureEnabled = document.getElementById("minitool-azure-enabled");
 const minitoolSecuritytrailsEnabled = document.getElementById("minitool-securitytrails-enabled");
 const minitoolSecurityHeadersEnabled = document.getElementById("minitool-security-headers-enabled");
 const minitoolTlsCheckEnabled = document.getElementById("minitool-tls-check-enabled");
+const minitoolDnsLookupEnabled = document.getElementById("minitool-dns-lookup-enabled");
 const minitoolLeakRadarEnabled = document.getElementById("minitool-leakradar-enabled");
 const minitoolCyberChefEnabled = document.getElementById("minitool-cyberchef-enabled");
 const minitoolsSaveBtn = document.getElementById("minitools-save-btn");
@@ -1647,6 +1648,7 @@ async function loadMinitoolsSettings() {
     if (minitoolSecuritytrailsEnabled) minitoolSecuritytrailsEnabled.checked = data.securitytrails;
     if (minitoolSecurityHeadersEnabled) minitoolSecurityHeadersEnabled.checked = data.securityHeaders;
     if (minitoolTlsCheckEnabled) minitoolTlsCheckEnabled.checked = data.tlsCheck;
+    if (minitoolDnsLookupEnabled) minitoolDnsLookupEnabled.checked = data.dnsLookup;
     if (minitoolLeakRadarEnabled) minitoolLeakRadarEnabled.checked = data.leakradar;
     if (minitoolCyberChefEnabled) minitoolCyberChefEnabled.checked = data.cyberchef;
   } catch (err) {
@@ -1674,6 +1676,7 @@ minitoolsSaveBtn?.addEventListener("click", async () => {
         securitytrailsEnabled: !!minitoolSecuritytrailsEnabled?.checked,
         securityHeadersEnabled: !!minitoolSecurityHeadersEnabled?.checked,
         tlsCheckEnabled: !!minitoolTlsCheckEnabled?.checked,
+        dnsLookupEnabled: !!minitoolDnsLookupEnabled?.checked,
         leakradarEnabled: !!minitoolLeakRadarEnabled?.checked,
         cyberchefEnabled: !!minitoolCyberChefEnabled?.checked,
       }),

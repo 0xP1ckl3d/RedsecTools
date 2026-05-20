@@ -29,6 +29,7 @@ const { createRouteHarness, signedCookieValue } = require("../helpers/route-harn
     assert.strictEqual(defaults.body.securitytrails, true);
     assert.strictEqual(defaults.body.securityHeaders, true);
     assert.strictEqual(defaults.body.tlsCheck, true);
+    assert.strictEqual(defaults.body.dnsLookup, true);
     assert.strictEqual(defaults.body.leakradar, true);
 
     const postRes = await harness.requestJson({
@@ -42,6 +43,7 @@ const { createRouteHarness, signedCookieValue } = require("../helpers/route-harn
         securitytrailsEnabled: false,
         securityHeadersEnabled: false,
         tlsCheckEnabled: false,
+        dnsLookupEnabled: false,
         leakradarEnabled: false,
       },
     });
@@ -58,6 +60,7 @@ const { createRouteHarness, signedCookieValue } = require("../helpers/route-harn
     assert.strictEqual(updated.body.securitytrails, false);
     assert.strictEqual(updated.body.securityHeaders, false);
     assert.strictEqual(updated.body.tlsCheck, false);
+    assert.strictEqual(updated.body.dnsLookup, false);
     assert.strictEqual(updated.body.leakradar, false);
 
     const leakRadarSettings = await harness.requestJson({
@@ -85,6 +88,7 @@ const { createRouteHarness, signedCookieValue } = require("../helpers/route-harn
     harness.database.setSetting("minitool_azure_enabled", "false");
     harness.database.setSetting("minitool_security_headers_enabled", "false");
     harness.database.setSetting("minitool_tls_check_enabled", "false");
+    harness.database.setSetting("minitool_dns_lookup_enabled", "false");
     harness.database.setSetting("minitool_leakradar_enabled", "false");
 
     const bootstrap = await harness.requestJson({
@@ -98,6 +102,8 @@ const { createRouteHarness, signedCookieValue } = require("../helpers/route-harn
     assert.strictEqual(bootstrap.body.tools.securitytrails.enabled, false);
     assert.strictEqual(bootstrap.body.tools.securityHeaders.enabled, false);
     assert.strictEqual(bootstrap.body.tools.tlsCheck.enabled, false);
+    assert.strictEqual(bootstrap.body.tools.dnsLookup.enabled, false);
+    assert.ok(Array.isArray(bootstrap.body.tools.dnsLookup.tools));
     assert.strictEqual(bootstrap.body.tools.leakradar.enabled, false);
   } finally {
     await harness.close();

@@ -1,4 +1,5 @@
 import { escapeHtml, safeAttr, badge, setInlineResult, clearInlineResult } from "./ui-components.js";
+import { showAlertModal } from "./confirm-modal.js";
 import {
   cvssSeverity,
   calculateCvssScore,
@@ -1338,6 +1339,327 @@ function tlsToMarkdown(data) {
   return lines.join("\n") + "\n";
 }
 
+let dnsLookupTools = [];
+
+function initDnsLookup(tools = []) {
+  dnsLookupTools = Array.isArray(tools) ? tools : [];
+  const targetInput = document.getElementById("dns-lookup-target");
+  const toolSelect = document.getElementById("dns-lookup-tool");
+  const optionsEl = document.getElementById("dns-lookup-options");
+  const runBtn = document.getElementById("dns-lookup-run-btn");
+  const infoBtn = document.getElementById("dns-lookup-info-btn");
+  const inlineEl = document.getElementById("dns-lookup-inline-result");
+  const resultsEl = document.getElementById("dns-lookup-results");
+  if (!targetInput || !toolSelect || !runBtn || !resultsEl) return;
+
+  toolSelect.innerHTML = dnsLookupTools.map((tool) => `<option value="${safeAttr(tool.id)}">${escapeHtml(tool.label)}</option>`).join("");
+  if (dnsLookupTools.some((tool) => tool.id === "security_dns_report")) {
+    toolSelect.value = "security_dns_report";
+  }
+
+  const selectedTool = () => dnsLookupTools.find((tool) => tool.id === toolSelect.value) || dnsLookupTools[0];
+
+  const renderOptions = () => {
+    const tool = selectedTool();
+    if (targetInput && tool?.placeholder) targetInput.placeholder = tool.placeholder;
+    const options = tool?.options || [];
+    if (!options.length) {
+      optionsEl?.classList.add("hidden");
+      if (optionsEl) optionsEl.innerHTML = "";
+      return;
+    }
+    optionsEl?.classList.remove("hidden");
+    if (optionsEl) {
+      optionsEl.innerHTML = options.map((option) => {
+        if (option.type === "select") {
+          return `<label class="block text-sm font-medium text-muted">${escapeHtml(option.label)}
+            <select class="input-field mt-1" data-dns-option="${safeAttr(option.id)}">
+              ${(option.values || []).map((value) => `<option value="${safeAttr(value)}" ${value === option.default ? "selected" : ""}>${escapeHtml(dnsLookupOptionLabel(value))}</option>`).join("")}
+            </select>
+          </label>`;
+        }
+        if (option.type === "boolean") {
+          return `<label class="custom-checkbox gap-2 mt-6">
+            <input type="checkbox" data-dns-option="${safeAttr(option.id)}" ${option.default !== false ? "checked" : ""}>
+            <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+            <span class="text-sm">${escapeHtml(option.label)}</span>
+          </label>`;
+        }
+        return `<label class="block text-sm font-medium text-muted">${escapeHtml(option.label)}
+          <input type="text" class="input-field mt-1" data-dns-option="${safeAttr(option.id)}" placeholder="${safeAttr(option.placeholder || "")}" autocomplete="off">
+        </label>`;
+      }).join("");
+    }
+  };
+
+  const readOptions = () => {
+    const options = {};
+    optionsEl?.querySelectorAll("[data-dns-option]").forEach((field) => {
+      if (field.type === "checkbox") options[field.dataset.dnsOption] = field.checked;
+      else options[field.dataset.dnsOption] = field.value;
+    });
+    return options;
+  };
+
+  const run = async () => {
+    const tool = selectedTool();
+    if (!tool) return;
+    const target = targetInput.value.trim();
+    if (!target) return;
+    clearInlineResult(inlineEl);
+    runBtn.disabled = true;
+    const original = runBtn.textContent;
+    runBtn.textContent = "Running...";
+    resultsEl.innerHTML = '<div class="text-sm text-muted">Running DNS Intelligence lookup...</div>';
+    try {
+      const data = await api("/minitools/dns-lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toolId: tool.id, target, options: readOptions() }),
+      });
+      renderDnsLookupResult(data, resultsEl);
+    } catch (err) {
+      resultsEl.innerHTML = `<div class="text-sm text-error">${escapeHtml(err.message)}</div>`;
+    } finally {
+      runBtn.disabled = false;
+      runBtn.textContent = original;
+    }
+  };
+
+  toolSelect.addEventListener("change", renderOptions);
+  runBtn.addEventListener("click", run);
+  targetInput.addEventListener("keydown", (event) => { if (event.key === "Enter") run(); });
+  infoBtn?.addEventListener("click", () => showDnsLookupInfo(selectedTool()));
+  renderOptions();
+}
+
+function dnsLookupOptionLabel(value) {
+  if (value === "ALL_COMMON") return "All Common Records";
+  if (value === "opendns") return "OpenDNS";
+  if (value === "quad9") return "Quad9";
+  return prettyLabel(String(value || ""));
+}
+
+async function showDnsLookupInfo(tool) {
+  if (!tool) return;
+  const info = tool.info || {};
+  const list = (items) => Array.isArray(items) && items.length ? `<ul class="list-disc pl-5 mt-1">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : '<p class="text-sm text-muted mt-1">-</p>';
+  await showAlertModal({
+    title: tool.label,
+    htmlMessage: true,
+    message: `
+      <div class="grid gap-3 text-sm">
+        <div><div class="font-bold">What it does</div><p class="text-muted mt-1">${escapeHtml(info.whatItDoes || "")}</p></div>
+        <div><div class="font-bold">Accepted input</div><p class="text-muted mt-1">${escapeHtml(info.acceptedInput || "")}</p></div>
+        <div><div class="font-bold">Returned data</div>${list(info.returnedData)}</div>
+        <div><div class="font-bold">Security value</div>${list(info.securityValue)}</div>
+        <div><div class="font-bold">Limitations</div>${list(info.limitations)}</div>
+      </div>
+    `,
+  });
+}
+
+function dnsLookupTone(status) {
+  return { success: "green", partial: "amber", warning: "amber", failed: "red", rate_limited: "red", validation_error: "amber", server_error: "red" }[status] || "gray";
+}
+
+function dnsCheckTone(status) {
+  return { pass: "green", info: "blue", warning: "amber", fail: "red", error: "red" }[status] || "gray";
+}
+
+function dnsCellBadgeTone(value) {
+  const normalized = String(value || "").toLowerCase();
+  return {
+    success: "green",
+    open: "green",
+    pass: "green",
+    yes: "red",
+    no_data: "red",
+    "no data": "red",
+    filtered: "amber",
+    closed: "gray",
+    no: "green",
+    unknown: "amber",
+    error: "red",
+    failed: "red",
+  }[normalized] || "";
+}
+
+function renderDnsLookupResult(data, container) {
+  const meta = data.meta || {};
+  const rawId = `dns-raw-${Date.now()}`;
+  const title = data.toolLabel || prettyLabel(data.toolId || "Lookup");
+  const rendererHtml = renderDnsLookupRenderer(data);
+  container.innerHTML = `
+    <div class="card p-4 mb-4">
+      <div class="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <h3 class="font-bold text-base">${escapeHtml(title)}</h3>
+            ${badge(prettyLabel(data.status || "unknown"), dnsLookupTone(data.status))}
+            ${meta.cached ? badge("Cached", "blue") : ""}
+          </div>
+          <div class="text-xs text-muted mt-1">Target: <code>${escapeHtml(data.target || "")}</code></div>
+          <div class="text-xs text-muted mt-1">${escapeHtml(meta.timestamp || "")} &middot; ${Number(meta.durationMs || 0).toLocaleString()}ms &middot; ${escapeHtml(meta.provider || "local")}</div>
+        </div>
+        <div class="flex gap-2 flex-wrap">
+          <button type="button" class="btn-secondary text-xs" data-dns-copy-summary>Copy Summary</button>
+          <button type="button" class="btn-secondary text-xs" data-dns-copy-json>Copy JSON</button>
+          <button type="button" class="btn-secondary text-xs" data-dns-export-json>Export JSON</button>
+          <button type="button" class="btn-secondary text-xs" data-dns-export-csv>Export CSV</button>
+          <button type="button" class="btn-secondary text-xs" data-dns-toggle-raw="${safeAttr(rawId)}">Raw JSON</button>
+        </div>
+      </div>
+      <p class="text-sm text-muted mt-3">${escapeHtml(data.summary || "")}</p>
+    </div>
+    ${rendererHtml}
+    <pre id="${safeAttr(rawId)}" class="hidden mt-4 text-xs bg-card p-3 rounded border border-border overflow-auto max-h-96 whitespace-pre-wrap break-all">${escapeHtml(JSON.stringify(data.raw || data, null, 2))}</pre>
+  `;
+  bindDnsLookupActions(container, data);
+}
+
+function bindDnsLookupActions(container, data) {
+  container.querySelector("[data-dns-copy-summary]")?.addEventListener("click", () => copyText(data.summary || ""));
+  container.querySelector("[data-dns-copy-json]")?.addEventListener("click", () => copyText(JSON.stringify(data.raw || data, null, 2)));
+  container.querySelector("[data-dns-toggle-raw]")?.addEventListener("click", (event) => {
+    const id = event.currentTarget.dataset.dnsToggleRaw;
+    document.getElementById(id)?.classList.toggle("hidden");
+  });
+  container.querySelector("[data-dns-export-json]")?.addEventListener("click", () => downloadText(`${data.toolId || "dns"}-${Date.now()}.json`, JSON.stringify(data.raw || data, null, 2), "application/json"));
+  container.querySelector("[data-dns-export-csv]")?.addEventListener("click", () => downloadText(`${data.toolId || "dns"}-${Date.now()}.csv`, dnsLookupToCsv(data), "text/csv"));
+}
+
+function copyText(text) {
+  navigator.clipboard?.writeText(String(text || ""));
+}
+
+function downloadText(filename, text, type) {
+  const blob = new Blob([text], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function renderDnsLookupRenderer(data) {
+  const renderer = data.renderer || "keyValue";
+  if (renderer === "table") return renderDnsLookupTable(data);
+  if (renderer === "groupedChecks") return renderDnsLookupGroupedChecks(data.data?.checks || []);
+  if (renderer === "statusMatrix") return renderDnsLookupStatusMatrix(data.data?.rows || []);
+  if (renderer === "rawText") return renderDnsLookupRawText(data);
+  return renderDnsLookupKeyValue(data.data || {});
+}
+
+function renderDnsLookupTable(data) {
+  const rows = data.data?.rows || [];
+  if (!rows.length && data.data?.security?.findings) {
+    return renderDnsLookupGroupedChecks(data.data.security.findings.map((item) => ({
+      category: "HTTP Security",
+      status: item.status === "warn" ? "warning" : item.status,
+      title: item.title,
+      evidence: item.observed || item.header || "",
+      impact: "",
+      recommendation: item.recommendation || item.fix || "",
+    })));
+  }
+  if (!rows.length) return '<div class="card p-4 text-sm text-muted">No structured rows returned.</div>';
+  const keys = Array.from(rows.reduce((set, row) => {
+    Object.keys(row).forEach((key) => { if (!["raw"].includes(key)) set.add(key); });
+    return set;
+  }, new Set())).slice(0, 8);
+  return `<div class="card p-0 overflow-hidden"><div class="threat-table-wrap"><table class="threat-table">
+    <thead><tr>${keys.map((key) => `<th>${escapeHtml(prettyLabel(key))}</th>`).join("")}</tr></thead>
+    <tbody>${rows.map((row) => `<tr>${keys.map((key) => `<td class="text-xs break-all">${renderDnsLookupTableCell(key, row[key])}</td>`).join("")}</tr>`).join("")}</tbody>
+  </table></div></div>
+  ${data.data?.security?.findings?.length ? `<div class="mt-4">${renderDnsLookupGroupedChecks(data.data.security.findings.map((item) => ({ category: "HTTP Security", status: item.status === "warn" ? "warning" : item.status, title: item.title, evidence: item.observed || item.header || "", impact: "", recommendation: item.recommendation || item.fix || "" })))}</div>` : ""}`;
+}
+
+function renderDnsLookupTableCell(key, value) {
+  const lowerKey = String(key || "").toLowerCase();
+  if (["status", "listed"].includes(lowerKey)) {
+    const label = String(value || "").replace(/_/g, " ") || "-";
+    const tone = dnsCellBadgeTone(label);
+    return tone ? badge(prettyLabel(label), tone) : escapeHtml(label);
+  }
+  return renderScalar(value);
+}
+
+function renderDnsLookupGroupedChecks(checks) {
+  if (!checks.length) return '<div class="card p-4 text-sm text-muted">No checks returned.</div>';
+  const groups = checks.reduce((acc, item) => {
+    const key = item.category || "Checks";
+    acc[key] = acc[key] || [];
+    acc[key].push(item);
+    return acc;
+  }, {});
+  return `<div class="grid gap-4">${Object.entries(groups).map(([category, items]) => `
+    <div class="card p-4">
+      <div class="flex items-center gap-2 mb-3">
+        <h3 class="font-bold text-sm">${escapeHtml(category)}</h3>
+        ${badge(`${items.length} checks`, "gray")}
+      </div>
+      <div class="grid gap-3">
+        ${items.map((item) => `
+          <div class="border border-border rounded p-3 bg-elevated">
+            <div class="flex items-center gap-2 flex-wrap">
+              ${badge(prettyLabel(item.status || "info"), dnsCheckTone(item.status))}
+              <h4 class="font-bold text-sm">${escapeHtml(item.title || "")}</h4>
+            </div>
+            ${item.evidence ? `<p class="text-xs mt-2"><span class="text-muted">Evidence:</span> ${escapeHtml(item.evidence)}</p>` : ""}
+            ${item.impact ? `<p class="text-xs mt-2"><span class="text-muted">Impact:</span> ${escapeHtml(item.impact)}</p>` : ""}
+            ${item.recommendation ? `<p class="text-xs mt-2"><span class="text-muted">Recommendation:</span> ${escapeHtml(item.recommendation)}</p>` : ""}
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  `).join("")}</div>`;
+}
+
+function renderDnsLookupStatusMatrix(rows) {
+  if (!rows.length) return '<div class="card p-4 text-sm text-muted">No resolver rows returned.</div>';
+  return `<div class="card p-0 overflow-hidden"><div class="threat-table-wrap"><table class="threat-table">
+    <thead><tr><th>Resolver</th><th>Type</th><th>Status</th><th>Values</th><th>Response Time</th><th>Error</th></tr></thead>
+    <tbody>${rows.map((row) => `<tr>
+      <td class="text-xs font-bold">${escapeHtml(row.resolver || "")}</td>
+      <td class="text-xs">${escapeHtml(row.type || "")}</td>
+      <td class="text-xs">${badge(prettyLabel(row.status || ""), row.status === "success" ? "green" : "red")}</td>
+      <td class="text-xs break-all">${renderScalar(row.values || [])}</td>
+      <td class="text-xs">${Number(row.durationMs || 0).toLocaleString()}ms</td>
+      <td class="text-xs break-all">${escapeHtml(row.error || "")}</td>
+    </tr>`).join("")}</tbody>
+  </table></div></div>`;
+}
+
+function renderDnsLookupRawText(data) {
+  const decoded = data.data?.decoded != null ? data.data.decoded : data.data?.error || data.summary || "";
+  return `<div class="card p-4"><pre class="text-sm whitespace-pre-wrap break-all">${escapeHtml(decoded)}</pre></div>`;
+}
+
+function renderDnsLookupKeyValue(data) {
+  const entries = Object.entries(data || {}).filter(([, value]) => value !== undefined);
+  if (!entries.length) return '<div class="card p-4 text-sm text-muted">No values returned.</div>';
+  return `<div class="card p-4"><div class="threat-table-wrap"><table class="threat-table">
+    <tbody>${entries.map(([key, value]) => `<tr><td class="text-xs text-muted whitespace-nowrap">${escapeHtml(prettyLabel(key))}</td><td class="text-xs break-all">${renderScalar(value)}</td></tr>`).join("")}</tbody>
+  </table></div></div>`;
+}
+
+function dnsLookupToCsv(data) {
+  const rows = data.data?.rows || data.data?.checks || [];
+  if (!Array.isArray(rows) || !rows.length) return `"field","value"\n${Object.entries(data.data || {}).map(([k, v]) => `"${csvEscape(k)}","${csvEscape(typeof v === "object" ? JSON.stringify(v) : v)}"`).join("\n")}\n`;
+  const keys = Array.from(rows.reduce((set, row) => {
+    Object.keys(row || {}).forEach((key) => { if (key !== "raw") set.add(key); });
+    return set;
+  }, new Set()));
+  return [keys, ...rows.map((row) => keys.map((key) => row?.[key] == null ? "" : typeof row[key] === "object" ? JSON.stringify(row[key]) : row[key]))]
+    .map((row) => row.map((cell) => `"${csvEscape(cell)}"`).join(",")).join("\n") + "\n";
+}
+
+function csvEscape(value) {
+  return String(value ?? "").replace(/"/g, '""');
+}
+
 function hideMinitool(tool) {
   document.querySelector(`[data-minitools-view="${tool}"]`)?.remove();
   document.querySelector(`.mobile-tab[data-minitools-view="${tool}"]`)?.remove();
@@ -1353,7 +1675,8 @@ function showFirstEnabledView(excludeTool) {
 
 async function init() {
   // Load bootstrap to determine which tools are enabled
-  let enabledTools = { cvss: true, breach: true, azure: true, securitytrails: true, "security-headers": true, "tls-check": true, leakradar: true, cyberchef: true };
+  let enabledTools = { cvss: true, breach: true, azure: true, securitytrails: true, "security-headers": true, "tls-check": true, "dns-lookup": true, leakradar: true, cyberchef: true };
+  let dnsTools = [];
   try {
     const data = await api("/minitools/bootstrap");
     enabledTools = {
@@ -1363,9 +1686,11 @@ async function init() {
       securitytrails: !!data.tools?.securitytrails?.enabled,
       "security-headers": !!data.tools?.securityHeaders?.enabled,
       "tls-check": !!data.tools?.tlsCheck?.enabled,
+      "dns-lookup": !!data.tools?.dnsLookup?.enabled,
       leakradar: !!data.tools?.leakradar?.enabled,
       cyberchef: !!data.tools?.cyberchef?.enabled,
     };
+    dnsTools = data.tools?.dnsLookup?.tools || [];
     const st = data.tools?.securitytrails;
     if (st) {
       updateSecurityTrailsQuota({ used: st.usedToday, limit: st.dailyLimit });
@@ -1386,7 +1711,7 @@ async function init() {
   } catch (_) { /* bootstrap optional */ }
 
   // Hide disabled tools from sidebar, mobile tabs, and view sections
-  const allTools = ["cvss", "breach", "azure", "securitytrails", "security-headers", "tls-check", "leakradar", "cyberchef"];
+  const allTools = ["cvss", "breach", "azure", "securitytrails", "security-headers", "tls-check", "dns-lookup", "leakradar", "cyberchef"];
   for (const tool of allTools) {
     if (!enabledTools[tool]) {
       hideMinitool(tool);
@@ -1406,6 +1731,7 @@ async function init() {
   if (enabledTools.securitytrails) initSecurityTrails();
   if (enabledTools["security-headers"]) initSecurityHeaders();
   if (enabledTools["tls-check"]) initTlsCheck();
+  if (enabledTools["dns-lookup"]) initDnsLookup(dnsTools);
   if (enabledTools.cyberchef) initCyberChef();
   if (enabledTools.leakradar) initLeakRadar();
 }
