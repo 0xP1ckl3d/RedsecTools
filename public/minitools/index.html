@@ -34,10 +34,6 @@
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
           <span class="sidebar-nav-text">CVSS Calculator</span>
         </button>
-        <button type="button" class="sidebar-nav-item" data-minitools-view="azure">
-          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"/></svg>
-          <span class="sidebar-nav-text">Azure Mapping</span>
-        </button>
         <button type="button" class="sidebar-nav-item" data-minitools-view="security-headers">
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-5m5-3v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6l8-3 8 3z"/></svg>
           <span class="sidebar-nav-text">Security Headers</span>
@@ -49,6 +45,10 @@
         <button type="button" class="sidebar-nav-item" data-minitools-view="dns-lookup">
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6.75 7.5l3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0021 18V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v12a2.25 2.25 0 002.25 2.25z"/></svg>
           <span class="sidebar-nav-text">DNS Intelligence</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-minitools-view="azure">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"/></svg>
+          <span class="sidebar-nav-text">Azure Mapping</span>
         </button>
         <button type="button" class="sidebar-nav-item" data-minitools-view="securitytrails">
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/></svg>
@@ -94,10 +94,10 @@
         <button type="button" class="mobile-tab" data-minitools-view="jwt-analyzer">JWT Analyzer</button>
         <button type="button" class="mobile-tab" data-minitools-view="header-analyzer">Header Analyzer</button>
         <button type="button" class="mobile-tab" data-minitools-view="cvss">CVSS Calculator</button>
-        <button type="button" class="mobile-tab" data-minitools-view="azure">Azure Mapping</button>
         <button type="button" class="mobile-tab" data-minitools-view="security-headers">Security Headers</button>
         <button type="button" class="mobile-tab" data-minitools-view="tls-check">TLS Check</button>
         <button type="button" class="mobile-tab" data-minitools-view="dns-lookup">DNS Intelligence</button>
+        <button type="button" class="mobile-tab" data-minitools-view="azure">Azure Mapping</button>
         <button type="button" class="mobile-tab" data-minitools-view="securitytrails">SecurityTrails</button>
         <button type="button" class="mobile-tab" data-minitools-view="breach">Breach Lookup</button>
         <button type="button" class="mobile-tab" data-minitools-view="leakradar">LeakRadar</button>
@@ -129,7 +129,7 @@
 
         <section id="minitools-view-azure" class="hidden">
           <h2 class="text-lg font-bold mb-4">Azure Mapping</h2>
-          <p class="text-sm text-muted mb-4">Look up Azure tenant information for a domain via azmap.dev. Click a domain to copy it.</p>
+          <p class="text-sm text-muted mb-4">Look up Azure/Entra tenant information: tenant ID, OpenID configuration, authentication endpoints, and verified domains. Click a domain to copy it.</p>
           <div class="minitools-lookup-form">
             <div class="flex gap-2 items-end">
               <div class="flex-1">

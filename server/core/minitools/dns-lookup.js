@@ -303,7 +303,7 @@ function hasRangeSyntax(value) {
   return /[,/\\]|\.{2}|\s+-\s+/.test(String(value || ""));
 }
 
-function normalizeHostnameInput(value, { stripUrl = true, requireDomain = false } = {}) {
+function normalizeHostnameInput(value, { stripUrl = true, requireDomain = false, allowUnderscoreLabels = false } = {}) {
   let raw = String(value || "").trim();
   if (!raw) return { ok: false, error: "Target is required" };
   if (raw.length > 253) return { ok: false, error: "Target is too long" };
@@ -318,11 +318,23 @@ function normalizeHostnameInput(value, { stripUrl = true, requireDomain = false 
   if (hasRangeSyntax(raw)) return { ok: false, error: "Ranges, CIDR notation, and multiple targets are not supported" };
   raw = raw.replace(/\.$/, "").toLowerCase();
   if (net.isIP(raw)) return { ok: false, error: "A domain or hostname is required" };
-  const ascii = domainToASCII(raw);
+  let ascii;
+  try {
+    ascii = domainToASCII(raw);
+  } catch (_) {
+    if (allowUnderscoreLabels) {
+      ascii = raw;
+    } else {
+      return { ok: false, error: "Invalid domain or hostname" };
+    }
+  }
   if (!ascii || ascii.length > 253) return { ok: false, error: "Invalid domain or hostname" };
   const labels = ascii.split(".");
   if (requireDomain && labels.length < 2) return { ok: false, error: "A registrable domain is required" };
-  if (!labels.every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(label))) {
+  const labelRe = allowUnderscoreLabels
+    ? /^[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9_])?$/i
+    : /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i;
+  if (!labels.every((label) => labelRe.test(label))) {
     return { ok: false, error: "Invalid domain label" };
   }
   return { ok: true, target: ascii };
@@ -360,7 +372,7 @@ function validateToolInput(tool, target, options = {}) {
   if (tool.inputKind === "domain") return normalizeHostnameInput(target, { requireDomain: true });
   if (tool.inputKind === "hostname") {
     if (tool.id === "light_port_check" && net.isIP(String(target || "").trim())) return normalizeIpInput(target);
-    return normalizeHostnameInput(target, { requireDomain: false });
+    return normalizeHostnameInput(target, { requireDomain: false, allowUnderscoreLabels: true });
   }
   const text = String(target || "").trim();
   if (!text) return { ok: false, error: "Input is required" };

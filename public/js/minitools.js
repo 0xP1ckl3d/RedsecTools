@@ -226,80 +226,149 @@ function initAzure() {
 }
 
 function renderAzureResults(response, container) {
-  if (response.format === "raw" || response.format === "unknown") {
-    container.innerHTML = `
-      <div class="minitools-azure-card card p-4">
-        <p class="text-sm text-muted mb-2">Raw response from Azure mapping service (unexpected format):</p>
+  let html = "";
+
+  // --- Tenant overview (from azmap.dev) ---
+  const d = response.azmap;
+  if (d && d.tenant_id) {
+    const related = d.related_domains || [];
+    html += `
+      <div class="minitools-azure-card card p-4 mb-4">
+        <h3 class="font-bold text-sm mb-3">Tenant Overview</h3>
+        <div class="grid gap-3">
+          <div>
+            <div class="text-xs text-muted">Tenant ID</div>
+            <code class="text-sm">${escapeHtml(d.tenant_id)}</code>
+          </div>
+          <div>
+            <div class="text-xs text-muted">Tenant Name</div>
+            <div class="text-sm font-bold">${escapeHtml(d.tenant_name)}</div>
+          </div>
+          <div>
+            <div class="text-xs text-muted">Brand Name</div>
+            <div class="text-sm">${escapeHtml(d.brand_name || "-")}</div>
+          </div>
+          <div>
+            <div class="text-xs text-muted">Primary Domain</div>
+            <div class="text-sm">${escapeHtml(d.domain)}</div>
+          </div>
+    `;
+    if (related.length > 0) {
+      html += `
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-muted">Related Domains</span>
+              <span class="badge badge-gray">${d.related_count || related.length}</span>
+            </div>
+            <button type="button" id="azure-copy-all-domains" class="text-xs text-accent hover:underline">Copy all</button>
+          </div>
+          <div class="flex flex-wrap gap-1" id="azure-domain-list">
+            ${related.map((dom) => `<span class="badge badge-gray text-xs cursor-pointer hover:text-accent transition-colors" data-azure-domain="${escapeHtml(dom)}" title="Click to copy">${escapeHtml(dom)}</span>`).join("")}
+          </div>
+        </div>
+      `;
+    }
+    html += "</div></div>";
+  } else if (response.raw) {
+    html += `
+      <div class="minitools-azure-card card p-4 mb-4">
+        <p class="text-sm text-muted mb-2">Raw response from Azure mapping service:</p>
         <pre class="text-xs bg-card p-3 rounded border border-border overflow-auto max-h-96 whitespace-pre-wrap break-all">${escapeHtml(response.raw)}</pre>
       </div>
     `;
-    return;
   }
 
-  const d = response.data;
-  if (!d || !d.tenant_id) {
-    container.innerHTML = '<div class="text-sm text-muted">No Azure tenant found for this domain.</div>';
-    return;
-  }
-
-  const related = d.related_domains || [];
-  let html = `
-    <div class="minitools-azure-card card p-4">
-      <div class="grid gap-3">
-        <div>
-          <div class="text-xs text-muted">Tenant ID</div>
-          <code class="text-sm">${escapeHtml(d.tenant_id)}</code>
-        </div>
-        <div>
-          <div class="text-xs text-muted">Tenant Name</div>
-          <div class="text-sm font-bold">${escapeHtml(d.tenant_name)}</div>
-        </div>
-        <div>
-          <div class="text-xs text-muted">Brand Name</div>
-          <div class="text-sm">${escapeHtml(d.brand_name || "-")}</div>
-        </div>
-        <div>
-          <div class="text-xs text-muted">Primary Domain</div>
-          <div class="text-sm">${escapeHtml(d.domain)}</div>
-        </div>
-  `;
-
-  if (related.length > 0) {
+  // --- OpenID Configuration ---
+  const oidc = response.openid;
+  if (oidc) {
     html += `
-      <div>
-        <div class="flex items-center justify-between mb-2">
-          <div class="flex items-center gap-2">
-            <span class="text-xs text-muted">Related Domains</span>
-            <span class="badge badge-gray">${d.related_count || related.length}</span>
-          </div>
-          <button type="button" id="azure-copy-all-domains" class="text-xs text-accent hover:underline">Copy all</button>
-        </div>
-        <div class="flex flex-wrap gap-1" id="azure-domain-list">
-          ${related.map((dom) => `<span class="badge badge-gray text-xs cursor-pointer hover:text-accent transition-colors" data-azure-domain="${escapeHtml(dom)}" title="Click to copy">${escapeHtml(dom)}</span>`).join("")}
+      <div class="card p-4 mb-4">
+        <h3 class="font-bold text-sm mb-3">OpenID Configuration</h3>
+        <div class="grid gap-3">
+          ${oidc.tenantId ? `<div><div class="text-xs text-muted">Tenant ID (OIDC)</div><code class="text-sm">${escapeHtml(oidc.tenantId)}</code></div>` : ""}
+          ${oidc.issuer ? `<div><div class="text-xs text-muted">Issuer</div><code class="text-sm break-all">${escapeHtml(oidc.issuer)}</code></div>` : ""}
+          ${oidc.tokenEndpoint ? `<div><div class="text-xs text-muted">Token Endpoint</div><code class="text-sm break-all">${escapeHtml(oidc.tokenEndpoint)}</code></div>` : ""}
+          ${oidc.authorizationEndpoint ? `<div><div class="text-xs text-muted">Authorization Endpoint</div><code class="text-sm break-all">${escapeHtml(oidc.authorizationEndpoint)}</code></div>` : ""}
+          ${oidc.deviceAuthorizationEndpoint ? `<div><div class="text-xs text-muted">Device Authorization Endpoint</div><code class="text-sm break-all">${escapeHtml(oidc.deviceAuthorizationEndpoint)}</code></div>` : ""}
+          ${oidc.jwksUri ? `<div><div class="text-xs text-muted">JWKS URI</div><code class="text-sm break-all">${escapeHtml(oidc.jwksUri)}</code></div>` : ""}
         </div>
       </div>
     `;
   }
 
-  html += "</div></div>";
+  // --- User Realm / Federation ---
+  const realm = response.realm;
+  if (realm) {
+    html += `
+      <div class="card p-4 mb-4">
+        <h3 class="font-bold text-sm mb-3">User Realm &amp; Federation</h3>
+        <div class="grid gap-3">
+          ${realm.federationBrandName ? `<div><div class="text-xs text-muted">Federation Brand Name</div><div class="text-sm font-bold">${escapeHtml(realm.federationBrandName)}</div></div>` : ""}
+          ${realm.nameSpaceType ? `<div><div class="text-xs text-muted">Namespace Type</div><span class="badge badge-blue">${escapeHtml(realm.nameSpaceType)}</span></div>` : ""}
+          ${realm.federationProtocol ? `<div><div class="text-xs text-muted">Federation Protocol</div><span class="badge badge-gray">${escapeHtml(realm.federationProtocol)}</span></div>` : ""}
+          ${realm.tenantId ? `<div><div class="text-xs text-muted">Tenant ID (Realm)</div><code class="text-sm">${escapeHtml(realm.tenantId)}</code></div>` : ""}
+          ${realm.authUrl ? `<div><div class="text-xs text-muted">Auth URL</div><code class="text-sm break-all">${escapeHtml(realm.authUrl)}</code></div>` : ""}
+        </div>
+      </div>
+    `;
+  }
+
+  // --- onmicrosoft.com Address ---
+  const onms = response.onmicrosoft;
+  if (onms && onms.length > 0) {
+    html += `
+      <div class="card p-4 mb-4">
+        <h3 class="font-bold text-sm mb-3">onmicrosoft.com Address</h3>
+        <div class="grid gap-2">
+          ${onms.map((addr) => `
+            <div class="flex items-center gap-2">
+              <code class="text-sm bg-card px-3 py-1 rounded border border-border">${escapeHtml(addr)}</code>
+              <button type="button" class="text-xs text-accent hover:underline" data-azure-onmicrosoft-copy="${escapeHtml(addr)}">Copy</button>
+            </div>
+          `).join("")}
+        </div>
+        <p class="text-xs text-muted mt-2">Detected via DKIM CNAME records. This is the initial *.onmicrosoft.com domain assigned to the Azure AD tenant.</p>
+      </div>
+    `;
+  }
+
+  if (!html) {
+    container.innerHTML = '<div class="text-sm text-muted">No Azure/Entra tenant found for this domain.</div>';
+    return;
+  }
+
   container.innerHTML = html;
 
-  if (related.length > 0) {
-    container.querySelectorAll("[data-azure-domain]").forEach((el) => {
-      el.addEventListener("click", () => {
-        navigator.clipboard.writeText(el.dataset.azureDomain).then(() => {
-          const orig = el.textContent;
-          el.textContent = "Copied!";
-          setTimeout(() => { el.textContent = orig; }, 1200);
-        });
+  // Wire copy-on-click for onmicrosoft.com addresses
+  container.querySelectorAll("[data-azure-onmicrosoft-copy]").forEach((el) => {
+    el.addEventListener("click", () => {
+      navigator.clipboard.writeText(el.dataset.azureOnmicrosoftCopy).then(() => {
+        const orig = el.textContent;
+        el.textContent = "Copied!";
+        setTimeout(() => { el.textContent = orig; }, 1200);
       });
     });
-    document.getElementById("azure-copy-all-domains")?.addEventListener("click", (e) => {
+  });
+
+  // Wire copy-on-click for related domains
+  container.querySelectorAll("[data-azure-domain]").forEach((el) => {
+    el.addEventListener("click", () => {
+      navigator.clipboard.writeText(el.dataset.azureDomain).then(() => {
+        const orig = el.textContent;
+        el.textContent = "Copied!";
+        setTimeout(() => { el.textContent = orig; }, 1200);
+      });
+    });
+  });
+  const copyAllBtn = document.getElementById("azure-copy-all-domains");
+  if (copyAllBtn && d?.related_domains) {
+    const related = d.related_domains;
+    copyAllBtn.addEventListener("click", (e) => {
       navigator.clipboard.writeText(related.join("\n")).then(() => {
-        const btn = e.target;
-        const orig = btn.textContent;
-        btn.textContent = "Copied!";
-        setTimeout(() => { btn.textContent = orig; }, 1200);
+        const orig = e.target.textContent;
+        e.target.textContent = "Copied!";
+        setTimeout(() => { e.target.textContent = orig; }, 1200);
       });
     });
   }

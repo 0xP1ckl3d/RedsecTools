@@ -204,6 +204,44 @@ async function fetchSecurityHeaders(targetUrl) {
   return getResult;
 }
 
+// --- DKIM CNAME -> onmicrosoft.com detection via DNS-over-HTTPS ---
+
+async function resolveCnameDoH(name) {
+  try {
+    const url = `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(name)}&type=CNAME`;
+    const { response } = await safeFetchPublicUrl(url, {
+      headers: { accept: "application/dns-json" },
+      timeoutMs: 4000,
+    });
+    const text = await readResponseTextWithLimit(response);
+    const data = JSON.parse(text);
+    return (data.Answer || []).map((r) => (r.data || "").replace(/\.$/, "")).filter(Boolean);
+  } catch (_) {
+    return [];
+  }
+}
+
+async function detectOnmicrosoftAddress(domains) {
+  const selectors = ["selector1", "selector2"];
+  const queries = domains.flatMap((d) =>
+    selectors.map((selector) => `${selector}._domainkey.${d}`)
+  );
+  const cnameResults = await Promise.all(queries.map(resolveCnameDoH));
+  const addresses = [];
+  const seen = new Set();
+  for (const cnames of cnameResults) {
+    for (const cname of cnames) {
+      if (!cname.endsWith(".onmicrosoft.com")) continue;
+      const match = cname.match(/([a-z0-9-]+\.onmicrosoft\.com)$/i);
+      if (match && !seen.has(match[1].toLowerCase())) {
+        seen.add(match[1].toLowerCase());
+        addresses.push(match[1].toLowerCase());
+      }
+    }
+  }
+  return addresses;
+}
+
 // --- Routes ---
 
 router.get("/minitools/bootstrap", readLimiter, requireUser, attachUserAccess, canViewMiniTools, (req, res) => {
@@ -265,22 +303,81 @@ router.get("/minitools/azure-tenant", azureLookupLimiter, requireUser, attachUse
   if (!domain || !DOMAIN_RE.test(domain)) {
     return res.status(400).json({ error: "Valid domain required" });
   }
+
+  const result = { domain };
+
+  // 1. azmap.dev tenant lookup
   try {
     const azureUrl = `https://azmap.dev/api/tenant?domain=${encodeURIComponent(domain)}&extract=true`;
     const { response } = await safeFetchPublicUrl(azureUrl);
     const text = await readResponseTextWithLimit(response);
-    let data = null;
-    try { data = JSON.parse(text); } catch (_) {
-      return res.json({ raw: text.substring(0, 10000), format: "raw" });
-    }
-    if (data && typeof data === "object") {
-      res.json({ data, format: "structured" });
-    } else {
-      res.json({ raw: JSON.stringify(data).substring(0, 10000), format: "unknown" });
+    try {
+      const data = JSON.parse(text);
+      if (data && typeof data === "object") {
+        result.azmap = data;
+        result.format = "structured";
+      } else {
+        result.raw = JSON.stringify(data).substring(0, 10000);
+        result.format = "unknown";
+      }
+    } catch (_) {
+      result.raw = text.substring(0, 10000);
+      result.format = "raw";
     }
   } catch (err) {
-    res.status(502).json({ error: "Failed to reach Azure mapping service", detail: err.message });
+    result.azmapError = err.message;
   }
+
+  // 2. OpenID configuration
+  try {
+    const oidcUrl = `https://login.windows.net/${encodeURIComponent(domain)}/.well-known/openid-configuration`;
+    const { response: oidcRes } = await safeFetchPublicUrl(oidcUrl);
+    const oidcText = await readResponseTextWithLimit(oidcRes);
+    const oidcData = JSON.parse(oidcText);
+    result.openid = {
+      tenantId: oidcData.tenant || oidcData.issuer?.split("/").pop() || null,
+      issuer: oidcData.issuer || null,
+      tokenEndpoint: oidcData.token_endpoint || null,
+      authorizationEndpoint: oidcData.authorization_endpoint || null,
+      deviceAuthorizationEndpoint: oidcData.device_authorization_endpoint || null,
+      jwksUri: oidcData.jwks_uri || null,
+    };
+  } catch (_) {
+    // Domain may not have an Entra tenant — skip silently
+  }
+
+  // 3. User Realm (federation info)
+  try {
+    const realmUrl = `https://login.microsoftonline.com/getuserrealm.srf?login=test@${encodeURIComponent(domain)}`;
+    const { response: realmRes } = await safeFetchPublicUrl(realmUrl);
+    const realmText = await readResponseTextWithLimit(realmRes);
+    const realmData = JSON.parse(realmText);
+    result.realm = {
+      authUrl: realmData.AuthUrl || null,
+      federationBrandName: realmData.FederationBrandName || null,
+      tenantId: realmData.TenantId || null,
+      nameSpaceType: realmData.NameSpaceType || null,
+      login: realmData.login || null,
+      federationProtocol: realmData.FederationProtocol || null,
+    };
+  } catch (_) {
+    // Not all domains return realm data — skip silently
+  }
+
+  // 4. DKIM CNAME -> onmicrosoft.com detection
+  try {
+    const candidateDomains = new Set([domain]);
+    if (result.azmap?.domain && result.azmap.domain !== domain) candidateDomains.add(result.azmap.domain);
+    if (result.azmap?.tenant_name && result.azmap.tenant_name !== domain) candidateDomains.add(result.azmap.tenant_name);
+    const onms = await detectOnmicrosoftAddress([...candidateDomains]);
+    if (onms.length) result.onmicrosoft = onms;
+  } catch (_) { /* best effort */ }
+
+  if (!result.azmap && !result.openid && !result.realm && !result.onmicrosoft) {
+    return res.status(404).json({ error: "No Azure/Entra tenant found for this domain" });
+  }
+
+  res.json(result);
 });
 
 router.post("/minitools/security-headers/analyze", securityHeadersLimiter, requireUser, attachUserAccess, canViewMiniTools, requireMinitoolEnabled("minitool_security_headers_enabled"), async (req, res) => {
