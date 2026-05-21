@@ -2363,6 +2363,7 @@ html.light[data-primary-theme="purple"] {
 
 .dashboard-sidebar.collapsed {
   width: 64px;
+  overflow: visible;
 }
 
 .dashboard-sidebar.collapsed .sidebar-nav-text,
@@ -2506,6 +2507,72 @@ html.light[data-primary-theme="purple"] {
 }
 
 .sidebar-spacer { flex: 1; }
+
+/* Early sidebar expand (pre-FOUC from theme-init.js — pages default to collapsed HTML) */
+.sidebar-starts-expanded .dashboard-sidebar,
+.sidebar-starts-expanded .dashboard-sidebar.collapsed {
+  width: 240px !important;
+}
+.sidebar-starts-expanded .dashboard-sidebar .sidebar-nav-text,
+.sidebar-starts-expanded .dashboard-sidebar .sidebar-links-section,
+.sidebar-starts-expanded .dashboard-sidebar .sidebar-links-title,
+.sidebar-starts-expanded .dashboard-sidebar .sidebar-section-empty {
+  display: revert !important;
+}
+.sidebar-starts-expanded .dashboard-sidebar .sidebar-nav-item {
+  justify-content: flex-start !important;
+  padding: 0.625rem 0.875rem !important;
+}
+.sidebar-starts-expanded .dashboard-sidebar .sidebar-collapse-icon {
+  transform: none !important;
+}
+
+/* Collapsed sidebar hover tooltips */
+.dashboard-sidebar.collapsed .sidebar-nav-item {
+  position: relative;
+}
+
+.dashboard-sidebar.collapsed .sidebar-nav-item[data-tooltip]:hover::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 4px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 0.75rem;
+  font-weight: 500;
+  white-space: nowrap;
+  z-index: 100;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.dashboard-sidebar.collapsed .sidebar-links-toggle[data-tooltip]:hover::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 4px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 0.75rem;
+  font-weight: 500;
+  white-space: nowrap;
+  z-index: 100;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.dashboard-sidebar.collapsed .sidebar-links-toggle {
+  position: relative;
+}
 
 /* --- Main content area --- */
 .dashboard-content {

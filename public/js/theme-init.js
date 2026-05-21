@@ -3,6 +3,12 @@ if (localStorage.getItem("theme") === "light") {
   document.documentElement.classList.add("light");
 }
 
+// Synchronous sidebar state restoration — prevents FOUC on page load
+// Pages default to collapsed, so we only need early CSS when user wants expanded
+if (localStorage.getItem("sidebar-collapsed") === "false") {
+  document.documentElement.classList.add("sidebar-starts-expanded");
+}
+
 // Site-wide primary palette. Cache first, then refresh from the server.
 (function () {
   var validThemes = { red: true, green: true, blue: true, orange: true, purple: true };
@@ -153,4 +159,50 @@ document.addEventListener("DOMContentLoaded", function () {
   for (var i = 0; i < els.length; i++) {
     els[i].textContent = new Date().getFullYear();
   }
+});
+
+// Sidebar state persistence + collapsed tooltips
+document.addEventListener("DOMContentLoaded", function () {
+  var collapsed = localStorage.getItem("sidebar-collapsed") === "true";
+
+  // Apply stored state to sidebar (remove the pre-FOUC class, set actual state)
+  document.documentElement.classList.remove("sidebar-starts-expanded");
+  var sidebars = document.querySelectorAll(".dashboard-sidebar");
+  sidebars.forEach(function (sidebar) {
+    if (collapsed) sidebar.classList.add("collapsed");
+    else sidebar.classList.remove("collapsed");
+  });
+
+  // Set data-tooltip on nav items and link toggles from their text labels
+  document.querySelectorAll(".dashboard-sidebar .sidebar-nav-item").forEach(function (item) {
+    var text = item.querySelector(".sidebar-nav-text");
+    if (text) item.setAttribute("data-tooltip", text.textContent.trim());
+  });
+  document.querySelectorAll(".dashboard-sidebar .sidebar-links-toggle").forEach(function (toggle) {
+    var title = toggle.querySelector(".sidebar-links-title");
+    if (title) toggle.setAttribute("data-tooltip", title.textContent.trim());
+  });
+
+  // Intercept ALL sidebar collapse button clicks to persist state
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest(".sidebar-collapse-btn, [data-tool-sidebar-toggle]");
+    if (!btn) return;
+
+    // Find the target sidebar
+    var sidebar = null;
+    var targetId = btn.getAttribute("data-tool-sidebar-toggle");
+    if (targetId) {
+      sidebar = document.getElementById(targetId);
+    } else {
+      sidebar = btn.closest(".dashboard-sidebar");
+    }
+    if (!sidebar) return;
+
+    // Toggle will be handled by the page's own handler — we just persist
+    // Use requestAnimationFrame to read the state AFTER the toggle
+    requestAnimationFrame(function () {
+      var isNowCollapsed = sidebar.classList.contains("collapsed");
+      try { localStorage.setItem("sidebar-collapsed", isNowCollapsed ? "true" : "false"); } catch {}
+    });
+  });
 });
