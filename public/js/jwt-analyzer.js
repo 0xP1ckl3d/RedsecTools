@@ -75,27 +75,41 @@ function parseJwt(raw) {
 /* ---------- claim metadata ---------- */
 
 const CLAIM_META = {
-  iss:              { label: "Issuer",          type: "uri" },
-  sub:              { label: "Subject",         type: "string" },
-  aud:              { label: "Audience",        type: "uri" },
-  exp:              { label: "Expires At",      type: "time" },
-  nbf:              { label: "Not Before",      type: "time" },
-  iat:              { label: "Issued At",       type: "time" },
-  jti:              { label: "JWT ID",          type: "string" },
-  scope:            { label: "Scope",           type: "scope" },
-  scp:              { label: "Scope (scp)",     type: "scope" },
-  roles:            { label: "Roles",           type: "list" },
-  appid:            { label: "Application ID",  type: "string" },
-  azp:              { label: "Authorized Party", type: "string" },
-  client_id:        { label: "Client ID",       type: "string" },
-  tid:              { label: "Tenant ID",       type: "string" },
-  tenant_id:        { label: "Tenant ID",       type: "string" },
-  name:             { label: "Name",            type: "string" },
-  email:            { label: "Email",           type: "string" },
-  preferred_username: { label: "Username",      type: "string" },
-  nonce:            { label: "Nonce",           type: "string" },
+  iss:              { label: "Issuer",            type: "uri" },
+  sub:              { label: "Subject",           type: "string" },
+  aud:              { label: "Audience",          type: "uri" },
+  exp:              { label: "Expires At",        type: "time" },
+  nbf:              { label: "Not Before",        type: "time" },
+  iat:              { label: "Issued At",         type: "time" },
+  jti:              { label: "JWT ID",            type: "string" },
+  scope:            { label: "Scope",             type: "scope" },
+  scp:              { label: "Scope (scp)",       type: "scope" },
+  roles:            { label: "Roles",             type: "list" },
+  appid:            { label: "Application ID",    type: "string" },
+  azp:              { label: "Authorized Party",  type: "string" },
+  client_id:        { label: "Client ID",         type: "string" },
+  tid:              { label: "Tenant ID",         type: "string" },
+  tenant_id:        { label: "Tenant ID",         type: "string" },
+  name:             { label: "Name",              type: "string" },
+  email:            { label: "Email",             type: "string" },
+  preferred_username: { label: "Username",        type: "string" },
+  nonce:            { label: "Nonce",             type: "string" },
   at_hash:          { label: "Access Token Hash", type: "hash" },
-  c_hash:           { label: "Code Hash",       type: "hash" },
+  c_hash:           { label: "Code Hash",         type: "hash" },
+  /* Entra / OAuth claims */
+  oid:              { label: "Object ID",         type: "string" },
+  upn:              { label: "User Principal Name", type: "string" },
+  unique_name:      { label: "Unique Name",       type: "string" },
+  appidacr:         { label: "App Auth Context",  type: "string" },
+  acr:              { label: "Auth Context Ref",  type: "string" },
+  amr:              { label: "Auth Methods",      type: "list" },
+  ver:              { label: "Token Version",     type: "string" },
+  idp:              { label: "Identity Provider", type: "string" },
+  groups:           { label: "Groups",            type: "list" },
+  wids:             { label: "Writable IDs",      type: "list" },
+  ipaddr:           { label: "IP Address",        type: "string" },
+  deviceid:         { label: "Device ID",         type: "string" },
+  onprem_sid:       { label: "On-Prem SID",       type: "string" },
 };
 
 function fmtDuration(s) {
@@ -132,7 +146,7 @@ function analyzeTimestamps(payload) {
     const exp = typeof payload.exp === "number" ? payload.exp : parseFloat(payload.exp);
     if (!isNaN(exp)) {
       if (exp < now) out.push({ status: "expired", msg: "Token expired " + fmtDuration(now - exp) + " ago", tone: "red" });
-      else out.push({ status: "valid", msg: "Token expires in " + fmtDuration(exp - now), tone: "green" });
+      else out.push({ status: "valid", msg: "Not expired — expires in " + fmtDuration(exp - now), tone: "green" });
       if (payload.iat && typeof payload.iat === "number") {
         const life = exp - payload.iat;
         if (life > 86400 * 365) out.push({ status: "long-expiry", msg: "Token validity is " + fmtDuration(life) + " (> 1 year)", tone: "amber" });
@@ -159,6 +173,8 @@ function analyzeSecurity(header, payload) {
 
   const known = ["hs256","hs384","hs512","rs256","rs384","rs512","es256","es384","es512","ps256","ps384","ps512","eddsa","ed25519","none"];
   if (alg && !known.includes(alg)) out.push({ sev: "warning", msg: "Uncommon algorithm: " + header.alg, tone: "amber" });
+
+  if (alg.startsWith("hs")) out.push({ sev: "info", msg: "Algorithm " + header.alg + " uses HMAC — verification requires the actual shared secret, not a public key", tone: "blue" });
 
   if (payload.exp === undefined) out.push({ sev: "warning", msg: "Missing exp claim — token has no expiration", tone: "amber" });
   if (payload.aud === undefined) out.push({ sev: "info", msg: "Missing aud claim — no audience restriction", tone: "blue" });
@@ -233,15 +249,14 @@ async function verifyPublicKey(token, pemOrJwk, alg) {
 
 function copyText(text) { navigator.clipboard.writeText(text).catch(() => {}); }
 
-/* ---------- sample JWT ---------- */
+/* ---------- sample JWT — dynamic expiry so sample is never stale ---------- */
 
 function buildSampleJwt() {
+  const now = Math.floor(Date.now() / 1000);
   const hdr = JSON.stringify({ alg: "HS256", typ: "JWT" });
-  const pld = JSON.stringify({ iss: "https://auth.example.com", sub: "user-42", aud: "https://api.example.com", exp: 1700000000, iat: 1699999000, nbf: 1699999000, jti: "a1b2c3d4-e5f6-7890-abcd-ef1234567890", scope: "read write admin", roles: ["admin", "editor"], appid: "app-42-demo", tid: "tenant-23456", name: "Jane Smith", email: "jane@example.com" });
+  const pld = JSON.stringify({ iss: "https://auth.example.com", sub: "user-42", aud: "https://api.example.com", exp: now + 3600, iat: now - 1000, nbf: now - 1000, jti: "a1b2c3d4-e5f6-7890-abcd-ef1234567890", scope: "read write admin", roles: ["admin", "editor"], appid: "app-42-demo", tid: "tenant-23456", name: "Jane Smith", email: "jane@example.com" });
   return textToB64Url(hdr) + "." + textToB64Url(pld) + ".SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c";
 }
-
-const SAMPLE_JWT = buildSampleJwt();
 
 /* ---------- text summary ---------- */
 
@@ -277,7 +292,7 @@ function renderResults(container, parsed) {
   const timeFindings = analyzeTimestamps(parsed.payload);
   const secFindings = analyzeSecurity(parsed.header, parsed.payload);
   const timeBadge = timeFindings[0] || { tone: "gray", status: "unknown" };
-  const statusLabel = { expired: "Expired", valid: "Valid", "no-exp": "No Expiry", "not-yet-valid": "Not Yet Valid" }[timeBadge.status] || "Unknown";
+  const statusLabel = { expired: "Expired", valid: "Not Expired", "no-exp": "No Expiry", "not-yet-valid": "Not Yet Valid" }[timeBadge.status] || "Unknown";
 
   const hdrJson = JSON.stringify(parsed.header, null, 2);
   const pldJson = JSON.stringify(parsed.payload, null, 2);
@@ -308,7 +323,7 @@ function renderResults(container, parsed) {
       '<div class="jwt-summary-grid">' +
         '<div><span class="text-sm opacity-70">Algorithm</span><br><span class="jwt-mono">' + escapeHtml(alg) + "</span></div>" +
         '<div><span class="text-sm opacity-70">Type</span><br><span class="jwt-mono">' + escapeHtml(typ) + "</span></div>" +
-        "<div><span class=\"text-sm opacity-70\">Structure</span><br>" + (parsed.parts === 3 ? badgeHtml("green", "JWS (3 parts)") : badgeHtml("amber", "Unsecured (2 parts)")) + "</div>" +
+        "<div><span class=\"text-sm opacity-70\">Structure</span><br>" + (parsed.parts === 3 ? badgeHtml("green", "JWS (3 parts)") : badgeHtml("amber", "Unsigned / no signature segment")) + "</div>" +
         "<div><span class=\"text-sm opacity-70\">Time Status</span><br>" + badgeHtml(timeBadge.tone, statusLabel) + "</div>" +
       "</div>" +
     "</div>" +
@@ -348,6 +363,10 @@ function renderResults(container, parsed) {
         '<h3 class="text-lg font-semibold">Rebuilt Token</h3>' +
         '<button type="button" class="btn-secondary text-xs" data-jwt-copy="rebuilt">Copy</button>' +
       "</div>" +
+      '<div class="flex items-center gap-3 mb-2">' +
+        '<label class="custom-checkbox gap-2 text-xs"><input type="checkbox" id="jwt-preserve-sig"><span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span><span>Preserve original signature</span></label>' +
+        '<span class="text-xs opacity-50">Signature will be invalid if header or payload changed</span>' +
+      "</div>" +
       '<div class="jwt-rebuilt-bar">' +
         '<div id="jwt-rebuilt-display" class="jwt-token-display"></div>' +
         '<span id="jwt-rebuilt-badge" class="jwt-rebuilt-warn hidden">Edited / Unverified</span>' +
@@ -369,7 +388,7 @@ function renderResults(container, parsed) {
     /* verification */
     '<div class="card p-4 mb-4">' +
       '<h3 class="text-lg font-semibold mb-3">Signature Verification</h3>' +
-      '<p class="text-sm opacity-70 mb-3">Paste an HMAC secret or PEM public key / JWK to verify the token signature.</p>' +
+      '<div class="info-box info-box-amber mb-3">Decoded tokens are untrusted unless signature verification succeeds with the expected key.</div>' +
       '<textarea id="jwt-verify-key" class="jwt-editor" rows="3" placeholder="HMAC secret, PEM public key, or JWK JSON"></textarea>' +
       '<div class="mt-3"><button type="button" id="jwt-verify-btn" class="btn-primary">Verify Signature</button></div>' +
       '<div id="jwt-verify-result" class="mt-3"></div>' +
@@ -391,6 +410,7 @@ function rebuildLive(parsed) {
   var pldTa = document.getElementById("jwt-edit-payload");
   var display = document.getElementById("jwt-rebuilt-display");
   var badge = document.getElementById("jwt-rebuilt-badge");
+  var chk = document.getElementById("jwt-preserve-sig");
   if (!hdrTa || !pldTa || !display || !badge) return;
 
   try {
@@ -398,9 +418,10 @@ function rebuildLive(parsed) {
     var pldObj = JSON.parse(pldTa.value);
     var newH = textToB64Url(JSON.stringify(hdrObj));
     var newP = textToB64Url(JSON.stringify(pldObj));
-    display.innerHTML = colorTokenHtml(newH, newP, parsed.signatureB64);
-
     var changed = (newH !== parsed.headerB64) || (newP !== parsed.payloadB64);
+    var sig = (chk && chk.checked) ? parsed.signatureB64 : "";
+    display.innerHTML = colorTokenHtml(newH, newP, sig);
+
     if (changed) badge.classList.remove("hidden");
     else badge.classList.add("hidden");
   } catch {
@@ -427,10 +448,12 @@ function wireEvents(container, parsed) {
   /* live rebuild on editor input */
   var hdrTa = document.getElementById("jwt-edit-header");
   var pldTa = document.getElementById("jwt-edit-payload");
+  var chk = document.getElementById("jwt-preserve-sig");
   if (hdrTa) hdrTa.addEventListener("input", function () { rebuildLive(parsed); });
   if (pldTa) pldTa.addEventListener("input", function () { rebuildLive(parsed); });
+  if (chk) chk.addEventListener("change", function () { rebuildLive(parsed); });
 
-  /* initial render of rebuilt token */
+  /* initial render — no signature by default */
   rebuildLive(parsed);
 
   /* signature verification */
@@ -473,13 +496,17 @@ function syncInputColors(input, backdrop) {
   }
 }
 
+var _jwtInitialized = false;
+
 export function initJwtAnalyzer() {
+  if (_jwtInitialized) return;
   var input = document.getElementById("jwt-input");
   var analyzeBtn = document.getElementById("jwt-analyze-btn");
   var clearBtn = document.getElementById("jwt-clear-btn");
   var sampleBtn = document.getElementById("jwt-sample-btn");
   var results = document.getElementById("jwt-results");
   if (!input || !analyzeBtn || !results) return;
+  _jwtInitialized = true;
 
   /* wrap textarea with color overlay */
   var wrapper = document.createElement("div");
@@ -505,5 +532,5 @@ export function initJwtAnalyzer() {
 
   clearBtn.addEventListener("click", function () { input.value = ""; results.innerHTML = ""; syncInputColors(input, backdrop); });
 
-  sampleBtn.addEventListener("click", function () { input.value = SAMPLE_JWT; syncInputColors(input, backdrop); });
+  sampleBtn.addEventListener("click", function () { input.value = buildSampleJwt(); syncInputColors(input, backdrop); });
 }

@@ -19,7 +19,7 @@ function badgeHtml(label, tone) {
 }
 
 function checkRow(status, title, detail) {
-  const tone = status === "ok" ? "green" : status === "warn" ? "red" : status === "fail" ? "red" : "gray";
+  const tone = status === "ok" ? "green" : status === "warn" ? "amber" : status === "fail" ? "red" : "gray";
   const statusLabel = status === "ok" ? "Ok" : status === "warn" ? "Warning" : status === "fail" ? "Problem" : "Info";
   return `<div class="border border-border rounded p-3 bg-elevated">
     <div class="flex items-center gap-2 flex-wrap">
@@ -96,9 +96,11 @@ function buildHopAnalysis(receivedHeaders) {
     hops[i].parsedDate = dt;
     hops[i].dateFormatted = dt ? dt.toISOString().replace("T", " ").slice(0, 19) : hops[i].date || "Unknown";
   }
-  for (let i = hops.length - 1; i >= 0; i--) {
-    if (i < hops.length - 1 && hops[i].parsedDate && hops[i + 1].parsedDate) {
-      const diff = Math.abs(hops[i + 1].parsedDate - hops[i].parsedDate) / 1000;
+  // Reverse so oldest-first for timeline readability
+  hops.reverse();
+  for (let i = 0; i < hops.length; i++) {
+    if (i > 0 && hops[i].parsedDate && hops[i - 1].parsedDate) {
+      const diff = Math.abs(hops[i].parsedDate - hops[i - 1].parsedDate) / 1000;
       hops[i].delaySec = diff;
       if (diff < 60) hops[i].delayFormatted = `${diff.toFixed(0)}s`;
       else if (diff < 3600) hops[i].delayFormatted = `${(diff / 60).toFixed(1)}m`;
@@ -123,6 +125,8 @@ function parseAuthResults(value) {
     if (dkimMatch) results.dkim = dkimMatch[1].toLowerCase();
     const dmarcMatch = trimmed.match(/^dmarc=(\S+)/i);
     if (dmarcMatch) results.dmarc = dmarcMatch[1].toLowerCase();
+    const arcMatch = trimmed.match(/^arc=(\S+)/i);
+    if (arcMatch) results.arc = arcMatch[1].toLowerCase();
     const dkimHeader = trimmed.match(/^header\.(?:i|from|d|s)=(\S+)/i);
     if (dkimHeader && !results.dkimHeaderFrom) results.dkimHeaderFrom = dkimHeader[1];
   }
@@ -211,12 +215,20 @@ function buildSpfChecks(auth, receivedSpf) {
 
 function extractDomain(fromHeader) {
   if (!fromHeader) return "";
-  // Match <email@domain> first, then bare email, then bare domain
   const angleMatch = fromHeader.match(/<([^@>]+)@([^>]+)>/);
   if (angleMatch) return angleMatch[2].toLowerCase().trim();
   const bareMatch = fromHeader.match(/([^\s,;]+)@([^\s,;>]+)/);
   if (bareMatch) return bareMatch[2].toLowerCase().trim();
   return fromHeader.toLowerCase().trim();
+}
+
+function extractMailbox(headerValue) {
+  if (!headerValue) return "";
+  const angleMatch = headerValue.match(/<([^>]+)>/);
+  if (angleMatch) return angleMatch[1].trim().toLowerCase();
+  const bareMatch = headerValue.match(/([^\s,;]+@[^\s,;>]+)/);
+  if (bareMatch) return bareMatch[1].trim().toLowerCase();
+  return headerValue.trim().toLowerCase();
 }
 
 function buildDkimChecks(auth, dkimSig, fromHeader) {
@@ -228,8 +240,20 @@ function buildDkimChecks(auth, dkimSig, fromHeader) {
   }
 
   const dkimResult = auth.dkim || "none";
+  const cryptoVerified = dkimResult === "pass";
 
-  // Body hash — we can report presence but cannot verify without the message body
+  // DKIM-Signature present
+  checks.push({
+    status: dkimSig ? "ok" : "info",
+    title: "DKIM-Signature Header Present",
+    detail: dkimSig
+      ? cryptoVerified
+        ? `DKIM-Signature header found for domain "${dkimSig.domain}" with selector "${dkimSig.selector}". Authentication-Results confirm cryptographic pass.`
+        : `DKIM-Signature header found for domain "${dkimSig.domain}" with selector "${dkimSig.selector}". Not cryptographically verified by this tool.`
+      : "No DKIM-Signature header present.",
+  });
+
+  // Body hash
   if (dkimSig?.bodyHash) {
     checks.push({
       status: "info",
@@ -237,15 +261,6 @@ function buildDkimChecks(auth, dkimSig, fromHeader) {
       detail: `Body hash (bh) tag is present: ${dkimSig.bodyHash.slice(0, 24)}${dkimSig.bodyHash.length > 24 ? "..." : ""}. Body hash verification requires the full message body, which is not available in a header-only analysis.`,
     });
   }
-
-  // Record published
-  checks.push({
-    status: dkimSig ? "ok" : "info",
-    title: "DKIM Record Published",
-    detail: dkimSig
-      ? `DKIM-Signature header found for domain "${dkimSig.domain}" with selector "${dkimSig.selector}".`
-      : "No DKIM-Signature header present.",
-  });
 
   // Syntax check
   checks.push({
@@ -258,22 +273,22 @@ function buildDkimChecks(auth, dkimSig, fromHeader) {
         : "No DKIM signature to validate.",
   });
 
-  // Public key check (we can only verify the tag is present, not do DNS)
+  // Public key note
   checks.push({
     status: dkimSig?.selector ? "ok" : "info",
-    title: "DKIM Public Key Check",
+    title: "DKIM Public Key Lookup",
     detail: dkimSig?.selector
-      ? `Selector "${dkimSig.selector}" is specified. The public key would be looked up at ${dkimSig.selector}._domainkey.${dkimSig.domain}.`
+      ? `Selector "${dkimSig.selector}" is specified. The public key would be looked up at ${dkimSig.selector}._domainkey.${dkimSig.domain}. DNS lookup is not performed by this tool.`
       : "No selector tag found in the DKIM signature.",
   });
 
   // Signature syntax check
   if (dkimSig) {
     checks.push({
-      status: dkimResult === "pass" ? "ok" : dkimResult === "fail" ? "fail" : "warn",
-      title: "DKIM Signature Syntax Check",
-      detail: dkimResult === "pass"
-        ? "The signature validated successfully against the message headers."
+      status: cryptoVerified ? "ok" : dkimResult === "fail" ? "fail" : "warn",
+      title: "DKIM Signature Validation",
+      detail: cryptoVerified
+        ? "The signature validated successfully against the message headers (per Authentication-Results)."
         : `Signature validation result: ${dkimResult}.`,
     });
   }
@@ -282,13 +297,13 @@ function buildDkimChecks(auth, dkimSig, fromHeader) {
   if (dkimSig?.domain) {
     const fromDomain = extractDomain(fromHeader);
     checks.push({
-      status: dkimResult === "pass" ? "ok" : "info",
+      status: cryptoVerified ? "ok" : "info",
       title: "DKIM Signature Identifier Match",
       detail: `Signing domain: ${dkimSig.domain}${fromDomain ? `, Header From domain: ${fromDomain}` : ""}.`,
     });
   }
 
-  // Alignment — compare DKIM signing domain against actual From: header domain
+  // Alignment
   if (dkimSig?.domain) {
     const fromDomain = extractDomain(fromHeader);
     const dkimDomain = dkimSig.domain.toLowerCase().trim();
@@ -313,22 +328,25 @@ function buildDkimChecks(auth, dkimSig, fromHeader) {
     checks.push({ status: "ok", title: "DKIM Signature Duplicate Tags", detail: "All signature tags are unique." });
   }
 
-  // Expiration
+  // Expiration — x= is Unix epoch seconds, not a date string
   if (dkimSig?.expire) {
-    const expDate = parseDateSafe(dkimSig.expire);
-    if (expDate) {
+    const expTs = parseInt(dkimSig.expire, 10);
+    if (!isNaN(expTs) && expTs > 0) {
+      const expDate = new Date(expTs * 1000);
       const expired = expDate < new Date();
       checks.push({
         status: expired ? "fail" : "ok",
         title: "DKIM Signature Expiration",
         detail: expired
-          ? `The signature expired at ${expDate.toISOString().replace("T", " ").slice(0, 19)}.`
-          : `The signature is valid until ${expDate.toISOString().replace("T", " ").slice(0, 19)}.`,
+          ? `The signature expired at ${expDate.toISOString().replace("T", " ").slice(0, 19)} UTC.`
+          : `The signature is valid until ${expDate.toISOString().replace("T", " ").slice(0, 19)} UTC.`,
       });
+    } else {
+      checks.push({ status: "warn", title: "DKIM Signature Expiration", detail: `Could not parse x= value: ${dkimSig.expire}` });
     }
   }
 
-  // Algorithm detail
+  // Algorithm
   if (dkimSig?.algorithm) {
     checks.push({
       status: dkimSig.algorithm.includes("sha256") || dkimSig.algorithm.includes("ed25519") ? "ok" : "warn",
@@ -337,6 +355,22 @@ function buildDkimChecks(auth, dkimSig, fromHeader) {
     });
   }
 
+  return checks;
+}
+
+// --- ARC Checks ---
+
+function buildArcChecks(auth) {
+  const checks = [];
+  const result = auth.arc || "none";
+  if (result === "none") return checks;
+  checks.push({
+    status: result === "pass" ? "ok" : result === "fail" ? "fail" : "warn",
+    title: "ARC Result",
+    detail: result === "pass"
+      ? "ARC validation passed. The message passed through intermediary forwarding without breaking authentication."
+      : `ARC check returned: ${result}.`,
+  });
   return checks;
 }
 
@@ -369,10 +403,15 @@ function detectIssues(headers, hops, auth) {
       break;
     }
   }
+  // Compare mailbox addresses, not raw header strings
   const fromAddr = getHeader(headers, "from");
   const replyTo = getHeader(headers, "reply-to");
-  if (fromAddr && replyTo && fromAddr !== replyTo) {
-    issues.push({ status: "warn", title: "From / Reply-To Mismatch", detail: "The From and Reply-To addresses differ, which is common in phishing campaigns." });
+  if (fromAddr && replyTo) {
+    const fromMailbox = extractMailbox(fromAddr);
+    const replyMailbox = extractMailbox(replyTo);
+    if (fromMailbox && replyMailbox && fromMailbox !== replyMailbox) {
+      issues.push({ status: "warn", title: "From / Reply-To Mismatch", detail: `From: ${fromMailbox} vs Reply-To: ${replyMailbox}. Differing addresses can indicate phishing.` });
+    }
   }
   if (!auth.spf && !auth.dkim && !auth.dmarc) {
     issues.push({ status: "warn", title: "No Authentication Results", detail: "No SPF, DKIM, or DMARC results were found. The message origin cannot be verified." });
@@ -446,6 +485,7 @@ function analyze(raw) {
   const spfChecks = buildSpfChecks(authResults, receivedSpf);
   const dkimChecks = buildDkimChecks(authResults, dkimSig, metadata.from);
   const dmarcChecks = buildDmarcChecks(authResults);
+  const arcChecks = buildArcChecks(authResults);
   const issues = detectIssues(headers, hops, authResults);
   const score = computeScore(authResults, issues);
 
@@ -453,10 +493,15 @@ function analyze(raw) {
   const rawReceivedSpf = receivedSpfRaw || "";
   const rawDkimSignature = dkimSigRaw || "";
 
-  return { headers, hops, authResults, receivedSpf, dkimSig, metadata, spfChecks, dkimChecks, dmarcChecks, issues, score, rawAuthResults, rawReceivedSpf, rawDkimSignature };
+  return { headers, hops, authResults, receivedSpf, dkimSig, metadata, spfChecks, dkimChecks, dmarcChecks, arcChecks, issues, score, rawAuthResults, rawReceivedSpf, rawDkimSignature };
 }
 
 // --- Rendering ---
+
+function copyBtnHtml(text, label) {
+  const id = "ha-copy-" + Math.random().toString(36).slice(2, 8);
+  return `<button type="button" class="btn-secondary text-xs" data-ha-copy-id="${id}" data-ha-copy="${escapeHtml(text)}">${escapeHtml(label)}</button>`;
+}
 
 function renderCheckGroup(title, checks, rawValue) {
   if (!checks.length) return "";
@@ -487,6 +532,7 @@ function renderAuthSummary(auth) {
     { label: "DKIM", value: auth.dkim || "none" },
     { label: "DMARC", value: auth.dmarc || "none" },
   ];
+  if (auth.arc) items.push({ label: "ARC", value: auth.arc });
   return items.map((item) => {
     let tone = "gray";
     if (item.value === "pass") tone = "green";
@@ -504,7 +550,7 @@ function renderHopTable(hops) {
   const rows = hops.map((hop, i) => {
     const delayTone = hop.delaySec > 3600 ? "amber" : "gray";
     return `<tr>
-      <td class="text-xs text-muted font-mono">${hops.length - i}</td>
+      <td class="text-xs text-muted font-mono">${i + 1}</td>
       <td class="text-xs font-mono">${escapeHtml(hop.from || "—")}</td>
       <td class="text-xs font-mono">${escapeHtml(hop.by || "—")}</td>
       <td class="text-xs">${escapeHtml(hop.with || "—")}</td>
@@ -532,9 +578,36 @@ function renderAllHeadersTable(headers) {
 
 function renderAnalysis(result) {
   const scoreCls = result.score.level === "green" ? "ha-score-green" : result.score.level === "amber" ? "ha-score-amber" : "ha-score-red";
+
+  // Build summary text for copy
+  const summaryText = [
+    "Header Trust Score: " + result.score.score + "/100 (" + result.score.label + ")",
+    "SPF: " + (result.authResults.spf || "none").toUpperCase(),
+    "DKIM: " + (result.authResults.dkim || "none").toUpperCase(),
+    "DMARC: " + (result.authResults.dmarc || "none").toUpperCase(),
+    result.authResults.arc ? "ARC: " + result.authResults.arc.toUpperCase() : "",
+    "Hops: " + result.hops.length,
+  ].filter(Boolean).join("\n");
+
+  const authSummaryText = [
+    "SPF: " + (result.authResults.spf || "none").toUpperCase(),
+    "DKIM: " + (result.authResults.dkim || "none").toUpperCase(),
+    "DMARC: " + (result.authResults.dmarc || "none").toUpperCase(),
+    result.authResults.arc ? "ARC: " + result.authResults.arc.toUpperCase() : "",
+  ].filter(Boolean).join("\n");
+
+  const hopTimelineText = result.hops.map((hop, i) =>
+    (i + 1) + ". " + (hop.from || "—") + " -> " + (hop.by || "—") + " [" + (hop.with || "?") + "] " + hop.dateFormatted + " delay:" + hop.delayFormatted
+  ).join("\n");
+
+  const metadataJson = JSON.stringify(result.metadata, null, 2);
+
   return `<div class="grid gap-4">
     <div class="card p-4">
-      <h3 class="font-bold text-sm mb-3">Deliverability Score</h3>
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="font-bold text-sm">Header Trust Score</h3>
+        ${copyBtnHtml(summaryText, "Copy Summary")}
+      </div>
       <div class="flex items-center gap-6 flex-wrap">
         <div class="text-center min-w-[80px]">
           <div class="text-3xl font-bold ${scoreCls}">${result.score.score}</div>
@@ -550,20 +623,28 @@ function renderAnalysis(result) {
     ${renderCheckGroup("SPF Checks", result.spfChecks, result.rawReceivedSpf || result.rawAuthResults)}
     ${renderCheckGroup("DKIM Checks", result.dkimChecks, result.rawDkimSignature)}
     ${renderCheckGroup("DMARC Checks", result.dmarcChecks, result.rawAuthResults)}
+    ${result.arcChecks.length ? renderCheckGroup("ARC Checks", result.arcChecks, result.rawAuthResults) : ""}
     ${result.issues.length ? renderCheckGroup("Warnings", result.issues) : ""}
 
     <div class="card p-4">
-      <div class="flex items-center gap-2 mb-3">
-        <h3 class="font-bold text-sm">Hop Analysis</h3>
-        ${badgeHtml(`${result.hops.length} hop${result.hops.length === 1 ? "" : "s"}`, "gray")}
+      <div class="flex items-center justify-between gap-2 mb-3">
+        <div class="flex items-center gap-2">
+          <h3 class="font-bold text-sm">Hop Analysis</h3>
+          ${badgeHtml(`${result.hops.length} hop${result.hops.length === 1 ? "" : "s"}`, "gray")}
+          <span class="text-xs text-muted">(oldest first)</span>
+        </div>
+        ${copyBtnHtml(hopTimelineText, "Copy Timeline")}
       </div>
       ${renderHopTable(result.hops)}
     </div>
 
     <div class="card p-4">
-      <div class="flex items-center gap-2 mb-3">
-        <h3 class="font-bold text-sm">All Headers</h3>
-        ${badgeHtml(`${result.headers.length} header${result.headers.length === 1 ? "" : "s"}`, "gray")}
+      <div class="flex items-center justify-between gap-2 mb-3">
+        <div class="flex items-center gap-2">
+          <h3 class="font-bold text-sm">All Headers</h3>
+          ${badgeHtml(`${result.headers.length} header${result.headers.length === 1 ? "" : "s"}`, "gray")}
+        </div>
+        ${copyBtnHtml(metadataJson, "Copy Metadata JSON")}
       </div>
       ${renderAllHeadersTable(result.headers)}
     </div>
@@ -601,13 +682,17 @@ X-Mailer: GitHub Notification Service`;
 
 // --- Init ---
 
+var _haInitialized = false;
+
 function initHeaderAnalyzer() {
+  if (_haInitialized) return;
   const inputEl = document.getElementById("header-analyzer-input");
   const analyzeBtn = document.getElementById("header-analyzer-btn");
   const sampleBtn = document.getElementById("header-analyzer-sample-btn");
   const clearBtn = document.getElementById("header-analyzer-clear-btn");
   const resultsEl = document.getElementById("header-analyzer-results");
   if (!inputEl || !analyzeBtn || !resultsEl) return;
+  _haInitialized = true;
 
   analyzeBtn.addEventListener("click", () => {
     const raw = inputEl.value.trim();
@@ -623,8 +708,13 @@ function initHeaderAnalyzer() {
     resultsEl.innerHTML = renderAnalysis(result);
   });
 
-  // Collapsible check group toggle
+  // Collapsible check group toggle + copy buttons
   resultsEl.addEventListener("click", (e) => {
+    const copyBtn = e.target.closest("[data-ha-copy-id]");
+    if (copyBtn) {
+      navigator.clipboard.writeText(copyBtn.dataset.haCopy || "").catch(() => {});
+      return;
+    }
     const btn = e.target.closest("[data-ha-toggle]");
     if (!btn) return;
     const id = btn.dataset.haToggle;

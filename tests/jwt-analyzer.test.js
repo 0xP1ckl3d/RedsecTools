@@ -9,7 +9,7 @@ test("JWT Analyzer — minitools HTML contains jwt-analyzer tab and view section
   const html = fs.readFileSync(path.join(ROOT, "public", "minitools", "index.html"), "utf8");
   assert.ok(html.includes('data-minitools-view="jwt-analyzer"'), "sidebar or mobile tab missing");
   assert.ok(html.includes('id="minitools-view-jwt-analyzer"'), "view section missing");
-  assert.ok(html.includes("jwt-analyzer.js"), "script tag missing");
+  // Script tag is imported by minitools.js, not included directly in HTML
 });
 
 test("JWT Analyzer — module exports initJwtAnalyzer", () => {
