@@ -1,53 +1,38 @@
 # RedSecTools
 
-RedSecTools is a self-hosted offensive security operations workspace for small teams. It brings secure collaboration, engagement planning, reporting, threat monitoring, focused utilities, and governed AI assistance into one application designed for internal deployment.
-
-RedSecTools is under active development and has not yet been publicly launched. Treat this README as a guide to the current application, fresh installs, and safe operation.
+RedSecTools is a self-hosted offensive security operations workspace for small teams. It brings secure collaboration, engagement planning, reporting, threat monitoring, focused utilities, and governed AI assistance into one team-controlled platform.
 
 ## Features
 
-### Secure collaboration
-
-- **RedSecPaste** provides encrypted paste sharing with syntax highlighting, optional password protection, burn-after-reading behavior, and guest links.
-- **RedSecShare** provides encrypted file sharing with configurable file limits, optional password protection, burn-after-reading behavior, guest links, and Chrome extension support.
-- **RedSecChat** provides end-to-end encrypted real-time messaging with key backup and rekey flows, rich message UI, and cross-tool embeds for paste, share, and vault items.
-- **RedSecVault** provides encrypted credential and note management for passwords, API keys, SSH keys, TOTP codes, custom fields, team vaults, shares, history, membership permissions, and vault audit trails.
-
-### Team operations
-
-- **Homepage and bulletins** provide an authenticated team dashboard with announcements, shortcuts, favorites, weather, profile controls, branding, and notifications.
-- **RedSecCal** provides scheduling, projects, allocations, reminders, utilisation tracking, multi-day series, and links into related tools.
-- **RedSecSurvey** provides survey creation, public and internal response modes, permission-aware results, CSV export, and administrative oversight.
-- **RedSecWiki** provides team and personal Markdown knowledge spaces with trees, previews, published rendering, revision history, search, and RedSecAI integration.
-- **Notifications** provide a persisted notification center and same-origin or trusted-origin WebSocket delivery.
-
-### Security operations
-
-- **RedSecThreat** monitors RSS, website, API, and onion sources with SSRF controls, matching and alerting, IOC extraction, MITRE mapping, tags, feed health, and notifications.
-- **RedSecReporter** supports report and proposal workspaces with projects, members, designs, templates, findings, comments, evidence, PDF rendering, proposal templates, and reusable test-type write-ups.
-- **RedSecEngage** supports clients, opportunities, engagements, contacts, pipeline and QA workflows, team assignment, notes, activity logs, notifications, and Reporter or Calendar links.
-- **RedSecMiniTools** provides focused utilities including CyberChef-style transforms, JWT analysis, email header analysis, CVSS scoring, security header checks, TLS checks, DNS intelligence, SecurityTrails lookups, breach lookup, and LeakRadar lookups where enabled.
-- **RedSecAI** provides a governed assistant backed by local Ollama or an admin-configured compatible model endpoint, with scoped application and MiniTools context and confirmation-gated mutations.
-
-### Platform controls and integrations
-
-- **Admin controls** cover users, roles, permissions, MFA administration, settings, branding, security posture, audit review and export, encrypted backup export, deployment warnings, and tool configuration.
-- **RBAC and audit surfaces** apply server-side permission checks to protected workflows and record security-relevant activity for administrators.
-- **Integrations** include scoped service accounts, platform webhooks, an authenticated interactive OpenAPI/Swagger surface, and optional SAML SSO controls when enabled.
-- **Chrome extension APIs** support vault access, autofill, paste creation, and share creation through the extension route surface.
+| Area | Module | Description |
+| --- | --- | --- |
+| Secure collaboration | **RedSecPaste** | Encrypted paste sharing with syntax highlighting, optional password protection, burn-after-reading behavior, and guest links. |
+| Secure collaboration | **RedSecShare** | Encrypted file sharing with configurable file limits, optional password protection, burn-after-reading behavior, guest links, and Chrome extension support. |
+| Secure collaboration | **RedSecTeam** | End-to-end encrypted real-time messaging with key backup and rekey flows, rich message UI, and paste, share, and vault embeds. |
+| Secure collaboration | **RedSecVault** | Encrypted credential and note management for passwords, API keys, SSH keys, TOTP codes, custom fields, team vaults, shares, history, membership permissions, and vault audit trails. |
+| Team operations | **Homepage and bulletins** | Authenticated dashboard with announcements, shortcuts, favorites, weather, profile controls, branding, and notifications. |
+| Team operations | **RedSecCal** | Scheduling, projects, allocations, reminders, utilisation tracking, multi-day series, and cross-tool links. |
+| Team operations | **RedSecSurvey** | Survey creation with public and internal response modes, permission-aware results, CSV export, and administrative oversight. |
+| Team operations | **RedSecWiki** | Team and personal Markdown knowledge spaces with trees, previews, published rendering, revision history, search, and RedSecAI integration. |
+| Security operations | **RedSecThreat** | RSS, website, API, and onion feed monitoring with SSRF controls, matching and alerting, IOC extraction, MITRE mapping, tags, feed health, and notifications. |
+| Security operations | **RedSecReporter** | Report and proposal workspaces with projects, members, designs, templates, findings, comments, evidence, PDF rendering, and reusable write-ups. |
+| Security operations | **RedSecEngage** | Client, opportunity, and engagement workflows with contacts, pipeline and QA tracking, team assignment, notes, activity logs, notifications, and Reporter or Calendar links. |
+| Security operations | **RedSecMiniTools** | Focused utilities including CyberChef-style transforms, JWT analysis, email header analysis, CVSS scoring, security header checks, TLS checks, DNS intelligence, SecurityTrails lookups, breach lookup, and LeakRadar lookups where enabled. |
+| Assisted operations | **RedSecAI** | Governed assistant backed by local Ollama or an admin-configured compatible model endpoint, with scoped application and MiniTools context and confirmation-gated mutations. |
+| Platform | **Notifications** | Persisted notification center with same-origin or trusted-origin WebSocket delivery. |
+| Platform | **Admin controls** | User, role, permission, MFA, settings, branding, security posture, audit, encrypted backup export, deployment warning, and tool configuration surfaces. |
+| Platform | **Integrations** | Scoped service accounts, platform webhooks, authenticated interactive OpenAPI/Swagger docs, optional SAML SSO controls, and Chrome extension APIs. |
 
 ## Architecture
 
-RedSecTools is a modular monolith:
+RedSecTools uses:
 
-- A **Node.js and Express** backend serves page routes, API routes, WebSocket behavior, authentication, integrations, and security controls.
-- A **SQLite** database stores application state and tracked migration state.
-- A **static multi-page frontend** in `public/` provides the browser UI.
+- A **Node.js and Express** backend for page routes, API routes, WebSocket behavior, authentication, integrations, and security controls.
+- A **SQLite** database for application state.
+- A **static multi-page frontend** in `public/` for the browser UI.
 - **Docker** and npm-based self-hosted deployment paths are supported.
 - **RedSecAI** can use a local Ollama service where configured. Administrators may also configure compatible external or cloud model endpoints when that is appropriate for their environment.
 - Browser-side cryptography is used for protected paste, file share, chat, and vault content areas.
-
-The codebase is being shaped as a modular monolith rather than a microservice estate. New work should preserve clear module boundaries without breaking existing route and data compatibility.
 
 ## Security Model
 
@@ -62,7 +47,7 @@ Administrators should also account for the boundaries of optional features:
 - RedSecAI can send prompts and scoped context to the configured model endpoint.
 - External APIs, cloud AI endpoints, SMTP providers, webhooks, and SSO identity providers have their own data-handling and availability risks.
 
-Do not treat UI visibility as an authorization boundary. New routes and integrations must retain server-side permission checks, audit expectations, and CSP-safe frontend behavior.
+Authorization is enforced server-side; frontend visibility alone is not an access control boundary.
 
 ## Quick Start
 
@@ -109,7 +94,16 @@ These steps describe a fresh npm-based install.
    npm start
    ```
 
-Tracked database migrations run as part of application startup. The current package scripts do not expose a separate migration command for fresh installs.
+Tracked database migrations run during application startup.
+
+### First admin access
+
+`ADMIN_PASSWORD` is the bootstrap password for `/admin`.
+
+- Before any RedSecTools user accounts exist, `/admin` can be unlocked with `ADMIN_PASSWORD` so the initial deployment can be configured.
+- After the first user account has been created, admin access requires both an active signed-in RedSecTools user session and the admin password. Sign in to the application first, then open `/admin`.
+
+Keep the generated or configured admin password available after first setup. Creating a user account does not replace it.
 
 ### Assisted local setup
 
@@ -177,15 +171,13 @@ Treat service-account tokens, webhook secrets, SMTP credentials, AI credentials,
 | `npm test` | Run the Node test suite. |
 | `npm run test:visual` | Run Playwright smoke and accessibility coverage. |
 
-The CI workflow currently runs:
+Recommended checks:
 
 ```bash
 npm test
 npm run build
 npm audit --omit=dev
 ```
-
-Route protection, static-page gating, security hardening, route contracts, and feature route coverage are exercised through the test suite where those tests exist. There is no separate package script for a route or static smoke run beyond the current test commands.
 
 ### CSS workflow
 
@@ -200,10 +192,8 @@ Route protection, static-page gating, security hardening, route contracts, and f
 
 ## Deployment Notes
 
-This section describes fresh deployments only.
-
-- Create a production `.env` and set a strong `COOKIE_SECRET` before startup.
-- Run behind TLS in production. Configure `COOKIE_SECURE`, reverse proxy behavior, trusted origins, and `TRUST_PROXY` to match the deployment topology.
+- Use the setup flow above to create the deployment environment before starting the app.
+- Terminate production traffic over TLS and verify reverse proxy behavior before exposing the service.
 - Keep the SQLite data directory persistent. Docker Compose persists app data through the `redsectools-data` volume.
 - Back up application data deliberately and protect exported backup material. The Admin backup path exports an encrypted database backup, but retention, off-host storage, restore drills, and secret handling remain operational responsibilities.
 - Verify SMTP, RedSecAI endpoint behavior, MiniTools API keys, webhook targets, service-account scopes, and SAML flows before relying on them in production workflows.
@@ -220,12 +210,6 @@ RedSecMiniTools includes both browser-local utilities and server-assisted lookup
 - Server-side lookup tools such as security header checks, TLS checks, DNS intelligence, and supported threat or intelligence lookups can make controlled outbound requests from the application.
 - Third-party-backed tools such as SecurityTrails and LeakRadar require admin configuration and should be enabled only when their data flows fit the deployment.
 - Sensitive inputs should be handled deliberately. A small utility surface is still part of the application's security boundary when it talks to the server or an external API.
-
-## Project Status
-
-RedSecTools is pre-public-release software under active development. It already contains broad product and operational capabilities, but it should not be presented as a finished hosted SaaS product or as a substitute for deployment review, security testing, backup planning, and operator judgment.
-
-The current commercial direction is paid self-hosted readiness first. Hosted multi-tenant SaaS behavior, billing, and license enforcement should be treated as future work unless implemented and documented separately.
 
 ## Contributing
 

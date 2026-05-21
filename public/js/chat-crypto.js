@@ -1,4 +1,4 @@
-// RedSecChat — E2E encryption module for the chat system
+// RedSecTeam - E2E encryption module for the chat system
 // Uses ONLY the native Web Crypto API. Zero external dependencies.
 // Hybrid RSA-OAEP (2048-bit) + AES-256-GCM scheme.
 

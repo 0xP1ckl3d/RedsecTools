@@ -1,5 +1,5 @@
 /**
- * chat.js — Main chat page controller for RedSecChat.
+ * chat.js - Main chat page controller for RedSecTeam.
  *
  * Handles all UI rendering, event wiring, and user interactions.
  * Depends on window.ChatState (chat-state.js), window.ChatWS (chat-ws-client.js),
@@ -1291,7 +1291,7 @@
     modal.innerHTML =
       '<h2 class="text-xl font-bold mb-4">Set Up Encryption Keys</h2>' +
       '<p class="text-muted text-sm mb-4">' +
-      "RedSecChat uses end-to-end encryption. You need to generate an encryption key pair " +
+      "RedSecTeam uses end-to-end encryption. You need to generate an encryption key pair " +
       "to send and receive encrypted messages. Your private key will be stored locally in " +
       "your browser and backed up to the server encrypted with your password." +
       "</p>" +
