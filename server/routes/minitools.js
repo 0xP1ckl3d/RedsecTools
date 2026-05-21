@@ -221,6 +221,7 @@ router.get("/minitools/bootstrap", readLimiter, requireUser, attachUserAccess, c
     leakradar: { enabled: isMinitoolEnabled("minitool_leakradar_enabled") && leakRadarApiKeyConfigured, apiKeyConfigured: leakRadarApiKeyConfigured, pageSize: LEAKRADAR_PAGE_SIZE },
     cyberchef: { enabled: isMinitoolEnabled("minitool_cyberchef_enabled") },
     headerAnalyzer: { enabled: isMinitoolEnabled("minitool_header_analyzer_enabled") },
+    jwtAnalyzer: { enabled: isMinitoolEnabled("minitool_jwt_analyzer_enabled") },
   };
   const anyEnabled = Object.values(tools).some((t) => t.enabled);
   res.json({

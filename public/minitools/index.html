@@ -58,6 +58,10 @@
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
           <span class="sidebar-nav-text">Header Analyzer</span>
         </button>
+        <button type="button" class="sidebar-nav-item" data-minitools-view="jwt-analyzer">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
+          <span class="sidebar-nav-text">JWT Analyzer</span>
+        </button>
       </nav>
     </aside>
 
@@ -96,6 +100,7 @@
         <button type="button" class="mobile-tab" data-minitools-view="leakradar">LeakRadar</button>
         <button type="button" class="mobile-tab" data-minitools-view="cyberchef">CyberChef</button>
         <button type="button" class="mobile-tab" data-minitools-view="header-analyzer">Header Analyzer</button>
+        <button type="button" class="mobile-tab" data-minitools-view="jwt-analyzer">JWT Analyzer</button>
       </div>
 
       <div class="dashboard-main">
@@ -341,6 +346,21 @@
           </div>
           <div id="header-analyzer-results" class="mt-4"></div>
         </section>
+
+        <section id="minitools-view-jwt-analyzer" class="hidden">
+          <h2 class="text-lg font-bold mb-4">JWT Analyzer</h2>
+          <p class="text-sm text-muted mb-4">Decode, inspect, edit, and rebuild JSON Web Tokens entirely in your browser. No JWT content is sent to the server.</p>
+          <div class="card p-4">
+            <label for="jwt-input" class="block text-sm font-medium text-muted mb-1">JWT Token</label>
+            <textarea id="jwt-input" class="input-field min-h-[8rem] font-mono text-xs" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"></textarea>
+            <div class="flex flex-wrap gap-2 mt-3">
+              <button type="button" id="jwt-analyze-btn" class="btn-primary">Analyze</button>
+              <button type="button" id="jwt-sample-btn" class="btn-secondary">Load Sample</button>
+              <button type="button" id="jwt-clear-btn" class="btn-secondary">Clear</button>
+            </div>
+          </div>
+          <div id="jwt-results" class="mt-4"></div>
+        </section>
       </div>
     </div>
   </div>
@@ -351,6 +371,7 @@
   <script src="/js/notifications.js?v=20260520-minitools"></script>
   <script type="module" src="/js/cyberchef-lite.js?v=20260520-minitools"></script>
   <script type="module" src="/js/header-analyzer.js?v=20260521-header-analyzer"></script>
-  <script type="module" src="/js/minitools.js?v=20260521-header-analyzer"></script>
+  <script type="module" src="/js/jwt-analyzer.js?v=20260521-jwt-analyzer"></script>
+  <script type="module" src="/js/minitools.js?v=20260521-jwt-analyzer"></script>
 </body>
 </html>

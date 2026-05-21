@@ -10,6 +10,7 @@ import {
 } from "./cvss-calculator.js";
 import { initCyberChef } from "./cyberchef-lite.js";
 import { initHeaderAnalyzer } from "./header-analyzer.js";
+import { initJwtAnalyzer } from "./jwt-analyzer.js";
 
 const state = { currentView: "cvss" };
 
@@ -1676,7 +1677,7 @@ function showFirstEnabledView(excludeTool) {
 
 async function init() {
   // Load bootstrap to determine which tools are enabled
-  let enabledTools = { cvss: true, breach: true, azure: true, securitytrails: true, "security-headers": true, "tls-check": true, "dns-lookup": true, leakradar: true, cyberchef: true, "header-analyzer": true };
+  let enabledTools = { cvss: true, breach: true, azure: true, securitytrails: true, "security-headers": true, "tls-check": true, "dns-lookup": true, leakradar: true, cyberchef: true, "header-analyzer": true, "jwt-analyzer": true };
   let dnsTools = [];
   try {
     const data = await api("/minitools/bootstrap");
@@ -1691,6 +1692,7 @@ async function init() {
       leakradar: !!data.tools?.leakradar?.enabled,
       cyberchef: !!data.tools?.cyberchef?.enabled,
       "header-analyzer": !!data.tools?.headerAnalyzer?.enabled,
+      "jwt-analyzer": !!data.tools?.jwtAnalyzer?.enabled,
     };
     dnsTools = data.tools?.dnsLookup?.tools || [];
     const st = data.tools?.securitytrails;
@@ -1713,7 +1715,7 @@ async function init() {
   } catch (_) { /* bootstrap optional */ }
 
   // Hide disabled tools from sidebar, mobile tabs, and view sections
-  const allTools = ["cvss", "breach", "azure", "securitytrails", "security-headers", "tls-check", "dns-lookup", "leakradar", "cyberchef", "header-analyzer"];
+  const allTools = ["cvss", "breach", "azure", "securitytrails", "security-headers", "tls-check", "dns-lookup", "leakradar", "cyberchef", "header-analyzer", "jwt-analyzer"];
   for (const tool of allTools) {
     if (!enabledTools[tool]) {
       hideMinitool(tool);
@@ -1736,6 +1738,7 @@ async function init() {
   if (enabledTools["dns-lookup"]) initDnsLookup(dnsTools);
   if (enabledTools.cyberchef) initCyberChef();
   if (enabledTools["header-analyzer"]) initHeaderAnalyzer();
+  if (enabledTools["jwt-analyzer"]) initJwtAnalyzer();
   if (enabledTools.leakradar) initLeakRadar();
 }
 

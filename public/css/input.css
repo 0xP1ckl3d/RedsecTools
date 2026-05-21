@@ -2583,6 +2583,112 @@ html.light .ha-score-amber { color: #a16207; }
 html.light .ha-score-red { color: #b91c1c; }
 .ha-chevron-collapsed { transform: rotate(-90deg); }
 
+/* --- JWT Analyzer --- */
+.jwt-editor {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  resize: vertical;
+}
+.jwt-editor:focus { outline: none; border-color: var(--accent); }
+.jwt-mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; font-size: 0.8125rem; }
+.jwt-break { word-break: break-all; }
+.jwt-summary-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem; }
+@media (min-width: 768px) { .jwt-summary-grid { grid-template-columns: repeat(4, 1fr); } }
+.jwt-editor-grid { display: grid; grid-template-columns: 1fr; gap: 1rem; }
+@media (min-width: 768px) { .jwt-editor-grid { grid-template-columns: repeat(2, 1fr); } }
+.jwt-color-header { color: #ef5350; }
+.jwt-color-payload { color: #ce93d8; }
+.jwt-color-signature { color: #4dd0e1; }
+.jwt-color-dot { color: var(--text-muted); }
+html.light .jwt-color-header { color: #c62828; }
+html.light .jwt-color-payload { color: #7b1fa2; }
+html.light .jwt-color-signature { color: #00838f; }
+.jwt-token-display {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+  word-break: break-all;
+  line-height: 1.6;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--bg-input);
+}
+.jwt-rebuilt-bar {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+.jwt-rebuilt-bar .jwt-token-display { flex: 1; min-width: 0; }
+.jwt-rebuilt-warn {
+  font-size: 0.75rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 0.375rem;
+  background: rgba(251, 191, 36, 0.15);
+  color: #fbbf24;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-top: 0.125rem;
+}
+html.light .jwt-rebuilt-warn { background: rgba(161, 98, 7, 0.12); color: #a16207; }
+.jwt-legend { display: flex; gap: 1rem; margin-top: 0.5rem; }
+.jwt-legend-item { display: flex; align-items: center; gap: 0.35rem; font-size: 0.75rem; }
+.jwt-legend-swatch { width: 0.75rem; height: 0.75rem; border-radius: 2px; }
+.jwt-swatch-header { background: #ef5350; }
+.jwt-swatch-payload { background: #ce93d8; }
+.jwt-swatch-signature { background: #4dd0e1; }
+
+/* JWT color-coded input overlay */
+.jwt-input-wrap {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-input);
+  overflow: hidden;
+}
+.jwt-input-wrap:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+.jwt-input-backdrop {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  pointer-events: none;
+  overflow: auto;
+  scrollbar-width: none;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  padding: 0.625rem 0.875rem;
+  color: var(--text-primary);
+}
+.jwt-input-backdrop::-webkit-scrollbar { display: none; }
+.jwt-input-wrap textarea.input-field {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: transparent !important;
+  caret-color: var(--text-primary) !important;
+  position: relative;
+  z-index: 1;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace !important;
+  font-size: 0.75rem !important;
+  line-height: 1.5 !important;
+  padding: 0.625rem 0.875rem !important;
+}
+.jwt-input-wrap textarea.input-field::placeholder {
+  color: var(--text-muted) !important;
+}
+
 /* --- Main content area --- */
 .dashboard-content {
   flex: 1;
