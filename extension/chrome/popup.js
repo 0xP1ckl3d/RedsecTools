@@ -34,6 +34,8 @@ const toolPanels = {
 const headerActions = document.getElementById("header-actions");
 const subtitle = document.getElementById("subtitle");
 const toast = document.getElementById("toast");
+const inlineToggleRow = document.getElementById("inline-toggle-row");
+const inlineSuggestionToggle = document.getElementById("inline-suggestion-toggle");
 const vaultDashboard = document.getElementById("vault-dashboard");
 const entryDetailView = document.getElementById("entry-detail-view");
 const pasteWorkspace = document.getElementById("paste-workspace");
@@ -248,6 +250,7 @@ function renderState(state) {
   if (state.mode === "signed_out") {
     setActiveView("login");
     subtitle.textContent = "Sign in.";
+    inlineToggleRow.classList.add("hidden");
     loginOverrideMode = false;
     renderLoginMode(state);
     initializeMfaMode("code");
@@ -257,12 +260,15 @@ function renderState(state) {
   if (state.mode === "locked") {
     setActiveView("locked");
     subtitle.textContent = `Signed in as ${state.user?.username || "user"}`;
+    inlineToggleRow.classList.add("hidden");
     return;
   }
 
   if (state.mode === "unlocked") {
     setActiveView("unlocked");
     subtitle.textContent = "Vault, paste, and share.";
+    inlineToggleRow.classList.remove("hidden");
+    loadInlineSuggestionSetting();
     document.getElementById("user-label").textContent = state.user?.username || "";
     document.getElementById("entry-count-label").textContent = `${state.entryCount}`;
     document.getElementById("site-label").textContent = getDisplayDomain(state.currentPageUrl) || "Open a website tab";
@@ -1253,6 +1259,25 @@ document.getElementById("new-share-btn").addEventListener("click", () => {
 });
 
 bindMfaDigits();
+
+async function loadInlineSuggestionSetting() {
+  try {
+    const response = await sendMessage("getInlineSuggestionSetting");
+    inlineSuggestionToggle.classList.toggle("active", response.enabled);
+  } catch {
+    inlineSuggestionToggle.classList.add("active");
+  }
+}
+
+inlineSuggestionToggle.addEventListener("click", async () => {
+  const isActive = inlineSuggestionToggle.classList.contains("active");
+  try {
+    const response = await sendMessage("setInlineSuggestionSetting", { enabled: !isActive });
+    inlineSuggestionToggle.classList.toggle("active", response.enabled);
+  } catch (error) {
+    showToast(error.message);
+  }
+});
 
 initialize().catch((error) => {
   subtitle.textContent = error.message || "Failed to initialize extension";

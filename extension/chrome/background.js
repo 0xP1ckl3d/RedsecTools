@@ -1068,6 +1068,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case "openPopup":
         sendResponse(await openExtensionPopup());
         break;
+      case "getInlineSuggestionSetting": {
+        const settings = await getSettings();
+        sendResponse({ success: true, enabled: settings.inlineSuggestions !== false });
+        break;
+      }
+      case "setInlineSuggestionSetting": {
+        const settings = await setSettings({
+          ...(await getSettings()),
+          inlineSuggestions: !!message.payload.enabled,
+        });
+        const allTabs = await chrome.tabs.query({});
+        for (const tab of allTabs) {
+          if (tab.id) {
+            chrome.tabs.sendMessage(tab.id, {
+              type: "inlineSuggestionSettingChanged",
+              enabled: settings.inlineSuggestions,
+            }).catch(() => {});
+          }
+        }
+        sendResponse({ success: true, enabled: settings.inlineSuggestions });
+        break;
+      }
       case "openServerApp":
         sendResponse(await openServerApp());
         break;

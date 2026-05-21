@@ -2,13 +2,21 @@
   let activeField = null;
   let menuEl = null;
   let hideTimer = null;
+  let inlineSuggestionsEnabled = true;
 
-  function isEditableField(element) {
-    if (!element) return false;
-    if (element.tagName === "TEXTAREA") return true;
-    if (element.tagName !== "INPUT") return false;
-    const type = (element.type || "text").toLowerCase();
-    return ["text", "email", "password", "search", "url", "tel"].includes(type);
+  chrome.runtime.sendMessage({ type: "getInlineSuggestionSetting" }).then((res) => {
+    if (res?.success) inlineSuggestionsEnabled = !!res.enabled;
+  }).catch(() => {});
+
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type === "inlineSuggestionSettingChanged") {
+      inlineSuggestionsEnabled = !!message.enabled;
+    }
+  });
+
+  function isPasswordField(element) {
+    if (!element || element.tagName !== "INPUT") return false;
+    return (element.type || "text").toLowerCase() === "password";
   }
 
   function getVisibleFields(form) {
@@ -62,6 +70,9 @@
     document.documentElement.appendChild(menuEl);
     menuEl.addEventListener("mouseenter", () => clearTimeout(hideTimer));
     menuEl.addEventListener("mouseleave", scheduleHide);
+    menuEl.addEventListener("click", (e) => {
+      if (e.target.closest("[data-close-menu]")) hideMenu();
+    });
     return menuEl;
   }
 
@@ -84,7 +95,7 @@
   }
 
   async function renderSuggestions(target) {
-    if (!isEditableField(target)) return;
+    if (!isPasswordField(target)) return;
     const response = await chrome.runtime.sendMessage({
       type: "getInlineSuggestions",
       payload: { pageUrl: window.location.href },
@@ -100,7 +111,7 @@
 
     if (response.mode === "locked") {
       menu.innerHTML = `
-        <div class="redsec-inline-menu-title">RedSecVault</div>
+        <div class="redsec-inline-menu-title">RedSecVault<span class="redsec-inline-close" data-close-menu title="Close">&times;</span></div>
         <div class="redsec-inline-menu-note">Unlock the extension to use site suggestions.</div>
         <div class="redsec-inline-footer"><button type="button" data-open-popup>Open Extension</button></div>
       `;
@@ -117,7 +128,7 @@
     }
 
     menu.innerHTML = `
-      <div class="redsec-inline-menu-title">RedSecVault</div>
+      <div class="redsec-inline-menu-title">RedSecVault<span class="redsec-inline-close" data-close-menu title="Close">&times;</span></div>
       <div class="redsec-inline-list">
         ${response.suggestions.map((suggestion) => `
           <button type="button" class="redsec-inline-item" data-fill-ref="${suggestion.refId}">
@@ -176,7 +187,8 @@
   }
 
   document.addEventListener("focusin", (event) => {
-    if (!isEditableField(event.target)) return;
+    if (!isPasswordField(event.target)) return;
+    if (!inlineSuggestionsEnabled) return;
     activeField = event.target;
     clearTimeout(hideTimer);
     renderSuggestions(event.target).catch(() => {});
