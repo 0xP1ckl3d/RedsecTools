@@ -282,17 +282,25 @@ function renderAzureResults(response, container) {
   // --- OpenID Configuration ---
   const oidc = response.openid;
   if (oidc) {
+    const sourceLabel = oidc.source === "v2.0" ? "Microsoft identity platform v2.0" : "Legacy (v1)";
+    const sourceBadge = oidc.source === "v2.0" ? "badge-green" : "badge-gray";
     html += `
       <div class="card p-4 mb-4">
-        <h3 class="font-bold text-sm mb-3">OpenID Configuration</h3>
+        <div class="flex items-center gap-2 mb-3">
+          <h3 class="font-bold text-sm">OpenID Configuration</h3>
+          <span class="badge ${sourceBadge} text-xs">${escapeHtml(sourceLabel)}</span>
+        </div>
         <div class="grid gap-3">
-          ${oidc.tenantId ? `<div><div class="text-xs text-muted">Tenant ID (OIDC)</div><code class="text-sm">${escapeHtml(oidc.tenantId)}</code></div>` : ""}
+          ${oidc.tenantId ? `<div><div class="text-xs text-muted">Tenant ID</div><code class="text-sm">${escapeHtml(oidc.tenantId)}</code></div>` : ""}
           ${oidc.issuer ? `<div><div class="text-xs text-muted">Issuer</div><code class="text-sm break-all">${escapeHtml(oidc.issuer)}</code></div>` : ""}
-          ${oidc.tokenEndpoint ? `<div><div class="text-xs text-muted">Token Endpoint</div><code class="text-sm break-all">${escapeHtml(oidc.tokenEndpoint)}</code></div>` : ""}
           ${oidc.authorizationEndpoint ? `<div><div class="text-xs text-muted">Authorization Endpoint</div><code class="text-sm break-all">${escapeHtml(oidc.authorizationEndpoint)}</code></div>` : ""}
+          ${oidc.tokenEndpoint ? `<div><div class="text-xs text-muted">Token Endpoint</div><code class="text-sm break-all">${escapeHtml(oidc.tokenEndpoint)}</code></div>` : ""}
           ${oidc.deviceAuthorizationEndpoint ? `<div><div class="text-xs text-muted">Device Authorization Endpoint</div><code class="text-sm break-all">${escapeHtml(oidc.deviceAuthorizationEndpoint)}</code></div>` : ""}
           ${oidc.jwksUri ? `<div><div class="text-xs text-muted">JWKS URI</div><code class="text-sm break-all">${escapeHtml(oidc.jwksUri)}</code></div>` : ""}
+          ${oidc.cloudInstanceName ? `<div><div class="text-xs text-muted">Cloud Instance</div><div class="text-sm">${escapeHtml(oidc.cloudInstanceName)}</div></div>` : ""}
+          ${oidc.msgraphHost ? `<div><div class="text-xs text-muted">MS Graph Host</div><code class="text-sm">${escapeHtml(oidc.msgraphHost)}</code></div>` : ""}
         </div>
+        ${oidc._raw ? `<details class="mt-3"><summary class="text-xs text-accent cursor-pointer hover:underline">Raw metadata</summary><pre class="mt-2 text-xs bg-card p-3 rounded border border-border overflow-auto max-h-64 whitespace-pre-wrap break-all">${escapeHtml(JSON.stringify(oidc._raw, null, 2))}</pre></details>` : ""}
       </div>
     `;
   }

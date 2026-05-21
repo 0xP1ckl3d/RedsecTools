@@ -328,20 +328,48 @@ router.get("/minitools/azure-tenant", azureLookupLimiter, requireUser, attachUse
     result.azmapError = err.message;
   }
 
-  // 2. OpenID configuration
+  // 2. OpenID configuration (v2 primary, legacy fallback)
   try {
-    const oidcUrl = `https://login.windows.net/${encodeURIComponent(domain)}/.well-known/openid-configuration`;
-    const { response: oidcRes } = await safeFetchPublicUrl(oidcUrl);
-    const oidcText = await readResponseTextWithLimit(oidcRes);
-    const oidcData = JSON.parse(oidcText);
-    result.openid = {
-      tenantId: oidcData.tenant || oidcData.issuer?.split("/").pop() || null,
-      issuer: oidcData.issuer || null,
-      tokenEndpoint: oidcData.token_endpoint || null,
-      authorizationEndpoint: oidcData.authorization_endpoint || null,
-      deviceAuthorizationEndpoint: oidcData.device_authorization_endpoint || null,
-      jwksUri: oidcData.jwks_uri || null,
+    const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const extractOidc = (data, source) => {
+      const issuerSlug = (data.issuer || "").split("/").filter(Boolean).pop() || "";
+      const tenantId = GUID_RE.test(issuerSlug) ? issuerSlug : (GUID_RE.test(data.tenant) ? data.tenant : null);
+      return {
+        source,
+        tenantId,
+        issuer: data.issuer || null,
+        tokenEndpoint: data.token_endpoint || null,
+        authorizationEndpoint: data.authorization_endpoint || null,
+        deviceAuthorizationEndpoint: data.device_authorization_endpoint || null,
+        jwksUri: data.jwks_uri || null,
+        cloudInstanceName: data.cloud_instance_name || null,
+        msgraphHost: data.msgraph_host || null,
+        _raw: data,
+      };
     };
+
+    let oidcData = null;
+    let oidcSource = null;
+
+    // Try v2.0 endpoint first
+    try {
+      const v2Url = `https://login.microsoftonline.com/${encodeURIComponent(domain)}/v2.0/.well-known/openid-configuration`;
+      const { response: v2Res } = await safeFetchPublicUrl(v2Url);
+      const v2Text = await readResponseTextWithLimit(v2Res);
+      oidcData = JSON.parse(v2Text);
+      oidcSource = "v2.0";
+    } catch (_) { /* v2 unavailable, try legacy */ }
+
+    // Fallback to legacy v1 endpoint
+    if (!oidcData) {
+      const legacyUrl = `https://login.windows.net/${encodeURIComponent(domain)}/.well-known/openid-configuration`;
+      const { response: legacyRes } = await safeFetchPublicUrl(legacyUrl);
+      const legacyText = await readResponseTextWithLimit(legacyRes);
+      oidcData = JSON.parse(legacyText);
+      oidcSource = "legacy";
+    }
+
+    if (oidcData) result.openid = extractOidc(oidcData, oidcSource);
   } catch (_) {
     // Domain may not have an Entra tenant — skip silently
   }
