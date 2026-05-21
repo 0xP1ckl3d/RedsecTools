@@ -54,6 +54,10 @@
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
           <span class="sidebar-nav-text">CyberChef</span>
         </button>
+        <button type="button" class="sidebar-nav-item" data-minitools-view="header-analyzer">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+          <span class="sidebar-nav-text">Header Analyzer</span>
+        </button>
       </nav>
     </aside>
 
@@ -91,6 +95,7 @@
         <button type="button" class="mobile-tab" data-minitools-view="dns-lookup">DNS Intelligence</button>
         <button type="button" class="mobile-tab" data-minitools-view="leakradar">LeakRadar</button>
         <button type="button" class="mobile-tab" data-minitools-view="cyberchef">CyberChef</button>
+        <button type="button" class="mobile-tab" data-minitools-view="header-analyzer">Header Analyzer</button>
       </div>
 
       <div class="dashboard-main">
@@ -321,6 +326,21 @@
             </div>
           </div>
         </section>
+
+        <section id="minitools-view-header-analyzer" class="hidden">
+          <h2 class="text-lg font-bold mb-4">Header Analyzer</h2>
+          <p class="text-sm text-muted mb-4">Paste raw email headers to analyze SPF, DKIM, DMARC authentication, hop-by-hop delivery path, and deliverability score. All processing runs locally in your browser.</p>
+          <div class="card p-4">
+            <label for="header-analyzer-input" class="block text-sm font-medium text-muted mb-1">Raw Email Headers</label>
+            <textarea id="header-analyzer-input" class="input-field min-h-[12rem] font-mono text-xs" placeholder="Delivered-To: user@example.com&#10;Received: from mail.example.com ...&#10;From: sender@example.com&#10;To: user@example.com&#10;Subject: Test email&#10;Date: Tue, 20 May 2025 14:00:00 +0000"></textarea>
+            <div class="flex flex-wrap gap-2 mt-3">
+              <button type="button" id="header-analyzer-btn" class="btn-primary">Analyze</button>
+              <button type="button" id="header-analyzer-sample-btn" class="btn-secondary">Load Sample</button>
+              <button type="button" id="header-analyzer-clear-btn" class="btn-secondary">Clear</button>
+            </div>
+          </div>
+          <div id="header-analyzer-results" class="mt-4"></div>
+        </section>
       </div>
     </div>
   </div>
@@ -330,6 +350,7 @@
   <script type="module" src="/js/burger-menu.js?v=20260520-minitools"></script>
   <script src="/js/notifications.js?v=20260520-minitools"></script>
   <script type="module" src="/js/cyberchef-lite.js?v=20260520-minitools"></script>
-  <script type="module" src="/js/minitools.js?v=20260520-minitools"></script>
+  <script type="module" src="/js/header-analyzer.js?v=20260521-header-analyzer"></script>
+  <script type="module" src="/js/minitools.js?v=20260521-header-analyzer"></script>
 </body>
 </html>

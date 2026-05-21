@@ -220,6 +220,7 @@ router.get("/minitools/bootstrap", readLimiter, requireUser, attachUserAccess, c
     dnsLookup: { enabled: isMinitoolEnabled("minitool_dns_lookup_enabled"), tools: publicToolRegistry() },
     leakradar: { enabled: isMinitoolEnabled("minitool_leakradar_enabled") && leakRadarApiKeyConfigured, apiKeyConfigured: leakRadarApiKeyConfigured, pageSize: LEAKRADAR_PAGE_SIZE },
     cyberchef: { enabled: isMinitoolEnabled("minitool_cyberchef_enabled") },
+    headerAnalyzer: { enabled: isMinitoolEnabled("minitool_header_analyzer_enabled") },
   };
   const anyEnabled = Object.values(tools).some((t) => t.enabled);
   res.json({

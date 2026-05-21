@@ -2574,6 +2574,15 @@ html.light[data-primary-theme="purple"] {
   position: relative;
 }
 
+/* --- Header Analyzer --- */
+.ha-score-green { color: #4ade80; }
+.ha-score-amber { color: #fbbf24; }
+.ha-score-red { color: #f87171; }
+html.light .ha-score-green { color: #15803d; }
+html.light .ha-score-amber { color: #a16207; }
+html.light .ha-score-red { color: #b91c1c; }
+.ha-chevron-collapsed { transform: rotate(-90deg); }
+
 /* --- Main content area --- */
 .dashboard-content {
   flex: 1;
