@@ -18,21 +18,25 @@
       </button>
 
       <nav class="sidebar-nav">
-        <button type="button" class="sidebar-nav-item active" data-minitools-view="cvss">
+        <button type="button" class="sidebar-nav-item active" data-minitools-view="cyberchef">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+          <span class="sidebar-nav-text">CyberChef</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-minitools-view="jwt-analyzer">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
+          <span class="sidebar-nav-text">JWT Analyzer</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-minitools-view="header-analyzer">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+          <span class="sidebar-nav-text">Header Analyzer</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-minitools-view="cvss">
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
           <span class="sidebar-nav-text">CVSS Calculator</span>
-        </button>
-        <button type="button" class="sidebar-nav-item" data-minitools-view="breach">
-          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-          <span class="sidebar-nav-text">Breach Lookup</span>
         </button>
         <button type="button" class="sidebar-nav-item" data-minitools-view="azure">
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"/></svg>
           <span class="sidebar-nav-text">Azure Mapping</span>
-        </button>
-        <button type="button" class="sidebar-nav-item" data-minitools-view="securitytrails">
-          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/></svg>
-          <span class="sidebar-nav-text">SecurityTrails</span>
         </button>
         <button type="button" class="sidebar-nav-item" data-minitools-view="security-headers">
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-5m5-3v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6l8-3 8 3z"/></svg>
@@ -43,24 +47,20 @@
           <span class="sidebar-nav-text">TLS Check</span>
         </button>
         <button type="button" class="sidebar-nav-item" data-minitools-view="dns-lookup">
-          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3a9 9 0 100 18 9 9 0 000-18zm0 0c2.5 2.5 2.5 15.5 0 18m0-18c-2.5 2.5-2.5 15.5 0 18M3.6 9h16.8M3.6 15h16.8"/></svg>
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6.75 7.5l3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0021 18V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v12a2.25 2.25 0 002.25 2.25z"/></svg>
           <span class="sidebar-nav-text">DNS Intelligence</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-minitools-view="securitytrails">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/></svg>
+          <span class="sidebar-nav-text">SecurityTrails</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-minitools-view="breach">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+          <span class="sidebar-nav-text">Breach Lookup</span>
         </button>
         <button type="button" class="sidebar-nav-item" data-minitools-view="leakradar">
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11a4 4 0 118 0c0 4-4 6-4 6s-4-2-4-6zm4 0h.01M4 19h16"/></svg>
           <span class="sidebar-nav-text">LeakRadar</span>
-        </button>
-        <button type="button" class="sidebar-nav-item" data-minitools-view="cyberchef">
-          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
-          <span class="sidebar-nav-text">CyberChef</span>
-        </button>
-        <button type="button" class="sidebar-nav-item" data-minitools-view="header-analyzer">
-          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
-          <span class="sidebar-nav-text">Header Analyzer</span>
-        </button>
-        <button type="button" class="sidebar-nav-item" data-minitools-view="jwt-analyzer">
-          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
-          <span class="sidebar-nav-text">JWT Analyzer</span>
         </button>
       </nav>
     </aside>
@@ -90,21 +90,21 @@
       </header>
 
       <div class="mobile-tabs">
-        <button type="button" class="mobile-tab active" data-minitools-view="cvss">CVSS Calculator</button>
-        <button type="button" class="mobile-tab" data-minitools-view="breach">Breach Lookup</button>
+        <button type="button" class="mobile-tab active" data-minitools-view="cyberchef">CyberChef</button>
+        <button type="button" class="mobile-tab" data-minitools-view="jwt-analyzer">JWT Analyzer</button>
+        <button type="button" class="mobile-tab" data-minitools-view="header-analyzer">Header Analyzer</button>
+        <button type="button" class="mobile-tab" data-minitools-view="cvss">CVSS Calculator</button>
         <button type="button" class="mobile-tab" data-minitools-view="azure">Azure Mapping</button>
-        <button type="button" class="mobile-tab" data-minitools-view="securitytrails">SecurityTrails</button>
         <button type="button" class="mobile-tab" data-minitools-view="security-headers">Security Headers</button>
         <button type="button" class="mobile-tab" data-minitools-view="tls-check">TLS Check</button>
         <button type="button" class="mobile-tab" data-minitools-view="dns-lookup">DNS Intelligence</button>
+        <button type="button" class="mobile-tab" data-minitools-view="securitytrails">SecurityTrails</button>
+        <button type="button" class="mobile-tab" data-minitools-view="breach">Breach Lookup</button>
         <button type="button" class="mobile-tab" data-minitools-view="leakradar">LeakRadar</button>
-        <button type="button" class="mobile-tab" data-minitools-view="cyberchef">CyberChef</button>
-        <button type="button" class="mobile-tab" data-minitools-view="header-analyzer">Header Analyzer</button>
-        <button type="button" class="mobile-tab" data-minitools-view="jwt-analyzer">JWT Analyzer</button>
       </div>
 
       <div class="dashboard-main">
-        <section id="minitools-view-cvss">
+        <section id="minitools-view-cvss" class="hidden">
           <h2 class="text-lg font-bold mb-4">CVSS Calculator</h2>
           <p class="text-sm text-muted mb-4">Interactive CVSS 3.1 and 4.0 score calculator. Select metrics to generate a vector string and severity rating.</p>
           <div id="minitools-cvss-container"></div>
@@ -150,7 +150,7 @@
           <div class="minitools-lookup-form">
             <div class="flex gap-2 items-end">
               <div class="flex-1">
-                <label for="securitytrails-domain" class="block text-sm font-medium text-muted mb-1">Domain</label>
+                <label for="securitytrails-domain" id="securitytrails-target-label" class="block text-sm font-medium text-muted mb-1">Domain</label>
                 <input type="text" id="securitytrails-domain" class="input-field" placeholder="example.com" autocomplete="off">
               </div>
               <button type="button" id="securitytrails-lookup-btn" class="btn-primary whitespace-nowrap">Lookup</button>
@@ -160,6 +160,7 @@
                 <button type="button" class="reporter-cvss-option active" data-st-type="both">Both (2 queries)</button>
                 <button type="button" class="reporter-cvss-option" data-st-type="details">Details (1)</button>
                 <button type="button" class="reporter-cvss-option" data-st-type="subdomains">Subdomains (1)</button>
+                <button type="button" class="reporter-cvss-option" data-st-type="reverse_ip">Reverse IP (1)</button>
               </div>
             </div>
             <div id="securitytrails-inline-result" class="mt-2"></div>
@@ -282,11 +283,11 @@
           </div>
           <div id="leakradar-results" class="mt-4"></div>
           <div class="flex justify-center mt-4">
-            <button type="button" id="leakradar-load-more-btn" class="btn-secondary hidden">Load Next Page</button>
+            <button type="button" id="leakradar-load-more-btn" class="btn-secondary hidden">Next Page</button>
           </div>
         </section>
 
-        <section id="minitools-view-cyberchef" class="hidden">
+        <section id="minitools-view-cyberchef">
           <div class="flex items-center justify-between mb-4">
             <div>
               <h2 class="text-lg font-bold">CyberChef</h2>

@@ -2,7 +2,7 @@ const test = require("node:test");
 const path = require("node:path");
 const { Worker } = require("node:worker_threads");
 
-function runFixture(name) {
+function runFixture(name, env = {}) {
   return new Promise((resolve, reject) => {
     const worker = new Worker(path.join(__dirname, "fixtures", name), {
       env: {
@@ -11,6 +11,7 @@ function runFixture(name) {
         COOKIE_SECRET: "legacy-upgrade-cookie-secret",
         REDSECAI_AUTOSTART: "false",
         REDSECAI_AUTO_PULL: "false",
+        ...env,
       },
     });
     worker.on("error", reject);
@@ -23,4 +24,13 @@ function runFixture(name) {
 
 test("sanitized legacy database snapshot upgrades additively and preserves ciphertext", async () => {
   await runFixture("legacy-upgrade-fixture.js");
+});
+
+test("legacy database upgrade seeds SSO feature defaults from env", async () => {
+  await runFixture("legacy-upgrade-fixture.js", {
+    SSO_ENABLED: "true",
+    SSO_REQUIRE_FOR_LOGIN: "true",
+    TEST_EXPECT_SSO_ENABLED: "true",
+    TEST_EXPECT_SSO_REQUIRED: "true",
+  });
 });

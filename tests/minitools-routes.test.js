@@ -62,6 +62,9 @@ test("MiniTools SecurityTrails route enforces per-user daily quota", () => {
 test("MiniTools SecurityTrails route uses safeFetchPublicUrl", () => {
   assert.ok(source.includes("securityTrailsApi"), "Must proxy through server-side function");
   assert.match(source, /securitytrails\.com/);
+  assert.ok(source.includes('lookupType === "reverse_ip"'), "SecurityTrails must support reverse IP mode");
+  assert.ok(source.includes("filter: { ipv4: normalizedIp.ip }"), "Reverse IP mode must use the SecurityTrails IPv4 filter API");
+  assert.ok(fs.readFileSync(path.join(__dirname, "../public/minitools/index.html"), "utf8").includes('data-st-type="reverse_ip"'), "Frontend must expose reverse IP mode");
 });
 
 test("MiniTools security headers analyzer supports raw and URL modes", () => {
@@ -110,10 +113,11 @@ test("MiniTools LeakRadar routes keep the API key server-side and page at 100 re
   assert.ok(source.includes("Authorization") || source.includes("authorization"), "LeakRadar must use bearer auth server-side");
   assert.ok(source.includes("leakradar_unlock"), "Unlocks must be audited");
   assert.ok(frontendSource.includes("initLeakRadar"), "Frontend must initialize the LeakRadar tab");
-  assert.ok(frontendSource.includes("Load Next Page"), "Frontend must expose upstream-aligned pagination");
+  assert.ok(frontendSource.includes("Next Page"), "Frontend must expose upstream-aligned pagination");
   assert.ok(frontendSource.includes("data-leakradar-page"), "Frontend must expose inline LeakRadar page navigation");
   assert.ok(frontendSource.includes("updateLeakRadarUnlockedRow"), "Unlocks must update the currently displayed row");
   assert.ok(frontendSource.includes("data-leakradar-password-cell"), "LeakRadar rows must expose a compact password cell for unlock replacement");
+  assert.ok(frontendSource.includes("data-leakradar-account-cell"), "Unlocks must hydrate the currently displayed account cell");
   assert.ok(!frontendSource.includes("<th>ID</th>"), "LeakRadar rows must not render backend IDs as a visible column");
   assert.ok(frontendSource.includes("LEAKRADAR_ACCOUNT_KEYS"), "LeakRadar account cells must use account-specific fields");
   assert.ok(frontendSource.includes("username_masked"), "LeakRadar account cells must use the documented masked username before unlock");

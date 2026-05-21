@@ -106,6 +106,25 @@ COOKIE_SECRET=${COOKIE_SECRET}
 # Secure cookies. Required for HTTPS deployments; set false only for direct HTTP.
 COOKIE_SECURE=${COOKIE_SECURE}
 
+# Reverse proxy trust. Leave blank unless RedSecTools is behind a proxy that
+# sets forwarded headers and you understand the Express trust proxy setting.
+# TRUST_PROXY=loopback
+
+# Optional hardening: require fresh admin authentication before high-risk writes.
+# This bootstrap default can also be managed from Admin > Security.
+ADMIN_REAUTH_REQUIRED=false
+
+# Optional professional integration surfaces. Disabled by default and also
+# manageable from Admin > Security after bootstrap.
+OPENAPI_ENABLED=false
+SERVICE_ACCOUNTS_ENABLED=false
+WEBHOOKS_ENABLED=false
+
+# Optional enterprise identity bootstrap defaults. Configure and test SAML in
+# Admin > Security before enabling these settings.
+SSO_ENABLED=false
+SSO_REQUIRE_FOR_LOGIN=false
+
 # Database path (default: ./data/pastes.db)
 # DB_PATH=./data/pastes.db
 
@@ -120,9 +139,14 @@ REPORTER_PDF_TIMEOUT_MS=120000
 REDSECAI_ENABLED=${REDSECAI_ENABLED}
 REDSECAI_BASE_URL=${REDSECAI_BASE_URL}
 REDSECAI_MODEL=${REDSECAI_MODEL}
-REDSECAI_TIMEOUT_MS=120000
+REDSECAI_TIMEOUT_MS=300000
+REDSECAI_NUM_CTX=4096
+REDSECAI_ACTION_TTL_SECONDS=7200
 REDSECAI_AUTOSTART=${REDSECAI_AUTOSTART}
 REDSECAI_AUTO_PULL=${REDSECAI_AUTO_PULL}
+# Docker Compose publishes Ollama on localhost for diagnostics only.
+REDSECAI_HOST=127.0.0.1
+REDSECAI_HOST_PORT=11434
 
 # Trusted public origins used for invite, reset-password, and guest links.
 # Includes local defaults plus any extra origins entered during setup.

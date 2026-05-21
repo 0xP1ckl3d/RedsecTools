@@ -29,6 +29,7 @@ const ENGAGE_OPPORTUNITY_WRITE_PERMISSIONS = ["engage.edit_opportunity", "engage
 const ENGAGE_ENGAGEMENT_WRITE_PERMISSIONS = ["engage.edit_engagement", "engage.manage_all"];
 const ENGAGE_QA_MANAGE_PERMISSIONS = ["engage.manage_qa", "engage.manage_all"];
 const ENGAGE_QA_WRITE_PERMISSIONS = ["engage.perform_qa", "engage.manage_qa", "engage.manage_all"];
+const MINITOOLS_PERMISSIONS = ["minitools.view"];
 
 const EMPTY_OBJECT_SCHEMA = { type: "object", properties: {} };
 const ID_PATH_SCHEMA = { type: "object", properties: { pathParams: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } }, required: ["pathParams"] };
@@ -44,6 +45,89 @@ const EXTRA_TOOL_INPUT_SCHEMAS = Object.freeze({
       limit: { type: "integer" },
       domain: { enum: ["all", "calendar", "reporter"] },
     },
+  },
+
+  "minitools.securitytrails.lookup": {
+    type: "object",
+    properties: {
+      domain: { type: "string", description: "Domain for SecurityTrails details or subdomain lookup." },
+      ip: { type: "string", description: "IPv4 address for SecurityTrails reverse IP lookup." },
+      type: { enum: ["details", "subdomains", "both", "reverse_ip"] },
+      page: { type: "integer" },
+    },
+  },
+  "minitools.dns.lookup": {
+    type: "object",
+    properties: {
+      body: {
+        type: "object",
+        properties: {
+          toolId: {
+            enum: [
+              "dns_records",
+              "security_dns_report",
+              "dnssec_test",
+              "reverse_dns",
+              "mail_dns_health",
+              "resolver_consistency",
+              "http_headers",
+              "site_availability",
+              "light_port_check",
+              "dnsbl_check",
+              "url_decode",
+            ],
+            description: "Exact DNS Intelligence MiniTool ID. For ordinary A/AAAA/CNAME/MX/TXT/NS/SOA/CAA/SRV/DS/DNSKEY/RRSIG record lookups use dns_records.",
+          },
+          target: { type: "string", description: "Public DNS target accepted by the selected DNS Intelligence tool." },
+          options: {
+            type: "object",
+            properties: {
+              recordType: {
+                enum: ["A", "AAAA", "CNAME", "MX", "TXT", "NS", "SOA", "CAA", "SRV", "DS", "DNSKEY", "RRSIG", "PTR", "ALL_COMMON"],
+                description: "DNS record type. Required intent for dns_records; omit for tools without a record-type option.",
+              },
+              resolverProfile: { enum: ["cloudflare", "google", "quad9", "opendns"] },
+              dkimSelector: { type: "string" },
+              plusToSpace: { type: "boolean" },
+              repeatDecode: { type: "boolean" },
+            },
+          },
+        },
+        required: ["toolId", "target"],
+      },
+    },
+    required: ["body"],
+  },
+  "minitools.securityHeaders.fetch": {
+    type: "object",
+    properties: {
+      body: {
+        type: "object",
+        properties: {
+          mode: { enum: ["url"] },
+          url: { type: "string", description: "Public URL or host for server-side security-header analysis." },
+        },
+        required: ["mode", "url"],
+      },
+    },
+    required: ["body"],
+  },
+  "minitools.tls.check": {
+    type: "object",
+    properties: {
+      body: {
+        type: "object",
+        properties: {
+          target: { type: "string", description: "Public TLS host or host:port target." },
+          includeDns: { type: "boolean" },
+          includeCt: { type: "boolean" },
+          includeCiphers: { type: "boolean" },
+          timeoutMs: { type: "integer" },
+        },
+        required: ["target"],
+      },
+    },
+    required: ["body"],
   },
 
   "calendar.settings": EMPTY_OBJECT_SCHEMA,
@@ -967,6 +1051,11 @@ const EXTRA_TOOL_ALLOWLIST = Object.freeze({
     capability: "users.read",
     description: "Resolve exact user IDs visible through calendar and Reporter tools. Use this before assigning work to a named person. It can also expose the calendar team-wide assignee value when the backend allows it.",
   },
+
+  "minitools.securitytrails.lookup": { method: "GET", path: "/api/minitools/securitytrails/lookup", permissionsAny: MINITOOLS_PERMISSIONS, capability: "minitools.read", description: "Run a user-scoped SecurityTrails domain, subdomain, or reverse IPv4 lookup through RedSecMiniTools. The MiniTools route owns API-key handling and user quota accounting." },
+  "minitools.dns.lookup": { method: "POST", path: "/api/minitools/dns-lookup", permissionsAny: MINITOOLS_PERMISSIONS, capability: "minitools.read", description: "Run a public-target DNS Intelligence MiniTool lookup through the existing MiniTools validator, audit path, and rate limiter. Use body.toolId=dns_records and body.options.recordType for ordinary DNS record lookups such as A, AAAA, CNAME, MX, or TXT." },
+  "minitools.securityHeaders.fetch": { method: "POST", path: "/api/minitools/security-headers/analyze", permissionsAny: MINITOOLS_PERMISSIONS, capability: "minitools.read", description: "Fetch and analyze browser security headers for a public URL through the existing MiniTools SSRF-safe analyzer. Use URL mode only." },
+  "minitools.tls.check": { method: "POST", path: "/api/minitools/tls-check/analyze", permissionsAny: MINITOOLS_PERMISSIONS, capability: "minitools.read", description: "Run a public-target TLS certificate and protocol diagnostic through the existing MiniTools TLS analyzer and route limiter." },
 
   "calendar.settings": { method: "VIRTUAL", path: "/api/calendar/settings", permissionsAny: CALENDAR_READ_PERMISSIONS, capability: "calendar.read", description: "Read calendar settings and permitted assignment values from calendar bootstrap." },
   "calendar.stats": { method: "GET", path: "/api/calendar/stats", permissionsAny: CALENDAR_READ_PERMISSIONS, capability: "calendar.read", description: "Read utilisation/capacity statistics for week, month, or year." },

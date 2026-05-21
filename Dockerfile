@@ -63,9 +63,9 @@ ENV REPORTER_PDF_TIMEOUT_MS=120000
 
 EXPOSE 3000
 
-# Health check: HTTP GET to /login (always accessible without auth)
+# Health check: readiness covers the HTTP server and database migration state.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD node -e "const http = require('http'); const options = { hostname: 'localhost', port: process.env.PORT || 3000, path: '/login', timeout: 3000 }; const req = http.get(options, (res) => { process.exit(res.statusCode < 400 ? 0 : 1); }); req.on('error', () => process.exit(1)); req.on('timeout', () => { req.destroy(); process.exit(1); });"
+    CMD node -e "const http = require('http'); const options = { hostname: 'localhost', port: process.env.PORT || 3000, path: '/readyz', timeout: 3000 }; const req = http.get(options, (res) => { process.exit(res.statusCode < 400 ? 0 : 1); }); req.on('error', () => process.exit(1)); req.on('timeout', () => { req.destroy(); process.exit(1); });"
 
 USER appuser
 

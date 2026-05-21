@@ -12,7 +12,7 @@ import { initCyberChef } from "./cyberchef-lite.js";
 import { initHeaderAnalyzer } from "./header-analyzer.js";
 import { initJwtAnalyzer } from "./jwt-analyzer.js";
 
-const state = { currentView: "cvss" };
+const state = { currentView: "cyberchef" };
 
 function api(path, options = {}) {
   return fetch("/api" + path, options).then(async (res) => {
@@ -310,6 +310,7 @@ function initSecurityTrails() {
   const btn = document.getElementById("securitytrails-lookup-btn");
   const resultsEl = document.getElementById("securitytrails-results");
   const inlineEl = document.getElementById("securitytrails-inline-result");
+  const targetLabel = document.getElementById("securitytrails-target-label");
 
   if (!btn || !input) return;
 
@@ -320,6 +321,9 @@ function initSecurityTrails() {
     if (!clicked) return;
     typeGroup.querySelectorAll("[data-st-type]").forEach((b) => b.classList.remove("active"));
     clicked.classList.add("active");
+    const reverseIp = clicked.dataset.stType === "reverse_ip";
+    if (targetLabel) targetLabel.textContent = reverseIp ? "IPv4 Address" : "Domain";
+    input.placeholder = reverseIp ? "8.8.8.8" : "example.com";
   });
 
   const lookup = async () => {
@@ -334,7 +338,9 @@ function initSecurityTrails() {
     resultsEl.innerHTML = '<div class="text-sm text-muted">Querying SecurityTrails...</div>';
 
     try {
-      const data = await api(`/minitools/securitytrails/lookup?domain=${encodeURIComponent(domain)}&type=${type}`);
+      const params = new URLSearchParams({ type });
+      params.set(type === "reverse_ip" ? "ip" : "domain", domain);
+      const data = await api(`/minitools/securitytrails/lookup?${params.toString()}`);
       updateSecurityTrailsQuota(data.quota);
       renderSecurityTrailsResults(data, resultsEl);
     } catch (err) {
@@ -360,13 +366,18 @@ function updateSecurityTrailsQuota(quota) {
 function renderSecurityTrailsResults(data, container) {
   const d = data.details;
   const subs = data.subdomains;
+  const reverseIp = data.reverseIp;
 
-  if (!d && !subs) {
+  if (!d && !subs && !reverseIp) {
     container.innerHTML = '<div class="text-sm text-muted">No data returned from SecurityTrails.</div>';
     return;
   }
 
   let html = "";
+
+  if (reverseIp) {
+    html += renderSecurityTrailsReverseIp(reverseIp, data.query || {});
+  }
 
   if (d) {
     // Domain overview table - scalar fields only
@@ -529,6 +540,53 @@ function renderSecurityTrailsResults(data, container) {
   });
 }
 
+function securityTrailsReverseIpRows(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== "object") return [];
+  return [
+    payload.records,
+    payload.results,
+    payload.domains,
+    payload.data,
+    payload.data?.records,
+    payload.data?.results,
+    payload.data?.domains,
+  ].find(Array.isArray) || [];
+}
+
+function renderSecurityTrailsReverseIp(payload, query) {
+  const rows = securityTrailsReverseIpRows(payload);
+  const scalarMeta = ["record_count", "total", "page", "pages", "endpoint"]
+    .filter((key) => payload?.[key] !== undefined && payload?.[key] !== null && payload?.[key] !== "");
+  const title = query?.ip ? `Reverse IP: ${escapeHtml(query.ip)}` : "Reverse IP";
+  if (!rows.length) {
+    return `<div class="card p-4 mb-4"><h3 class="font-bold text-sm mb-2">${title}</h3><p class="text-sm text-muted">No SecurityTrails domain records were returned for this IP.</p></div>`;
+  }
+
+  const rowObjects = rows.filter((row) => row && typeof row === "object" && !Array.isArray(row));
+  const columns = rowObjects.length
+    ? [...new Set(rowObjects.slice(0, 20).flatMap((row) => Object.keys(row)))].slice(0, 8)
+    : ["Domain"];
+  return `<div class="card p-4 mb-4">
+    <div class="flex items-center justify-between gap-2 flex-wrap mb-3">
+      <h3 class="font-bold text-sm">${title}</h3>
+      <div class="flex gap-1 flex-wrap">
+        ${badge(`${rows.length} returned`, "gray")}
+        ${scalarMeta.map((key) => badge(`${prettyLabel(key)}: ${payload[key]}`, "blue")).join("")}
+      </div>
+    </div>
+    <div class="threat-table-wrap"><table class="threat-table">
+      <thead><tr>${columns.map((column) => `<th>${escapeHtml(prettyLabel(column))}</th>`).join("")}</tr></thead>
+      <tbody>${rows.map((row) => {
+        if (!row || typeof row !== "object" || Array.isArray(row)) {
+          return `<tr><td class="text-xs break-all">${leakRadarCompactValue(row)}</td></tr>`;
+        }
+        return `<tr>${columns.map((column) => `<td class="text-xs break-all">${renderScalar(row[column])}</td>`).join("")}</tr>`;
+      }).join("")}</tbody>
+    </table></div>
+  </div>`;
+}
+
 function initLeakRadar() {
   const input = document.getElementById("leakradar-domain");
   const typeGroup = document.getElementById("leakradar-type-group");
@@ -601,7 +659,7 @@ function initLeakRadar() {
   unlockedBtn?.addEventListener("click", () => run({ mode: "unlocked", page: 1 }));
   loadMoreBtn?.addEventListener("click", () => {
     if (!leakState.nextPage) return;
-    run({ mode: leakState.mode, page: leakState.nextPage, append: true });
+    run({ mode: leakState.mode, page: leakState.nextPage, append: false });
   });
   input.addEventListener("keydown", (event) => { if (event.key === "Enter") run({ mode: "search", page: 1 }); });
 
@@ -684,6 +742,11 @@ function updateLeakRadarUnlockedRow(container, leakId, payload) {
   const row = container?.querySelector(`[data-leakradar-row="${CSS.escape(leakId)}"]`);
   if (!row) return;
   const unlockedItem = extractLeakRadarUnlockedItem(payload, leakId);
+  const account = leakRadarFirstValue(unlockedItem, LEAKRADAR_ACCOUNT_KEYS);
+  const accountCell = row.querySelector("[data-leakradar-account-cell]");
+  if (accountCell && account) {
+    accountCell.innerHTML = leakRadarCompactValue(account);
+  }
   const password = leakRadarUnlockedPassword(unlockedItem);
   const passwordCell = row.querySelector("[data-leakradar-password-cell]");
   if (passwordCell && password) {
@@ -730,7 +793,7 @@ function renderLeakRadarResults(data, container, { append = false, mode = "searc
         <div class="flex gap-2 flex-wrap">
           ${badge(`${items.length} loaded`, "gray")}
           ${data.total != null ? badge(`${Number(data.total).toLocaleString()} total`, "blue") : ""}
-          ${badge(`Page ${data.page || 1}`, "gray")}
+          ${badge(data.totalPages ? `Page ${data.page || 1} of ${data.totalPages}` : `Page ${data.page || 1}`, "gray")}
           ${Number(data.page || 1) > 1 ? `<button type="button" class="btn-secondary text-xs px-2 py-1" data-leakradar-page="${Number(data.page || 1) - 1}">Prev</button>` : ""}
           ${data.nextPage ? `<button type="button" class="btn-secondary text-xs px-2 py-1" data-leakradar-page="${Number(data.nextPage)}">Next</button>` : ""}
         </div>
@@ -836,7 +899,7 @@ function renderLeakRadarTableRow(item, { mode, type, unlockedById = {} }) {
   const meta = leakRadarMetaValue(displayItem);
   return `
     <tr ${id ? `data-leakradar-row="${safeAttr(id)}"` : ""}>
-      <td class="text-xs break-all">${leakRadarCompactValue(account)}</td>
+      <td class="text-xs break-all" data-leakradar-account-cell>${leakRadarCompactValue(account)}</td>
       <td class="text-xs break-all">${leakRadarCompactValue(domainOrUrl)}</td>
       <td class="text-xs break-all">${leakRadarCompactValue(source)}</td>
       <td class="text-xs break-all" data-leakradar-password-cell>${leakRadarCompactValue(password)}</td>

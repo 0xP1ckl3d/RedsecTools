@@ -687,6 +687,52 @@ function normalizeWikiBody(toolName, args = {}) {
   return normalizedArgs;
 }
 
+const REDSECAI_DNS_RECORD_TYPES = new Set(["A", "AAAA", "CNAME", "MX", "TXT", "NS", "SOA", "CAA", "SRV", "DS", "DNSKEY", "RRSIG", "PTR", "ALL_COMMON"]);
+const REDSECAI_DNS_RECORD_TOOL_ALIASES = new Set(["dns_record", "dns_records", "dns-record", "dns-records", "record", "records", "record_lookup", "records_lookup"]);
+
+function normalizeRedSecAiDnsRecordType(value) {
+  const type = String(value || "").trim().toUpperCase().replace(/\s+/g, "_");
+  return REDSECAI_DNS_RECORD_TYPES.has(type) ? type : "";
+}
+
+function normalizeMiniToolsDnsArgs(args = {}) {
+  const cleanArgs = getNestedObject(args);
+  const body = { ...getNestedObject(cleanArgs.body) };
+  const bodyOptions = { ...getNestedObject(body.options) };
+  const topOptions = getNestedObject(cleanArgs.options);
+  const sources = [bodyOptions, body, topOptions, cleanArgs];
+  const target = firstStringField([body, cleanArgs], ["target", "domain", "hostname", "host", "name"]);
+  const recordType = normalizeRedSecAiDnsRecordType(firstStringField(sources, ["recordType", "rrtype", "rrType", "dnsRecordType"]));
+  let toolId = firstStringField([body, cleanArgs], ["toolId", "dnsToolId", "lookupType", "tool"]);
+  const toolIdAsRecordType = normalizeRedSecAiDnsRecordType(toolId);
+
+  if (toolIdAsRecordType) {
+    toolId = "dns_records";
+    bodyOptions.recordType = toolIdAsRecordType;
+  } else if (REDSECAI_DNS_RECORD_TOOL_ALIASES.has(String(toolId || "").trim().toLowerCase())) {
+    toolId = "dns_records";
+  }
+  if (!toolId && recordType) toolId = "dns_records";
+  if (recordType) bodyOptions.recordType = recordType;
+
+  const resolverProfile = firstStringField(sources, ["resolverProfile", "resolver"]);
+  const dkimSelector = firstStringField(sources, ["dkimSelector"]);
+  if (resolverProfile !== undefined) bodyOptions.resolverProfile = resolverProfile;
+  if (dkimSelector !== undefined) bodyOptions.dkimSelector = dkimSelector;
+  if (topOptions.plusToSpace !== undefined && bodyOptions.plusToSpace === undefined) bodyOptions.plusToSpace = topOptions.plusToSpace;
+  if (topOptions.repeatDecode !== undefined && bodyOptions.repeatDecode === undefined) bodyOptions.repeatDecode = topOptions.repeatDecode;
+
+  if (toolId !== undefined) body.toolId = String(toolId).trim();
+  if (target !== undefined) body.target = String(target).trim();
+  if (Object.keys(bodyOptions).length) body.options = bodyOptions;
+
+  const normalized = { ...cleanArgs, body };
+  for (const alias of ["toolId", "dnsToolId", "lookupType", "tool", "target", "domain", "hostname", "host", "name", "recordType", "rrtype", "rrType", "dnsRecordType", "resolverProfile", "resolver", "dkimSelector", "options"]) {
+    delete normalized[alias];
+  }
+  return normalized;
+}
+
 function findPathParamValue(toolName, args, key) {
   const aliases = [key, ...(TOOL_PATH_PARAM_ALIASES[toolName]?.[key] || [])];
   const sources = [
@@ -710,7 +756,10 @@ function normalizeRedSecAiToolArgs(toolName, args = {}) {
   if (!tool) return { ...cleanArgs };
   const paramNames = getToolPathParamNames(tool);
   let normalized = { ...cleanArgs };
-  if (!paramNames.length) return normalizeWikiBody(toolName, normalized);
+  if (!paramNames.length) {
+    if (toolName === "minitools.dns.lookup") normalized = normalizeMiniToolsDnsArgs(normalized);
+    return normalizeWikiBody(toolName, normalized);
+  }
   const pathParams = { ...getNestedObject(cleanArgs.pathParams) };
   for (const key of paramNames) {
     const value = findPathParamValue(toolName, cleanArgs, key);
@@ -1550,6 +1599,30 @@ function deriveRedSecAiToolCalls(message, access) {
     /\b(alert|alerts|threat|ioc|iocs|cve-|malware|ransom|phish|exploit|vulnerab|mitre)\b/i.test(lower)
   )) {
     calls.push({ tool: "threat.searchAlerts", args: { query: text, limit: 8 } });
+  }
+  if (hasAny(access, ["minitools.view"]) && /\b(securitytrails|reverse ip|dns(?:\s+(?:intelligence|tool|lookup|lookups|records?|query|queries|check|checks))?|security headers?|tls check|tls diagnostic)\b/i.test(lower)) {
+    const domain = text.match(/\b[a-z0-9]+(?:[-.][a-z0-9]+)+\.[a-z]{2,}\b/i)?.[0] || "";
+    const ip = text.match(/\b(?:\d{1,3}\.){3}\d{1,3}\b/)?.[0] || "";
+    const dnsRecordType = normalizeRedSecAiDnsRecordType(
+      lower.match(/\b(a{1,4}|cname|mx|txt|ns|soa|caa|srv|ds|dnskey|rrsig|ptr)\s+(?:dns\s+)?records?\b/i)?.[1]
+    );
+    if (/\bsecuritytrails|reverse ip\b/i.test(lower) && (/\breverse ip\b/i.test(lower) ? ip : domain)) {
+      calls.push({
+        tool: "minitools.securitytrails.lookup",
+        args: /\breverse ip\b/i.test(lower)
+          ? { type: "reverse_ip", ip }
+          : { type: /\bsubdomains?\b/i.test(lower) ? "subdomains" : "both", domain },
+      });
+    } else if (/\bsecurity headers?\b/i.test(lower) && domain) {
+      calls.push({ tool: "minitools.securityHeaders.fetch", args: { body: { mode: "url", url: domain || text } } });
+    } else if (/\btls check|tls diagnostic\b/i.test(lower) && (domain || ip)) {
+      calls.push({ tool: "minitools.tls.check", args: { body: { target: domain || ip || text, includeDns: true } } });
+    } else if (/\bdns\b/i.test(lower) && domain && dnsRecordType) {
+      calls.push({
+        tool: "minitools.dns.lookup",
+        args: { body: { toolId: "dns_records", target: domain, options: { recordType: dnsRecordType } } },
+      });
+    }
   }
   if (hasAny(access, ["wiki.view", "wiki.create_personal", "wiki.create_team", "wiki.edit_team", "wiki.manage"]) && (
     /\b(wiki|page|runbook|docs?|procedure|playbook|knowledge)\b/i.test(lower)

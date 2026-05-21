@@ -21,8 +21,8 @@ try {
   const paste = database.getPaste("legacyPaste123456789012");
   assert.ok(paste);
   assert.deepEqual(Buffer.from(paste.ciphertext), Buffer.from("00112233445566778899", "hex"));
-  assert.equal(database.getSetting("sso_enabled"), "false");
-  assert.equal(database.getSetting("sso_require_for_login"), "false");
+  assert.equal(database.getSetting("sso_enabled"), process.env.TEST_EXPECT_SSO_ENABLED || "false");
+  assert.equal(database.getSetting("sso_require_for_login"), process.env.TEST_EXPECT_SSO_REQUIRED || "false");
   assert.equal(database.getSetting("admin_reauth_required"), "false");
   assert.equal(database.getSetting("openapi_enabled"), "false");
   assert.equal(database.getSetting("service_accounts_enabled"), "false");

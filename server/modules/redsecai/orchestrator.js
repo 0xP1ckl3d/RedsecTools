@@ -106,6 +106,7 @@ Security boundaries:
 - Do not say you have no access to internal tools when tool results contain successful outputs. Instead, say which scoped data is available.
 - Never invent platform data. If the scoped tool results are empty, failed, or lack a requested field, say the data is not available in the current scoped tool results.
 - Never tell the user to refresh the page, provide updated schedule data, or paste application data when a RedSecAI read/search tool exists for that domain. Tool routing must fetch the available context before the final answer.
+- Routed turns can include a scoped tool manifest so you can decide and explain which allowlisted tools are available to this user. Do not claim that RedSecAI never receives a tool list or that the platform alone chooses tools without model routing.
 - You do not have admin scope and must not claim to perform admin actions.
 - You must not access, request, infer, store, or summarize decrypted content from RedSecPaste, RedSecShare, RedSecTeam chat, or RedSecVault.
 - You may help draft report text, summarize permitted threat intel, and reason about permitted calendar context.
@@ -117,7 +118,8 @@ Be concise, practical, and transparent about limitations.`;
 
 const DIRECT_SYSTEM_PROMPT = `${SYSTEM_PROMPT}
 
-For this turn, no RedSecTools internal tool context was requested or fetched. Answer from general model knowledge only. If the user asks for current/live facts or RedSecTools data, say that live application context is not available for this turn and ask them to make the request specific to their RedSecTools data.`;
+For this turn, no RedSecTools internal tool context was requested or fetched. Answer from general model knowledge only. If the user asks for current/live facts or RedSecTools data, say that live application context is not available for this turn and ask them to make the request specific to their RedSecTools data.
+Do not describe RedSecAI routing internals, deny that routed turns can include a scoped tool manifest, or claim that the platform chooses every tool without model routing.`;
 
 function normalizeMessages(input) {
   if (!Array.isArray(input)) return [];
@@ -316,6 +318,10 @@ function describeToolCall(call) {
     "survey.stats": "Reading survey stats",
     "survey.results": "Reading survey results",
     "survey.response.get": "Reading survey response",
+    "minitools.securitytrails.lookup": "Running SecurityTrails lookup",
+    "minitools.dns.lookup": "Running DNS Intelligence lookup",
+    "minitools.securityHeaders.fetch": "Analyzing security headers",
+    "minitools.tls.check": "Running TLS diagnostic",
   };
   if (labels[tool]) return labels[tool];
   if (tool?.startsWith("calendar.")) return "Working with calendar data";
@@ -324,6 +330,7 @@ function describeToolCall(call) {
   if (tool?.startsWith("reporter.")) return "Working with Reporter data";
   if (tool?.startsWith("survey.")) return "Working with survey data";
   if (tool?.startsWith("homepage.")) return "Working with homepage data";
+  if (tool?.startsWith("minitools.")) return "Running a MiniTools diagnostic";
   return `Running ${tool || "selected tool"}`;
 }
 
@@ -356,6 +363,9 @@ Rules:
 - Use at most ${MAX_MODEL_TOOL_CALLS} tool calls.
 - Read/search tools can be used immediately. Write tools can only create a pending action card for explicit user confirmation.
 - Do not request admin, vault, paste, share, or chat tools.
+- MiniTools tools are read-only diagnostics. Use only the listed MiniTools diagnostics for explicit security-header, TLS, DNS Intelligence, or SecurityTrails requests. Do not request LeakRadar data through RedSecAI.
+- For an ordinary DNS record lookup through minitools.dns.lookup, use args.body.toolId="dns_records", args.body.target="<domain>", and args.body.options.recordType with the requested record type such as "A", "AAAA", "MX", or "TXT".
+- If the user asks which tools are available or asks for the current tool list, return {"toolCalls":[]} so the final answer can describe the scoped manifest without executing unrelated tools.
 - Do not invent IDs, user IDs, project IDs, design IDs, template IDs, field names, enum values, or special assignee values. Use read/search tool results to obtain exact values first.
 - For named people, teams, or membership/assignment requests, use users.search or the relevant bootstrap/users tool before writing unless the exact user ID is already present in tool results.
 - If the selected TARGETED_TOOL_RESULTS are enough, return {"toolCalls":[]}.
@@ -409,6 +419,8 @@ Rules:
 - Use only tools listed in TOOL_CATALOG.
 - Use at most ${MAX_MODEL_TOOL_CALLS} tool calls.
 - Do not request admin, vault, paste, share, or chat tools.
+- MiniTools tools are read-only diagnostics. Use them only for explicit security-header, TLS, DNS Intelligence, or SecurityTrails lookup requests. Do not route LeakRadar data into RedSecAI.
+- For an ordinary DNS record lookup, select minitools.dns.lookup and use body.toolId=dns_records with body.options.recordType set to the requested record type.
 - Prefer read/search tools first when the request asks to find, check, verify, list, inspect, or summarize existing RedSecTools data.
 - Write tools create confirmation cards only and may need a prior read/search tool to identify the target record.
 - If a write action is likely but you need more schema/context, set selectedTools to include the likely write tool and the read/search tools that can identify its required IDs.
@@ -475,7 +487,7 @@ function sanitizeToolArgs(args = {}, depth = 0, context = {}) {
     if (!/^[a-zA-Z0-9_]+$/.test(key)) continue;
     if (typeof value === "string") clean[key] = value.slice(0, getToolStringLimit(context.toolName, key, context.path || []));
     else if (typeof value === "number" || typeof value === "boolean") clean[key] = value;
-    else if (value && typeof value === "object" && !Array.isArray(value) && depth < 2 && ["body", "query", "pathParams"].includes(key)) {
+    else if (value && typeof value === "object" && !Array.isArray(value) && depth < 2 && ["body", "query", "pathParams", "options"].includes(key)) {
       clean[key] = sanitizeToolArgs(value, depth + 1, {
         ...context,
         path: [...(context.path || []), key],
@@ -558,7 +570,50 @@ function buildToolCallFromCatalogTool(tool, latest, page = {}) {
   if (tool.name === "homepage.bulletins") return { tool: tool.name, args: { limit: 10 } };
   if (tool.name === "homepage.toolFavourites") return { tool: tool.name, args: {} };
   if (tool.name === "survey.list") return { tool: tool.name, args: {} };
+  if (tool.name === "minitools.securityHeaders.fetch") {
+    if (!/\bsecurity\s+headers?\b/i.test(latest)) return null;
+    const target = findMiniToolDomainTarget(latest);
+    return target ? { tool: tool.name, args: { body: { mode: "url", url: target } } } : null;
+  }
+  if (tool.name === "minitools.tls.check") {
+    if (!/\btls\b/i.test(latest)) return null;
+    const target = findMiniToolDomainTarget(latest) || findMiniToolIpv4Target(latest);
+    return target ? { tool: tool.name, args: { body: { target, includeDns: true } } } : null;
+  }
+  if (tool.name === "minitools.securitytrails.lookup") {
+    if (!/\bsecuritytrails|reverse\s+ip\b/i.test(latest)) return null;
+    const reverseIp = /\breverse\s+ip\b/i.test(latest);
+    const target = reverseIp ? findMiniToolIpv4Target(latest) : findMiniToolDomainTarget(latest);
+    if (!target) return null;
+    return reverseIp
+      ? { tool: tool.name, args: { type: "reverse_ip", ip: target } }
+      : { tool: tool.name, args: { type: /\bsubdomains?\b/i.test(latest) ? "subdomains" : "both", domain: target } };
+  }
+  if (tool.name === "minitools.dns.lookup") {
+    if (!/\bdns\b/i.test(latest)) return null;
+    const target = findMiniToolDomainTarget(latest);
+    const recordType = findMiniToolDnsRecordType(latest);
+    return target && recordType
+      ? { tool: tool.name, args: { body: { toolId: "dns_records", target, options: { recordType } } } }
+      : null;
+  }
   return null;
+}
+
+const MINITOOLS_DNS_RECORD_TYPES = new Set(["A", "AAAA", "CNAME", "MX", "TXT", "NS", "SOA", "CAA", "SRV", "DS", "DNSKEY", "RRSIG", "PTR"]);
+
+function findMiniToolDomainTarget(value) {
+  return String(value || "").match(/\b[a-z0-9]+(?:[-.][a-z0-9]+)+\.[a-z]{2,}\b/i)?.[0] || "";
+}
+
+function findMiniToolIpv4Target(value) {
+  return String(value || "").match(/\b(?:\d{1,3}\.){3}\d{1,3}\b/)?.[0] || "";
+}
+
+function findMiniToolDnsRecordType(value) {
+  const match = String(value || "").match(/\b(a{1,4}|cname|mx|txt|ns|soa|caa|srv|ds|dnskey|rrsig|ptr)\s+(?:dns\s+)?records?\b/i);
+  const type = String(match?.[1] || "").toUpperCase();
+  return MINITOOLS_DNS_RECORD_TYPES.has(type) ? type : "";
 }
 
 function baselineToolNamesForDomain(domain) {
@@ -570,6 +625,7 @@ function baselineToolNamesForDomain(domain) {
     reporter: ["reporter.bootstrap", "reporter.projects", "reporter.project.get", "reporter.users", "reporter.templates"],
     homepage: ["homepage.home", "homepage.shortcuts", "homepage.bulletins", "homepage.toolFavourites", "homepage.shortcut.create", "homepage.shortcut.update", "homepage.shortcut.delete", "homepage.shortcut.favourite", "homepage.shortcuts.reorder", "homepage.toolFavourites.update", "homepage.settings.update"],
     survey: ["survey.list", "survey.get", "survey.stats", "survey.results"],
+    minitools: ["minitools.securitytrails.lookup", "minitools.dns.lookup", "minitools.securityHeaders.fetch", "minitools.tls.check"],
   };
   return baselines[domain] || [];
 }
@@ -668,8 +724,15 @@ function extractSelectedToolNames(parsed, calls = []) {
 
 function shouldUseRecoveredToolsWhenRouterDeclines(messages = []) {
   const text = `${latestUserText(messages)}\n${(messages || []).slice(-4).map((message) => message?.content || "").join("\n")}`.toLowerCase();
-  return /\b(calendar|schedule|scheduled|meeting|meetings|wiki|page|runbook|threat|alert|alerts|reporter|report|finding|survey|homepage|bulletin|shortcut|project|client|evidence)\b/.test(text)
+  return /\b(calendar|schedule|scheduled|meeting|meetings|wiki|page|runbook|threat|alert|alerts|reporter|report|finding|survey|homepage|bulletin|shortcut|project|client|evidence|minitools|securitytrails|dns|security headers?|tls)\b/.test(text)
     || /\b(no meetings|anything on|what have i got|check it|is it there|did it work)\b/.test(text);
+}
+
+function userAskedForToolInventory(messages = []) {
+  const text = latestUserText(messages).toLowerCase();
+  return /\b(list|show|check|tell)\b[\s\S]{0,80}\b(available|scoped|your)\s+tools?\b/.test(text)
+    || /\bwhat\s+tools?\b[\s\S]{0,80}\b(available|have|list|can\s+you\s+(?:use|call))\b/.test(text)
+    || /\btool\s+list\b/.test(text);
 }
 
 function inferWriteIntentFromMessages(messages = []) {
@@ -1388,6 +1451,17 @@ async function routeModelToolUse(req, messages, options = {}) {
   const toolCatalog = getRedSecAiToolCatalog(req.access);
   if (!toolCatalog.length) {
     return { useTools: false, calls: [], raw: "", toolManifest, toolCatalog, candidateToolNames: [], writeIntent: false };
+  }
+  if (userAskedForToolInventory(messages)) {
+    return {
+      useTools: true,
+      calls: [],
+      raw: "",
+      toolManifest,
+      toolCatalog,
+      candidateToolNames: toolManifest.map((tool) => tool.name),
+      writeIntent: false,
+    };
   }
   emitStatus(options, { phase: "tool_router", label: "Deciding whether RedSecTools data is needed" });
   const raw = await provider.chat([

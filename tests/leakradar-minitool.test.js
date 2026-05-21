@@ -59,6 +59,27 @@ test("LeakRadar envelope respects upstream page size for pagination", () => {
   assert.equal(envelope.nextPage, 2);
 });
 
+test("LeakRadar envelope accepts upstream total-page and next-link pagination shapes", () => {
+  const totalPages = buildLeakRadarEnvelope({
+    items: [{ id: "1" }],
+    page: 2,
+    total_pages: 4,
+  }, { page: 2, limit: LEAKRADAR_PAGE_SIZE });
+  const nextLink = buildLeakRadarEnvelope({
+    data: [{ id: "1" }],
+    pagination: {
+      page: 3,
+      next: "/search/domain/example.com/employees?page=4",
+    },
+  }, { page: 3, limit: LEAKRADAR_PAGE_SIZE });
+
+  assert.equal(totalPages.hasMore, true);
+  assert.equal(totalPages.nextPage, 3);
+  assert.equal(totalPages.totalPages, 4);
+  assert.equal(nextLink.hasMore, true);
+  assert.equal(nextLink.nextPage, 4);
+});
+
 test("LeakRadar unlocked filter keeps only records matching the requested domain", () => {
   const items = [
     { id: "1", email_domain: "example.com", username: "a@example.com" },

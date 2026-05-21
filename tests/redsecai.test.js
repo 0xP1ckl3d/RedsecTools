@@ -58,6 +58,8 @@ test("RedSecAI exposes a clear scoped tool manifest", () => {
   assert.equal(TOOL_ALLOWLIST["engage.dashboard.summary"].capability, "engage.read");
   assert.equal(TOOL_ALLOWLIST["engage.engagement.update_status"].confirmRequired, true);
   assert.equal(TOOL_ALLOWLIST["wiki.bootstrap"].capability, "wiki.read");
+  assert.equal(TOOL_ALLOWLIST["minitools.securitytrails.lookup"].capability, "minitools.read");
+  assert.equal(TOOL_ALLOWLIST["minitools.tls.check"].confirmRequired, undefined);
   assert.equal(TOOL_ALLOWLIST["wiki.page.get"].capability, "wiki.read");
   assert.equal(TOOL_ALLOWLIST["wiki.page.create"].confirmRequired, true);
   assert.equal(TOOL_ALLOWLIST["vault.entries"], undefined);
@@ -247,6 +249,23 @@ test("RedSecAI targeted tools require RBAC", () => {
   assert.equal(calls.some((call) => call.tool === "threat.searchAlerts"), false);
 });
 
+test("RedSecAI derives concrete DNS record MiniTool calls for explicit DNS prompts", () => {
+  const { deriveRedSecAiToolCalls } = require("../server/modules/redsecai/context");
+  const calls = deriveRedSecAiToolCalls("Use your dns tool to lookup the a records for infotrust.com.au", {
+    permissionSet: new Set(["minitools.view"]),
+  });
+  assert.deepEqual(calls, [{
+    tool: "minitools.dns.lookup",
+    args: {
+      body: {
+        toolId: "dns_records",
+        target: "infotrust.com.au",
+        options: { recordType: "A" },
+      },
+    },
+  }]);
+});
+
 test("RedSecAI exposes Engage tools with engagement governance and confirmation requirements", () => {
   const { getRedSecAiToolManifest, getRedSecAiToolGovernanceMatrix } = require("../server/modules/redsecai/context");
   const manifest = getRedSecAiToolManifest({
@@ -288,6 +307,7 @@ test("RedSecAI exposes broad non-encrypted tool coverage without encrypted produ
       "engage.view_team",
       "engage.edit_engagement",
       "engage.manage_qa",
+      "minitools.view",
     ]),
   });
   const names = new Set(manifest.map((tool) => tool.name));
@@ -304,10 +324,104 @@ test("RedSecAI exposes broad non-encrypted tool coverage without encrypted produ
     "engage.engagement.update_status",
     "engage.qa.assign",
     "survey.create",
+    "minitools.securitytrails.lookup",
+    "minitools.dns.lookup",
+    "minitools.securityHeaders.fetch",
+    "minitools.tls.check",
   ]) {
     assert.ok(names.has(expected), `${expected} should be available`);
   }
   assert.ok([...names].every((name) => !/^(vault|paste|share|chat)\./.test(name)));
+});
+
+test("RedSecAI MiniTools reads call the existing user-scoped MiniTools route", async () => {
+  const originalFetch = global.fetch;
+  try {
+    let fetchedUrl = "";
+    global.fetch = async (url, init) => {
+      fetchedUrl = String(url);
+      assert.equal(init.method, "GET");
+      assert.equal(init.headers.cookie, "redsec_session=s%3Atest.sig");
+      return new Response(JSON.stringify({
+        reverseIp: { records: [{ hostname: "example.com" }] },
+        quota: { used: 3, limit: 50 },
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    };
+    const result = await executeRedSecAiTool({
+      user: { id: "u1", username: "alice" },
+      access: { permissionSet: new Set(["minitools.view"]) },
+      headers: { cookie: "redsec_session=s%3Atest.sig" },
+      protocol: "http",
+      get: () => "localhost:3000",
+    }, "minitools.securitytrails.lookup", { type: "reverse_ip", ip: "8.8.8.8" });
+
+    assert.equal(result.ok, true);
+    assert.match(fetchedUrl, /\/api\/minitools\/securitytrails\/lookup/);
+    assert.match(fetchedUrl, /type=reverse_ip/);
+    assert.match(fetchedUrl, /ip=8\.8\.8\.8/);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("RedSecAI DNS record reads call MiniTools with a canonical record lookup body", async () => {
+  const originalFetch = global.fetch;
+  try {
+    global.fetch = async (url, init) => {
+      assert.match(String(url), /\/api\/minitools\/dns-lookup$/);
+      assert.equal(init.method, "POST");
+      assert.equal(init.headers.cookie, "redsec_session=s%3Atest.sig");
+      assert.deepEqual(JSON.parse(init.body), {
+        toolId: "dns_records",
+        target: "infotrust.com.au",
+        options: { recordType: "A" },
+      });
+      return new Response(JSON.stringify({
+        toolId: "dns_records",
+        target: "infotrust.com.au",
+        status: "ok",
+        records: [{ type: "A", value: "203.0.113.10" }],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    };
+
+    const result = await executeRedSecAiTool({
+      user: { id: "u1", username: "alice" },
+      access: { permissionSet: new Set(["minitools.view"]) },
+      headers: { cookie: "redsec_session=s%3Atest.sig" },
+    }, "minitools.dns.lookup", {
+      body: {
+        toolId: "dns_records",
+        target: "infotrust.com.au",
+        options: { recordType: "A" },
+      },
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.data.toolId, "dns_records");
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("RedSecAI canonicalizes DNS record lookup aliases before MiniTools schema validation", () => {
+  const { getRedSecAiSchemaValidationError, normalizeRedSecAiToolCall } = require("../server/modules/redsecai/context");
+  const call = normalizeRedSecAiToolCall({
+    tool: "minitools.dns.lookup",
+    args: { tool: "A", domain: "infotrust.com.au" },
+  });
+  assert.deepEqual(call.args, {
+    body: {
+      toolId: "dns_records",
+      target: "infotrust.com.au",
+      options: { recordType: "A" },
+    },
+  });
+  assert.equal(getRedSecAiSchemaValidationError(call.tool, call.args), null);
+});
+
+test("RedSecAI does not expose LeakRadar MiniTools to the model", () => {
+  const { TOOL_ALLOWLIST } = require("../server/modules/redsecai/context");
+  assert.equal(Object.keys(TOOL_ALLOWLIST).some((name) => name.includes("leakradar")), false);
 });
 
 test("RedSecAI resolver tools return backend-provided IDs instead of guessed aliases", async () => {
@@ -388,9 +502,31 @@ test("RedSecAI routes tool use with a lightweight model decision", async () => {
     const calendar = await orchestrator.routeModelToolUse(req, [{ role: "user", content: "No meetings?" }], { page: { timeZone: "Australia/Sydney" } });
     assert.equal(calendar.useTools, true);
     assert.deepEqual(calendar.calls.map((call) => call.tool), ["calendar.bootstrap"]);
+
+    provider.chat = async () => JSON.stringify({ useTools: false, toolCalls: [] });
+    const securityHeaders = await orchestrator.routeModelToolUse({
+      access: { permissionSet: new Set(["minitools.view"]) },
+    }, [{ role: "user", content: "perform a security headers analysis for infotrust.com.au" }]);
+    assert.equal(securityHeaders.useTools, true);
+    assert.deepEqual(securityHeaders.calls, [{
+      tool: "minitools.securityHeaders.fetch",
+      args: { body: { mode: "url", url: "infotrust.com.au" } },
+    }]);
   } finally {
     provider.chat = originalChat;
   }
+});
+
+test("RedSecAI keeps tool inventory questions on the scoped manifest path", async () => {
+  const orchestrator = require("../server/modules/redsecai/orchestrator");
+  const routed = await orchestrator.routeModelToolUse({
+    access: { permissionSet: new Set(["minitools.view", "wiki.view"]) },
+  }, [{ role: "user", content: "Check your list of available tools and tell me everything on it" }]);
+
+  assert.equal(routed.useTools, true);
+  assert.deepEqual(routed.calls, []);
+  assert.ok(routed.candidateToolNames.includes("minitools.securityHeaders.fetch"));
+  assert.ok(routed.candidateToolNames.includes("wiki.search"));
 });
 
 test("RedSecAI recovers fuzzy wiki lookup through catalog discovery", async () => {
@@ -1039,6 +1175,34 @@ test("RedSecAI sanitizes model-planned tools against manifest and encrypted scop
   assert.deepEqual(calls[1].args.body.assigneeUserIds, ["u1", "u2"]);
   assert.equal(calls[2].args.query.length, 1000);
   assert.equal(calls[3].args.body.bodyMarkdown, longWikiBody);
+});
+
+test("RedSecAI sanitizer keeps MiniTools DNS options inside the request body", () => {
+  const calls = sanitizeModelToolCalls({
+    toolCalls: [{
+      tool: "minitools.dns.lookup",
+      args: {
+        body: {
+          toolId: "dns_records",
+          target: "infotrust.com.au",
+          options: { recordType: "A", resolverProfile: "cloudflare" },
+        },
+      },
+    }],
+  }, {
+    toolManifest: [{ name: "minitools.dns.lookup" }],
+  });
+
+  assert.deepEqual(calls, [{
+    tool: "minitools.dns.lookup",
+    args: {
+      body: {
+        toolId: "dns_records",
+        target: "infotrust.com.au",
+        options: { recordType: "A", resolverProfile: "cloudflare" },
+      },
+    },
+  }]);
 });
 
 test("RedSecAI sanitizer preserves long narrative body fields across write tools", () => {

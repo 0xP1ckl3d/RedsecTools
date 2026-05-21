@@ -1,5 +1,6 @@
 const { Router } = require("express");
 const rateLimit = require("express-rate-limit");
+const net = require("net");
 const { requireUser } = require("../middleware/auth");
 const { attachUserAccess } = require("../middleware/permissions");
 const { logEvent, redactObject } = require("../core/logger");
@@ -365,20 +366,44 @@ router.post("/minitools/dns-lookup", dnsLookupLimiter, requireUser, attachUserAc
 
 // --- SecurityTrails proxy ---
 
-async function securityTrailsApi(endpointPath) {
+async function securityTrailsApi(endpointPath, { method = "GET", query = {}, body = null } = {}) {
   const apiKey = getSecurityTrailsApiKey();
   if (!apiKey) return { error: "No API key configured" };
 
-  const url = `https://api.securitytrails.com/v1${endpointPath}`;
-  const { response } = await safeFetchPublicUrl(url, {
-    headers: { APIKEY: apiKey },
-  });
-  const text = await readResponseTextWithLimit(response);
-  try {
-    return { data: JSON.parse(text) };
-  } catch (_) {
-    return { raw: text.substring(0, 10000), format: "raw" };
+  const url = new URL(`https://api.securitytrails.com/v1${endpointPath}`);
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== null && value !== "") {
+      url.searchParams.set(key, String(value));
+    }
   }
+  const headers = { APIKEY: apiKey, accept: "application/json" };
+  const options = { method, headers };
+  if (body !== null) {
+    headers["content-type"] = "application/json";
+    options.body = JSON.stringify(body);
+  }
+  const { response } = await safeFetchPublicUrl(url.href, options);
+  const text = await readResponseTextWithLimit(response);
+  const parsed = {
+    status: response.status,
+    ok: response.ok,
+  };
+  try {
+    return { ...parsed, data: JSON.parse(text) };
+  } catch (_) {
+    return { ...parsed, raw: text.substring(0, 10000), format: "raw" };
+  }
+}
+
+function normalizeSecurityTrailsIpv4(raw) {
+  const ip = String(raw || "").trim();
+  if (!net.isIPv4(ip)) return { ok: false, error: "Valid IPv4 address required for reverse IP lookup" };
+  return { ok: true, ip };
+}
+
+function normalizeSecurityTrailsPage(raw) {
+  const page = parseInt(raw, 10);
+  return Number.isInteger(page) && page > 0 ? Math.min(page, 10000) : 1;
 }
 
 router.get("/minitools/securitytrails/lookup", securityTrailsLimiter, requireUser, attachUserAccess, canViewMiniTools, requireMinitoolEnabled("minitool_securitytrails_enabled"), async (req, res) => {
@@ -388,12 +413,48 @@ router.get("/minitools/securitytrails/lookup", securityTrailsLimiter, requireUse
   }
 
   const dailyLimit = getSecurityTrailsDailyLimit();
+  const lookupType = String(req.query.type || "both").toLowerCase();
+  const usedToday = getSecurityTrailsUsage(req.user.id);
+
+  if (lookupType === "reverse_ip") {
+    const normalizedIp = normalizeSecurityTrailsIpv4(req.query.ip || req.query.domain);
+    if (!normalizedIp.ok) return res.status(400).json({ error: normalizedIp.error });
+    if (usedToday + 1 > dailyLimit) {
+      return res.status(429).json({ error: `User daily API limit reached (${usedToday}/${dailyLimit}). Requesting 1 query would exceed quota. Resets at midnight UTC.` });
+    }
+
+    try {
+      const page = normalizeSecurityTrailsPage(req.query.page);
+      const reverseIp = await securityTrailsApi("/domains/list", {
+        method: "POST",
+        query: { include_ips: true, page },
+        body: { filter: { ipv4: normalizedIp.ip } },
+      });
+      if (reverseIp.error) return res.status(502).json({ error: reverseIp.error });
+      if (!reverseIp.ok) {
+        return res.status(reverseIp.status === 429 ? 429 : 502).json({
+          error: "SecurityTrails reverse IP lookup failed",
+          status: reverseIp.status,
+          detail: reverseIp.data || reverseIp.raw || null,
+        });
+      }
+      incrementSecurityTrailsUsage(req.user.id);
+      return res.json({
+        reverseIp: reverseIp.data || null,
+        reverseIpRaw: reverseIp.raw || null,
+        query: { ip: normalizedIp.ip, page },
+        quota: { used: usedToday + 1, limit: dailyLimit },
+      });
+    } catch (err) {
+      return res.status(502).json({ error: "Failed to reach SecurityTrails API", detail: err.message });
+    }
+  }
+
   const domain = String(req.query.domain || "").trim().toLowerCase();
   if (!domain || !DOMAIN_RE.test(domain)) {
     return res.status(400).json({ error: "Valid domain required" });
   }
 
-  const lookupType = String(req.query.type || "both").toLowerCase();
   const fetchDetails = lookupType === "details" || lookupType === "both";
   const fetchSubdomains = lookupType === "subdomains" || lookupType === "both";
   const queryCount = (fetchDetails ? 1 : 0) + (fetchSubdomains ? 1 : 0);
@@ -401,7 +462,6 @@ router.get("/minitools/securitytrails/lookup", securityTrailsLimiter, requireUse
     return res.status(400).json({ error: "Invalid type. Use 'details', 'subdomains', or 'both'." });
   }
 
-  const usedToday = getSecurityTrailsUsage(req.user.id);
   if (usedToday + queryCount > dailyLimit) {
     return res.status(429).json({ error: `User daily API limit reached (${usedToday}/${dailyLimit}). Requesting ${queryCount} queries would exceed quota. Resets at midnight UTC.` });
   }

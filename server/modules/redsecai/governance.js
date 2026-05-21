@@ -12,6 +12,7 @@ const DATA_CLASS_BY_DOMAIN = Object.freeze({
   reporter: "reporting_project_data",
   engage: "engagement_operations",
   survey: "survey_metadata_and_results",
+  minitools: "security_diagnostics",
 });
 
 function getToolDomain(toolName) {

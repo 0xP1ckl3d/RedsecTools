@@ -22364,16 +22364,37 @@
     "/api/minitools/securitytrails/lookup": {
       "get": {
         "tags": ["MiniTools"],
-        "summary": "Look up domain intelligence via SecurityTrails",
-        "description": "Proxies domain details and subdomain enumeration to the SecurityTrails API. Requires an admin-configured API key. Per-user daily request quota enforced. Rate limited to 60 requests per 15 minutes.",
+        "summary": "Look up domain and reverse IP intelligence via SecurityTrails",
+        "description": "Proxies domain details, subdomain enumeration, and reverse IPv4 domain search to the SecurityTrails API. Reverse IP uses SecurityTrails domain search with an IPv4 filter. Requires an admin-configured API key. Per-user daily request quota enforced. Rate limited to 60 requests per 15 minutes.",
         "security": [{ "UserSessionCookie": [] }],
         "parameters": [
           {
             "name": "domain",
             "in": "query",
-            "required": true,
+            "required": false,
             "schema": { "type": "string" },
-            "description": "Domain name to look up"
+            "description": "Domain name to look up for details, subdomains, or both modes"
+          },
+          {
+            "name": "ip",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "format": "ipv4" },
+            "description": "IPv4 address for reverse_ip mode"
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "enum": ["details", "subdomains", "both", "reverse_ip"], "default": "both" },
+            "description": "SecurityTrails lookup mode"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "default": 1 },
+            "description": "Reverse IP domain-search page"
           }
         ],
         "responses": {
@@ -22386,6 +22407,8 @@
                   "properties": {
                     "details": { "type": "object", "description": "Domain details from SecurityTrails" },
                     "subdomains": { "type": "object", "description": "Subdomain list from SecurityTrails" },
+                    "reverseIp": { "type": "object", "description": "Reverse IPv4 domain search result from SecurityTrails domains/list" },
+                    "query": { "type": "object", "description": "Normalized reverse IP query metadata when reverse_ip mode is used" },
                     "quota": {
                       "type": "object",
                       "properties": {
@@ -22418,7 +22441,7 @@
           { "name": "page", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "default": 1 } }
         ],
         "responses": {
-          "200": { "description": "LeakRadar search results", "content": { "application/json": { "schema": { "type": "object", "properties": { "domain": { "type": "string" }, "type": { "type": "string" }, "page": { "type": "integer" }, "limit": { "type": "integer", "example": 100 }, "items": { "type": "array", "items": { "type": "object" } }, "unlockedById": { "type": "object", "description": "Previously unlocked records from the encrypted local database cache keyed by LeakRadar ID." }, "total": { "type": "integer", "nullable": true }, "hasMore": { "type": "boolean" }, "nextPage": { "type": "integer", "nullable": true }, "raw": { "type": "object" } } } } } },
+          "200": { "description": "LeakRadar search results", "content": { "application/json": { "schema": { "type": "object", "properties": { "domain": { "type": "string" }, "type": { "type": "string" }, "page": { "type": "integer" }, "limit": { "type": "integer", "example": 100 }, "items": { "type": "array", "items": { "type": "object" } }, "unlockedById": { "type": "object", "description": "Previously unlocked records from the encrypted local database cache keyed by LeakRadar ID." }, "total": { "type": "integer", "nullable": true }, "totalPages": { "type": "integer", "nullable": true }, "hasMore": { "type": "boolean" }, "nextPage": { "type": "integer", "nullable": true }, "raw": { "type": "object" } } } } } },
           "400": { "description": "Invalid domain or search type" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "403": { "description": "Missing minitools.view permission, tool disabled, or API key not configured" },
@@ -22468,7 +22491,7 @@
           { "name": "page", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "default": 1 } }
         ],
         "responses": {
-          "200": { "description": "Unlocked LeakRadar records", "content": { "application/json": { "schema": { "type": "object", "properties": { "domain": { "type": "string" }, "type": { "type": "string", "enum": ["unlocked"] }, "page": { "type": "integer" }, "limit": { "type": "integer", "example": 100 }, "items": { "type": "array", "items": { "type": "object" } }, "unlockedById": { "type": "object", "description": "Records persisted to the encrypted local database cache keyed by LeakRadar ID." }, "total": { "type": "integer", "nullable": true }, "hasMore": { "type": "boolean" }, "nextPage": { "type": "integer", "nullable": true }, "raw": { "type": "object" } } } } } },
+          "200": { "description": "Unlocked LeakRadar records", "content": { "application/json": { "schema": { "type": "object", "properties": { "domain": { "type": "string" }, "type": { "type": "string", "enum": ["unlocked"] }, "page": { "type": "integer" }, "limit": { "type": "integer", "example": 100 }, "items": { "type": "array", "items": { "type": "object" } }, "unlockedById": { "type": "object", "description": "Records persisted to the encrypted local database cache keyed by LeakRadar ID." }, "total": { "type": "integer", "nullable": true }, "totalPages": { "type": "integer", "nullable": true }, "hasMore": { "type": "boolean" }, "nextPage": { "type": "integer", "nullable": true }, "raw": { "type": "object" } } } } } },
           "400": { "description": "Invalid domain" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "403": { "description": "Missing minitools.view permission, tool disabled, or API key not configured" },

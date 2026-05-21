@@ -89,12 +89,12 @@ Every API route requires authentication except public survey response endpoints 
 
 ## RedSecAI route details
 
-RedSecAI routes (`/api/ai/*`) are **not publicly accessible**. They require an authenticated `UserSessionCookie` and are rate-limited (60 requests per 15 minutes per user). RedSecAI also does not bypass RBAC — it calls the same scoped API routes (calendar, engage, wiki, threat, reporter, homepage) using an internal origin and the user's session context, so all permission checks still apply.
+RedSecAI routes (`/api/ai/*`) are **not publicly accessible**. They require an authenticated `UserSessionCookie` and are rate-limited (60 requests per 15 minutes per user). RedSecAI also does not bypass RBAC — it calls the same scoped API routes (calendar, engage, wiki, threat, reporter, homepage, and a read-only MiniTools diagnostic subset) using an internal origin and the user's session context, so all permission checks still apply. MiniTools calls made by RedSecAI still pass through the normal MiniTools route limiters, and SecurityTrails lookups still consume that user's daily SecurityTrails quota.
 
 | Route | Method | Auth | Description |
 |---|---|---|---|
 | `/api/ai/status` | GET | UserSessionCookie | Returns model health, config, and user's pending actions |
-| `/api/ai/chat` | POST | UserSessionCookie + rate limit | Sends a message to the local Ollama model with scoped tool access. The model can read permitted data (calendar, engage, wiki, threat, reporter) and prepare confirmation-gated write actions |
+| `/api/ai/chat` | POST | UserSessionCookie + rate limit | Sends a message to the local Ollama model with scoped tool access. The model can read permitted data (calendar, engage, wiki, threat, reporter, and read-only MiniTools diagnostics) and prepare confirmation-gated write actions |
 | `/api/ai/actions/{id}/confirm` | POST | UserSessionCookie + rate limit | Confirms and executes a previously prepared action against the RBAC-protected API |
 | `/api/ai/actions/{id}/reject` | POST | UserSessionCookie + rate limit | Cancels a pending action without applying it |
 
