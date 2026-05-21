@@ -498,9 +498,12 @@ function analyze(raw) {
 
 // --- Rendering ---
 
+const _copyPayloads = new Map();
+
 function copyBtnHtml(text, label) {
   const id = "ha-copy-" + Math.random().toString(36).slice(2, 8);
-  return `<button type="button" class="btn-secondary text-xs" data-ha-copy-id="${id}" data-ha-copy="${escapeHtml(text)}">${escapeHtml(label)}</button>`;
+  _copyPayloads.set(id, text);
+  return `<button type="button" class="btn-secondary text-xs" data-ha-copy-id="${id}">${escapeHtml(label)}</button>`;
 }
 
 function renderCheckGroup(title, checks, rawValue) {
@@ -712,7 +715,8 @@ function initHeaderAnalyzer() {
   resultsEl.addEventListener("click", (e) => {
     const copyBtn = e.target.closest("[data-ha-copy-id]");
     if (copyBtn) {
-      navigator.clipboard.writeText(copyBtn.dataset.haCopy || "").catch(() => {});
+      const payload = _copyPayloads.get(copyBtn.dataset.haCopyId) || "";
+      navigator.clipboard.writeText(payload).catch(() => {});
       return;
     }
     const btn = e.target.closest("[data-ha-toggle]");

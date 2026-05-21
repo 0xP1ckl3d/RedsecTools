@@ -106,7 +106,7 @@ const CLAIM_META = {
   ver:              { label: "Token Version",     type: "string" },
   idp:              { label: "Identity Provider", type: "string" },
   groups:           { label: "Groups",            type: "list" },
-  wids:             { label: "Writable IDs",      type: "list" },
+  wids:             { label: "Directory Role Template IDs", type: "list" },
   ipaddr:           { label: "IP Address",        type: "string" },
   deviceid:         { label: "Device ID",         type: "string" },
   onprem_sid:       { label: "On-Prem SID",       type: "string" },
@@ -418,11 +418,11 @@ function rebuildLive(parsed) {
     var pldObj = JSON.parse(pldTa.value);
     var newH = textToB64Url(JSON.stringify(hdrObj));
     var newP = textToB64Url(JSON.stringify(pldObj));
-    var changed = (newH !== parsed.headerB64) || (newP !== parsed.payloadB64);
     var sig = (chk && chk.checked) ? parsed.signatureB64 : "";
     display.innerHTML = colorTokenHtml(newH, newP, sig);
 
-    if (changed) badge.classList.remove("hidden");
+    var rebuilt = newH + "." + newP + (sig ? "." + sig : "");
+    if (rebuilt !== parsed.raw) badge.classList.remove("hidden");
     else badge.classList.add("hidden");
   } catch {
     display.innerHTML = '<span class="opacity-50">Invalid JSON in editor</span>';
