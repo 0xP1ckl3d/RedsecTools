@@ -49,6 +49,7 @@ const { pageRequirePermission, pageRequireAnyPermission } = require("./middlewar
 const { buildDeploymentWarnings } = require("./core/security/posture");
 const { logWarn } = require("./core/logger");
 const { startWebhookWorker } = require("./core/integrations/webhooks");
+const { startLolLookupSyncScheduler } = require("./core/minitools/lol-lookup");
 const redsecAiProvider = require("./modules/redsecai/provider");
 const database = require("./database");
 
@@ -380,6 +381,7 @@ server.listen(PORT, HOST, () => {
   seedThreatDefaults();
   startFeedFetchInterval();
   startWebhookWorker(database);
+  startLolLookupSyncScheduler(database.db, { getSetting: database.getSetting });
 });
 
 module.exports = { server };

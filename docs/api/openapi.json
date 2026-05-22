@@ -3884,6 +3884,73 @@
         }
       }
     },
+    "/admin/api/settings/lol-lookup": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "Get LOL Lookup dataset settings and status",
+        "description": "Returns LOL Lookup scheduled sync settings, freshness state, entry counts, raw backup counts, last sync errors, and source metadata for locally cached LOLBAS, GTFOBins, and LOLDrivers datasets.",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "responses": {
+          "200": { "description": "LOL Lookup settings and dataset status", "content": { "application/json": { "schema": { "type": "object" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Update LOL Lookup dataset settings",
+        "description": "Updates the scheduled sync cadence, retained raw backup count per source, and stale warning threshold. May require recent admin authentication.",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "syncSchedule": { "type": "string", "enum": ["manual", "daily", "weekly"] },
+                  "backupRetention": { "type": "integer", "minimum": 1, "maximum": 50 },
+                  "staleDays": { "type": "integer", "minimum": 1, "maximum": 365 }
+                },
+                "required": ["syncSchedule", "backupRetention", "staleDays"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/admin/api/minitools/lol-lookup/sync": {
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Refresh LOL Lookup datasets",
+        "description": "Queues a fetch, validation, backup, normalisation, and local cache swap for LOL Lookup source caches. A failed source refresh leaves its previous known-good local cache active. May require recent admin authentication.",
+        "security": [{ "AdminCookie": [], "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": { "source": { "type": "string", "enum": ["all", "lolbas", "gtfobins", "loldrivers"], "default": "all" } }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": { "description": "Refresh queued", "content": { "application/json": { "schema": { "type": "object" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "502": { "description": "Refresh queue failed before a job could be accepted" }
+        }
+      }
+    },
     "/admin/api/settings/minitools": {
       "get": {
         "tags": [
@@ -3928,6 +3995,21 @@
                     },
                     "leakradar": {
                       "type": "boolean"
+                    },
+                    "lolLookup": {
+                      "type": "boolean"
+                    },
+                    "cyberchef": {
+                      "type": "boolean"
+                    },
+                    "headerAnalyzer": {
+                      "type": "boolean"
+                    },
+                    "jwtAnalyzer": {
+                      "type": "boolean"
+                    },
+                    "apiAnalyzer": {
+                      "type": "boolean"
                     }
                   }
                 }
@@ -3950,7 +4032,7 @@
           "Admin"
         ],
         "summary": "Update RedSecMiniTools visibility settings",
-        "description": "Updates admin-controlled visibility toggles for CVSS, breach lookup, Azure tenant mapping, SecurityTrails, Security Headers, TLS Check, DNS Intelligence, and LeakRadar. This is a high-risk admin write and may require fresh admin authentication when enabled.",
+        "description": "Updates admin-controlled visibility toggles for CVSS, breach lookup, Azure tenant mapping, SecurityTrails, Security Headers, TLS Check, DNS Intelligence, LeakRadar, LOL Lookup, CyberChef, Header Analyzer, JWT Analyzer, and API Analyzer. This is a high-risk admin write and may require fresh admin authentication when enabled.",
         "security": [
           {
             "AdminCookie": [],
@@ -3986,6 +4068,21 @@
                     "type": "boolean"
                   },
                   "leakradarEnabled": {
+                    "type": "boolean"
+                  },
+                  "lolLookupEnabled": {
+                    "type": "boolean"
+                  },
+                  "cyberchefEnabled": {
+                    "type": "boolean"
+                  },
+                  "headerAnalyzerEnabled": {
+                    "type": "boolean"
+                  },
+                  "jwtAnalyzerEnabled": {
+                    "type": "boolean"
+                  },
+                  "apiAnalyzerEnabled": {
                     "type": "boolean"
                   }
                 }
@@ -22118,7 +22215,8 @@
                         "securitytrails": { "type": "object", "properties": { "enabled": { "type": "boolean" }, "apiKeyConfigured": { "type": "boolean" }, "dailyLimit": { "type": "integer" }, "usedToday": { "type": "integer" } } },
                         "securityHeaders": { "type": "object", "properties": { "enabled": { "type": "boolean" } } },
                         "tlsCheck": { "type": "object", "properties": { "enabled": { "type": "boolean" } } },
-                        "leakradar": { "type": "object", "properties": { "enabled": { "type": "boolean" }, "apiKeyConfigured": { "type": "boolean" }, "pageSize": { "type": "integer" } } }
+                        "leakradar": { "type": "object", "properties": { "enabled": { "type": "boolean" }, "apiKeyConfigured": { "type": "boolean" }, "pageSize": { "type": "integer" } } },
+                        "apiAnalyzer": { "type": "object", "properties": { "enabled": { "type": "boolean" } } }
                       }
                     }
                   }
@@ -22497,6 +22595,173 @@
           "403": { "description": "Missing minitools.view permission, tool disabled, or API key not configured" },
           "429": { "description": "LeakRadar lookup rate limit reached" },
           "502": { "description": "Upstream LeakRadar API unavailable" }
+        }
+      }
+    },
+    "/api/minitools/lol-lookup/status": {
+      "get": {
+        "tags": ["MiniTools"],
+        "summary": "Get local LOL Lookup dataset status",
+        "description": "Returns local LOLBAS, GTFOBins, and LOLDrivers cache freshness, entry counts, backup counts, source versions, latest sync errors, and the function facets available from the locally indexed datasets. Runtime status reads do not fetch upstream data.",
+        "security": [{ "UserSessionCookie": [] }],
+        "responses": {
+          "200": { "description": "LOL Lookup dataset status", "content": { "application/json": { "schema": { "type": "object" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "description": "Missing minitools.view permission or tool disabled" },
+          "429": { "description": "LOL Lookup rate limit reached" }
+        }
+      }
+    },
+    "/api/minitools/lol-lookup/search": {
+      "get": {
+        "tags": ["MiniTools"],
+        "summary": "Search the local LOL Lookup cache",
+        "description": "Searches normalised local LOLBAS, GTFOBins, and LOLDrivers entries. Search does not call upstream datasets.",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [
+          { "name": "q", "in": "query", "required": false, "schema": { "type": "string" }, "description": "Binary, driver name, command fragment, ATT&CK ID, hash, path, signer, vendor, tag, or description search text. May be omitted when a dataset or function filter defines a filtered browse lookup." },
+          { "name": "mode", "in": "query", "required": false, "schema": { "type": "string", "enum": ["quick", "exact", "command", "hash"], "default": "quick" } },
+          { "name": "source", "in": "query", "required": false, "schema": { "type": "string", "enum": ["lolbas", "gtfobins", "loldrivers"] } },
+          { "name": "platform", "in": "query", "required": false, "schema": { "type": "string", "enum": ["windows", "linux/unix", "drivers"] } },
+          { "name": "function", "in": "query", "required": false, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Grouped entry summaries for matching local cache entries", "content": { "application/json": { "schema": { "type": "object" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "description": "Missing minitools.view permission or tool disabled" },
+          "429": { "description": "LOL Lookup rate limit reached" }
+        }
+      }
+    },
+    "/api/minitools/lol-lookup/entries/{id}": {
+      "get": {
+        "tags": ["MiniTools"],
+        "summary": "Get LOL Lookup entry detail",
+        "description": "Returns cached commands, function-specific GTFOBins payloads, LOLBAS paths and detections, LOLDrivers hashes and blocking metadata, references, and raw source metadata for one local entry.",
+        "security": [{ "UserSessionCookie": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "LOL Lookup entry detail", "content": { "application/json": { "schema": { "type": "object" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "description": "Missing minitools.view permission or tool disabled" },
+          "404": { "description": "Entry not found" },
+          "429": { "description": "LOL Lookup rate limit reached" }
+        }
+      }
+    },
+    "/api/minitools/api-analyzer/analyze": {
+      "post": {
+        "tags": ["MiniTools"],
+        "summary": "Parse and analyze an API specification",
+        "description": "Parses OpenAPI 3.x, Swagger 2.0, Postman Collection, or raw endpoint list input and returns a structured endpoint inventory with security risk tags. Supports JSON and YAML input via paste or file upload. All processing is local — no external requests are made. Rate limited to 15 requests per minute.",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "specFile": { "type": "string", "format": "binary", "description": "API spec file (JSON or YAML, max 5 MB)" }
+                }
+              }
+            },
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "spec": { "type": "string", "description": "API spec content as text (JSON or YAML)" }
+                },
+                "required": ["spec"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Analysis result with endpoints, risk tags, and overview",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "specType": { "type": "string", "enum": ["openapi3", "openapi2", "postman", "raw"] },
+                    "specVersion": { "type": "string" },
+                    "warnings": { "type": "array", "items": { "type": "string" } },
+                    "overview": {
+                      "type": "object",
+                      "properties": {
+                        "title": { "type": "string" },
+                        "version": { "type": "string" },
+                        "description": { "type": "string" },
+                        "endpointCount": { "type": "integer" },
+                        "deprecatedCount": { "type": "integer" },
+                        "serverUrls": { "type": "array", "items": { "type": "string" } },
+                        "authSchemes": { "type": "array", "items": { "type": "object" } },
+                        "tagGroups": { "type": "array", "items": { "type": "string" } },
+                        "riskSummary": {
+                          "type": "object",
+                          "properties": {
+                            "total": { "type": "integer" },
+                            "tagged": { "type": "integer" },
+                            "byTag": { "type": "object", "additionalProperties": { "type": "integer" } },
+                            "bySeverity": { "type": "object", "properties": { "critical": { "type": "integer" }, "high": { "type": "integer" }, "medium": { "type": "integer" }, "low": { "type": "integer" }, "info": { "type": "integer" } } }
+                          }
+                        }
+                      }
+                    },
+                    "endpoints": { "type": "array", "items": { "type": "object" } },
+                    "tagIndex": { "type": "object", "additionalProperties": { "type": "array", "items": { "type": "integer" } } },
+                    "meta": { "type": "object", "properties": { "durationMs": { "type": "integer" }, "timestamp": { "type": "string" } } }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Missing or oversized spec content", "content": { "application/json": { "schema": { "type": "object", "properties": { "error": { "type": "string" } } } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "description": "Missing minitools.view permission or tool disabled" },
+          "429": { "description": "API Analyzer rate limit reached (15 per minute)" },
+          "500": { "description": "Analysis failed", "content": { "application/json": { "schema": { "type": "object", "properties": { "error": { "type": "string" }, "detail": { "type": "string" } } } } } }
+        }
+      }
+    },
+    "/api/minitools/api-analyzer/export": {
+      "post": {
+        "tags": ["MiniTools"],
+        "summary": "Export API analysis results",
+        "description": "Generates a downloadable export of API analysis results in CSV, Markdown, plain text, curl skeletons, or Burp request skeletons format. Rate limited to 15 requests per minute.",
+        "security": [{ "UserSessionCookie": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "format": { "type": "string", "enum": ["csv", "md", "txt", "curl", "burp"], "description": "Export format" },
+                  "section": { "type": "string", "description": "Content section for markdown/text exports (all, auth_summary, idor, tenant, mass_assignment, sensitive, unauthenticated)" },
+                  "analysis": { "type": "object", "description": "Full analysis result object from the analyze endpoint" }
+                },
+                "required": ["format", "analysis"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exported content",
+            "content": {
+              "text/csv": { "schema": { "type": "string" } },
+              "text/markdown": { "schema": { "type": "string" } },
+              "text/plain": { "schema": { "type": "string" } }
+            }
+          },
+          "400": { "description": "Missing or invalid parameters", "content": { "application/json": { "schema": { "type": "object", "properties": { "error": { "type": "string" } } } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "description": "Missing minitools.view permission or tool disabled" },
+          "429": { "description": "API Analyzer rate limit reached" }
         }
       }
     }

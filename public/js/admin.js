@@ -262,6 +262,7 @@ function updateAdminVisibleTabs() {
     loadSecurityTrailsSettings();
     loadLeakRadarSettings();
     loadMinitoolsSettings();
+    loadLolLookupSettings();
   }
   if (visibleTabs.has("survey-tool-settings")) {
     loadSurveyAdminStats();
@@ -1624,6 +1625,13 @@ const leakRadarApiKeyInput = document.getElementById("leakradar-api-key");
 const leakRadarSaveBtn = document.getElementById("leakradar-save-btn");
 const leakRadarToggleKeyBtn = document.getElementById("leakradar-toggle-key");
 const leakRadarResult = document.getElementById("leakradar-result");
+const lolLookupSyncSchedule = document.getElementById("lol-lookup-sync-schedule");
+const lolLookupBackupRetention = document.getElementById("lol-lookup-backup-retention");
+const lolLookupStaleDays = document.getElementById("lol-lookup-stale-days");
+const lolLookupSettingsSaveBtn = document.getElementById("lol-lookup-settings-save-btn");
+const lolLookupSyncAllBtn = document.getElementById("lol-lookup-sync-all-btn");
+const lolLookupSettingsResult = document.getElementById("lol-lookup-settings-result");
+const lolLookupAdminStatus = document.getElementById("lol-lookup-admin-status");
 
 // MiniTools settings
 const minitoolCvssEnabled = document.getElementById("minitool-cvss-enabled");
@@ -1634,9 +1642,11 @@ const minitoolSecurityHeadersEnabled = document.getElementById("minitool-securit
 const minitoolTlsCheckEnabled = document.getElementById("minitool-tls-check-enabled");
 const minitoolDnsLookupEnabled = document.getElementById("minitool-dns-lookup-enabled");
 const minitoolLeakRadarEnabled = document.getElementById("minitool-leakradar-enabled");
+const minitoolLolLookupEnabled = document.getElementById("minitool-lol-lookup-enabled");
 const minitoolCyberChefEnabled = document.getElementById("minitool-cyberchef-enabled");
 const minitoolHeaderAnalyzerEnabled = document.getElementById("minitool-header-analyzer-enabled");
 const minitoolJwtAnalyzerEnabled = document.getElementById("minitool-jwt-analyzer-enabled");
+const minitoolApiAnalyzerEnabled = document.getElementById("minitool-api-analyzer-enabled");
 const minitoolsSaveBtn = document.getElementById("minitools-save-btn");
 const minitoolsResult = document.getElementById("minitools-result");
 
@@ -1652,9 +1662,11 @@ async function loadMinitoolsSettings() {
     if (minitoolTlsCheckEnabled) minitoolTlsCheckEnabled.checked = data.tlsCheck;
     if (minitoolDnsLookupEnabled) minitoolDnsLookupEnabled.checked = data.dnsLookup;
     if (minitoolLeakRadarEnabled) minitoolLeakRadarEnabled.checked = data.leakradar;
+    if (minitoolLolLookupEnabled) minitoolLolLookupEnabled.checked = data.lolLookup;
     if (minitoolCyberChefEnabled) minitoolCyberChefEnabled.checked = data.cyberchef;
     if (minitoolHeaderAnalyzerEnabled) minitoolHeaderAnalyzerEnabled.checked = data.headerAnalyzer;
     if (minitoolJwtAnalyzerEnabled) minitoolJwtAnalyzerEnabled.checked = data.jwtAnalyzer;
+    if (minitoolApiAnalyzerEnabled) minitoolApiAnalyzerEnabled.checked = data.apiAnalyzer;
   } catch (err) {
     if (minitoolsResult) {
       minitoolsResult.textContent = err.message || "Failed to load settings";
@@ -1682,9 +1694,11 @@ minitoolsSaveBtn?.addEventListener("click", async () => {
         tlsCheckEnabled: !!minitoolTlsCheckEnabled?.checked,
         dnsLookupEnabled: !!minitoolDnsLookupEnabled?.checked,
         leakradarEnabled: !!minitoolLeakRadarEnabled?.checked,
+        lolLookupEnabled: !!minitoolLolLookupEnabled?.checked,
         cyberchefEnabled: !!minitoolCyberChefEnabled?.checked,
         headerAnalyzerEnabled: !!minitoolHeaderAnalyzerEnabled?.checked,
         jwtAnalyzerEnabled: !!minitoolJwtAnalyzerEnabled?.checked,
+        apiAnalyzerEnabled: !!minitoolApiAnalyzerEnabled?.checked,
       }),
     });
     const data = await res.json().catch(() => ({}));
@@ -1822,6 +1836,128 @@ leakRadarSaveBtn?.addEventListener("click", async () => {
   } finally {
     leakRadarSaveBtn.disabled = false;
   }
+});
+
+function formatLolLookupDate(timestamp) {
+  if (!timestamp) return "Never";
+  return new Date(Number(timestamp) * 1000).toLocaleString();
+}
+
+function renderLolLookupAdminStatus(status) {
+  if (!lolLookupAdminStatus) return;
+  const sources = Array.isArray(status?.sources) ? status.sources : [];
+  if (!sources.length) {
+    lolLookupAdminStatus.innerHTML = '<div class="text-sm text-muted">No dataset sources available.</div>';
+    return;
+  }
+  lolLookupAdminStatus.innerHTML = sources.map((source) => `
+    <article class="card p-3">
+      <div class="flex items-start justify-between gap-2">
+        <div>
+          <h4 class="text-sm font-bold">${escapeHtml(source.name)}</h4>
+          <p class="text-xs text-muted">${escapeHtml(String(source.entryCount || 0))} entries</p>
+        </div>
+        ${source.syncing ? badge("Refreshing", "blue") : source.stale ? badge("Stale", "amber") : badge("Fresh", "green")}
+      </div>
+      <dl class="grid gap-1 mt-3 text-xs">
+        <div><dt class="text-muted">Last sync</dt><dd>${escapeHtml(formatLolLookupDate(source.lastSuccessAt))}</dd></div>
+        <div><dt class="text-muted">Last attempt</dt><dd>${escapeHtml(formatLolLookupDate(source.lastAttemptedAt))}</dd></div>
+        <div><dt class="text-muted">Raw backups</dt><dd>${escapeHtml(String(source.backupCount || 0))}</dd></div>
+        <div><dt class="text-muted">Version</dt><dd class="break-all">${escapeHtml(source.sourceVersion || "-")}</dd></div>
+      </dl>
+      ${source.lastError ? `<p class="text-xs text-error mt-2">${escapeHtml(source.lastError)}</p>` : ""}
+      <button type="button" class="btn-secondary text-xs mt-3" data-lol-lookup-admin-sync="${safeAttr(source.key)}">Refresh ${escapeHtml(source.name)}</button>
+    </article>
+  `).join("");
+}
+
+async function loadLolLookupSettings() {
+  try {
+    const res = await api("/api/settings/lol-lookup");
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to load LOL Lookup settings");
+    if (lolLookupSyncSchedule) lolLookupSyncSchedule.value = data.settings?.syncSchedule || "daily";
+    if (lolLookupBackupRetention) lolLookupBackupRetention.value = data.settings?.backupRetention || 10;
+    if (lolLookupStaleDays) lolLookupStaleDays.value = data.settings?.staleDays || 8;
+    renderLolLookupAdminStatus(data);
+  } catch (err) {
+    setInlineResult(lolLookupSettingsResult, err.message || "Failed to load LOL Lookup settings", false);
+  }
+}
+
+async function refreshLolLookupSource(source = "all", button = null) {
+  if (button) button.disabled = true;
+  if (lolLookupSyncAllBtn && source === "all") lolLookupSyncAllBtn.disabled = true;
+  setInlineResult(lolLookupSettingsResult, `Refreshing ${source === "all" ? "all LOL Lookup sources" : source}...`);
+  try {
+    const res = await api("/api/minitools/lol-lookup/sync", {
+      method: "POST",
+      body: JSON.stringify({ source }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || data.results?.map((result) => result.error).filter(Boolean).join("; ") || "Refresh failed");
+    const failed = (data.results || []).filter((result) => !result.ok);
+    setInlineResult(
+      lolLookupSettingsResult,
+      data.queued
+        ? "LOL Lookup refresh queued. Completion will appear in notifications and refresh this status panel."
+        : failed.length
+          ? `Refresh completed with ${failed.length} source error(s). Existing cache remains active.`
+          : "LOL Lookup datasets refreshed.",
+    );
+    renderLolLookupAdminStatus(data.status);
+    if (data.queued) {
+      setTimeout(loadLolLookupSettings, 3000);
+      setTimeout(loadLolLookupSettings, 12000);
+    }
+  } catch (err) {
+    setInlineResult(lolLookupSettingsResult, err.message || "Refresh failed", false);
+    await loadLolLookupSettings();
+  } finally {
+    if (button) button.disabled = false;
+    if (lolLookupSyncAllBtn) lolLookupSyncAllBtn.disabled = false;
+  }
+}
+
+lolLookupSettingsSaveBtn?.addEventListener("click", async () => {
+  lolLookupSettingsSaveBtn.disabled = true;
+  try {
+    const res = await api("/api/settings/lol-lookup", {
+      method: "POST",
+      body: JSON.stringify({
+        syncSchedule: lolLookupSyncSchedule?.value || "daily",
+        backupRetention: parseInt(lolLookupBackupRetention?.value, 10),
+        staleDays: parseInt(lolLookupStaleDays?.value, 10),
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Save failed");
+    setInlineResult(lolLookupSettingsResult, "LOL Lookup settings saved.");
+    await loadLolLookupSettings();
+  } catch (err) {
+    setInlineResult(lolLookupSettingsResult, err.message || "Save failed", false);
+  } finally {
+    lolLookupSettingsSaveBtn.disabled = false;
+  }
+});
+
+lolLookupSyncAllBtn?.addEventListener("click", () => refreshLolLookupSource("all", lolLookupSyncAllBtn));
+lolLookupAdminStatus?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-lol-lookup-admin-sync]");
+  if (button) refreshLolLookupSource(button.dataset.lolLookupAdminSync, button);
+});
+window.addEventListener("redsec:notification", async (event) => {
+  const notification = event.detail;
+  if (!notification || notification.entity_type !== "lol_lookup_source") return;
+  if (!["lol_lookup_sync_complete", "lol_lookup_sync_failed"].includes(notification.action)) return;
+  setInlineResult(
+    lolLookupSettingsResult,
+    notification.action === "lol_lookup_sync_complete"
+      ? notification.body || "LOL Lookup datasets refreshed."
+      : notification.body || "LOL Lookup refresh completed with source errors.",
+    notification.action === "lol_lookup_sync_complete",
+  );
+  await loadLolLookupSettings();
 });
 
 // ============================================================

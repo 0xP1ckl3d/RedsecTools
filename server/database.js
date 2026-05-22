@@ -2307,6 +2307,9 @@ const DEFAULTS = {
   redsecai_action_ttl_seconds: process.env.REDSECAI_ACTION_TTL_SECONDS || "7200",
   securitytrails_api_key: "",
   securitytrails_daily_limit: "50",
+  lol_lookup_sync_schedule: "daily",
+  lol_lookup_backup_retention: "10",
+  lol_lookup_stale_days: "8",
 };
 for (const [key, value] of Object.entries(DEFAULTS)) {
   if (!getSetting(key)) setSetting(key, value);

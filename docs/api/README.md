@@ -19,7 +19,7 @@ The current spec covers all HTTP routes across the platform:
 - RedSecEngage bootstrap, client/contact/opportunity/engagement/team/QA/note/activity/linking routes, role-aware dashboard statistics, and RedSecCal/Reporter integration endpoints
 - RedSecAI status, chat, and confirmation-gated action confirm/reject routes
 - RedSecShare upload/download routes plus live upload-config endpoints used by the app and extension
-- RedSecMiniTools bootstrap, breach lookup (xposedornot proxy), Azure tenant mapping (azmap.dev proxy), SecurityTrails, security-header analysis, TLS certificate/recon analysis, DNS Intelligence, and LeakRadar domain leak-intelligence routes
+- RedSecMiniTools bootstrap, breach lookup (xposedornot proxy), Azure tenant mapping (azmap.dev proxy), SecurityTrails, security-header analysis, TLS certificate/recon analysis, DNS Intelligence, LeakRadar domain leak-intelligence, and API Analyzer routes
 
 Important:
 - These docs are exposed in-app only when an admin enables OpenAPI publishing in Admin > Security.

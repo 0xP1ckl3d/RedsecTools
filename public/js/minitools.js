@@ -1802,6 +1802,349 @@ function csvEscape(value) {
   return String(value ?? "").replace(/"/g, '""');
 }
 
+function lolLookupDate(timestamp) {
+  if (!timestamp) return "Never";
+  return new Date(Number(timestamp) * 1000).toLocaleString();
+}
+
+function lolLookupSourceTone(source) {
+  return { lolbas: "blue", gtfobins: "purple", loldrivers: "amber" }[source] || "gray";
+}
+
+function lolLookupList(values, empty = "-") {
+  const list = Array.isArray(values) ? values.filter(Boolean) : [];
+  if (!list.length) return `<span class="text-muted">${escapeHtml(empty)}</span>`;
+  return `<div class="flex flex-wrap gap-1">${list.map((value) => badge(value, "gray", "text-xs")).join("")}</div>`;
+}
+
+function lolLookupObjectText(value) {
+  if (value == null || value === "") return "-";
+  if (typeof value === "string") return value;
+  return JSON.stringify(value, null, 2);
+}
+
+let lolLookupFunctionFacets = { all: [], bySource: {} };
+
+function renderLolLookupFunctionFilter(sourceKey = "") {
+  const select = document.getElementById("lol-lookup-function");
+  if (!select) return;
+  const previous = select.value;
+  const sourceFunctions = sourceKey ? lolLookupFunctionFacets.bySource?.[sourceKey] : lolLookupFunctionFacets.all;
+  const functions = Array.isArray(sourceFunctions) ? sourceFunctions : [];
+  select.innerHTML = `
+    <option value="">Any function</option>
+    ${functions.map((functionName) => `<option value="${safeAttr(functionName)}">${escapeHtml(functionName)}</option>`).join("")}
+  `;
+  if (functions.includes(previous)) select.value = previous;
+}
+
+function renderLolLookupStatus(status) {
+  lolLookupFunctionFacets = {
+    all: Array.isArray(status?.functionFacets?.all) ? status.functionFacets.all : [],
+    bySource: status?.functionFacets?.bySource && typeof status.functionFacets.bySource === "object"
+      ? status.functionFacets.bySource
+      : {},
+  };
+  renderLolLookupFunctionFilter(document.getElementById("lol-lookup-source")?.value || "");
+  const container = document.getElementById("lol-lookup-status");
+  if (!container) return;
+  const sources = Array.isArray(status?.sources) ? status.sources : [];
+  container.innerHTML = sources.length ? sources.map((source) => `
+    <article class="border border-border rounded p-3">
+      <div class="flex items-start justify-between gap-2">
+        <div>
+          <div class="text-sm font-bold">${escapeHtml(source.name)}</div>
+          <div class="text-xs text-muted">${escapeHtml(String(source.entryCount || 0))} entries</div>
+        </div>
+        ${source.syncing ? badge("Refreshing", "blue", "text-xs") : source.stale ? badge("Stale", "amber", "text-xs") : badge("Fresh", "green", "text-xs")}
+      </div>
+      <div class="grid gap-1 mt-2 text-xs">
+        <div><span class="text-muted">Updated:</span> ${escapeHtml(lolLookupDate(source.lastSuccessAt))}</div>
+        <div><span class="text-muted">Attempted:</span> ${escapeHtml(lolLookupDate(source.lastAttemptedAt))}</div>
+        <div><span class="text-muted">Backups:</span> ${escapeHtml(String(source.backupCount || 0))}</div>
+      </div>
+      ${source.lastError ? `<p class="text-xs text-error mt-2">${escapeHtml(source.lastError)}</p>` : ""}
+    </article>
+  `).join("") : '<div class="text-sm text-muted">No local dataset status is available yet.</div>';
+}
+
+async function loadLolLookupStatus() {
+  const container = document.getElementById("lol-lookup-status");
+  if (container) container.innerHTML = '<div class="text-sm text-muted">Loading dataset status...</div>';
+  try {
+    renderLolLookupStatus(await api("/minitools/lol-lookup/status"));
+  } catch (error) {
+    if (container) container.innerHTML = `<div class="text-sm text-error">${escapeHtml(error.message)}</div>`;
+  }
+}
+
+function renderLolLookupResultCard(entry) {
+  const detail = entry.description ? `<p class="text-xs text-muted mt-2 line-clamp-3">${escapeHtml(entry.description)}</p>` : "";
+  const hashCount = Array.isArray(entry.hashes) ? entry.hashes.length : 0;
+  return `
+    <article class="card p-4">
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <h4 class="text-sm font-bold break-all">${escapeHtml(entry.name)}</h4>
+          <div class="flex flex-wrap gap-1 mt-2">
+            ${badge(entry.platform, "gray", "text-xs")}
+            ${badge(entry.type, "gray", "text-xs")}
+            ${entry.functions?.slice(0, 4).map((fn) => badge(fn, "blue", "text-xs")).join("") || ""}
+            ${hashCount ? badge(`${hashCount} hash${hashCount === 1 ? "" : "es"}`, "amber", "text-xs") : ""}
+          </div>
+        </div>
+        <button type="button" class="btn-secondary text-xs whitespace-nowrap" data-lol-lookup-detail="${safeAttr(entry.id)}">Open</button>
+      </div>
+      ${detail}
+    </article>
+  `;
+}
+
+function renderLolLookupResults(data) {
+  const container = document.getElementById("lol-lookup-results");
+  const detail = document.getElementById("lol-lookup-detail");
+  if (!container) return;
+  if (detail) detail.innerHTML = "";
+  const entries = Array.isArray(data?.results) ? data.results : [];
+  if (!entries.length) {
+    container.innerHTML = '<div class="card p-4 text-sm text-muted">No local LOL Lookup matches found. If a dataset has not been synced yet, refresh it from Admin &gt; Tools.</div>';
+    return;
+  }
+  const grouped = Object.groupBy
+    ? Object.groupBy(entries, (entry) => entry.source)
+    : entries.reduce((groups, entry) => ({ ...groups, [entry.source]: [...(groups[entry.source] || []), entry] }), {});
+  const sourceOrder = ["lolbas", "gtfobins", "loldrivers"];
+  container.innerHTML = `
+    <div class="flex items-center justify-between gap-3 flex-wrap mb-3">
+      <div class="text-sm text-muted">${escapeHtml(String(entries.length))} local match${entries.length === 1 ? "" : "es"} for ${escapeHtml(data.mode || "quick")} lookup</div>
+    </div>
+    <div class="grid gap-4">
+      ${sourceOrder.filter((source) => grouped[source]?.length).map((source) => `
+        <section>
+          <div class="flex items-center gap-2 mb-2">
+            ${badge(grouped[source][0].sourceName || source, lolLookupSourceTone(source))}
+            <span class="text-xs text-muted">${escapeHtml(String(grouped[source].length))} result${grouped[source].length === 1 ? "" : "s"}</span>
+          </div>
+          <div class="grid gap-3 lg:grid-cols-2">${grouped[source].map(renderLolLookupResultCard).join("")}</div>
+        </section>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderLolLookupCommand(command, index) {
+  const text = String(command.command || command.code || "").trim();
+  const label = command.function || command.category || command.usecase || `Example ${index + 1}`;
+  const contexts = command.contexts && typeof command.contexts === "object"
+    ? Object.entries(command.contexts).map(([name, detail]) => {
+      if (detail && typeof detail === "object" && detail.code) return `${name}: ${detail.code}`;
+      return name;
+    })
+    : [];
+  const notes = [command.description, command.usecase, command.privileges, command.operatingSystem]
+    .filter(Boolean)
+    .map((value) => `<p class="text-xs text-muted">${escapeHtml(value)}</p>`)
+    .join("");
+  return `
+    <article class="lol-lookup-command border border-border rounded p-3" data-lol-lookup-function-payload="${safeAttr(command.function || "")}">
+      <div class="flex items-center justify-between gap-2 mb-2">
+        <div class="flex flex-wrap gap-1">
+          ${badge(label, "blue", "text-xs")}
+          ${command.mitreId ? badge(command.mitreId, "gray", "text-xs") : ""}
+        </div>
+        ${text ? '<button type="button" class="btn-secondary text-xs px-2 py-1" data-lol-lookup-copy>Copy</button>' : ""}
+      </div>
+      ${notes}
+      ${contexts.length ? `<p class="text-xs text-muted">Contexts / preconditions: ${escapeHtml(contexts.join(" | "))}</p>` : ""}
+      ${text ? `<pre class="mt-2 text-xs bg-card p-3 rounded border border-border overflow-auto whitespace-pre-wrap break-all"><code>${escapeHtml(text)}</code></pre>` : ""}
+    </article>
+  `;
+}
+
+function renderLolLookupDetection(items) {
+  const detections = Array.isArray(items) ? items : [];
+  if (!detections.length) return '<p class="text-sm text-muted">No detection metadata in the synced source entry.</p>';
+  return detections.map((item) => `
+    <pre class="text-xs bg-card p-3 rounded border border-border overflow-auto whitespace-pre-wrap break-all">${escapeHtml(lolLookupObjectText(item))}</pre>
+  `).join("");
+}
+
+function renderLolLookupReferences(entry) {
+  const refs = Array.isArray(entry.references) ? entry.references : [];
+  const links = [...new Set([entry.sourceLink, ...refs].filter(Boolean))];
+  if (!links.length) return '<span class="text-muted">-</span>';
+  return `<div class="grid gap-1 text-xs">${links.map((link) => `<a href="${safeAttr(link)}" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline break-all">${escapeHtml(link)}</a>`).join("")}</div>`;
+}
+
+function renderLolLookupHashes(entry) {
+  const hashes = Array.isArray(entry.hashes) ? entry.hashes : [];
+  if (!hashes.length) return '<p class="text-sm text-muted">No hashes in the synced source entry.</p>';
+  return `<div class="threat-table-wrap"><table class="threat-table"><thead><tr><th>Algorithm</th><th>Hash</th><th>File</th></tr></thead><tbody>${hashes.map((hash) => `
+    <tr>
+      <td class="text-xs whitespace-nowrap">${escapeHtml(hash.algorithm || "-")}</td>
+      <td class="text-xs break-all"><code>${escapeHtml(hash.value || "-")}</code></td>
+      <td class="text-xs break-all">${escapeHtml(hash.filename || "-")}</td>
+    </tr>
+  `).join("")}</tbody></table></div>`;
+}
+
+function renderLolLookupDetail(entry) {
+  const container = document.getElementById("lol-lookup-detail");
+  if (!container) return;
+  const commands = Array.isArray(entry.commands) ? entry.commands : [];
+  const gtfobinsFunctions = entry.source === "gtfobins" ? entry.functions || [] : [];
+  container.innerHTML = `
+    <article class="card p-4">
+      <div class="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <div class="flex flex-wrap gap-1 mb-2">
+            ${badge(entry.sourceName || entry.source, lolLookupSourceTone(entry.source))}
+            ${badge(entry.platform, "gray")}
+            ${badge(entry.type, "gray")}
+          </div>
+          <h3 class="text-lg font-bold break-all">${escapeHtml(entry.name)}</h3>
+          <p class="text-sm text-muted mt-2 whitespace-pre-wrap">${escapeHtml(entry.description || "No source description.")}</p>
+        </div>
+        <div class="text-xs text-muted">Dataset updated ${escapeHtml(lolLookupDate(entry.lastDatasetUpdate))}</div>
+      </div>
+
+      <div class="grid gap-4 lg:grid-cols-2 mt-4">
+        <section>
+          <h4 class="text-sm font-bold mb-2">Functions / Categories</h4>
+          ${lolLookupList(entry.functions)}
+        </section>
+        <section>
+          <h4 class="text-sm font-bold mb-2">ATT&amp;CK / Tags</h4>
+          <div class="grid gap-2">
+            ${lolLookupList(entry.attackMappings)}
+            ${lolLookupList(entry.tags)}
+          </div>
+        </section>
+        <section>
+          <h4 class="text-sm font-bold mb-2">Paths</h4>
+          ${lolLookupList(entry.paths)}
+        </section>
+        <section>
+          <h4 class="text-sm font-bold mb-2">Signer / Vendor</h4>
+          <div class="text-sm"><span class="text-muted">Signer:</span> ${escapeHtml(entry.signer || "-")}</div>
+          <div class="text-sm mt-1"><span class="text-muted">Vendor:</span> ${escapeHtml(entry.vendor || "-")}</div>
+        </section>
+      </div>
+
+      <section class="mt-5">
+        <div class="flex items-end justify-between gap-3 flex-wrap mb-2">
+          <h4 class="text-sm font-bold">Commands / Payloads / Use Examples</h4>
+          ${gtfobinsFunctions.length ? `
+            <label class="space-y-1 min-w-[12rem]">
+              <span class="text-xs font-semibold uppercase tracking-wide text-muted">GTFOBins Function</span>
+              <select class="input-field" data-lol-lookup-function-select>
+                <option value="">All functions</option>
+                ${gtfobinsFunctions.map((fn) => `<option value="${safeAttr(fn)}">${escapeHtml(fn)}</option>`).join("")}
+              </select>
+            </label>
+          ` : ""}
+        </div>
+        ${commands.length ? `<div class="grid gap-3">${commands.map(renderLolLookupCommand).join("")}</div>` : '<p class="text-sm text-muted">No command examples in the synced source entry.</p>'}
+      </section>
+
+      <div class="grid gap-4 lg:grid-cols-2 mt-5">
+        <section>
+          <h4 class="text-sm font-bold mb-2">Detections / Blocking</h4>
+          <div class="grid gap-2">${renderLolLookupDetection(entry.detections)}</div>
+        </section>
+        <section>
+          <h4 class="text-sm font-bold mb-2">References</h4>
+          ${renderLolLookupReferences(entry)}
+        </section>
+      </div>
+
+      <section class="mt-5">
+        <h4 class="text-sm font-bold mb-2">Driver Hashes</h4>
+        ${renderLolLookupHashes(entry)}
+      </section>
+    </article>
+  `;
+  container.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+async function openLolLookupDetail(id) {
+  const container = document.getElementById("lol-lookup-detail");
+  if (container) container.innerHTML = '<div class="card p-4 text-sm text-muted">Loading LOL Lookup entry...</div>';
+  try {
+    const data = await api(`/minitools/lol-lookup/entries/${encodeURIComponent(id)}`);
+    renderLolLookupDetail(data.entry);
+  } catch (error) {
+    if (container) container.innerHTML = `<div class="card p-4 text-sm text-error">${escapeHtml(error.message)}</div>`;
+  }
+}
+
+function initLolLookup() {
+  const query = document.getElementById("lol-lookup-query");
+  const mode = document.getElementById("lol-lookup-mode");
+  const source = document.getElementById("lol-lookup-source");
+  const functionFilter = document.getElementById("lol-lookup-function");
+  const button = document.getElementById("lol-lookup-search-btn");
+  const inline = document.getElementById("lol-lookup-inline-result");
+  const results = document.getElementById("lol-lookup-results");
+  const detail = document.getElementById("lol-lookup-detail");
+  const search = async () => {
+    const value = query?.value.trim() || "";
+    if (!value && !source?.value && !functionFilter?.value) {
+      setInlineResult(inline, "Enter a lookup value or choose a dataset/function filter.", false);
+      return;
+    }
+    clearInlineResult(inline);
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Searching...";
+    }
+    if (results) results.innerHTML = '<div class="card p-4 text-sm text-muted">Searching local LOL Lookup cache...</div>';
+    try {
+        const params = new URLSearchParams({ mode: mode?.value || "quick" });
+        if (value) params.set("q", value);
+        if (source?.value) params.set("source", source.value);
+        if (functionFilter?.value) params.set("function", functionFilter.value);
+      renderLolLookupResults(await api(`/minitools/lol-lookup/search?${params.toString()}`));
+    } catch (error) {
+      if (results) results.innerHTML = `<div class="card p-4 text-sm text-error">${escapeHtml(error.message)}</div>`;
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = "Search";
+      }
+    }
+  };
+  button?.addEventListener("click", search);
+  query?.addEventListener("keydown", (event) => { if (event.key === "Enter") search(); });
+  source?.addEventListener("change", () => renderLolLookupFunctionFilter(source.value));
+  document.getElementById("lol-lookup-status-btn")?.addEventListener("click", loadLolLookupStatus);
+  results?.addEventListener("click", (event) => {
+    const open = event.target.closest("[data-lol-lookup-detail]");
+    if (open) openLolLookupDetail(open.dataset.lolLookupDetail);
+  });
+  detail?.addEventListener("click", async (event) => {
+    const copy = event.target.closest("[data-lol-lookup-copy]");
+    if (!copy) return;
+    const code = copy.closest(".lol-lookup-command")?.querySelector("code")?.textContent || "";
+    if (!code) return;
+    try {
+      await navigator.clipboard.writeText(code);
+      copy.textContent = "Copied";
+      setTimeout(() => { copy.textContent = "Copy"; }, 1200);
+    } catch (_) {
+      showAlertModal("Copy failed", "Clipboard access was not available for this command block.");
+    }
+  });
+  detail?.addEventListener("change", (event) => {
+    const select = event.target.closest("[data-lol-lookup-function-select]");
+    if (!select) return;
+    detail.querySelectorAll("[data-lol-lookup-function-payload]").forEach((item) => {
+      item.classList.toggle("hidden", !!select.value && item.dataset.lolLookupFunctionPayload !== select.value);
+    });
+  });
+  loadLolLookupStatus();
+}
+
 function hideMinitool(tool) {
   document.querySelector(`[data-minitools-view="${tool}"]`)?.remove();
   document.querySelector(`.mobile-tab[data-minitools-view="${tool}"]`)?.remove();
@@ -1815,9 +2158,581 @@ function showFirstEnabledView(excludeTool) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// API Analyzer
+// ---------------------------------------------------------------------------
+
+let apiAnalyzerState = {
+  result: null,
+  filterMethod: "ALL",
+  filterTag: "ALL",
+  filterAuth: "ALL",
+  searchQuery: "",
+  expandedEndpoint: null,
+};
+
+const METHOD_COLORS = { GET: "green", POST: "blue", PUT: "amber", PATCH: "amber", DELETE: "red", HEAD: "gray", OPTIONS: "gray" };
+
+const RISK_SEVERITY_ORDER = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
+
+function initApiAnalyzer() {
+  const specInput = document.getElementById("api-analyzer-spec");
+  const fileInput = document.getElementById("api-analyzer-file");
+  const dropzone = document.getElementById("api-analyzer-dropzone");
+  const analyzeBtn = document.getElementById("api-analyzer-analyze-btn");
+  const clearBtn = document.getElementById("api-analyzer-clear-btn");
+  const resultsEl = document.getElementById("api-analyzer-results");
+  const inlineEl = document.getElementById("api-analyzer-inline-result");
+  const fileInfo = document.getElementById("api-analyzer-file-info");
+  if (!specInput || !analyzeBtn || !resultsEl) return;
+
+  if (dropzone) {
+    let dragCounter = 0;
+    const dropText = document.getElementById("api-analyzer-dropzone-text");
+    const enterDrop = () => {
+      dragCounter++;
+      dropzone.style.borderColor = "var(--accent)";
+      dropzone.style.backgroundColor = "color-mix(in srgb, var(--accent) 10%, transparent)";
+      if (dropText) dropText.textContent = "Drop file to load into editor";
+    };
+    const leaveDrop = () => {
+      dragCounter--;
+      if (dragCounter <= 0) {
+        dragCounter = 0;
+        dropzone.style.borderColor = "";
+        dropzone.style.backgroundColor = "";
+        if (dropText) dropText.textContent = "Drag and drop a spec file here";
+      }
+    };
+    dropzone.addEventListener("dragenter", (e) => { e.preventDefault(); enterDrop(); });
+    dropzone.addEventListener("dragleave", () => { leaveDrop(); });
+    dropzone.addEventListener("dragover", (e) => { e.preventDefault(); });
+    dropzone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dragCounter = 0;
+      dropzone.style.borderColor = "";
+      dropzone.style.backgroundColor = "";
+      if (dropText) dropText.textContent = "Drag and drop a spec file here";
+      const file = e.dataTransfer?.files?.[0];
+      if (file) loadFileIntoTextarea(file, specInput, fileInfo);
+    });
+  }
+
+  if (fileInput) {
+    fileInput.addEventListener("change", () => {
+      const file = fileInput.files?.[0];
+      if (file) loadFileIntoTextarea(file, specInput, fileInfo);
+    });
+  }
+
+  const runAnalyze = async () => {
+    const spec = specInput.value.trim();
+    clearInlineResult(inlineEl);
+    if (!spec) {
+      setInlineResult(inlineEl, "Paste or upload an API spec first.", "error");
+      return;
+    }
+    analyzeBtn.disabled = true;
+    analyzeBtn.textContent = "Analyzing...";
+    resultsEl.innerHTML = '<div class="text-sm text-muted">Parsing API specification...</div>';
+    try {
+      const data = await api("/minitools/api-analyzer/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ spec }),
+      });
+      apiAnalyzerState.result = data;
+      apiAnalyzerState.filterMethod = "ALL";
+      apiAnalyzerState.filterTag = "ALL";
+      apiAnalyzerState.filterAuth = "ALL";
+      apiAnalyzerState.searchQuery = "";
+      apiAnalyzerState.expandedEndpoint = null;
+      renderApiAnalyzerResults(data, resultsEl);
+    } catch (err) {
+      resultsEl.innerHTML = `<div class="text-sm text-error">${escapeHtml(err.message)}</div>`;
+    } finally {
+      analyzeBtn.disabled = false;
+      analyzeBtn.textContent = "Analyze";
+    }
+  };
+
+  analyzeBtn.addEventListener("click", runAnalyze);
+  specInput.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") runAnalyze(); });
+
+  clearBtn.addEventListener("click", () => {
+    specInput.value = "";
+    resultsEl.innerHTML = "";
+    clearInlineResult(inlineEl);
+    if (fileInfo) fileInfo.classList.add("hidden");
+    apiAnalyzerState.result = null;
+  });
+
+  resultsEl.addEventListener("click", (e) => {
+    const epBtn = e.target.closest("[data-api-analyzer-ep]");
+    if (epBtn) {
+      const idx = parseInt(epBtn.dataset.apiAnalyzerEp, 10);
+      apiAnalyzerState.expandedEndpoint = apiAnalyzerState.expandedEndpoint === idx ? null : idx;
+      renderApiAnalyzerResults(apiAnalyzerState.result, resultsEl);
+      return;
+    }
+    const searchBtn = e.target.closest("#api-analyzer-search-btn");
+    if (searchBtn) {
+      const input = document.getElementById("api-analyzer-search-input");
+      if (input) {
+        apiAnalyzerState.searchQuery = input.value.trim().toLowerCase();
+        apiAnalyzerState.expandedEndpoint = null;
+        renderApiAnalyzerResults(apiAnalyzerState.result, resultsEl);
+      }
+      return;
+    }
+    const exportBtn = e.target.closest("[data-api-analyzer-export]");
+    if (exportBtn) {
+      const fmt = exportBtn.dataset.apiAnalyzerExport;
+      doApiAnalyzerExport(fmt);
+      return;
+    }
+    const copyBtn = e.target.closest("[data-api-analyzer-copy]");
+    if (copyBtn) {
+      const text = copyBtn.dataset.apiAnalyzerCopy;
+      copyText(text);
+      copyBtn.textContent = "Copied";
+      setTimeout(() => { copyBtn.textContent = "Copy"; }, 1500);
+      return;
+    }
+  });
+
+  resultsEl.addEventListener("change", (e) => {
+    const filterEl = e.target.closest("[data-api-analyzer-filter]");
+    if (!filterEl) return;
+    const { filterType } = filterEl.dataset;
+    const filterValue = filterEl.value;
+    if (filterType === "method") apiAnalyzerState.filterMethod = filterValue;
+    if (filterType === "tag") apiAnalyzerState.filterTag = filterValue;
+    if (filterType === "auth") apiAnalyzerState.filterAuth = filterValue;
+    apiAnalyzerState.expandedEndpoint = null;
+    renderApiAnalyzerResults(apiAnalyzerState.result, resultsEl);
+  });
+}
+
+function loadFileIntoTextarea(file, textarea, fileInfoEl) {
+  if (file.size > 5 * 1024 * 1024) {
+    setInlineResult(document.getElementById("api-analyzer-inline-result"), "File must be 5 MB or less.", "error");
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    textarea.value = reader.result;
+    if (fileInfoEl) {
+      fileInfoEl.textContent = `Loaded: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+      fileInfoEl.classList.remove("hidden");
+    }
+  };
+  reader.readAsText(file);
+}
+
+function renderApiAnalyzerResults(data, container) {
+  if (!data || !data.success) {
+    container.innerHTML = `<div class="text-sm text-error">${escapeHtml(data?.error || "Analysis failed")}</div>`;
+    return;
+  }
+  const { overview, endpoints, tagIndex, warnings } = data;
+  let html = "";
+
+  // Overview
+  html += `<div class="card p-4 mb-4">`;
+  html += `<div class="flex flex-wrap items-start justify-between gap-4">`;
+  html += `<div>`;
+  html += `<h3 class="text-base font-bold">${escapeHtml(overview.title)}</h3>`;
+  if (overview.version) html += `<span class="text-xs text-muted ml-2">v${escapeHtml(overview.version)}</span>`;
+  if (overview.description) html += `<p class="text-sm text-muted mt-1">${escapeHtml(overview.description).slice(0, 200)}</p>`;
+  html += `</div>`;
+  html += `<div class="text-right text-xs text-muted">`;
+  html += `<div>${overview.endpointCount} endpoints`;
+  if (overview.deprecatedCount > 0) html += ` &middot; ${overview.deprecatedCount} deprecated`;
+  html += `</div>`;
+  if (data.specType) html += `<div class="mt-1">${escapeHtml(data.specType)}</div>`;
+  html += `</div></div>`;
+
+  if (overview.serverUrls && overview.serverUrls.length > 0) {
+    html += `<div class="text-xs text-muted mt-2">Servers: ${overview.serverUrls.map((u) => escapeHtml(u)).join(", ")}</div>`;
+  }
+  if (overview.authSchemes && overview.authSchemes.length > 0) {
+    html += `<div class="flex flex-wrap gap-1 mt-2">`;
+    for (const scheme of overview.authSchemes) {
+      html += `<span class="badge badge-blue text-xs">${escapeHtml(scheme.type)}: ${escapeHtml(scheme.name)}</span>`;
+    }
+    html += `</div>`;
+  }
+
+  // Risk summary badges
+  const rs = overview.riskSummary || {};
+  html += `<div class="flex flex-wrap gap-2 mt-3">`;
+  html += `<span class="badge badge-gray text-xs">${rs.total || 0} total</span>`;
+  if (rs.tagged > 0) html += `<span class="badge badge-amber text-xs">${rs.tagged} tagged</span>`;
+  const sevColors = { critical: "red", high: "red", medium: "amber", low: "blue", info: "gray" };
+  for (const [sev, count] of Object.entries(rs.bySeverity || {})) {
+    if (count > 0) html += `<span class="badge badge-${sevColors[sev] || "gray"} text-xs">${count} ${sev}</span>`;
+  }
+  html += `</div>`;
+
+  if (warnings && warnings.length > 0) {
+    html += `<div class="mt-2 text-xs text-muted">`;
+    html += `Parser warnings: ${warnings.map((w) => escapeHtml(w)).join("; ")}`;
+    html += `</div>`;
+  }
+  html += `</div>`;
+
+  // Toolbar
+  const methods = ["ALL", ...new Set(endpoints.map((e) => e.method))];
+  const authOptions = ["ALL", "authenticated", "unauthenticated"];
+  const tags = ["ALL", ...Object.keys(tagIndex || {})];
+
+  html += `<div class="card p-3 mb-4">`;
+  html += `<div class="flex flex-wrap items-center gap-2">`;
+
+  html += `<select data-api-analyzer-filter data-filter-type="method" class="input-field text-xs py-1 px-2">`;
+  for (const m of methods) html += `<option value="${m}" ${apiAnalyzerState.filterMethod === m ? "selected" : ""}>${m === "ALL" ? "All Methods" : m}</option>`;
+  html += `</select>`;
+
+  html += `<select data-api-analyzer-filter data-filter-type="tag" class="input-field text-xs py-1 px-2">`;
+  for (const t of tags) html += `<option value="${escapeHtml(t)}" ${apiAnalyzerState.filterTag === t ? "selected" : ""}>${t === "ALL" ? "All Tags" : t}</option>`;
+  html += `</select>`;
+
+  html += `<select data-api-analyzer-filter data-filter-type="auth" class="input-field text-xs py-1 px-2">`;
+  for (const a of authOptions) html += `<option value="${a}" ${apiAnalyzerState.filterAuth === a ? "selected" : ""}>${a === "ALL" ? "All Auth" : a}</option>`;
+  html += `</select>`;
+
+  html += `<input id="api-analyzer-search-input" class="input-field text-xs py-1 px-2 flex-1 min-w-[120px]" placeholder="Search paths..." value="${escapeHtml(apiAnalyzerState.searchQuery)}">`;
+  html += `<button id="api-analyzer-search-btn" class="btn-secondary text-xs py-1 px-3">Search</button>`;
+
+  html += `<div class="flex gap-1 ml-auto">`;
+  html += `<button data-api-analyzer-export="csv" class="btn-secondary text-xs py-1 px-2">CSV</button>`;
+  html += `<button data-api-analyzer-export="curl" class="btn-secondary text-xs py-1 px-2">cURL</button>`;
+  html += `<button data-api-analyzer-export="burp" class="btn-secondary text-xs py-1 px-2">Burp</button>`;
+  html += `</div>`;
+  html += `</div></div>`;
+
+  // Filtered endpoints
+  const filtered = filterApiAnalyzerEndpoints(endpoints);
+  html += renderApiAnalyzerEndpointTable(filtered, endpoints);
+
+  // Expanded endpoint detail
+  if (apiAnalyzerState.expandedEndpoint !== null && endpoints[apiAnalyzerState.expandedEndpoint]) {
+    const ep = endpoints[apiAnalyzerState.expandedEndpoint];
+    html += renderApiAnalyzerEndpointDetail(ep, data);
+  }
+
+  // Risk sections
+  if (tagIndex && Object.keys(tagIndex).length > 0) {
+    html += `<div class="mt-4">`;
+    html += `<h3 class="text-sm font-bold mb-2">Risk-Tagged Endpoints</h3>`;
+    const sortedTags = Object.entries(tagIndex).sort((a, b) => {
+      const sa = RISK_SEVERITY_ORDER[getTagSeverity(a[0])] ?? 4;
+      const sb = RISK_SEVERITY_ORDER[getTagSeverity(b[0])] ?? 4;
+      return sa - sb;
+    });
+    for (const [tag, indices] of sortedTags) {
+      const tagEndpoints = indices.map((i) => endpoints[i]).filter(Boolean);
+      if (tagEndpoints.length === 0) continue;
+      const sev = getTagSeverity(tag);
+      const sevColor = sevColors[sev] || "gray";
+      html += `<details class="card p-3 mb-2">`;
+      html += `<summary class="cursor-pointer text-sm font-bold flex items-center gap-2">`;
+      html += `<span class="badge badge-${sevColor} text-xs">${sev}</span>`;
+      html += `${escapeHtml(tag)} <span class="text-muted text-xs">(${tagEndpoints.length})</span>`;
+      html += `</summary>`;
+      html += `<div class="mt-2 overflow-x-auto"><table class="w-full text-xs">`;
+      html += `<thead><tr class="text-left text-muted"><th class="pb-1 pr-2">Method</th><th class="pb-1 pr-2">Path</th><th class="pb-1 pr-2">Reason</th></tr></thead><tbody>`;
+      for (const ep of tagEndpoints) {
+        const idx = endpoints.indexOf(ep);
+        const reason = ep.riskReasons?.[tag] || "";
+        html += `<tr class="border-t border-[var(--border)]">`;
+        html += `<td class="py-1 pr-2"><span class="badge badge-${METHOD_COLORS[ep.method] || "gray"} text-xs">${ep.method}</span></td>`;
+        html += `<td class="py-1 pr-2"><button data-api-analyzer-ep="${idx}" class="text-accent hover:underline cursor-pointer">${escapeHtml(ep.path)}</button></td>`;
+        html += `<td class="py-1 text-muted">${escapeHtml(reason)}</td>`;
+        html += `</tr>`;
+      }
+      html += `</tbody></table></div></details>`;
+    }
+    html += `</div>`;
+  }
+
+  container.innerHTML = html;
+}
+
+function getTagSeverity(tag) {
+  const map = {
+    unauthenticated: "high", idor_candidate: "high", weak_object_reference: "medium",
+    tenant_boundary: "high", user_boundary: "medium", cross_account: "high",
+    mass_assignment: "high", sensitive_response: "medium", admin_internal: "medium",
+    file_upload: "medium", file_download: "medium", destructive_method: "medium",
+    bulk_operation: "low", search_filter: "info", webhook_callback: "low",
+    password_token: "high", role_permission: "high", sequential_id: "medium",
+    client_ownership: "high",
+  };
+  return map[tag] || "info";
+}
+
+function filterApiAnalyzerEndpoints(endpoints) {
+  return endpoints.filter((ep, idx) => {
+    if (apiAnalyzerState.filterMethod !== "ALL" && ep.method !== apiAnalyzerState.filterMethod) return false;
+    if (apiAnalyzerState.filterTag !== "ALL" && !(ep.riskTags || []).includes(apiAnalyzerState.filterTag)) return false;
+    if (apiAnalyzerState.filterAuth === "authenticated" && !ep.hasSecurity) return false;
+    if (apiAnalyzerState.filterAuth === "unauthenticated" && ep.hasSecurity) return false;
+    if (apiAnalyzerState.searchQuery) {
+      const q = apiAnalyzerState.searchQuery;
+      const haystack = `${ep.method} ${ep.path} ${ep.summary || ""} ${(ep.tags || []).join(" ")}`.toLowerCase();
+      if (!haystack.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+function renderApiAnalyzerEndpointTable(filtered, allEndpoints) {
+  let html = `<div class="card p-3 mb-4 overflow-x-auto">`;
+  html += `<div class="text-xs text-muted mb-2">${filtered.length} endpoint${filtered.length !== 1 ? "s" : ""} shown</div>`;
+  html += `<table class="w-full text-xs">`;
+  html += `<thead><tr class="text-left text-muted"><th class="pb-1 pr-2">Method</th><th class="pb-1 pr-2">Path</th><th class="pb-1 pr-2">Summary</th><th class="pb-1 pr-2">Tags</th><th class="pb-1">Auth</th></tr></thead>`;
+  html += `<tbody>`;
+  for (const ep of filtered) {
+    const idx = allEndpoints.indexOf(ep);
+    const isExpanded = apiAnalyzerState.expandedEndpoint === idx;
+    const authBadge = ep.hasSecurity
+      ? '<span class="badge badge-green text-xs">secured</span>'
+      : '<span class="badge badge-red text-xs">none</span>';
+    const tagBadges = (ep.riskTags || []).slice(0, 3).map((t) => {
+      const sev = getTagSeverity(t);
+      const sevColor = { critical: "red", high: "red", medium: "amber", low: "blue", info: "gray" }[sev] || "gray";
+      return `<span class="badge badge-${sevColor} text-xs">${escapeHtml(t)}</span>`;
+    }).join(" ");
+    html += `<tr class="border-t border-[var(--border)] ${isExpanded ? "bg-elevated" : ""}">`;
+    html += `<td class="py-1.5 pr-2"><span class="badge badge-${METHOD_COLORS[ep.method] || "gray"} text-xs">${ep.method}</span></td>`;
+    html += `<td class="py-1.5 pr-2"><button data-api-analyzer-ep="${idx}" class="text-accent hover:underline cursor-pointer text-left">${escapeHtml(ep.path)}${ep.deprecated ? ' <span class="text-muted">(deprecated)</span>' : ""}</button></td>`;
+    html += `<td class="py-1.5 pr-2 text-muted">${escapeHtml(ep.summary || "").slice(0, 60)}</td>`;
+    html += `<td class="py-1.5 pr-2"><div class="flex flex-wrap gap-1">${tagBadges}</div></td>`;
+    html += `<td class="py-1.5">${authBadge}</td>`;
+    html += `</tr>`;
+  }
+  html += `</tbody></table></div>`;
+  return html;
+}
+
+function renderApiAnalyzerEndpointDetail(ep, data) {
+  let html = `<div class="card p-4 mb-4 border-l-4 border-accent">`;
+  html += `<div class="flex items-center gap-2 mb-3">`;
+  html += `<span class="badge badge-${METHOD_COLORS[ep.method] || "gray"}">${ep.method}</span>`;
+  html += `<code class="text-sm font-bold">${escapeHtml(ep.path)}</code>`;
+  if (ep.deprecated) html += `<span class="badge badge-amber text-xs">deprecated</span>`;
+  html += `</div>`;
+
+  if (ep.description) html += `<p class="text-sm text-muted mb-3">${escapeHtml(ep.description)}</p>`;
+  if (ep.summary && ep.summary !== ep.description) html += `<p class="text-sm mb-3">${escapeHtml(ep.summary)}</p>`;
+
+  // Auth
+  html += `<div class="mb-3"><span class="text-xs font-bold">Authentication:</span> `;
+  if (ep.hasSecurity) {
+    const schemes = [];
+    for (const sec of ep.security) {
+      for (const name of Object.keys(sec)) schemes.push(name);
+    }
+    html += schemes.length > 0 ? `<span class="badge badge-green text-xs">${schemes.map((s) => escapeHtml(s)).join(", ")}</span>` : `<span class="badge badge-green text-xs">Required</span>`;
+  } else {
+    html += `<span class="badge badge-red text-xs">None</span>`;
+  }
+  html += `</div>`;
+
+  // Parameters
+  if (ep.parameters && ep.parameters.length > 0) {
+    html += `<div class="mb-3"><h4 class="text-xs font-bold mb-1">Parameters</h4>`;
+    html += `<table class="w-full text-xs"><thead><tr class="text-muted"><th class="pb-1 pr-2 text-left">Name</th><th class="pb-1 pr-2 text-left">In</th><th class="pb-1 pr-2 text-left">Required</th><th class="pb-1 pr-2 text-left">Type</th><th class="pb-1 text-left">Description</th></tr></thead><tbody>`;
+    for (const p of ep.parameters) {
+      html += `<tr class="border-t border-[var(--border)]">`;
+      html += `<td class="py-1 pr-2 font-mono">${escapeHtml(p.name)}</td>`;
+      html += `<td class="py-1 pr-2">${escapeHtml(p.in)}</td>`;
+      html += `<td class="py-1 pr-2">${p.required ? "yes" : "no"}</td>`;
+      html += `<td class="py-1 pr-2">${escapeHtml(p.type || "")}</td>`;
+      html += `<td class="py-1 text-muted">${escapeHtml(p.description || "").slice(0, 80)}</td>`;
+      html += `</tr>`;
+    }
+    html += `</tbody></table></div>`;
+  }
+
+  // Request body
+  if (ep.requestBody && ep.requestBody.schema) {
+    html += `<div class="mb-3"><h4 class="text-xs font-bold mb-1">Request Body (${escapeHtml(ep.requestBody.contentType || "application/json")})</h4>`;
+    html += `<pre class="text-xs bg-elevated p-2 rounded overflow-x-auto">${escapeHtml(JSON.stringify(ep.requestBody.schema, null, 2))}</pre>`;
+    html += `</div>`;
+  }
+
+  // Response schemas
+  const respCodes = Object.keys(ep.responses || {});
+  if (respCodes.length > 0) {
+    html += `<div class="mb-3"><h4 class="text-xs font-bold mb-1">Responses</h4>`;
+    for (const code of respCodes) {
+      const resp = ep.responses[code];
+      html += `<details class="mb-1"><summary class="text-xs cursor-pointer">${escapeHtml(code)} ${escapeHtml(resp.description || "").slice(0, 60)}</summary>`;
+      if (resp.schema) {
+        html += `<pre class="text-xs bg-elevated p-2 rounded mt-1 overflow-x-auto">${escapeHtml(JSON.stringify(resp.schema, null, 2))}</pre>`;
+      }
+      html += `</details>`;
+    }
+    html += `</div>`;
+  }
+
+  // Risk tags with reasons
+  if (ep.riskTags && ep.riskTags.length > 0) {
+    html += `<div class="mb-3"><h4 class="text-xs font-bold mb-1">Risk Tags</h4>`;
+    html += `<div class="space-y-1">`;
+    for (const tag of ep.riskTags) {
+      const sev = getTagSeverity(tag);
+      const sevColor = { critical: "red", high: "red", medium: "amber", low: "blue", info: "gray" }[sev] || "gray";
+      html += `<div class="flex items-start gap-2 text-xs">`;
+      html += `<span class="badge badge-${sevColor} shrink-0">${escapeHtml(tag)}</span>`;
+      html += `<span class="text-muted">${escapeHtml(ep.riskReasons?.[tag] || "")}</span>`;
+      html += `</div>`;
+    }
+    html += `</div></div>`;
+  }
+
+  // Request skeletons
+  const baseUrl = (data.overview?.serverUrls?.[0]) || "<BASE_URL>";
+  const curlSkeleton = generateCurlDisplay(ep, baseUrl);
+  const burpSkeleton = generateBurpDisplay(ep, baseUrl);
+  if (curlSkeleton) {
+    html += `<div class="mb-2">`;
+    html += `<div class="flex items-center gap-2 mb-1"><h4 class="text-xs font-bold">cURL Skeleton</h4>`;
+    html += `<button data-api-analyzer-copy="${safeAttr(curlSkeleton)}" class="btn-secondary text-xs py-0 px-2">Copy</button></div>`;
+    html += `<pre class="text-xs bg-elevated p-2 rounded overflow-x-auto">${escapeHtml(curlSkeleton)}</pre>`;
+    html += `</div>`;
+  }
+  if (burpSkeleton) {
+    html += `<div class="mb-2">`;
+    html += `<div class="flex items-center gap-2 mb-1"><h4 class="text-xs font-bold">Burp Skeleton</h4>`;
+    html += `<button data-api-analyzer-copy="${safeAttr(burpSkeleton)}" class="btn-secondary text-xs py-0 px-2">Copy</button></div>`;
+    html += `<pre class="text-xs bg-elevated p-2 rounded overflow-x-auto">${escapeHtml(burpSkeleton)}</pre>`;
+    html += `</div>`;
+  }
+
+  // Testing checklist
+  const checks = generateChecklistDisplay(ep);
+  if (checks.length > 0) {
+    html += `<div class="mb-2"><h4 class="text-xs font-bold mb-1">Manual Testing Checklist</h4>`;
+    html += `<ul class="space-y-1">`;
+    for (const check of checks) {
+      html += `<li class="text-xs"><strong>${escapeHtml(check.title)}</strong> — <span class="text-muted">${escapeHtml(check.detail)}</span></li>`;
+    }
+    html += `</ul></div>`;
+  }
+
+  html += `</div>`;
+  return html;
+}
+
+function generateCurlDisplay(ep, baseUrl) {
+  const url = `${baseUrl}${ep.path}`;
+  const parts = [`curl -X ${ep.method} '${url}'`];
+  const hasJson = ep.requestBody && ep.requestBody.contentType === "application/json";
+  if (hasJson) parts.push(`  -H 'Content-Type: application/json'`);
+  if (ep.hasSecurity) parts.push(`  -H 'Authorization: Bearer <TOKEN>'`);
+  for (const p of ep.parameters) {
+    if (p.in === "header") parts.push(`  -H '${p.name}: <${p.name.toUpperCase()}>'`);
+  }
+  const qs = ep.parameters.filter((p) => p.in === "query");
+  if (qs.length > 0) {
+    const qStr = qs.map((p) => `${p.name}=<${p.name.toUpperCase()}>`).join("&");
+    parts[0] = `curl -X ${ep.method} '${url}?${qStr}'`;
+  }
+  if (hasJson && ep.requestBody.schema && ep.requestBody.schema.properties) {
+    const body = {};
+    for (const [k] of Object.entries(ep.requestBody.schema.properties)) body[k] = `<${k.toUpperCase()}>`;
+    parts.push(`  -d '${JSON.stringify(body)}'`);
+  }
+  if (["DELETE", "PUT", "PATCH"].includes(ep.method)) {
+    parts.push(`  # WARNING: ${ep.method} is destructive. Verify target before sending.`);
+  }
+  return parts.join(" \\\n");
+}
+
+function generateBurpDisplay(ep, baseUrl) {
+  const qs = ep.parameters.filter((p) => p.in === "query");
+  let path = ep.path;
+  if (qs.length > 0) {
+    const qStr = qs.map((p) => `${p.name}=<${p.name.toUpperCase()}>`).join("&");
+    path = `${path}?${qStr}`;
+  }
+  const lines = [`${ep.method} ${path} HTTP/1.1`, `Host: <HOST>`];
+  const hasJson = ep.requestBody && ep.requestBody.contentType === "application/json";
+  if (hasJson) lines.push("Content-Type: application/json");
+  if (ep.hasSecurity) lines.push("Authorization: Bearer <TOKEN>");
+  for (const p of ep.parameters) {
+    if (p.in === "header") lines.push(`${p.name}: <${p.name.toUpperCase()}>`);
+  }
+  if (hasJson && ep.requestBody.schema && ep.requestBody.schema.properties) {
+    const body = {};
+    for (const [k] of Object.entries(ep.requestBody.schema.properties)) body[k] = `<${k.toUpperCase()}>`;
+    lines.push("", JSON.stringify(body, null, 2));
+  }
+  return lines.join("\r\n");
+}
+
+function generateChecklistDisplay(ep) {
+  const checks = [];
+  checks.push({ title: "Test unauthenticated access", detail: `Send ${ep.method} ${ep.path} without Authorization header` });
+  if (ep.hasSecurity) {
+    checks.push({ title: "Test omitted authorization", detail: "Remove the Authorization header and verify the response" });
+  }
+  if (ep.riskTags?.includes("idor_candidate") || ep.riskTags?.includes("weak_object_reference")) {
+    checks.push({ title: "Test modified object IDs", detail: "Change object identifiers to values belonging to other users/tenants" });
+  }
+  if (ep.riskTags?.includes("tenant_boundary")) {
+    checks.push({ title: "Test cross-tenant access", detail: "Attempt access with tenant IDs from different organisations" });
+  }
+  if (ep.riskTags?.includes("user_boundary")) {
+    checks.push({ title: "Test cross-user access", detail: "Attempt to access resources owned by another user" });
+  }
+  if (ep.riskTags?.includes("mass_assignment")) {
+    checks.push({ title: "Test mass assignment", detail: "Include privileged fields (role, isAdmin, permissions) in the request body" });
+  }
+  if (ep.riskTags?.includes("file_upload")) {
+    checks.push({ title: "Test file upload restrictions", detail: "Upload unexpected file types, oversized files, or files with malicious names" });
+  }
+  if (ep.riskTags?.includes("file_download")) {
+    checks.push({ title: "Test export/download access", detail: "Attempt to export/download data belonging to other users or tenants" });
+  }
+  if (ep.riskTags?.includes("destructive_method")) {
+    checks.push({ title: "Test destructive method authorisation", detail: `Verify ${ep.method} requires proper authorisation` });
+  }
+  if (ep.riskTags?.includes("role_permission")) {
+    checks.push({ title: "Test role/permission modification", detail: "Attempt privilege escalation through role or permission fields" });
+  }
+  checks.push({ title: "Verify expected response", detail: "Confirm 403/404 or equivalent for unauthorised access" });
+  return checks;
+}
+
+function doApiAnalyzerExport(format) {
+  const data = apiAnalyzerState.result;
+  if (!data) return;
+  const endpoints = filterApiAnalyzerEndpoints(data.endpoints);
+  if (format === "csv") {
+    const rows = [["Method", "Path", "Summary", "Deprecated", "Tags", "Auth", "Risk Tags"].join(",")];
+    for (const ep of endpoints) {
+      rows.push(`"${ep.method}","${ep.path}","${(ep.summary || "").replace(/"/g, '""')}","${ep.deprecated ? "yes" : "no"}","${(ep.tags || []).join(";")}","${ep.hasSecurity ? "yes" : "no"}","${(ep.riskTags || []).join(";")}"`);
+    }
+    downloadText("all-endpoints.csv", rows.join("\n"), "text/csv");
+  } else if (format === "curl") {
+    const baseUrl = data.overview?.serverUrls?.[0] || "<BASE_URL>";
+    const content = endpoints.map((ep) => generateCurlDisplay(ep, baseUrl)).join("\n\n");
+    downloadText("curl-skeletons.txt", content, "text/plain");
+  } else if (format === "burp") {
+    const baseUrl = data.overview?.serverUrls?.[0] || "<BASE_URL>";
+    const content = endpoints.map((ep) => generateBurpDisplay(ep, baseUrl)).join("\n\n---\n\n");
+    downloadText("burp-request-skeletons.txt", content, "text/plain");
+  }
+}
+
 async function init() {
   // Load bootstrap to determine which tools are enabled
-  let enabledTools = { cvss: true, breach: true, azure: true, securitytrails: true, "security-headers": true, "tls-check": true, "dns-lookup": true, leakradar: true, cyberchef: true, "header-analyzer": true, "jwt-analyzer": true };
+  let enabledTools = { cvss: true, breach: true, azure: true, securitytrails: true, "security-headers": true, "tls-check": true, "dns-lookup": true, leakradar: true, "lol-lookup": true, cyberchef: true, "header-analyzer": true, "jwt-analyzer": true, "api-analyzer": true };
   let dnsTools = [];
   try {
     const data = await api("/minitools/bootstrap");
@@ -1830,9 +2745,11 @@ async function init() {
       "tls-check": !!data.tools?.tlsCheck?.enabled,
       "dns-lookup": !!data.tools?.dnsLookup?.enabled,
       leakradar: !!data.tools?.leakradar?.enabled,
+      "lol-lookup": !!data.tools?.lolLookup?.enabled,
       cyberchef: !!data.tools?.cyberchef?.enabled,
       "header-analyzer": !!data.tools?.headerAnalyzer?.enabled,
       "jwt-analyzer": !!data.tools?.jwtAnalyzer?.enabled,
+      "api-analyzer": !!data.tools?.apiAnalyzer?.enabled,
     };
     dnsTools = data.tools?.dnsLookup?.tools || [];
     const st = data.tools?.securitytrails;
@@ -1855,7 +2772,7 @@ async function init() {
   } catch (_) { /* bootstrap optional */ }
 
   // Hide disabled tools from sidebar, mobile tabs, and view sections
-  const allTools = ["cvss", "breach", "azure", "securitytrails", "security-headers", "tls-check", "dns-lookup", "leakradar", "cyberchef", "header-analyzer", "jwt-analyzer"];
+  const allTools = ["cvss", "breach", "azure", "securitytrails", "security-headers", "tls-check", "dns-lookup", "leakradar", "lol-lookup", "cyberchef", "header-analyzer", "jwt-analyzer", "api-analyzer"];
   for (const tool of allTools) {
     if (!enabledTools[tool]) {
       hideMinitool(tool);
@@ -1880,6 +2797,8 @@ async function init() {
   if (enabledTools["header-analyzer"]) initHeaderAnalyzer();
   if (enabledTools["jwt-analyzer"]) initJwtAnalyzer();
   if (enabledTools.leakradar) initLeakRadar();
+  if (enabledTools["lol-lookup"]) initLolLookup();
+  if (enabledTools["api-analyzer"]) initApiAnalyzer();
 }
 
 init();

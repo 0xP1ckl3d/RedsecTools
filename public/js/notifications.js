@@ -148,6 +148,9 @@
           if (loadedNotifications.length > 30) loadedNotifications.pop();
           renderNotifications(loadedNotifications);
           updateBadge(unreadCount + 1);
+          window.dispatchEvent(new CustomEvent("redsec:notification", {
+            detail: msg.notification,
+          }));
         } else if (msg.type === "unread_count") {
           updateBadge(msg.count);
         }

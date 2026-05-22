@@ -31,6 +31,7 @@ const { createRouteHarness, signedCookieValue } = require("../helpers/route-harn
     assert.strictEqual(defaults.body.tlsCheck, true);
     assert.strictEqual(defaults.body.dnsLookup, true);
     assert.strictEqual(defaults.body.leakradar, true);
+    assert.strictEqual(defaults.body.lolLookup, true);
 
     const postRes = await harness.requestJson({
       method: "POST",
@@ -45,6 +46,7 @@ const { createRouteHarness, signedCookieValue } = require("../helpers/route-harn
         tlsCheckEnabled: false,
         dnsLookupEnabled: false,
         leakradarEnabled: false,
+        lolLookupEnabled: false,
       },
     });
     assert.strictEqual(postRes.status, 200);
@@ -62,6 +64,24 @@ const { createRouteHarness, signedCookieValue } = require("../helpers/route-harn
     assert.strictEqual(updated.body.tlsCheck, false);
     assert.strictEqual(updated.body.dnsLookup, false);
     assert.strictEqual(updated.body.leakradar, false);
+    assert.strictEqual(updated.body.lolLookup, false);
+
+    const lolLookupDefaults = await harness.requestJson({
+      path: "/admin/api/settings/lol-lookup",
+      cookie,
+    });
+    assert.strictEqual(lolLookupDefaults.status, 200);
+    assert.strictEqual(lolLookupDefaults.body.settings.syncSchedule, "daily");
+    assert.strictEqual(lolLookupDefaults.body.sources.length, 3);
+
+    const lolLookupSettings = await harness.requestJson({
+      method: "POST",
+      path: "/admin/api/settings/lol-lookup",
+      cookie,
+      body: { syncSchedule: "weekly", backupRetention: 7, staleDays: 14 },
+    });
+    assert.strictEqual(lolLookupSettings.status, 200);
+    assert.strictEqual(lolLookupSettings.body.settings.syncSchedule, "weekly");
 
     const leakRadarSettings = await harness.requestJson({
       method: "POST",
@@ -90,6 +110,7 @@ const { createRouteHarness, signedCookieValue } = require("../helpers/route-harn
     harness.database.setSetting("minitool_tls_check_enabled", "false");
     harness.database.setSetting("minitool_dns_lookup_enabled", "false");
     harness.database.setSetting("minitool_leakradar_enabled", "false");
+    harness.database.setSetting("minitool_lol_lookup_enabled", "false");
 
     const bootstrap = await harness.requestJson({
       path: "/api/minitools/bootstrap",
@@ -105,6 +126,7 @@ const { createRouteHarness, signedCookieValue } = require("../helpers/route-harn
     assert.strictEqual(bootstrap.body.tools.dnsLookup.enabled, false);
     assert.ok(Array.isArray(bootstrap.body.tools.dnsLookup.tools));
     assert.strictEqual(bootstrap.body.tools.leakradar.enabled, false);
+    assert.strictEqual(bootstrap.body.tools.lolLookup.enabled, false);
   } finally {
     await harness.close();
   }

@@ -29,6 +29,16 @@ const {
   publicToolRegistry,
   runDnsMiniTool,
 } = require("../core/minitools/dns-lookup");
+const {
+  getLolLookupStatus,
+  searchLolLookup,
+  getLolLookupEntry,
+} = require("../core/minitools/lol-lookup");
+const {
+  analyzeApiSpec,
+  generateExport: generateApiExport,
+} = require("../core/minitools/api-analyzer");
+const multer = require("multer");
 
 const router = Router();
 
@@ -116,6 +126,27 @@ const dnsLookupLimiter = rateLimit({
   message: { error: "DNS Intelligence rate limit reached. Try again later." },
   standardHeaders: true,
   legacyHeaders: false,
+});
+
+const lolLookupLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 180,
+  message: { error: "LOL Lookup rate limit reached. Try again later." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const apiAnalyzerLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 15,
+  message: { error: "API Analyzer rate limit reached. Try again later." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const apiAnalyzerUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
 });
 
 function canViewMiniTools(req, res, next) {
@@ -258,9 +289,11 @@ router.get("/minitools/bootstrap", readLimiter, requireUser, attachUserAccess, c
     tlsCheck: { enabled: isMinitoolEnabled("minitool_tls_check_enabled") },
     dnsLookup: { enabled: isMinitoolEnabled("minitool_dns_lookup_enabled"), tools: publicToolRegistry() },
     leakradar: { enabled: isMinitoolEnabled("minitool_leakradar_enabled") && leakRadarApiKeyConfigured, apiKeyConfigured: leakRadarApiKeyConfigured, pageSize: LEAKRADAR_PAGE_SIZE },
+    lolLookup: { enabled: isMinitoolEnabled("minitool_lol_lookup_enabled") },
     cyberchef: { enabled: isMinitoolEnabled("minitool_cyberchef_enabled") },
     headerAnalyzer: { enabled: isMinitoolEnabled("minitool_header_analyzer_enabled") },
     jwtAnalyzer: { enabled: isMinitoolEnabled("minitool_jwt_analyzer_enabled") },
+    apiAnalyzer: { enabled: isMinitoolEnabled("minitool_api_analyzer_enabled") },
   };
   const anyEnabled = Object.values(tools).some((t) => t.enabled);
   res.json({
@@ -331,6 +364,15 @@ router.get("/minitools/azure-tenant", azureLookupLimiter, requireUser, attachUse
   // 2. OpenID configuration (v2 primary, legacy fallback)
   try {
     const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const isUsableOidc = (data) =>
+      data &&
+      typeof data === "object" &&
+      (
+        typeof data.issuer === "string" ||
+        typeof data.authorization_endpoint === "string" ||
+        typeof data.token_endpoint === "string" ||
+        typeof data.jwks_uri === "string"
+      );
     const extractOidc = (data, source) => {
       const issuerSlug = (data.issuer || "").split("/").filter(Boolean).pop() || "";
       const tenantId = GUID_RE.test(issuerSlug) ? issuerSlug : (GUID_RE.test(data.tenant) ? data.tenant : null);
@@ -356,8 +398,11 @@ router.get("/minitools/azure-tenant", azureLookupLimiter, requireUser, attachUse
       const v2Url = `https://login.microsoftonline.com/${encodeURIComponent(domain)}/v2.0/.well-known/openid-configuration`;
       const { response: v2Res } = await safeFetchPublicUrl(v2Url);
       const v2Text = await readResponseTextWithLimit(v2Res);
-      oidcData = JSON.parse(v2Text);
-      oidcSource = "v2.0";
+      const parsed = JSON.parse(v2Text);
+      if (isUsableOidc(parsed)) {
+        oidcData = parsed;
+        oidcSource = "v2.0";
+      }
     } catch (_) { /* v2 unavailable, try legacy */ }
 
     // Fallback to legacy v1 endpoint
@@ -365,8 +410,11 @@ router.get("/minitools/azure-tenant", azureLookupLimiter, requireUser, attachUse
       const legacyUrl = `https://login.windows.net/${encodeURIComponent(domain)}/.well-known/openid-configuration`;
       const { response: legacyRes } = await safeFetchPublicUrl(legacyUrl);
       const legacyText = await readResponseTextWithLimit(legacyRes);
-      oidcData = JSON.parse(legacyText);
-      oidcSource = "legacy";
+      const parsed = JSON.parse(legacyText);
+      if (isUsableOidc(parsed)) {
+        oidcData = parsed;
+        oidcSource = "legacy";
+      }
     }
 
     if (oidcData) result.openid = extractOidc(oidcData, oidcSource);
@@ -487,6 +535,47 @@ router.post("/minitools/dns-lookup", dnsLookupLimiter, requireUser, attachUserAc
     },
   });
   return res.status(result.statusCode).json(body);
+});
+
+router.get("/minitools/lol-lookup/status", lolLookupLimiter, requireUser, attachUserAccess, canViewMiniTools, requireMinitoolEnabled("minitool_lol_lookup_enabled"), (req, res) => {
+  const { db, getSetting } = require("../database");
+  res.json(getLolLookupStatus(db, { getSetting }));
+});
+
+router.get("/minitools/lol-lookup/search", lolLookupLimiter, requireUser, attachUserAccess, canViewMiniTools, requireMinitoolEnabled("minitool_lol_lookup_enabled"), (req, res) => {
+  const { db } = require("../database");
+  if (![req.query.q, req.query.source, req.query.function].some((value) => String(value || "").trim())) {
+    return res.status(400).json({ error: "LOL Lookup search text or a dataset/function filter is required" });
+  }
+  const result = searchLolLookup(db, {
+    query: req.query.q,
+    mode: req.query.mode,
+    source: req.query.source,
+    platform: req.query.platform,
+    functionFilter: req.query.function,
+    limit: req.query.limit,
+  });
+  auditMiniTool(req, {
+    action: "lol_lookup_search",
+    targetType: "lol_lookup",
+    targetId: result.mode,
+    metadata: {
+      mode: result.mode,
+      source: req.query.source || null,
+      platform: req.query.platform || null,
+      functionFilter: req.query.function || null,
+      resultCount: result.results.length,
+      queryLength: result.query.length,
+    },
+  });
+  res.json(result);
+});
+
+router.get("/minitools/lol-lookup/entries/:id", lolLookupLimiter, requireUser, attachUserAccess, canViewMiniTools, requireMinitoolEnabled("minitool_lol_lookup_enabled"), (req, res) => {
+  const { db } = require("../database");
+  const entry = getLolLookupEntry(db, req.params.id);
+  if (!entry) return res.status(404).json({ error: "LOL Lookup entry not found" });
+  res.json({ entry });
 });
 
 // --- SecurityTrails proxy ---
@@ -813,5 +902,72 @@ router.get("/minitools/leakradar/unlocked", leakRadarLimiter, requireUser, attac
     return res.status(502).json({ error: "Failed to reach LeakRadar API", detail: err.message });
   }
 });
+
+// --- API Analyzer ---
+
+router.post(
+  "/minitools/api-analyzer/analyze",
+  apiAnalyzerLimiter,
+  requireUser,
+  attachUserAccess,
+  canViewMiniTools,
+  requireMinitoolEnabled("minitool_api_analyzer_enabled"),
+  apiAnalyzerUpload.single("specFile"),
+  (req, res) => {
+    try {
+      let specContent;
+      if (req.file) {
+        specContent = req.file.buffer.toString("utf-8");
+      } else {
+        specContent = String(req.body?.spec || "");
+      }
+      if (!specContent.trim()) {
+        return res.status(400).json({ error: "API spec content is required. Paste or upload a spec file." });
+      }
+      if (specContent.length > 5 * 1024 * 1024) {
+        return res.status(400).json({ error: "Spec content must be 5 MB or less." });
+      }
+      const result = analyzeApiSpec(specContent);
+      auditMiniTool(req, {
+        action: "api_analyzer",
+        targetType: "api_analyzer",
+        outcome: result.success ? "success" : "failure",
+        metadata: { specType: result.specType, endpointCount: result.overview?.endpointCount || 0 },
+      });
+      res.json(result);
+    } catch (err) {
+      auditMiniTool(req, { action: "api_analyzer", targetType: "api_analyzer", outcome: "failure", metadata: { error: err.message } });
+      res.status(500).json({ error: "Analysis failed", detail: err.message });
+    }
+  }
+);
+
+router.post(
+  "/minitools/api-analyzer/export",
+  apiAnalyzerLimiter,
+  requireUser,
+  attachUserAccess,
+  canViewMiniTools,
+  requireMinitoolEnabled("minitool_api_analyzer_enabled"),
+  (req, res) => {
+    try {
+      const { format, section } = req.body || {};
+      const analysis = req.body?.analysis;
+      if (!analysis || !format) {
+        return res.status(400).json({ error: "Export requires format and analysis data." });
+      }
+      const validFormats = ["csv", "md", "txt", "curl", "burp"];
+      if (!validFormats.includes(format)) {
+        return res.status(400).json({ error: `Invalid format. Supported: ${validFormats.join(", ")}` });
+      }
+      const exported = generateApiExport(analysis, format, section);
+      res.setHeader("Content-Type", exported.contentType);
+      res.setHeader("Content-Disposition", `attachment; filename="${exported.filename}"`);
+      res.send(exported.content);
+    } catch (err) {
+      res.status(500).json({ error: "Export failed", detail: err.message });
+    }
+  }
+);
 
 module.exports = router;

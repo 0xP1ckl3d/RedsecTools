@@ -62,6 +62,14 @@
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11a4 4 0 118 0c0 4-4 6-4 6s-4-2-4-6zm4 0h.01M4 19h16"/></svg>
           <span class="sidebar-nav-text">LeakRadar</span>
         </button>
+        <button type="button" class="sidebar-nav-item" data-minitools-view="lol-lookup">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 4a7 7 0 105.292 11.584L21 20.292 19.708 21.6 15 16.9A7 7 0 0011 4zm0 3v4l3 2"/></svg>
+          <span class="sidebar-nav-text">LOL Lookup</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-minitools-view="api-analyzer">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
+          <span class="sidebar-nav-text">API Analyzer</span>
+        </button>
       </nav>
     </aside>
 
@@ -101,6 +109,8 @@
         <button type="button" class="mobile-tab" data-minitools-view="securitytrails">SecurityTrails</button>
         <button type="button" class="mobile-tab" data-minitools-view="breach">Breach Lookup</button>
         <button type="button" class="mobile-tab" data-minitools-view="leakradar">LeakRadar</button>
+        <button type="button" class="mobile-tab" data-minitools-view="lol-lookup">LOL Lookup</button>
+        <button type="button" class="mobile-tab" data-minitools-view="api-analyzer">API Analyzer</button>
       </div>
 
       <div class="dashboard-main">
@@ -287,6 +297,59 @@
           </div>
         </section>
 
+        <section id="minitools-view-lol-lookup" class="hidden">
+          <h2 class="text-lg font-bold mb-4">LOL Lookup</h2>
+          <p class="text-sm text-muted mb-4">Search the locally synced LOLBAS, GTFOBins, and LOLDrivers reference cache by binary, command, function, ATT&amp;CK ID, driver filename, or hash.</p>
+
+            <div class="grid gap-4">
+              <div class="card p-4">
+                <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(22rem,2.4fr)_minmax(12rem,1fr)_minmax(12rem,1fr)_minmax(12rem,1fr)_auto] xl:items-end">
+                  <div class="md:col-span-2 xl:col-span-1">
+                    <label for="lol-lookup-query" class="block text-sm font-medium text-muted mb-1">Lookup</label>
+                    <input type="text" id="lol-lookup-query" class="input-field" placeholder="certutil, bash, rundll32, T1218, command, filename, or hash" autocomplete="off">
+                  </div>
+                  <label class="space-y-1">
+                    <span class="text-xs font-semibold uppercase tracking-wide text-muted">Search Mode</span>
+                    <select id="lol-lookup-mode" class="input-field">
+                      <option value="quick">Quick search</option>
+                      <option value="exact">Exact lookup</option>
+                      <option value="command">Command lookup</option>
+                      <option value="hash">Hash lookup</option>
+                    </select>
+                  </label>
+                  <label class="space-y-1">
+                    <span class="text-xs font-semibold uppercase tracking-wide text-muted">Dataset</span>
+                    <select id="lol-lookup-source" class="input-field">
+                      <option value="">All datasets</option>
+                      <option value="lolbas">LOLBAS</option>
+                      <option value="gtfobins">GTFOBins</option>
+                      <option value="loldrivers">LOLDrivers</option>
+                    </select>
+                  </label>
+                  <label class="space-y-1">
+                    <span class="text-xs font-semibold uppercase tracking-wide text-muted">Function</span>
+                    <select id="lol-lookup-function" class="input-field">
+                      <option value="">Any function</option>
+                    </select>
+                  </label>
+                  <button type="button" id="lol-lookup-search-btn" class="btn-primary whitespace-nowrap md:self-end">Search</button>
+                </div>
+                <div id="lol-lookup-inline-result" class="mt-2"></div>
+              </div>
+
+              <aside class="card p-4">
+                <div class="flex items-center justify-between gap-2 mb-3">
+                  <h3 class="text-sm font-bold">Dataset Status</h3>
+                  <button type="button" id="lol-lookup-status-btn" class="btn-secondary text-xs px-2 py-1">Refresh Status</button>
+                </div>
+                <div id="lol-lookup-status" class="grid gap-2 md:grid-cols-3"></div>
+              </aside>
+            </div>
+
+          <div id="lol-lookup-results" class="mt-4"></div>
+          <div id="lol-lookup-detail" class="mt-4"></div>
+        </section>
+
         <section id="minitools-view-cyberchef">
           <div class="flex items-center justify-between mb-4">
             <div>
@@ -361,6 +424,35 @@
             </div>
           </div>
           <div id="jwt-results" class="mt-4"></div>
+        </section>
+
+        <section id="minitools-view-api-analyzer" class="hidden">
+          <h2 class="text-lg font-bold mb-4">API Analyzer</h2>
+          <p class="text-sm text-muted mb-4">Parse and analyze OpenAPI, Swagger, and Postman specs for security assessment targets. All processing is local — no external requests are made.</p>
+          <div class="grid gap-4 lg:grid-cols-2">
+            <div class="card p-4">
+              <h3 class="text-sm font-bold mb-3">Paste Spec</h3>
+              <label for="api-analyzer-spec" class="block text-sm font-medium text-muted mb-1">OpenAPI / Swagger / Postman JSON or YAML</label>
+              <textarea id="api-analyzer-spec" class="input-field w-full min-h-[16rem] font-mono text-xs resize-y" placeholder="Paste your API spec here..." spellcheck="false"></textarea>
+              <div class="flex flex-wrap gap-2 mt-3">
+                <button type="button" id="api-analyzer-analyze-btn" class="btn-primary">Analyze</button>
+                <button type="button" id="api-analyzer-clear-btn" class="btn-secondary">Clear</button>
+              </div>
+            </div>
+            <div class="card p-4">
+              <h3 class="text-sm font-bold mb-3">Upload File</h3>
+              <div id="api-analyzer-dropzone" class="border-2 border-dashed border-[var(--border)] rounded-lg p-8 text-center transition-all duration-150">
+                <svg class="mx-auto h-10 w-10 text-muted mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+                <p id="api-analyzer-dropzone-text" class="text-sm text-muted mb-2">Drag and drop a spec file here</p>
+                <label for="api-analyzer-file" class="btn-secondary cursor-pointer inline-block">Browse Files</label>
+                <input type="file" id="api-analyzer-file" accept=".json,.yaml,.yml" class="hidden">
+                <p class="text-xs text-muted mt-2">JSON or YAML — max 5 MB</p>
+              </div>
+              <div id="api-analyzer-file-info" class="text-xs text-muted mt-2 hidden"></div>
+            </div>
+          </div>
+          <div id="api-analyzer-inline-result" class="mt-2"></div>
+          <div id="api-analyzer-results" class="mt-4"></div>
         </section>
       </div>
     </div>

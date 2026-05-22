@@ -5,6 +5,10 @@ const path = require("path");
 
 const source = fs.readFileSync(path.join(__dirname, "../server/routes/minitools.js"), "utf8");
 const frontendSource = fs.readFileSync(path.join(__dirname, "../public/js/minitools.js"), "utf8");
+const frontendPageSource = fs.readFileSync(path.join(__dirname, "../public/minitools/index.html"), "utf8");
+const adminRouteSource = fs.readFileSync(path.join(__dirname, "../server/routes/admin.js"), "utf8");
+const adminFrontendSource = fs.readFileSync(path.join(__dirname, "../public/js/admin.js"), "utf8");
+const notificationFrontendSource = fs.readFileSync(path.join(__dirname, "../public/js/notifications.js"), "utf8");
 
 test("MiniTools routes enforce authentication and access attachment on all endpoints", () => {
   for (const line of source.split(/\r?\n/).filter((item) => /router\.(get|post)\("\/minitools\//.test(item))) {
@@ -123,6 +127,27 @@ test("MiniTools LeakRadar routes keep the API key server-side and page at 100 re
   assert.ok(frontendSource.includes("username_masked"), "LeakRadar account cells must use the documented masked username before unlock");
   assert.ok(frontendSource.includes("added_at"), "LeakRadar meta cells must use the documented added_at date before unlock");
   assert.ok(frontendSource.includes("LEAKRADAR_DOMAIN_URL_KEYS"), "LeakRadar URL/domain cells must stay separate from account cells");
+});
+
+test("MiniTools LOL Lookup queries local cached datasets and exposes dataset status", () => {
+  assert.match(source, /\/minitools\/lol-lookup\/status/);
+  assert.match(source, /\/minitools\/lol-lookup\/search/);
+  assert.match(source, /\/minitools\/lol-lookup\/entries\/:id/);
+  assert.ok(source.includes("searchLolLookup"), "LOL Lookup search must use the local cached index service");
+  assert.ok(source.includes("getLolLookupStatus"), "LOL Lookup must expose source freshness from the local cache");
+  assert.ok(source.includes("minitool_lol_lookup_enabled"), "LOL Lookup must support per-tool enablement");
+  assert.ok(frontendSource.includes("initLolLookup"), "Frontend must initialize the LOL Lookup tab");
+  assert.ok(frontendSource.includes("lolLookupFunctionFacets"), "LOL Lookup function filters must come from locally indexed dataset facets");
+  assert.ok(!frontendPageSource.includes('id="lol-lookup-platform"'), "LOL Lookup must not duplicate dataset selection with a platform filter");
+  assert.ok(!frontendPageSource.includes('<option value="execute">Execute / command</option>'), "LOL Lookup must not hardcode mixed function filters");
+  assert.ok(frontendSource.includes("data-lol-lookup-copy"), "Frontend must expose copy buttons for source payload examples");
+});
+
+test("LOL Lookup manual refresh completion reaches Admin through notifications WebSocket events", () => {
+  assert.ok(adminRouteSource.includes('action: failures.length ? "lol_lookup_sync_failed" : "lol_lookup_sync_complete"'), "Manual refresh must notify the requesting admin after queued sync");
+  assert.ok(notificationFrontendSource.includes('"redsec:notification"'), "Notification WebSocket client must surface received notifications to the page");
+  assert.ok(adminFrontendSource.includes('"lol_lookup_sync_complete"'), "Admin panel must react to successful refresh notifications");
+  assert.ok(adminFrontendSource.includes('"lol_lookup_sync_failed"'), "Admin panel must react to failed refresh notifications");
 });
 
 test("MiniTools security header badges use supported tones and readable labels", () => {

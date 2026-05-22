@@ -1322,6 +1322,37 @@
             </div>
           </div>
 
+          <hr class="my-6 border-border">
+
+          <div>
+            <h3 class="text-sm font-bold mb-2">LOL Lookup Dataset Cache</h3>
+            <p class="text-sm text-muted mb-4">LOL Lookup searches local copies of LOLBAS, GTFOBins, and LOLDrivers. Refresh validates new source data before replacing the current cache and keeps raw source backups for parser review and recovery.</p>
+            <div class="grid gap-4 lg:grid-cols-3">
+              <label class="space-y-1">
+                <span class="text-xs font-semibold uppercase tracking-wide text-muted">Scheduled Sync</span>
+                <select id="lol-lookup-sync-schedule" class="input-field">
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="manual">Manual only</option>
+                </select>
+              </label>
+              <label class="space-y-1">
+                <span class="text-xs font-semibold uppercase tracking-wide text-muted">Raw Backups Per Source</span>
+                <input id="lol-lookup-backup-retention" type="number" min="1" max="50" step="1" class="input-field">
+              </label>
+              <label class="space-y-1">
+                <span class="text-xs font-semibold uppercase tracking-wide text-muted">Stale Warning After Days</span>
+                <input id="lol-lookup-stale-days" type="number" min="1" max="365" step="1" class="input-field">
+              </label>
+            </div>
+            <div class="flex flex-wrap items-center gap-3 mt-4">
+              <button type="button" id="lol-lookup-settings-save-btn" class="btn-primary">Save LOL Lookup Settings</button>
+              <button type="button" id="lol-lookup-sync-all-btn" class="btn-secondary">Refresh All Sources</button>
+              <p id="lol-lookup-settings-result" class="text-sm hidden"></p>
+            </div>
+            <div id="lol-lookup-admin-status" class="grid gap-3 md:grid-cols-3 mt-4"></div>
+          </div>
+
           <hr class="my-6 border-border" id="minitools-toggles-divider">
 
           <div id="minitools-toggles-section">
@@ -1370,6 +1401,11 @@
                 <span class="text-sm">LeakRadar</span>
               </label>
               <label class="custom-checkbox gap-2">
+                <input type="checkbox" id="minitool-lol-lookup-enabled">
+                <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+                <span class="text-sm">LOL Lookup</span>
+              </label>
+              <label class="custom-checkbox gap-2">
                 <input type="checkbox" id="minitool-cyberchef-enabled">
                 <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
                 <span class="text-sm">CyberChef</span>
@@ -1383,6 +1419,11 @@
                 <input type="checkbox" id="minitool-jwt-analyzer-enabled">
                 <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
                 <span class="text-sm">JWT Analyzer</span>
+              </label>
+              <label class="custom-checkbox gap-2">
+                <input type="checkbox" id="minitool-api-analyzer-enabled">
+                <span class="checkmark"><svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg></span>
+                <span class="text-sm">API Analyzer</span>
               </label>
             </div>
 

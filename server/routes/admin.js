@@ -51,8 +51,16 @@ const { SERVICE_ACCOUNT_SCOPES, isValidServiceAccountScope } = require("../core/
 const { PERMISSION_DEFINITIONS } = require("../access");
 const { assertPublicHttpUrl } = require("../core/security/fetch-targets");
 const { deliverPendingWebhooks, enqueueWebhookEvent } = require("../core/integrations/webhooks");
+const { createNotification } = require("../core/notifications");
 const samlAuth = require("../core/auth/saml");
 const redsecAiProvider = require("../modules/redsecai/provider");
+const {
+  LOL_LOOKUP_SOURCES,
+  getLolLookupStatus,
+  getLolLookupSettings,
+  syncLolLookupSource,
+  syncAllLolLookupSources,
+} = require("../core/minitools/lol-lookup");
 
 const router = Router();
 const swaggerUiAssetPath = require("swagger-ui-dist").absolutePath();
@@ -1413,6 +1421,99 @@ router.post("/api/settings/leakradar", requireAdmin, requireRecentAdminAuth, (re
   res.json({ success: true, apiKeyConfigured: configured });
 });
 
+// GET /admin/api/settings/lol-lookup
+router.get("/api/settings/lol-lookup", requireAdmin, (req, res) => {
+  res.json(getLolLookupStatus(db, { getSetting }));
+});
+
+// POST /admin/api/settings/lol-lookup
+router.post("/api/settings/lol-lookup", requireAdmin, requireRecentAdminAuth, (req, res) => {
+  const syncSchedule = String(req.body?.syncSchedule || "").trim().toLowerCase();
+  const backupRetention = parseInt(req.body?.backupRetention, 10);
+  const staleDays = parseInt(req.body?.staleDays, 10);
+  if (!["manual", "daily", "weekly"].includes(syncSchedule)) {
+    return res.status(400).json({ error: "Sync schedule must be manual, daily, or weekly" });
+  }
+  if (!Number.isInteger(backupRetention) || backupRetention < 1 || backupRetention > 50) {
+    return res.status(400).json({ error: "Backup retention must be between 1 and 50" });
+  }
+  if (!Number.isInteger(staleDays) || staleDays < 1 || staleDays > 365) {
+    return res.status(400).json({ error: "Stale warning days must be between 1 and 365" });
+  }
+  setSetting("lol_lookup_sync_schedule", syncSchedule);
+  setSetting("lol_lookup_backup_retention", String(backupRetention));
+  setSetting("lol_lookup_stale_days", String(staleDays));
+  auditAdmin(req, {
+    category: "settings",
+    action: "lol_lookup_settings_update",
+    targetType: "lol_lookup_settings",
+    metadata: { syncSchedule, backupRetention, staleDays },
+  });
+  res.json({ success: true, settings: getLolLookupSettings(getSetting) });
+});
+
+// POST /admin/api/minitools/lol-lookup/sync
+router.post("/api/minitools/lol-lookup/sync", requireAdmin, requireRecentAdminAuth, async (req, res) => {
+  const sourceKey = String(req.body?.source || "all").trim().toLowerCase();
+  if (sourceKey !== "all" && !Object.hasOwn(LOL_LOOKUP_SOURCES, sourceKey)) {
+    return res.status(400).json({ error: "Unknown LOL Lookup source" });
+  }
+  const notificationUserId = req.user?.id || null;
+  const syncLabel = sourceKey === "all" ? "all LOL Lookup datasets" : LOL_LOOKUP_SOURCES[sourceKey].name;
+  const queuedSync = async () => {
+    try {
+      const results = sourceKey === "all"
+        ? await syncAllLolLookupSources(db, { getSetting })
+        : [await syncLolLookupSource(db, sourceKey, { getSetting })];
+      const failures = results.filter((result) => !result.ok);
+      if (notificationUserId) {
+        createNotification({
+          userId: notificationUserId,
+          category: "system",
+          action: failures.length ? "lol_lookup_sync_failed" : "lol_lookup_sync_complete",
+          title: failures.length ? "LOL Lookup refresh completed with errors" : "LOL Lookup datasets refreshed",
+          body: failures.length
+            ? `${failures.length} of ${results.length} source refreshes failed. The previous validated cache remains active.`
+            : `Finished refreshing ${syncLabel}.`,
+          linkUrl: "/admin",
+          entityType: "lol_lookup_source",
+          entityId: sourceKey,
+          severity: failures.length ? "warning" : "success",
+        });
+      }
+    } catch (error) {
+      logEvent("lol_lookup:manual_sync_failed", req, { source: sourceKey, error: error.message });
+      if (notificationUserId) {
+        createNotification({
+          userId: notificationUserId,
+          category: "system",
+          action: "lol_lookup_sync_failed",
+          title: "LOL Lookup refresh failed",
+          body: `The refresh for ${syncLabel} failed before a validated cache update completed.`,
+          linkUrl: "/admin",
+          entityType: "lol_lookup_source",
+          entityId: sourceKey,
+          severity: "warning",
+        });
+      }
+    }
+  };
+  setImmediate(queuedSync);
+  auditAdmin(req, {
+    category: "minitools",
+    action: "lol_lookup_sync",
+    targetType: "lol_lookup_source",
+    targetId: sourceKey,
+    metadata: { queued: true },
+  });
+  res.status(202).json({
+    success: true,
+    queued: true,
+    source: sourceKey,
+    status: getLolLookupStatus(db, { getSetting }),
+  });
+});
+
 // GET /admin/api/settings/minitools
 router.get("/api/settings/minitools", requireAdmin, (req, res) => {
   const parseEnabled = (key) => {
@@ -1429,15 +1530,17 @@ router.get("/api/settings/minitools", requireAdmin, (req, res) => {
     tlsCheck: parseEnabled("minitool_tls_check_enabled"),
     dnsLookup: parseEnabled("minitool_dns_lookup_enabled"),
     leakradar: parseEnabled("minitool_leakradar_enabled"),
+    lolLookup: parseEnabled("minitool_lol_lookup_enabled"),
     cyberchef: parseEnabled("minitool_cyberchef_enabled"),
     headerAnalyzer: parseEnabled("minitool_header_analyzer_enabled"),
     jwtAnalyzer: parseEnabled("minitool_jwt_analyzer_enabled"),
+    apiAnalyzer: parseEnabled("minitool_api_analyzer_enabled"),
   });
 });
 
 // POST /admin/api/settings/minitools
 router.post("/api/settings/minitools", requireAdmin, requireRecentAdminAuth, (req, res) => {
-  const { cvssEnabled, breachEnabled, azureEnabled, securitytrailsEnabled, securityHeadersEnabled, tlsCheckEnabled, dnsLookupEnabled, leakradarEnabled, cyberchefEnabled, headerAnalyzerEnabled, jwtAnalyzerEnabled } = req.body || {};
+  const { cvssEnabled, breachEnabled, azureEnabled, securitytrailsEnabled, securityHeadersEnabled, tlsCheckEnabled, dnsLookupEnabled, leakradarEnabled, lolLookupEnabled, cyberchefEnabled, headerAnalyzerEnabled, jwtAnalyzerEnabled, apiAnalyzerEnabled } = req.body || {};
   if (cvssEnabled !== undefined) {
     setSetting("minitool_cvss_enabled", cvssEnabled ? "true" : "false");
   }
@@ -1462,6 +1565,9 @@ router.post("/api/settings/minitools", requireAdmin, requireRecentAdminAuth, (re
   if (leakradarEnabled !== undefined) {
     setSetting("minitool_leakradar_enabled", leakradarEnabled ? "true" : "false");
   }
+  if (lolLookupEnabled !== undefined) {
+    setSetting("minitool_lol_lookup_enabled", lolLookupEnabled ? "true" : "false");
+  }
   if (cyberchefEnabled !== undefined) {
     setSetting("minitool_cyberchef_enabled", cyberchefEnabled ? "true" : "false");
   }
@@ -1471,11 +1577,14 @@ router.post("/api/settings/minitools", requireAdmin, requireRecentAdminAuth, (re
   if (jwtAnalyzerEnabled !== undefined) {
     setSetting("minitool_jwt_analyzer_enabled", jwtAnalyzerEnabled ? "true" : "false");
   }
+  if (apiAnalyzerEnabled !== undefined) {
+    setSetting("minitool_api_analyzer_enabled", apiAnalyzerEnabled ? "true" : "false");
+  }
   auditAdmin(req, {
     category: "settings",
     action: "minitools_update",
     targetType: "minitools_settings",
-    metadata: { cvssEnabled, breachEnabled, azureEnabled, securitytrailsEnabled, securityHeadersEnabled, tlsCheckEnabled, dnsLookupEnabled, leakradarEnabled, cyberchefEnabled, headerAnalyzerEnabled, jwtAnalyzerEnabled },
+    metadata: { cvssEnabled, breachEnabled, azureEnabled, securitytrailsEnabled, securityHeadersEnabled, tlsCheckEnabled, dnsLookupEnabled, leakradarEnabled, lolLookupEnabled, cyberchefEnabled, headerAnalyzerEnabled, jwtAnalyzerEnabled, apiAnalyzerEnabled },
   });
   res.json({ success: true });
 });
