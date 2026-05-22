@@ -195,13 +195,13 @@ function parseOpenApi3(spec, warnings) {
 
   for (const [pathStr, pathItem] of Object.entries(paths)) {
     if (!pathItem || typeof pathItem !== "object") continue;
-    const pathLevelParams = (pathItem.parameters || []).map(normalizeParameter);
+    const pathLevelParams = (pathItem.parameters || []).map((p) => normalizeParameter(resolveParamRef(p, spec)));
 
     for (const method of HTTP_METHODS) {
       const op = pathItem[method];
       if (!op || typeof op !== "object") continue;
 
-      const opParams = (op.parameters || []).map(normalizeParameter);
+      const opParams = (op.parameters || []).map((p) => normalizeParameter(resolveParamRef(p, spec)));
       const allParams = mergeParams(pathLevelParams, opParams);
 
       let requestBody = null;
@@ -252,7 +252,8 @@ function parseOpenApi3(spec, warnings) {
         };
       }
 
-      const opSecurity = op.security !== undefined ? op.security : globalSecurity;
+      const hasExplicitSecurity = op.security !== undefined;
+      const opSecurity = hasExplicitSecurity ? op.security : globalSecurity;
       const hasSecurity = opSecurity.length > 0;
 
       endpoints.push({
@@ -265,6 +266,7 @@ function parseOpenApi3(spec, warnings) {
         operationId: op.operationId || null,
         security: opSecurity,
         hasSecurity,
+        explicitSecurity: hasExplicitSecurity,
         parameters: allParams,
         requestBody,
         responses,
@@ -319,13 +321,13 @@ function parseOpenApi2(spec, warnings) {
 
   for (const [pathStr, pathItem] of Object.entries(paths)) {
     if (!pathItem || typeof pathItem !== "object") continue;
-    const pathLevelParams = (pathItem.parameters || []).map(normalizeParameter);
+    const pathLevelParams = (pathItem.parameters || []).map((p) => normalizeParameter(resolveParamRef(p, spec)));
 
     for (const method of HTTP_METHODS) {
       const op = pathItem[method];
       if (!op || typeof op !== "object") continue;
 
-      const opParams = (op.parameters || []).map(normalizeParameter);
+      const opParams = (op.parameters || []).map((p) => normalizeParameter(resolveParamRef(p, spec)));
       const allParams = mergeParams(pathLevelParams, opParams);
 
       let requestBody = null;
@@ -361,7 +363,8 @@ function parseOpenApi2(spec, warnings) {
         };
       }
 
-      const opSecurity = op.security !== undefined ? op.security : globalSecurity;
+      const hasExplicitSecurity = op.security !== undefined;
+      const opSecurity = hasExplicitSecurity ? op.security : globalSecurity;
       const hasSecurity = opSecurity.length > 0;
 
       endpoints.push({
@@ -374,6 +377,7 @@ function parseOpenApi2(spec, warnings) {
         operationId: op.operationId || null,
         security: opSecurity,
         hasSecurity,
+        explicitSecurity: hasExplicitSecurity,
         parameters: allParams.filter((p) => p.in !== "body" && p.in !== "formData"),
         requestBody,
         responses,
@@ -579,9 +583,17 @@ function parseRawEndpoints(text, warnings) {
 
 const HTTP_METHODS = ["get", "post", "put", "patch", "delete", "head", "options", "trace", "connect"];
 
+function resolveParamRef(param, root) {
+  if (!param || typeof param !== "object") return param;
+  if (param.$ref && typeof param.$ref === "string") {
+    const resolved = resolveRef(root, param.$ref);
+    if (resolved && typeof resolved === "object") return resolved;
+  }
+  return param;
+}
+
 function normalizeParameter(param) {
   if (!param || typeof param !== "object") return { name: "", in: "query", required: false, type: "string", description: "" };
-  if (param.$ref) return { name: "", in: "query", required: false, type: "string", description: "($ref: " + param.$ref + ")" };
   return {
     name: param.name || "",
     in: param.in || "query",
@@ -639,15 +651,15 @@ const HIGH_VALUE_KEYWORDS = [
 ];
 
 const TAG_DEFS = {
-  unauthenticated: { label: "Unauthenticated", severity: "high", category: "authorization" },
+  unauthenticated: { label: "Unauthenticated Candidate", severity: "high", category: "authorization" },
   idor_candidate: { label: "IDOR / BOLA Candidate", severity: "high", category: "authorization" },
-  weak_object_reference: { label: "Weak Object Reference", severity: "medium", category: "authorization" },
-  tenant_boundary: { label: "Tenant Boundary", severity: "high", category: "access_control" },
-  user_boundary: { label: "User Boundary", severity: "medium", category: "access_control" },
-  cross_account: { label: "Cross-Account Access", severity: "high", category: "access_control" },
-  mass_assignment: { label: "Mass Assignment", severity: "high", category: "access_control" },
-  sensitive_response: { label: "Sensitive Response Fields", severity: "medium", category: "data_exposure" },
-  admin_internal: { label: "Admin / Internal", severity: "medium", category: "function" },
+  weak_object_reference: { label: "Weak Object Reference Candidate", severity: "medium", category: "authorization" },
+  tenant_boundary: { label: "Tenant Boundary Candidate", severity: "high", category: "access_control" },
+  user_boundary: { label: "User Boundary Candidate", severity: "medium", category: "access_control" },
+  cross_account: { label: "Cross-Account Access Candidate", severity: "high", category: "access_control" },
+  mass_assignment: { label: "Mass Assignment Candidate", severity: "high", category: "access_control" },
+  sensitive_response: { label: "Potential Sensitive Response Fields", severity: "medium", category: "data_exposure" },
+  admin_internal: { label: "Admin / Internal Endpoint", severity: "medium", category: "function" },
   file_upload: { label: "File Upload", severity: "medium", category: "function" },
   file_download: { label: "File Download / Export", severity: "medium", category: "function" },
   destructive_method: { label: "Destructive Method", severity: "medium", category: "function" },
@@ -655,7 +667,7 @@ const TAG_DEFS = {
   search_filter: { label: "Search / Filter", severity: "info", category: "function" },
   webhook_callback: { label: "Webhook / Callback", severity: "low", category: "architecture" },
   password_token: { label: "Password / Token / Session", severity: "high", category: "function" },
-  role_permission: { label: "Role / Permission Modification", severity: "high", category: "access_control" },
+  role_permission: { label: "Role / Permission Endpoint", severity: "high", category: "access_control" },
   sequential_id: { label: "Sequential ID Candidate", severity: "medium", category: "authorization" },
   client_ownership: { label: "Client-Supplied Ownership", severity: "high", category: "access_control" },
 };
@@ -692,10 +704,10 @@ function tagEndpoint(endpoint, globalSecurity) {
 }
 
 function detectUnauthenticated(ep, globalSecurity, add) {
-  if (!ep.hasSecurity && globalSecurity.length === 0) {
+  if (!ep.hasSecurity && ep.explicitSecurity && globalSecurity.length > 0) {
+    add("unauthenticated", "Endpoint explicitly sets empty security — intentionally disables authentication");
+  } else if (!ep.hasSecurity && globalSecurity.length === 0) {
     add("unauthenticated", "No authentication defined at endpoint or global level");
-  } else if (!ep.hasSecurity) {
-    add("unauthenticated", "No authentication defined at endpoint level (relies on global security)");
   }
 }
 
@@ -714,26 +726,26 @@ function detectIdorBola(ep, add) {
   const queryIdParams = idParams.filter((p) => p.in === "query");
 
   if (pathIdParams.length >= 2) {
-    add("cross_account", `Multiple object-scope identifiers in path: ${pathIdParams.map((p) => p.name).join(", ")}`);
+    add("cross_account", `Multiple object-scope identifiers in path may indicate cross-account testing surface: ${pathIdParams.map((p) => p.name).join(", ")}`);
   }
 
   for (const p of pathIdParams) {
     const lower = p.name.toLowerCase().replace(/[_-]/g, "");
     if (lower === "id" && /\{[a-z_]*id\}/i.test(ep.path)) {
-      add("idor_candidate", `Path parameter '${p.name}' is a direct object reference`);
+      add("idor_candidate", `Path parameter '${p.name}' may be a direct object reference — test whether authorisation is enforced`);
       if (p.type === "integer" || p.type === "number") {
-        add("sequential_id", `Parameter '${p.name}' appears to use numeric/sequential IDs`);
+        add("sequential_id", `Parameter '${p.name}' may use numeric/sequential IDs — candidate for enumeration testing`);
       }
     }
     if (["userid", "ownerid", "createdby", "updatedby"].includes(lower)) {
-      add("weak_object_reference", `Path parameter '${p.name}' is a user-scoped object reference`);
+      add("weak_object_reference", `Path parameter '${p.name}' may be a user-scoped object reference — test ownership enforcement`);
     }
   }
 
   for (const p of queryIdParams) {
     const lower = p.name.toLowerCase().replace(/[_-]/g, "");
     if (IDOR_PARAM_NAMES.has(lower)) {
-      add("weak_object_reference", `Object ID '${p.name}' passed in query string`);
+      add("weak_object_reference", `Object ID '${p.name}' passed in query string — candidate for manipulation testing`);
     }
   }
 
@@ -742,8 +754,8 @@ function detectIdorBola(ep, add) {
     for (const prop of bodyProps) {
       const lower = prop.toLowerCase().replace(/[_-]/g, "");
       if (["ownerid", "userid", "tenantid", "accountid", "roleid"].includes(lower)) {
-        add("client_ownership", `Request body contains client-supplied ownership field '${prop}'`);
-        add("idor_candidate", `Object reference '${prop}' in request body for ${ep.method} operation`);
+        add("client_ownership", `Request body may accept client-supplied ownership field '${prop}' — test if server validates it`);
+        add("idor_candidate", `Object reference '${prop}' in request body for ${ep.method} operation — candidate for IDOR testing`);
       }
     }
   }
@@ -752,7 +764,7 @@ function detectIdorBola(ep, add) {
   const destructiveOps = ["update", "delete", "export", "download", "approve", "assign", "transfer", "modify"];
   for (const kw of destructiveOps) {
     if (lowerPath.includes(kw) && pathIdParams.length > 0) {
-      add("idor_candidate", `${kw} operation with object parameter: ${pathIdParams.map((p) => p.name).join(", ")}`);
+      add("idor_candidate", `${kw} operation with object parameter — candidate for authorisation bypass testing: ${pathIdParams.map((p) => p.name).join(", ")}`);
       break;
     }
   }
@@ -763,15 +775,15 @@ function detectTenantBoundary(ep, add) {
   for (const p of ep.parameters) {
     const lower = p.name.toLowerCase().replace(/[_-]/g, "");
     if (tenantFields.includes(lower)) {
-      add("tenant_boundary", `Parameter '${p.name}' indicates tenant/account boundary`);
+      add("tenant_boundary", `Parameter '${p.name}' may indicate a tenant/account boundary — test cross-tenant access`);
     }
   }
   if (ep.requestBody && ep.requestBody.schema && ep.requestBody.schema.properties) {
     for (const prop of Object.keys(ep.requestBody.schema.properties)) {
       const lower = prop.toLowerCase().replace(/[_-]/g, "");
       if (tenantFields.includes(lower)) {
-        add("tenant_boundary", `Request body contains tenant/account identifier '${prop}'`);
-        add("client_ownership", `Tenant identifier '${prop}' is client-supplied`);
+        add("tenant_boundary", `Request body may accept tenant/account identifier '${prop}' — test if validated`);
+        add("client_ownership", `Tenant identifier '${prop}' may be client-supplied — test if server enforces ownership`);
       }
     }
   }
@@ -782,7 +794,7 @@ function detectUserBoundary(ep, add) {
   for (const p of ep.parameters) {
     const lower = p.name.toLowerCase().replace(/[_-]/g, "");
     if (userFields.includes(lower)) {
-      add("user_boundary", `Parameter '${p.name}' indicates user boundary`);
+      add("user_boundary", `Parameter '${p.name}' may indicate a user boundary — test cross-user access`);
     }
   }
 }
@@ -798,7 +810,7 @@ function detectMassAssignment(ep, add) {
     }
   }
   if (found.length > 0) {
-    add("mass_assignment", `Request body contains privileged fields: ${found.join(", ")}`);
+    add("mass_assignment", `Request body may accept privileged fields — test if server ignores them: ${found.join(", ")}`);
   }
 }
 
@@ -812,7 +824,7 @@ function detectSensitiveResponse(ep, add) {
     }
   }
   if (found.length > 0) {
-    add("sensitive_response", `Response may expose sensitive fields: ${found.join(", ")}`);
+    add("sensitive_response", `Response schema includes potentially sensitive fields — verify if exposure is intended: ${found.join(", ")}`);
   }
 }
 
@@ -823,7 +835,7 @@ function detectAdminInternal(ep, add) {
     return ["admin", "debug", "internal", "support", "impersonate", "sudo", "assume"].some((kw) => lower.includes(kw));
   };
   if (check(ep.path) || check(ep.summary) || check(ep.description) || ep.tags.some(check)) {
-    add("admin_internal", `Endpoint path, description, or tags contain admin/internal keywords`);
+    add("admin_internal", `Endpoint path, description, or tags suggest admin/internal functionality — verify access controls`);
   }
 }
 
@@ -857,9 +869,9 @@ function detectFileDownload(ep, add) {
 
 function detectDestructiveMethod(ep, add) {
   if (ep.method === "DELETE") {
-    add("destructive_method", "DELETE method will remove resources");
+    add("destructive_method", "DELETE method — verify authorisation and target validation before testing");
   } else if ((ep.method === "PUT" || ep.method === "PATCH") && /\{.*id\}/i.test(ep.path)) {
-    add("destructive_method", `${ep.method} on object-specific path may modify resources`);
+    add("destructive_method", `${ep.method} on object-specific path — verify authorisation enforcement`);
   }
 }
 
@@ -867,12 +879,12 @@ function detectBulkOperation(ep, add) {
   const lowerPath = ep.path.toLowerCase();
   const lowerSummary = (ep.summary || "").toLowerCase();
   if (/bulk|batch|mass/i.test(lowerPath) || /bulk|batch/i.test(lowerSummary)) {
-    add("bulk_operation", "Endpoint suggests bulk/batch operation");
+    add("bulk_operation", "Endpoint path or summary suggests bulk/batch operation — test authorisation scope");
   }
   if (ep.requestBody && ep.requestBody.schema) {
     const s = ep.requestBody.schema;
     if (s.type === "array" && (ep.method === "DELETE" || ep.method === "PUT" || ep.method === "PATCH")) {
-      add("bulk_operation", "Destructive method accepts array body for bulk operations");
+      add("bulk_operation", "Destructive method accepts array body — test bulk authorisation enforcement");
     }
   }
 }

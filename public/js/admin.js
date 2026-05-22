@@ -1647,6 +1647,7 @@ const minitoolCyberChefEnabled = document.getElementById("minitool-cyberchef-ena
 const minitoolHeaderAnalyzerEnabled = document.getElementById("minitool-header-analyzer-enabled");
 const minitoolJwtAnalyzerEnabled = document.getElementById("minitool-jwt-analyzer-enabled");
 const minitoolApiAnalyzerEnabled = document.getElementById("minitool-api-analyzer-enabled");
+const minitoolCallbackEnabled = document.getElementById("minitool-callback-enabled");
 const minitoolsSaveBtn = document.getElementById("minitools-save-btn");
 const minitoolsResult = document.getElementById("minitools-result");
 
@@ -1667,6 +1668,7 @@ async function loadMinitoolsSettings() {
     if (minitoolHeaderAnalyzerEnabled) minitoolHeaderAnalyzerEnabled.checked = data.headerAnalyzer;
     if (minitoolJwtAnalyzerEnabled) minitoolJwtAnalyzerEnabled.checked = data.jwtAnalyzer;
     if (minitoolApiAnalyzerEnabled) minitoolApiAnalyzerEnabled.checked = data.apiAnalyzer;
+    if (minitoolCallbackEnabled) minitoolCallbackEnabled.checked = data.callback;
   } catch (err) {
     if (minitoolsResult) {
       minitoolsResult.textContent = err.message || "Failed to load settings";
@@ -1699,6 +1701,7 @@ minitoolsSaveBtn?.addEventListener("click", async () => {
         headerAnalyzerEnabled: !!minitoolHeaderAnalyzerEnabled?.checked,
         jwtAnalyzerEnabled: !!minitoolJwtAnalyzerEnabled?.checked,
         apiAnalyzerEnabled: !!minitoolApiAnalyzerEnabled?.checked,
+        callbackEnabled: !!minitoolCallbackEnabled?.checked,
       }),
     });
     const data = await res.json().catch(() => ({}));

@@ -1,5 +1,5 @@
 import { escapeHtml, safeAttr, badge, setInlineResult, clearInlineResult } from "./ui-components.js";
-import { showAlertModal } from "./confirm-modal.js";
+import { showAlertModal, showConfirmModal } from "./confirm-modal.js";
 import {
   cvssSeverity,
   calculateCvssScore,
@@ -2236,10 +2236,11 @@ function initApiAnalyzer() {
     analyzeBtn.textContent = "Analyzing...";
     resultsEl.innerHTML = '<div class="text-sm text-muted">Parsing API specification...</div>';
     try {
+      const formData = new FormData();
+      formData.append("spec", spec);
       const data = await api("/minitools/api-analyzer/analyze", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ spec }),
+        body: formData,
       });
       apiAnalyzerState.result = data;
       apiAnalyzerState.filterMethod = "ALL";
@@ -2295,8 +2296,10 @@ function initApiAnalyzer() {
     if (copyBtn) {
       const text = copyBtn.dataset.apiAnalyzerCopy;
       copyText(text);
-      copyBtn.textContent = "Copied";
-      setTimeout(() => { copyBtn.textContent = "Copy"; }, 1500);
+      const orig = copyBtn.innerHTML;
+      copyBtn.classList.add("text-green-400");
+      setTimeout(() => { copyBtn.classList.remove("text-green-400"); }, 1200);
+      setInlineResult(inlineEl, "cURL skeleton copied to clipboard", "success");
       return;
     }
   });
@@ -2425,7 +2428,7 @@ function renderApiAnalyzerResults(data, container) {
   // Risk sections
   if (tagIndex && Object.keys(tagIndex).length > 0) {
     html += `<div class="mt-4">`;
-    html += `<h3 class="text-sm font-bold mb-2">Risk-Tagged Endpoints</h3>`;
+    html += `<h3 class="text-sm font-bold mb-2">Risk-Tagged Candidates</h3>`;
     const sortedTags = Object.entries(tagIndex).sort((a, b) => {
       const sa = RISK_SEVERITY_ORDER[getTagSeverity(a[0])] ?? 4;
       const sb = RISK_SEVERITY_ORDER[getTagSeverity(b[0])] ?? 4;
@@ -2494,9 +2497,8 @@ function renderApiAnalyzerEndpointTable(filtered, allEndpoints) {
   html += `<table class="w-full text-xs">`;
   html += `<thead><tr class="text-left text-muted"><th class="pb-1 pr-2">Method</th><th class="pb-1 pr-2">Path</th><th class="pb-1 pr-2">Summary</th><th class="pb-1 pr-2">Tags</th><th class="pb-1">Auth</th></tr></thead>`;
   html += `<tbody>`;
+  const baseUrl = apiAnalyzerState.result?.overview?.serverUrls?.[0] || "<BASE_URL>";
   for (const ep of filtered) {
-    const idx = allEndpoints.indexOf(ep);
-    const isExpanded = apiAnalyzerState.expandedEndpoint === idx;
     const authBadge = ep.hasSecurity
       ? '<span class="badge badge-green text-xs">secured</span>'
       : '<span class="badge badge-red text-xs">none</span>';
@@ -2505,9 +2507,10 @@ function renderApiAnalyzerEndpointTable(filtered, allEndpoints) {
       const sevColor = { critical: "red", high: "red", medium: "amber", low: "blue", info: "gray" }[sev] || "gray";
       return `<span class="badge badge-${sevColor} text-xs">${escapeHtml(t)}</span>`;
     }).join(" ");
-    html += `<tr class="border-t border-[var(--border)] ${isExpanded ? "bg-elevated" : ""}">`;
+    const curl = safeAttr(generateCurlDisplay(ep, baseUrl));
+    html += `<tr class="border-t border-[var(--border)]">`;
     html += `<td class="py-1.5 pr-2"><span class="badge badge-${METHOD_COLORS[ep.method] || "gray"} text-xs">${ep.method}</span></td>`;
-    html += `<td class="py-1.5 pr-2"><button data-api-analyzer-ep="${idx}" class="text-accent hover:underline cursor-pointer text-left">${escapeHtml(ep.path)}${ep.deprecated ? ' <span class="text-muted">(deprecated)</span>' : ""}</button></td>`;
+    html += `<td class="py-1.5 pr-2"><button data-api-analyzer-copy="${curl}" class="text-accent hover:underline cursor-pointer text-left">${escapeHtml(ep.path)}${ep.deprecated ? ' <span class="text-muted">(deprecated)</span>' : ""}</button></td>`;
     html += `<td class="py-1.5 pr-2 text-muted">${escapeHtml(ep.summary || "").slice(0, 60)}</td>`;
     html += `<td class="py-1.5 pr-2"><div class="flex flex-wrap gap-1">${tagBadges}</div></td>`;
     html += `<td class="py-1.5">${authBadge}</td>`;
@@ -2581,7 +2584,7 @@ function renderApiAnalyzerEndpointDetail(ep, data) {
 
   // Risk tags with reasons
   if (ep.riskTags && ep.riskTags.length > 0) {
-    html += `<div class="mb-3"><h4 class="text-xs font-bold mb-1">Risk Tags</h4>`;
+    html += `<div class="mb-3"><h4 class="text-xs font-bold mb-1">Risk Tags (Candidates)</h4>`;
     html += `<div class="space-y-1">`;
     for (const tag of ep.riskTags) {
       const sev = getTagSeverity(tag);
@@ -2691,7 +2694,7 @@ function generateChecklistDisplay(ep) {
     checks.push({ title: "Test cross-user access", detail: "Attempt to access resources owned by another user" });
   }
   if (ep.riskTags?.includes("mass_assignment")) {
-    checks.push({ title: "Test mass assignment", detail: "Include privileged fields (role, isAdmin, permissions) in the request body" });
+    checks.push({ title: "Test mass assignment candidate", detail: "Include privileged fields (role, isAdmin, permissions) in the request body to see if they are accepted" });
   }
   if (ep.riskTags?.includes("file_upload")) {
     checks.push({ title: "Test file upload restrictions", detail: "Upload unexpected file types, oversized files, or files with malicious names" });
@@ -2730,9 +2733,358 @@ function doApiAnalyzerExport(format) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Callback (OOB tester)
+// ---------------------------------------------------------------------------
+
+let callbackState = { urls: [], expandedUrlId: null, expandedReqId: null, ws: null, requestCache: {} };
+
+function initCallback() {
+  const createBtn = document.getElementById("callback-create-btn");
+  const urlsList = document.getElementById("callback-urls-list");
+  const createResult = document.getElementById("callback-create-result");
+  if (!createBtn || !urlsList) return;
+
+  const loadUrls = async () => {
+    try {
+      const data = await api("/minitools/callback/urls");
+      if (data.ok) {
+        callbackState.urls = data.urls;
+        renderCallbackAll(urlsList);
+      }
+    } catch (_) { /* silent */ }
+  };
+
+  const createUrl = async () => {
+    const nickname = document.getElementById("callback-nickname")?.value.trim() || "";
+    const expiry = document.getElementById("callback-expiry")?.value || "60";
+    createBtn.disabled = true;
+    createBtn.textContent = "Generating...";
+    try {
+      const data = await api("/minitools/callback/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expiryMinutes: parseInt(expiry, 10), nickname }),
+      });
+      if (data.ok) {
+        document.getElementById("callback-nickname").value = "";
+        setInlineResult(createResult, "Callback URL created", "success");
+        await loadUrls();
+      }
+    } catch (err) {
+      setInlineResult(createResult, err.message, "error");
+    } finally {
+      createBtn.disabled = false;
+      createBtn.textContent = "Generate URL";
+    }
+  };
+
+  createBtn.addEventListener("click", createUrl);
+
+  urlsList.addEventListener("click", async (e) => {
+    const copyBtn = e.target.closest("[data-callback-copy]");
+    if (copyBtn) {
+      copyText(copyBtn.dataset.callbackCopy);
+      const orig = copyBtn.textContent;
+      copyBtn.textContent = "Copied";
+      setTimeout(() => { copyBtn.textContent = orig; }, 1500);
+      return;
+    }
+    const revokeBtn = e.target.closest("[data-callback-revoke]");
+    if (revokeBtn) {
+      const id = revokeBtn.dataset.callbackRevoke;
+      const confirmed = await showConfirmModal({ title: "Revoke Callback URL", message: "This will stop the URL from accepting new requests. Existing captured requests will be preserved.", confirmLabel: "Revoke", danger: true });
+      if (!confirmed) return;
+      try { await api(`/minitools/callback/urls/${id}`, { method: "DELETE" }); } catch (_) {}
+      await loadUrls();
+      return;
+    }
+    const hardDelBtn = e.target.closest("[data-callback-harddelete]");
+    if (hardDelBtn) {
+      const id = hardDelBtn.dataset.callbackHarddelete;
+      const confirmed = await showConfirmModal({ title: "Permanently Delete Callback", message: "This will permanently delete the callback URL and all captured requests. This cannot be undone.", confirmLabel: "Delete Permanently", danger: true });
+      if (!confirmed) return;
+      try { await api(`/minitools/callback/urls/${id}/hard`, { method: "DELETE" }); } catch (_) {}
+      if (callbackState.expandedUrlId === id) callbackState.expandedUrlId = null;
+      await loadUrls();
+      return;
+    }
+    const rawToggle = e.target.closest("[data-cb-raw-toggle]");
+    if (rawToggle) {
+      const pre = rawToggle.closest(".card")?.querySelector("[data-cb-raw-pre]");
+      if (pre) {
+        const showing = pre.classList.toggle("hidden");
+        rawToggle.textContent = showing ? "View Raw" : "Hide Raw";
+      }
+      return;
+    }
+    const urlHeader = e.target.closest("[data-callback-toggle]");
+    if (urlHeader) {
+      const id = urlHeader.dataset.callbackToggle;
+      callbackState.expandedReqId = null;
+      if (callbackState.expandedUrlId === id) {
+        callbackState.expandedUrlId = null;
+        renderCallbackAll(urlsList);
+      } else {
+        callbackState.expandedUrlId = id;
+        renderCallbackAll(urlsList);
+        const reqContainer = document.getElementById(`callback-reqs-${id}`);
+        if (reqContainer) {
+          reqContainer.innerHTML = '<div class="text-xs text-muted py-2">Loading...</div>';
+          try {
+            const data = await api(`/minitools/callback/urls/${id}/requests`);
+            if (data.ok) {
+              callbackState.requestCache[id] = data.requests;
+              renderCallbackRequests(data.requests, reqContainer, id);
+            }
+          } catch (_) { reqContainer.innerHTML = '<div class="text-xs text-error">Failed to load requests</div>'; }
+        }
+      }
+      return;
+    }
+    const reqRow = e.target.closest("[data-callback-req]");
+    if (reqRow) {
+      const reqId = reqRow.dataset.callbackReq;
+      if (callbackState.expandedReqId === reqId) {
+        callbackState.expandedReqId = null;
+        const detailEl = document.getElementById("callback-req-detail");
+        if (detailEl) detailEl.remove();
+        return;
+      }
+      callbackState.expandedReqId = reqId;
+      const detailEl = document.getElementById("callback-req-detail");
+      if (detailEl) detailEl.remove();
+      try {
+        const data = await api(`/minitools/callback/requests/${reqId}`);
+        if (data.ok && data.request) {
+          const row = reqRow;
+          const detail = document.createElement("div");
+          detail.id = "callback-req-detail";
+          detail.innerHTML = renderCallbackRequestDetailHtml(data.request);
+          row.after(detail);
+        }
+      } catch (_) {}
+      return;
+    }
+  });
+
+  // Live timestamp ticker — update every second
+  const tickTimestamps = () => {
+    urlsList.querySelectorAll("[data-cb-ts]").forEach((el) => {
+      const val = Number(el.dataset.cbVal);
+      if (Number.isNaN(val)) return;
+      const type = el.dataset.cbTs;
+      if (type === "expire") el.textContent = formatTimeRemaining(val);
+      else if (type === "expired") el.textContent = "Expired " + formatTimeAgo(val);
+      else if (type === "created") el.textContent = "Created " + formatTimeAgo(val);
+    });
+  };
+  setInterval(tickTimestamps, 1000);
+
+  // WebSocket for live updates
+  const connectWs = () => {
+    if (callbackState.ws && callbackState.ws.readyState <= 1) return;
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    const ws = new WebSocket(`${proto}//${location.host}/ws/callback`);
+    ws.onmessage = () => {
+      loadUrls();
+      const uid = callbackState.expandedUrlId;
+      if (uid) {
+        const reqContainer = document.getElementById(`callback-reqs-${uid}`);
+        if (reqContainer) {
+          api(`/minitools/callback/urls/${uid}/requests`).then((data) => {
+            if (data.ok) {
+              callbackState.requestCache[uid] = data.requests;
+              renderCallbackRequests(data.requests, reqContainer, uid);
+            }
+          }).catch(() => {});
+        }
+      }
+    };
+    ws.onclose = () => setTimeout(connectWs, 5000);
+    callbackState.ws = ws;
+  };
+
+  loadUrls();
+  connectWs();
+}
+
+function formatTimeAgo(unixTs) {
+  const diff = Math.floor(Date.now() / 1000) - unixTs;
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
+function formatTimeRemaining(expiresAt) {
+  const diff = expiresAt - Math.floor(Date.now() / 1000);
+  if (diff <= 0) return "Expired";
+  if (diff < 60) return `${diff}s`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ${diff % 60}s`;
+  return `${Math.floor(diff / 3600)}h ${Math.floor((diff % 3600) / 60)}m`;
+}
+
+const CB_METHOD_COLORS = { GET: "green", POST: "blue", PUT: "amber", PATCH: "amber", DELETE: "red", HEAD: "gray", OPTIONS: "gray" };
+
+function renderCallbackAll(container) {
+  const urls = callbackState.urls;
+  if (!urls || urls.length === 0) {
+    container.innerHTML = '<div class="text-sm text-muted">No callback URLs yet. Create one above.</div>';
+    return;
+  }
+  const baseUrl = window.location.origin;
+  let html = "";
+  for (const url of urls) {
+    const fullUrl = `${baseUrl}/cb/${url.id}`;
+    const isExpanded = callbackState.expandedUrlId === url.id;
+    const statusBadge = url.isDeleted
+      ? '<span class="badge badge-gray text-xs">Revoked</span>'
+      : url.isExpired
+        ? '<span class="badge badge-amber text-xs">Expired</span>'
+        : '<span class="badge badge-green text-xs">Live</span>';
+
+    html += `<div class="card p-3 ${isExpanded ? "border-l-4 border-accent" : ""}">`;
+
+    // Header row - clickable to expand
+    html += `<div class="flex items-center gap-2 cursor-pointer" data-callback-toggle="${url.id}">`;
+    html += `<svg class="w-4 h-4 text-muted shrink-0 transition-transform ${isExpanded ? "rotate-90" : ""}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>`;
+    html += statusBadge;
+    if (url.nickname) html += `<span class="text-sm font-bold">${escapeHtml(url.nickname)}</span>`;
+    html += `<code class="text-xs font-mono text-accent truncate flex-1">${escapeHtml(fullUrl)}</code>`;
+    html += `<span class="badge badge-blue text-xs">${url.requestCount} req${url.requestCount !== 1 ? "s" : ""}</span>`;
+    html += `</div>`;
+
+    // Meta row
+    html += `<div class="flex items-center gap-2 mt-1.5 pl-6 text-xs text-muted">`;
+    if (!url.isExpired && !url.isDeleted) html += `<span data-cb-ts="expire" data-cb-val="${url.expiresAt}">${formatTimeRemaining(url.expiresAt)}</span>`;
+    if (url.isExpired && !url.isDeleted) html += `<span data-cb-ts="expired" data-cb-val="${url.expiresAt}">Expired ${formatTimeAgo(url.expiresAt)}</span>`;
+    html += `<span data-cb-ts="created" data-cb-val="${url.createdAt}">Created ${formatTimeAgo(url.createdAt)}</span>`;
+    html += `</div>`;
+
+    // Action buttons
+    html += `<div class="flex items-center gap-1.5 mt-2 pl-6">`;
+    html += `<button data-callback-copy="${escapeHtml(fullUrl)}" class="btn-secondary text-xs px-2 py-0.5">Copy URL</button>`;
+    if (!url.isDeleted) html += `<button data-callback-revoke="${url.id}" class="btn-secondary text-xs px-2 py-0.5">Revoke</button>`;
+    if (url.isDeleted || url.isExpired) html += `<button data-callback-harddelete="${url.id}" class="btn-danger text-xs px-2 py-0.5">Delete</button>`;
+    html += `</div>`;
+
+    // Inline request log (only when expanded)
+    if (isExpanded) {
+      html += `<div id="callback-reqs-${url.id}" class="mt-3 ml-6 border-t border-[var(--border)] pt-3">`;
+      const cached = callbackState.requestCache[url.id];
+      if (cached) {
+        html += renderCallbackRequestsHtml(cached, url.id);
+      } else {
+        html += '<div class="text-xs text-muted py-2">Loading requests...</div>';
+      }
+      html += `</div>`;
+    }
+
+    html += `</div>`;
+  }
+  container.innerHTML = html;
+}
+
+function renderCallbackRequests(requests, container, urlId) {
+  container.innerHTML = renderCallbackRequestsHtml(requests, urlId);
+}
+
+function renderCallbackRequestsHtml(requests, urlId) {
+  if (!requests || requests.length === 0) {
+    return `<p class="text-xs text-muted">No requests captured yet. Waiting for inbound traffic to <code>/cb/${urlId}</code>...</p>`;
+  }
+  let html = `<div class="text-xs font-bold mb-2">Captured Requests (${requests.length})</div>`;
+  html += `<table class="w-full text-xs"><thead><tr class="text-left text-muted"><th class="pb-1 pr-2">Time</th><th class="pb-1 pr-2">Method</th><th class="pb-1 pr-2">Source</th><th class="pb-1 pr-2">Path</th><th class="pb-1">User-Agent</th></tr></thead><tbody>`;
+  for (const req of requests) {
+    const isExpanded = callbackState.expandedReqId === String(req.id);
+    html += `<tr class="border-t border-[var(--border)] ${isExpanded ? "bg-elevated" : ""} cursor-pointer" data-callback-req="${req.id}">`;
+    html += `<td class="py-1 pr-2 whitespace-nowrap">${formatTimeAgo(req.received_at)}</td>`;
+    html += `<td class="py-1 pr-2"><span class="badge badge-${CB_METHOD_COLORS[req.method] || "gray"} text-xs">${req.method}</span></td>`;
+    html += `<td class="py-1 pr-2">${escapeHtml(req.source_ip)}</td>`;
+    html += `<td class="py-1 pr-2">${escapeHtml(req.path)}${req.query ? "?" + escapeHtml(req.query) : ""}</td>`;
+    html += `<td class="py-1 text-muted truncate max-w-[200px]">${escapeHtml(req.user_agent || "").slice(0, 60)}</td>`;
+    html += `</tr>`;
+  }
+  html += `</tbody></table>`;
+  return html;
+}
+
+function renderCallbackRequestDetailHtml(req) {
+  let html = `<div class="card p-4 border-l-4 border-accent overflow-hidden">`;
+
+  // Title
+  html += `<div class="flex items-center gap-2 mb-3">`;
+  html += `<span class="badge badge-${CB_METHOD_COLORS[req.method] || "gray"}">${req.method}</span>`;
+  html += `<code class="text-sm font-bold break-all">${escapeHtml(req.path)}${req.query ? "?" + escapeHtml(req.query) : ""}</code>`;
+  html += `<button type="button" class="btn-secondary text-xs px-2 py-0.5 ml-auto" data-cb-raw-toggle>View Raw</button>`;
+  html += `</div>`;
+
+  // Raw packet (hidden by default)
+  html += `<pre class="hidden text-xs bg-elevated p-3 rounded border border-border overflow-auto max-h-[500px] whitespace-pre-wrap break-all mb-3" data-cb-raw-pre>`;
+  html += escapeHtml(buildRawPacket(req));
+  html += `</pre>`;
+
+  // Overview table
+  html += `<div class="overflow-x-auto"><table class="w-full text-xs mb-3"><tbody>`;
+  html += `<tr class="border-t border-[var(--border)]"><td class="py-1.5 pr-3 text-muted whitespace-nowrap">Timestamp</td><td class="py-1.5">${new Date(req.receivedAt * 1000).toISOString()}</td></tr>`;
+  html += `<tr class="border-t border-[var(--border)]"><td class="py-1.5 pr-3 text-muted whitespace-nowrap">Source IP</td><td class="py-1.5">${escapeHtml(req.sourceIp)}</td></tr>`;
+  html += `<tr class="border-t border-[var(--border)]"><td class="py-1.5 pr-3 text-muted whitespace-nowrap">User-Agent</td><td class="py-1.5 break-all">${escapeHtml(req.userAgent || "—")}</td></tr>`;
+  html += `<tr class="border-t border-[var(--border)]"><td class="py-1.5 pr-3 text-muted whitespace-nowrap">Content-Type</td><td class="py-1.5">${escapeHtml(req.contentType || "—")}</td></tr>`;
+  html += `<tr class="border-t border-[var(--border)]"><td class="py-1.5 pr-3 text-muted whitespace-nowrap">Content-Length</td><td class="py-1.5">${req.contentLength || 0}</td></tr>`;
+  html += `<tr class="border-t border-[var(--border)]"><td class="py-1.5 pr-3 text-muted whitespace-nowrap">Referer</td><td class="py-1.5 break-all">${escapeHtml(req.referer || "—")}</td></tr>`;
+  html += `<tr class="border-t border-[var(--border)]"><td class="py-1.5 pr-3 text-muted whitespace-nowrap">Origin</td><td class="py-1.5 break-all">${escapeHtml(req.origin || "—")}</td></tr>`;
+  html += `</tbody></table></div>`;
+
+  // Full headers
+  if (req.headers && typeof req.headers === "object") {
+    const entries = Object.entries(req.headers);
+    if (entries.length > 0) {
+      html += `<div class="mb-3 overflow-hidden"><h4 class="text-xs font-bold mb-1">Request Headers</h4>`;
+      html += `<div class="overflow-x-auto"><table class="w-full text-xs"><thead><tr class="text-left text-muted"><th class="pb-1 pr-3">Header</th><th class="pb-1">Value</th></tr></thead><tbody>`;
+      for (const [k, v] of entries) {
+        html += `<tr class="border-t border-[var(--border)]"><td class="py-1 pr-3 font-mono text-accent whitespace-nowrap">${escapeHtml(k)}</td><td class="py-1 break-all cb-header-val">${escapeHtml(String(v))}</td></tr>`;
+      }
+      html += `</tbody></table></div></div>`;
+    }
+  }
+
+  // Cookies
+  if (req.cookies) {
+    html += `<div class="mb-3 overflow-hidden"><h4 class="text-xs font-bold mb-1">Cookies</h4>`;
+    html += `<pre class="text-xs bg-elevated p-2 rounded overflow-x-auto whitespace-pre-wrap break-all">${escapeHtml(req.cookies)}</pre>`;
+    html += `</div>`;
+  }
+
+  // Body
+  if (req.body) {
+    html += `<div class="mb-3 overflow-hidden"><h4 class="text-xs font-bold mb-1">Request Body</h4>`;
+    let bodyDisplay = req.body;
+    try { bodyDisplay = JSON.stringify(JSON.parse(req.body), null, 2); } catch (_) {}
+    html += `<pre class="text-xs bg-elevated p-2 rounded overflow-auto max-h-[400px] whitespace-pre-wrap break-all">${escapeHtml(bodyDisplay)}</pre>`;
+    html += `</div>`;
+  }
+
+  html += `</div>`;
+  return html;
+}
+
+function buildRawPacket(req) {
+  let raw = `${req.method} ${req.path || "/"}${req.query ? "?" + req.query : ""} HTTP/1.1\n`;
+  if (req.headers && typeof req.headers === "object") {
+    for (const [k, v] of Object.entries(req.headers)) {
+      raw += `${k}: ${v}\n`;
+    }
+  }
+  raw += "\n";
+  if (req.body) raw += req.body;
+  if (req.cookies) raw += `\n// Cookie: ${req.cookies}`;
+  return raw;
+}
+
 async function init() {
   // Load bootstrap to determine which tools are enabled
-  let enabledTools = { cvss: true, breach: true, azure: true, securitytrails: true, "security-headers": true, "tls-check": true, "dns-lookup": true, leakradar: true, "lol-lookup": true, cyberchef: true, "header-analyzer": true, "jwt-analyzer": true, "api-analyzer": true };
+  let enabledTools = { cvss: true, breach: true, azure: true, securitytrails: true, "security-headers": true, "tls-check": true, "dns-lookup": true, leakradar: true, "lol-lookup": true, cyberchef: true, "header-analyzer": true, "jwt-analyzer": true, "api-analyzer": true, callback: true };
   let dnsTools = [];
   try {
     const data = await api("/minitools/bootstrap");
@@ -2750,6 +3102,7 @@ async function init() {
       "header-analyzer": !!data.tools?.headerAnalyzer?.enabled,
       "jwt-analyzer": !!data.tools?.jwtAnalyzer?.enabled,
       "api-analyzer": !!data.tools?.apiAnalyzer?.enabled,
+      callback: !!data.tools?.callback?.enabled,
     };
     dnsTools = data.tools?.dnsLookup?.tools || [];
     const st = data.tools?.securitytrails;
@@ -2772,7 +3125,7 @@ async function init() {
   } catch (_) { /* bootstrap optional */ }
 
   // Hide disabled tools from sidebar, mobile tabs, and view sections
-  const allTools = ["cvss", "breach", "azure", "securitytrails", "security-headers", "tls-check", "dns-lookup", "leakradar", "lol-lookup", "cyberchef", "header-analyzer", "jwt-analyzer", "api-analyzer"];
+  const allTools = ["cvss", "breach", "azure", "securitytrails", "security-headers", "tls-check", "dns-lookup", "leakradar", "lol-lookup", "cyberchef", "header-analyzer", "jwt-analyzer", "api-analyzer", "callback"];
   for (const tool of allTools) {
     if (!enabledTools[tool]) {
       hideMinitool(tool);
@@ -2799,6 +3152,7 @@ async function init() {
   if (enabledTools.leakradar) initLeakRadar();
   if (enabledTools["lol-lookup"]) initLolLookup();
   if (enabledTools["api-analyzer"]) initApiAnalyzer();
+  if (enabledTools.callback) initCallback();
 }
 
 init();

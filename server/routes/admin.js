@@ -1466,6 +1466,9 @@ router.post("/api/minitools/lol-lookup/sync", requireAdmin, requireRecentAdminAu
         ? await syncAllLolLookupSources(db, { getSetting })
         : [await syncLolLookupSource(db, sourceKey, { getSetting })];
       const failures = results.filter((result) => !result.ok);
+      const failureSummary = failures
+        .map((result) => `${result.sourceName}: ${result.error || "refresh failed"}`)
+        .join("; ");
       if (notificationUserId) {
         createNotification({
           userId: notificationUserId,
@@ -1473,7 +1476,7 @@ router.post("/api/minitools/lol-lookup/sync", requireAdmin, requireRecentAdminAu
           action: failures.length ? "lol_lookup_sync_failed" : "lol_lookup_sync_complete",
           title: failures.length ? "LOL Lookup refresh completed with errors" : "LOL Lookup datasets refreshed",
           body: failures.length
-            ? `${failures.length} of ${results.length} source refreshes failed. The previous validated cache remains active.`
+            ? `${failureSummary}. The previous validated cache remains active for failed sources.`
             : `Finished refreshing ${syncLabel}.`,
           linkUrl: "/admin",
           entityType: "lol_lookup_source",
@@ -1535,12 +1538,13 @@ router.get("/api/settings/minitools", requireAdmin, (req, res) => {
     headerAnalyzer: parseEnabled("minitool_header_analyzer_enabled"),
     jwtAnalyzer: parseEnabled("minitool_jwt_analyzer_enabled"),
     apiAnalyzer: parseEnabled("minitool_api_analyzer_enabled"),
+    callback: parseEnabled("minitool_callback_enabled"),
   });
 });
 
 // POST /admin/api/settings/minitools
 router.post("/api/settings/minitools", requireAdmin, requireRecentAdminAuth, (req, res) => {
-  const { cvssEnabled, breachEnabled, azureEnabled, securitytrailsEnabled, securityHeadersEnabled, tlsCheckEnabled, dnsLookupEnabled, leakradarEnabled, lolLookupEnabled, cyberchefEnabled, headerAnalyzerEnabled, jwtAnalyzerEnabled, apiAnalyzerEnabled } = req.body || {};
+  const { cvssEnabled, breachEnabled, azureEnabled, securitytrailsEnabled, securityHeadersEnabled, tlsCheckEnabled, dnsLookupEnabled, leakradarEnabled, lolLookupEnabled, cyberchefEnabled, headerAnalyzerEnabled, jwtAnalyzerEnabled, apiAnalyzerEnabled, callbackEnabled } = req.body || {};
   if (cvssEnabled !== undefined) {
     setSetting("minitool_cvss_enabled", cvssEnabled ? "true" : "false");
   }
@@ -1580,11 +1584,14 @@ router.post("/api/settings/minitools", requireAdmin, requireRecentAdminAuth, (re
   if (apiAnalyzerEnabled !== undefined) {
     setSetting("minitool_api_analyzer_enabled", apiAnalyzerEnabled ? "true" : "false");
   }
+  if (callbackEnabled !== undefined) {
+    setSetting("minitool_callback_enabled", callbackEnabled ? "true" : "false");
+  }
   auditAdmin(req, {
     category: "settings",
     action: "minitools_update",
     targetType: "minitools_settings",
-    metadata: { cvssEnabled, breachEnabled, azureEnabled, securitytrailsEnabled, securityHeadersEnabled, tlsCheckEnabled, dnsLookupEnabled, leakradarEnabled, lolLookupEnabled, cyberchefEnabled, headerAnalyzerEnabled, jwtAnalyzerEnabled, apiAnalyzerEnabled },
+    metadata: { cvssEnabled, breachEnabled, azureEnabled, securitytrailsEnabled, securityHeadersEnabled, tlsCheckEnabled, dnsLookupEnabled, leakradarEnabled, lolLookupEnabled, cyberchefEnabled, headerAnalyzerEnabled, jwtAnalyzerEnabled, apiAnalyzerEnabled, callbackEnabled },
   });
   res.json({ success: true });
 });

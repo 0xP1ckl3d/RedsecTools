@@ -27,11 +27,13 @@ const notificationRouter = require("./routes/notifications");
 const engageRouter = require("./routes/engage");
 const integrationsRouter = require("./routes/integrations");
 const minitoolsRouter = require("./routes/minitools");
+const { captureRequest } = require("./core/minitools/callback");
 const { runBulletinAutoPurge } = require("./bulletin-service");
 const { startFeedFetchInterval, seedDefaults: seedThreatDefaults } = require("./threat-feed-service");
 const { initWebSocket } = require("./chat-ws");
 const { initRedSecAiWebSocket } = require("./redsecai-ws");
 const { initNotificationWebSocket } = require("./notification-ws");
+const { initCallbackWebSocket } = require("./callback-ws");
 const {
   deleteExpired, deleteExpiredFiles,
   deleteExpiredSessions, deleteExpiredInvites,
@@ -304,6 +306,19 @@ app.get("/admin", (req, res) => {
 // Guest link redemption
 app.get("/guest/:token", authRouter.getGuestRedirect);
 
+// --- Callback listener (public, no auth) ---
+app.all("/cb/:id", express.text({ type: "*/*", limit: "512kb" }), (req, res) => {
+  const { id } = req.params;
+  if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+    return res.status(404).sendFile(page("error.html"));
+  }
+  const result = captureRequest(id, req);
+  if (!result.captured) {
+    return res.status(404).sendFile(page("error.html"));
+  }
+  res.status(200).send("OK");
+});
+
 // --- Custom error pages ---
 app.use((req, res) => {
   res.status(404).sendFile(page("error.html"));
@@ -370,6 +385,7 @@ const server = http.createServer(app);
 initWebSocket(server);
 initRedSecAiWebSocket(server);
 initNotificationWebSocket(server);
+initCallbackWebSocket(server);
 server.listen(PORT, HOST, () => {
   console.log(JSON.stringify({ ts: new Date().toISOString(), action: "start", host: HOST, port: PORT, name: "RedSecTools" }));
   for (const warning of buildDeploymentWarnings({ host: HOST })) {

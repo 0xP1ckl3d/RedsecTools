@@ -647,15 +647,16 @@ async function syncLolLookupSource(db, sourceKey, { getSetting = () => null } = 
 }
 
 async function syncAllLolLookupSources(db, options) {
-  const results = [];
-  for (const sourceKey of Object.keys(LOL_LOOKUP_SOURCES)) {
-    results.push(await syncLolLookupSource(db, sourceKey, options));
-  }
-  return results;
+  return Promise.all(Object.keys(LOL_LOOKUP_SOURCES).map((sourceKey) =>
+    syncLolLookupSource(db, sourceKey, options)
+  ));
 }
 
 function serializeStatus(row, settings, now = timestampSeconds()) {
   const lastSuccessAt = Number(row?.last_success_at || 0) || null;
+  const lastAttemptedAt = Number(row?.last_attempted_at || 0) || null;
+  const syncing = activeSourceSyncs.has(row.source_key);
+  const incompleteAttempt = !syncing && lastAttemptedAt && (!lastSuccessAt || lastAttemptedAt > lastSuccessAt) && !row?.last_error;
   const staleAfter = settings.staleDays * 24 * 60 * 60;
   return {
     key: row.source_key,
@@ -664,11 +665,11 @@ function serializeStatus(row, settings, now = timestampSeconds()) {
     sourceVersion: row.source_version || null,
     fetchedAt: row.fetched_at || null,
     lastSuccessAt,
-    lastAttemptedAt: row.last_attempted_at || null,
-    lastError: row.last_error || null,
+    lastAttemptedAt,
+    lastError: row.last_error || (incompleteAttempt ? "The last refresh attempt did not complete before a validated cache update." : null),
     entryCount: Number(row.entry_count || 0),
     backupCount: Number(row.backup_count || 0),
-    syncing: activeSourceSyncs.has(row.source_key),
+    syncing,
     stale: !lastSuccessAt || (now - lastSuccessAt) > staleAfter,
   };
 }

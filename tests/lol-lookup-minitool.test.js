@@ -133,6 +133,28 @@ test("LOL Lookup status exposes per-source freshness and backup counts", () => {
   }
 });
 
+test("LOL Lookup status surfaces interrupted source refresh attempts", () => {
+  const db = createDb();
+  try {
+    seedSource(db, "loldrivers", JSON.stringify({
+      Id: "driver-interrupted",
+      Description: "Driver cache entry used for status checks.",
+      KnownVulnerableSamples: [{ Filename: "status.sys", SHA256: "f".repeat(64) }],
+    }), 1000);
+    db.prepare(`
+      UPDATE lol_lookup_sources
+      SET last_attempted_at = last_success_at + 5, last_error = NULL
+      WHERE source_key = 'loldrivers'
+    `).run();
+
+    const status = getLolLookupStatus(db, { getSetting: () => null });
+    const loldrivers = status.sources.find((source) => source.key === "loldrivers");
+    assert.match(loldrivers.lastError, /did not complete/i);
+  } finally {
+    db.close();
+  }
+});
+
 test("LOL Lookup supports function-filtered browsing without search text", () => {
   const db = createDb();
   try {

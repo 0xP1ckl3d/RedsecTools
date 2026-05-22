@@ -38,6 +38,16 @@ const {
   analyzeApiSpec,
   generateExport: generateApiExport,
 } = require("../core/minitools/api-analyzer");
+const {
+  EXPIRY_OPTIONS,
+  normalizeExpiry,
+  createCallbackUrl,
+  listCallbackUrls,
+  getCallbackRequests,
+  getRequestDetail,
+  deleteCallbackUrl,
+  hardDeleteCallbackUrl,
+} = require("../core/minitools/callback");
 const multer = require("multer");
 
 const router = Router();
@@ -147,6 +157,14 @@ const apiAnalyzerLimiter = rateLimit({
 const apiAnalyzerUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
+});
+
+const callbackLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: { error: "Callback rate limit reached. Try again later." },
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 
 function canViewMiniTools(req, res, next) {
@@ -294,6 +312,7 @@ router.get("/minitools/bootstrap", readLimiter, requireUser, attachUserAccess, c
     headerAnalyzer: { enabled: isMinitoolEnabled("minitool_header_analyzer_enabled") },
     jwtAnalyzer: { enabled: isMinitoolEnabled("minitool_jwt_analyzer_enabled") },
     apiAnalyzer: { enabled: isMinitoolEnabled("minitool_api_analyzer_enabled") },
+    callback: { enabled: isMinitoolEnabled("minitool_callback_enabled"), expiryOptions: EXPIRY_OPTIONS },
   };
   const anyEnabled = Object.values(tools).some((t) => t.enabled);
   res.json({
@@ -967,6 +986,97 @@ router.post(
     } catch (err) {
       res.status(500).json({ error: "Export failed", detail: err.message });
     }
+  }
+);
+
+// --- Callback (OOB tester) ---
+
+router.post(
+  "/minitools/callback/create",
+  callbackLimiter,
+  requireUser,
+  attachUserAccess,
+  canViewMiniTools,
+  requireMinitoolEnabled("minitool_callback_enabled"),
+  (req, res) => {
+    const { expiryMinutes, nickname } = req.body || {};
+    const exp = normalizeExpiry(expiryMinutes);
+    if (!exp.ok) return res.status(400).json({ error: exp.error });
+    const result = createCallbackUrl(req.user.id, exp.minutes, nickname);
+    if (!result.ok) return res.status(400).json({ error: result.error });
+    auditMiniTool(req, { action: "callback_create", targetType: "callback", targetId: result.id, outcome: "success" });
+    res.json({ ok: true, id: result.id, nickname: result.nickname, createdAt: result.createdAt, expiresAt: result.expiresAt });
+  }
+);
+
+router.get(
+  "/minitools/callback/urls",
+  callbackLimiter,
+  requireUser,
+  attachUserAccess,
+  canViewMiniTools,
+  requireMinitoolEnabled("minitool_callback_enabled"),
+  (req, res) => {
+    const urls = listCallbackUrls(req.user.id);
+    res.json({ ok: true, urls });
+  }
+);
+
+router.get(
+  "/minitools/callback/urls/:id/requests",
+  callbackLimiter,
+  requireUser,
+  attachUserAccess,
+  canViewMiniTools,
+  requireMinitoolEnabled("minitool_callback_enabled"),
+  (req, res) => {
+    const result = getCallbackRequests(req.params.id, req.user.id);
+    if (!result.ok) return res.status(result.error === "Access denied" ? 403 : 404).json({ error: result.error });
+    res.json({ ok: true, requests: result.requests });
+  }
+);
+
+router.get(
+  "/minitools/callback/requests/:id",
+  callbackLimiter,
+  requireUser,
+  attachUserAccess,
+  canViewMiniTools,
+  requireMinitoolEnabled("minitool_callback_enabled"),
+  (req, res) => {
+    const result = getRequestDetail(req.params.id, req.user.id);
+    if (!result.ok) return res.status(result.error === "Access denied" ? 403 : 404).json({ error: result.error });
+    res.json({ ok: true, request: result.request });
+  }
+);
+
+router.delete(
+  "/minitools/callback/urls/:id",
+  callbackLimiter,
+  requireUser,
+  attachUserAccess,
+  canViewMiniTools,
+  requireMinitoolEnabled("minitool_callback_enabled"),
+  (req, res) => {
+    const result = deleteCallbackUrl(req.params.id, req.user.id);
+    if (!result.ok) return res.status(result.error === "Access denied" ? 403 : 404).json({ error: result.error });
+    auditMiniTool(req, { action: "callback_delete", targetType: "callback", targetId: req.params.id, outcome: "success" });
+    res.json({ ok: true });
+  }
+);
+
+router.delete(
+  "/minitools/callback/urls/:id/hard",
+  callbackLimiter,
+  requireUser,
+  attachUserAccess,
+  canViewMiniTools,
+  requireMinitoolEnabled("minitool_callback_enabled"),
+  (req, res) => {
+    const result = hardDeleteCallbackUrl(req.params.id, req.user.id);
+    if (!result.ok) return res.status(result.error === "Access denied" ? 403 : 404).json({ error: result.error });
+    auditMiniTool(req, { action: "callback_hard_delete", targetType: "callback", targetId: req.params.id, outcome: "success" });
+    res.json({ ok: true });
   }
 );
 
