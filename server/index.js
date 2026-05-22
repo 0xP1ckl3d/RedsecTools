@@ -27,7 +27,7 @@ const notificationRouter = require("./routes/notifications");
 const engageRouter = require("./routes/engage");
 const integrationsRouter = require("./routes/integrations");
 const minitoolsRouter = require("./routes/minitools");
-const { captureRequest } = require("./core/minitools/callback");
+const { captureRequest, cleanupExpiredCallbacks } = require("./core/minitools/callback");
 const { runBulletinAutoPurge } = require("./bulletin-service");
 const { startFeedFetchInterval, seedDefaults: seedThreatDefaults } = require("./threat-feed-service");
 const { initWebSocket } = require("./chat-ws");
@@ -54,6 +54,8 @@ const { startWebhookWorker } = require("./core/integrations/webhooks");
 const { startLolLookupSyncScheduler } = require("./core/minitools/lol-lookup");
 const redsecAiProvider = require("./modules/redsecai/provider");
 const database = require("./database");
+
+const rateLimit = require("express-rate-limit");
 
 const app = express();
 const PORT = parseInt(process.env.PORT, 10) || 3000;
@@ -307,7 +309,18 @@ app.get("/admin", (req, res) => {
 app.get("/guest/:token", authRouter.getGuestRedirect);
 
 // --- Callback listener (public, no auth) ---
-app.all("/cb/:id", express.text({ type: "*/*", limit: "512kb" }), (req, res) => {
+const callbackCaptureLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => {
+    const id = req.params.id;
+    return !id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+  },
+});
+
+app.all("/cb/:id{*subpath}", express.text({ type: "*/*", limit: "512kb" }), callbackCaptureLimiter, (req, res) => {
   const { id } = req.params;
   if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
     return res.status(404).sendFile(page("error.html"));
@@ -352,8 +365,9 @@ setInterval(() => {
   const threatAlerts = cleanupOldThreatAlerts(threatRetentionDays);
   const threatArticles = cleanupOldThreatArticles(threatRetentionDays);
   const expiredNotifications = deleteExpiredNotifications();
+  const callbackCleanup = cleanupExpiredCallbacks();
   if (shareRouter.cleanupTmp) shareRouter.cleanupTmp();
-  const total = pastes + files + sessions + invites + guestLinks + passwordResets + messages + vaultShares + pendingLogins + trustedDevices + adminSessions + extensionSessions + expiredSurveys + bulletinPurge.deletedBulletins + bulletinPurge.deletedAssets + threatAlerts + threatArticles + expiredNotifications;
+  const total = pastes + files + sessions + invites + guestLinks + passwordResets + messages + vaultShares + pendingLogins + trustedDevices + adminSessions + extensionSessions + expiredSurveys + bulletinPurge.deletedBulletins + bulletinPurge.deletedAssets + threatAlerts + threatArticles + expiredNotifications + callbackCleanup;
   if (total > 0) {
     console.log(JSON.stringify({
       ts: new Date().toISOString(),
@@ -375,6 +389,7 @@ setInterval(() => {
       threatAlerts,
       threatArticles,
       expiredNotifications,
+      callbackCleanup,
       bulletinPurge,
     }));
   }

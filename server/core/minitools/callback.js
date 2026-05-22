@@ -7,6 +7,8 @@ function getDb() {
 }
 
 const MAX_LIVE_URLS = 10;
+const MAX_REQUESTS_PER_URL = 500;
+const CLEANUP_RETENTION_DAYS = 7;
 const EXPIRY_OPTIONS = [
   { label: "15 minutes", minutes: 15 },
   { label: "30 minutes", minutes: 30 },
@@ -144,16 +146,31 @@ function captureRequest(callbackId, req) {
   if (url.deleted_at) return { captured: false, reason: "deleted" };
   if (url.expires_at <= now) return { captured: false, reason: "expired" };
 
+  // Enforce request cap — prune oldest if at limit
+  const count = db.prepare("SELECT COUNT(*) AS cnt FROM callback_requests WHERE callback_id = ?").get(callbackId).cnt;
+  if (count >= MAX_REQUESTS_PER_URL) {
+    const overage = count - MAX_REQUESTS_PER_URL + 1;
+    db.prepare(
+      "DELETE FROM callback_requests WHERE callback_id = ? AND id IN (SELECT id FROM callback_requests WHERE callback_id = ? ORDER BY received_at ASC LIMIT ?)"
+    ).run(callbackId, callbackId, overage);
+  }
+
   const headers = {};
   for (const [key, value] of Object.entries(req.headers)) {
     headers[key] = value;
   }
 
   let body = null;
-  if (["POST", "PUT", "PATCH"].includes(req.method) && req.body) {
-    body = typeof req.body === "string" ? req.body : JSON.stringify(req.body);
+  if (req.body && typeof req.body === "string" && req.body.length > 0) {
+    body = req.body;
     if (body.length > 512 * 1024) body = body.slice(0, 512 * 1024);
   }
+
+  const fullPath = req.path || "/";
+  const queryString = req._parsedUrl?.query || (req.originalUrl ? req.originalUrl.split("?")[1] || "" : "");
+
+  const xff = req.get("x-forwarded-for");
+  const sourceIp = xff ? xff.split(",")[0].trim() : (req.ip || "");
 
   db.prepare(`
     INSERT INTO callback_requests (callback_id, received_at, method, path, query, source_ip, user_agent, headers, body, content_type, content_length, referer, origin, cookies)
@@ -162,9 +179,9 @@ function captureRequest(callbackId, req) {
     callbackId,
     now,
     req.method,
-    req.path || "/",
-    req.url ? req.url.split("?")[1] || "" : "",
-    req.ip || "",
+    fullPath,
+    queryString,
+    sourceIp,
     req.get("user-agent") || null,
     JSON.stringify(headers),
     body,
@@ -195,9 +212,31 @@ function hardDeleteCallbackUrl(callbackId, userId) {
   return { ok: true };
 }
 
+function cleanupExpiredCallbacks() {
+  const db = getDb();
+  const cutoff = Math.floor(Date.now() / 1000) - CLEANUP_RETENTION_DAYS * 86400;
+
+  const stale = db.prepare(
+    "SELECT id FROM callback_urls WHERE (deleted_at IS NOT NULL AND deleted_at < ?) OR (expires_at < ?)"
+  ).all(cutoff, cutoff);
+
+  let deleted = 0;
+  const deleteReqs = db.prepare("DELETE FROM callback_requests WHERE callback_id = ?");
+  const deleteUrl = db.prepare("DELETE FROM callback_urls WHERE id = ?");
+
+  for (const row of stale) {
+    deleteReqs.run(row.id);
+    deleteUrl.run(row.id);
+    deleted++;
+  }
+
+  return deleted;
+}
+
 module.exports = {
   EXPIRY_OPTIONS,
   MAX_LIVE_URLS,
+  MAX_REQUESTS_PER_URL,
   normalizeExpiry,
   createCallbackUrl,
   listCallbackUrls,
@@ -206,4 +245,5 @@ module.exports = {
   deleteCallbackUrl,
   hardDeleteCallbackUrl,
   captureRequest,
+  cleanupExpiredCallbacks,
 };

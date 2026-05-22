@@ -9,7 +9,7 @@
 
 var activeOverlay = null;
 
-function createOverlay() {
+export function createOverlay() {
   if (activeOverlay) {
     activeOverlay.remove();
     activeOverlay = null;
@@ -65,12 +65,12 @@ export function showConfirmModal({ title = "Confirm", message = "", htmlMessage 
   });
 }
 
-export function showAlertModal({ title = "Notice", message = "", htmlMessage = false, confirmLabel = "OK" } = {}) {
+export function showAlertModal({ title = "Notice", message = "", htmlMessage = false, confirmLabel = "OK", cardClass = "" } = {}) {
   return new Promise(function (resolve) {
     var overlay = createOverlay();
 
     var card = document.createElement("div");
-    card.className = "modal-card";
+    card.className = "modal-card" + (cardClass ? " " + cardClass : "");
     card.innerHTML =
       '<h3 class="confirm-modal-title">' + escapeModalHtml(title) + "</h3>" +
       '<p class="confirm-modal-message">' + (htmlMessage ? message : escapeModalHtml(message)) + "</p>" +

@@ -1,5 +1,5 @@
 import { escapeHtml, safeAttr, badge, setInlineResult, clearInlineResult } from "./ui-components.js";
-import { showAlertModal, showConfirmModal } from "./confirm-modal.js";
+import { showAlertModal, showConfirmModal, createOverlay } from "./confirm-modal.js";
 import {
   cvssSeverity,
   calculateCvssScore,
@@ -2737,7 +2737,7 @@ function doApiAnalyzerExport(format) {
 // Callback (OOB tester)
 // ---------------------------------------------------------------------------
 
-let callbackState = { urls: [], expandedUrlId: null, expandedReqId: null, ws: null, requestCache: {} };
+let callbackState = { urls: [], expandedUrlId: null, ws: null, requestCache: {} };
 
 function initCallback() {
   const createBtn = document.getElementById("callback-create-btn");
@@ -2809,19 +2809,9 @@ function initCallback() {
       await loadUrls();
       return;
     }
-    const rawToggle = e.target.closest("[data-cb-raw-toggle]");
-    if (rawToggle) {
-      const pre = rawToggle.closest(".card")?.querySelector("[data-cb-raw-pre]");
-      if (pre) {
-        const showing = pre.classList.toggle("hidden");
-        rawToggle.textContent = showing ? "View Raw" : "Hide Raw";
-      }
-      return;
-    }
     const urlHeader = e.target.closest("[data-callback-toggle]");
     if (urlHeader) {
       const id = urlHeader.dataset.callbackToggle;
-      callbackState.expandedReqId = null;
       if (callbackState.expandedUrlId === id) {
         callbackState.expandedUrlId = null;
         renderCallbackAll(urlsList);
@@ -2845,23 +2835,10 @@ function initCallback() {
     const reqRow = e.target.closest("[data-callback-req]");
     if (reqRow) {
       const reqId = reqRow.dataset.callbackReq;
-      if (callbackState.expandedReqId === reqId) {
-        callbackState.expandedReqId = null;
-        const detailEl = document.getElementById("callback-req-detail");
-        if (detailEl) detailEl.remove();
-        return;
-      }
-      callbackState.expandedReqId = reqId;
-      const detailEl = document.getElementById("callback-req-detail");
-      if (detailEl) detailEl.remove();
       try {
         const data = await api(`/minitools/callback/requests/${reqId}`);
         if (data.ok && data.request) {
-          const row = reqRow;
-          const detail = document.createElement("div");
-          detail.id = "callback-req-detail";
-          detail.innerHTML = renderCallbackRequestDetailHtml(data.request);
-          row.after(detail);
+          showCallbackRequestModal(data.request);
         }
       } catch (_) {}
       return;
@@ -2997,8 +2974,7 @@ function renderCallbackRequestsHtml(requests, urlId) {
   let html = `<div class="text-xs font-bold mb-2">Captured Requests (${requests.length})</div>`;
   html += `<table class="w-full text-xs"><thead><tr class="text-left text-muted"><th class="pb-1 pr-2">Time</th><th class="pb-1 pr-2">Method</th><th class="pb-1 pr-2">Source</th><th class="pb-1 pr-2">Path</th><th class="pb-1">User-Agent</th></tr></thead><tbody>`;
   for (const req of requests) {
-    const isExpanded = callbackState.expandedReqId === String(req.id);
-    html += `<tr class="border-t border-[var(--border)] ${isExpanded ? "bg-elevated" : ""} cursor-pointer" data-callback-req="${req.id}">`;
+    html += `<tr class="border-t border-[var(--border)] cursor-pointer hover:bg-elevated" data-callback-req="${req.id}">`;
     html += `<td class="py-1 pr-2 whitespace-nowrap">${formatTimeAgo(req.received_at)}</td>`;
     html += `<td class="py-1 pr-2"><span class="badge badge-${CB_METHOD_COLORS[req.method] || "gray"} text-xs">${req.method}</span></td>`;
     html += `<td class="py-1 pr-2">${escapeHtml(req.source_ip)}</td>`;
@@ -3010,62 +2986,104 @@ function renderCallbackRequestsHtml(requests, urlId) {
   return html;
 }
 
+function showCallbackRequestModal(req) {
+  const overlay = createOverlay();
+  const rawText = buildRawPacket(req);
+
+  const card = document.createElement("div");
+  card.className = "modal-card cb-detail-modal";
+  card.innerHTML =
+    `<h3 class="confirm-modal-title">${escapeHtml(req.method)} ${escapeHtml(req.path || "/")}${req.query ? "?" + escapeHtml(req.query) : ""}</h3>` +
+    `<div class="confirm-modal-message">${renderCallbackRequestDetailHtml(req)}</div>` +
+    `<div class="confirm-modal-actions">` +
+      `<button type="button" class="btn-secondary" data-cb-copy-raw>Copy Raw</button>` +
+      `<button type="button" class="btn-primary confirm-modal-confirm">Close</button>` +
+    `</div>`;
+
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+
+  const closeBtn = card.querySelector(".confirm-modal-confirm");
+  const copyBtn = card.querySelector("[data-cb-copy-raw]");
+
+  function cleanup() {
+    overlay.remove();
+  }
+
+  closeBtn.addEventListener("click", cleanup);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) cleanup(); });
+  const escHandler = (e) => { if (e.key === "Escape") { cleanup(); document.removeEventListener("keydown", escHandler); } };
+  document.addEventListener("keydown", escHandler);
+
+  const details = card.querySelector("details");
+  if (details) {
+    details.addEventListener("toggle", () => {
+      if (details.open) details.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+  }
+
+  copyBtn.addEventListener("click", () => {
+    navigator.clipboard.writeText(rawText).then(() => {
+      const orig = copyBtn.textContent;
+      copyBtn.textContent = "Copied!";
+      setTimeout(() => { copyBtn.textContent = orig; }, 1500);
+    });
+  });
+
+  closeBtn.focus();
+}
+
 function renderCallbackRequestDetailHtml(req) {
-  let html = `<div class="card p-4 border-l-4 border-accent overflow-hidden">`;
+  let html = "";
 
-  // Title
-  html += `<div class="flex items-center gap-2 mb-3">`;
-  html += `<span class="badge badge-${CB_METHOD_COLORS[req.method] || "gray"}">${req.method}</span>`;
-  html += `<code class="text-sm font-bold break-all">${escapeHtml(req.path)}${req.query ? "?" + escapeHtml(req.query) : ""}</code>`;
-  html += `<button type="button" class="btn-secondary text-xs px-2 py-0.5 ml-auto" data-cb-raw-toggle>View Raw</button>`;
-  html += `</div>`;
+  // Overview
+  html += `<div class="text-xs mb-3">`;
+  html += `<div class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">`;
+  html += `<span class="text-muted">Timestamp</span><span>${new Date(req.receivedAt * 1000).toISOString()}</span>`;
+  html += `<span class="text-muted">Source IP</span><span>${escapeHtml(req.sourceIp)}</span>`;
+  const xff = req.headers && (req.headers["x-forwarded-for"] || req.headers["x-real-ip"]);
+  if (xff) html += `<span class="text-muted">Forwarded For</span><span class="break-all">${escapeHtml(String(xff))}</span>`;
+  html += `<span class="text-muted">User-Agent</span><span class="break-all">${escapeHtml(req.userAgent || "—")}</span>`;
+  html += `<span class="text-muted">Content-Type</span><span>${escapeHtml(req.contentType || "—")}</span>`;
+  html += `<span class="text-muted">Content-Length</span><span>${req.contentLength || 0}</span>`;
+  if (req.referer) html += `<span class="text-muted">Referer</span><span class="break-all">${escapeHtml(req.referer)}</span>`;
+  if (req.origin) html += `<span class="text-muted">Origin</span><span class="break-all">${escapeHtml(req.origin)}</span>`;
+  html += `</div></div>`;
 
-  // Raw packet (hidden by default)
-  html += `<pre class="hidden text-xs bg-elevated p-3 rounded border border-border overflow-auto max-h-[500px] whitespace-pre-wrap break-all mb-3" data-cb-raw-pre>`;
-  html += escapeHtml(buildRawPacket(req));
-  html += `</pre>`;
-
-  // Overview table
-  html += `<div class="overflow-x-auto"><table class="w-full text-xs mb-3"><tbody>`;
-  html += `<tr class="border-t border-[var(--border)]"><td class="py-1.5 pr-3 text-muted whitespace-nowrap">Timestamp</td><td class="py-1.5">${new Date(req.receivedAt * 1000).toISOString()}</td></tr>`;
-  html += `<tr class="border-t border-[var(--border)]"><td class="py-1.5 pr-3 text-muted whitespace-nowrap">Source IP</td><td class="py-1.5">${escapeHtml(req.sourceIp)}</td></tr>`;
-  html += `<tr class="border-t border-[var(--border)]"><td class="py-1.5 pr-3 text-muted whitespace-nowrap">User-Agent</td><td class="py-1.5 break-all">${escapeHtml(req.userAgent || "—")}</td></tr>`;
-  html += `<tr class="border-t border-[var(--border)]"><td class="py-1.5 pr-3 text-muted whitespace-nowrap">Content-Type</td><td class="py-1.5">${escapeHtml(req.contentType || "—")}</td></tr>`;
-  html += `<tr class="border-t border-[var(--border)]"><td class="py-1.5 pr-3 text-muted whitespace-nowrap">Content-Length</td><td class="py-1.5">${req.contentLength || 0}</td></tr>`;
-  html += `<tr class="border-t border-[var(--border)]"><td class="py-1.5 pr-3 text-muted whitespace-nowrap">Referer</td><td class="py-1.5 break-all">${escapeHtml(req.referer || "—")}</td></tr>`;
-  html += `<tr class="border-t border-[var(--border)]"><td class="py-1.5 pr-3 text-muted whitespace-nowrap">Origin</td><td class="py-1.5 break-all">${escapeHtml(req.origin || "—")}</td></tr>`;
-  html += `</tbody></table></div>`;
-
-  // Full headers
+  // Headers
   if (req.headers && typeof req.headers === "object") {
     const entries = Object.entries(req.headers);
     if (entries.length > 0) {
-      html += `<div class="mb-3 overflow-hidden"><h4 class="text-xs font-bold mb-1">Request Headers</h4>`;
-      html += `<div class="overflow-x-auto"><table class="w-full text-xs"><thead><tr class="text-left text-muted"><th class="pb-1 pr-3">Header</th><th class="pb-1">Value</th></tr></thead><tbody>`;
+      html += `<div class="mb-3"><h4 class="text-xs font-bold mb-1">Headers</h4>`;
+      html += `<table class="w-full text-xs"><thead><tr class="text-left text-muted"><th class="pb-1 pr-3">Name</th><th class="pb-1">Value</th></tr></thead><tbody>`;
       for (const [k, v] of entries) {
-        html += `<tr class="border-t border-[var(--border)]"><td class="py-1 pr-3 font-mono text-accent whitespace-nowrap">${escapeHtml(k)}</td><td class="py-1 break-all cb-header-val">${escapeHtml(String(v))}</td></tr>`;
+        html += `<tr class="border-t border-[var(--border)]"><td class="py-1 pr-3 font-mono text-accent whitespace-nowrap">${escapeHtml(k)}</td><td class="py-1 break-all">${escapeHtml(String(v))}</td></tr>`;
       }
-      html += `</tbody></table></div></div>`;
+      html += `</tbody></table></div>`;
     }
   }
 
   // Cookies
   if (req.cookies) {
-    html += `<div class="mb-3 overflow-hidden"><h4 class="text-xs font-bold mb-1">Cookies</h4>`;
+    html += `<div class="mb-3"><h4 class="text-xs font-bold mb-1">Cookies</h4>`;
     html += `<pre class="text-xs bg-elevated p-2 rounded overflow-x-auto whitespace-pre-wrap break-all">${escapeHtml(req.cookies)}</pre>`;
     html += `</div>`;
   }
 
   // Body
   if (req.body) {
-    html += `<div class="mb-3 overflow-hidden"><h4 class="text-xs font-bold mb-1">Request Body</h4>`;
+    html += `<div class="mb-3"><h4 class="text-xs font-bold mb-1">Request Body</h4>`;
     let bodyDisplay = req.body;
     try { bodyDisplay = JSON.stringify(JSON.parse(req.body), null, 2); } catch (_) {}
-    html += `<pre class="text-xs bg-elevated p-2 rounded overflow-auto max-h-[400px] whitespace-pre-wrap break-all">${escapeHtml(bodyDisplay)}</pre>`;
+    html += `<pre class="text-xs bg-elevated p-2 rounded overflow-auto max-h-[300px] whitespace-pre-wrap break-all">${escapeHtml(bodyDisplay)}</pre>`;
     html += `</div>`;
   }
 
-  html += `</div>`;
+  // Raw packet — collapsed by default
+  html += `<details class="mb-1"><summary class="text-xs font-bold cursor-pointer select-none">Raw Packet</summary>`;
+  html += `<pre class="text-xs bg-elevated p-2 rounded overflow-auto max-h-[300px] whitespace-pre-wrap break-all mt-1">${escapeHtml(buildRawPacket(req))}</pre>`;
+  html += `</details>`;
+
   return html;
 }
 
