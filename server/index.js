@@ -320,11 +320,14 @@ const callbackCaptureLimiter = rateLimit({
   },
 });
 
-app.all("/cb/:id{*subpath}", express.text({ type: "*/*", limit: "512kb" }), callbackCaptureLimiter, (req, res) => {
+app.all("/cb/:id", express.text({ type: "*/*", limit: "512kb" }), callbackCaptureLimiter, (req, res) => {
   const { id } = req.params;
   if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
     return res.status(404).sendFile(page("error.html"));
   }
+  // Reconstruct the full subpath from any trailing path segments
+  const baseUrl = `/cb/${id}`;
+  req.path = req.originalUrl.slice(baseUrl.length).split("?")[0] || "/";
   const result = captureRequest(id, req);
   if (!result.captured) {
     return res.status(404).sendFile(page("error.html"));
