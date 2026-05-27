@@ -1,10 +1,7 @@
 const os = require("os");
 const { describeCookieSecureSource, getCookieSecure } = require("./cookies");
 const { getConfiguredTrustedOrigins } = require("../../public-origin");
-
-function getGitCommit() {
-  return process.env.APP_COMMIT || process.env.GIT_COMMIT || "";
-}
+const { getVersionInfo } = require("../platform/version");
 
 function buildDeploymentWarnings({ trustedOrigins = getConfiguredTrustedOrigins(), host = process.env.HOST || "0.0.0.0" } = {}) {
   const warnings = [];
@@ -46,13 +43,15 @@ function buildDeploymentWarnings({ trustedOrigins = getConfiguredTrustedOrigins(
 }
 
 function buildBasePosture() {
+  const versionInfo = getVersionInfo();
   return {
     app: {
-      version: process.env.npm_package_version || "",
-      commit: getGitCommit(),
-      node: process.version,
+      version: versionInfo.version,
+      commit: versionInfo.buildCommit,
+      buildCommit: versionInfo.buildCommit,
+      node: versionInfo.node,
       platform: `${os.platform()} ${os.release()}`,
-      environment: process.env.NODE_ENV || "development",
+      environment: versionInfo.environment,
     },
     deployment: {
       host: process.env.HOST || "0.0.0.0",

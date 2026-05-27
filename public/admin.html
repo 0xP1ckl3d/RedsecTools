@@ -773,6 +773,25 @@
               </div>
               <div id="deployment-warnings" class="space-y-2"></div>
               <div id="deployment-summary-grid" class="grid gap-3 md:grid-cols-2 xl:grid-cols-3"></div>
+              <div class="mt-5 border-t border-card pt-5">
+                <div class="admin-card-header mb-3">
+                  <div>
+                    <h3 class="admin-card-title text-base">Platform Health</h3>
+                    <p class="admin-card-copy">Runtime checks for storage, mail, PDF rendering, workers, WebSockets, RedSecAI, and local MiniTool caches.</p>
+                  </div>
+                </div>
+                <div id="platform-health-grid" class="grid gap-3 md:grid-cols-2 xl:grid-cols-4"></div>
+                <div class="grid gap-4 xl:grid-cols-2 mt-4">
+                  <div>
+                    <h3 class="text-sm font-semibold text-primary mb-2">Workers And Sockets</h3>
+                    <div id="platform-workers-grid" class="grid gap-2"></div>
+                  </div>
+                  <div>
+                    <h3 class="text-sm font-semibold text-primary mb-2">Recent Platform Warnings</h3>
+                    <div id="platform-warning-list" class="space-y-2"></div>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div class="card admin-section-card">
@@ -835,7 +854,7 @@
               <div>
                 <p class="admin-card-kicker">Server Settings</p>
                 <h2 class="admin-card-title">Encrypted Backup</h2>
-                <p class="admin-card-copy">Export an encrypted copy of the active SQLite database without exposing plaintext at rest.</p>
+                <p class="admin-card-copy">Export an encrypted platform archive containing SQLite plus persistent data files and a backup manifest.</p>
               </div>
             </div>
             <div class="space-y-4">

@@ -17,6 +17,7 @@ const MAX_BUFFER_CHARS = 24000;
 
 const userConnections = new Map();
 const jobs = new Map();
+let initialized = false;
 
 function parseCookies(req) {
   return new Promise((resolve, reject) => {
@@ -238,6 +239,7 @@ function resumeJob(ws, auth, jobId) {
 
 function initRedSecAiWebSocket(server) {
   const wss = new WebSocketServer({ noServer: true });
+  initialized = true;
 
   server.on("upgrade", (req, socket, head) => {
     if (!String(req.url || "").startsWith("/ws/redsecai")) return;
@@ -320,7 +322,20 @@ function isAllowedRedSecAiWebSocketOrigin(req) {
   return isAllowedWebSocketOrigin(req);
 }
 
+function getRedSecAiWebSocketStatus() {
+  let connections = 0;
+  for (const sockets of userConnections.values()) connections += sockets.size;
+  return {
+    name: "RedSecAI",
+    initialized,
+    connectedUsers: userConnections.size,
+    connections,
+    activeJobs: jobs.size,
+  };
+}
+
 module.exports = {
+  getRedSecAiWebSocketStatus,
   initRedSecAiWebSocket,
   isAllowedRedSecAiWebSocketOrigin,
 };

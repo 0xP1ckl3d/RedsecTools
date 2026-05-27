@@ -20,7 +20,7 @@ RedSecTools is a self-hosted offensive security operations workspace for small t
 | Security operations | **RedSecMiniTools** | Focused utilities including CyberChef-style transforms, JWT analysis, email header analysis, CVSS scoring, security header checks, TLS checks, DNS intelligence, SecurityTrails lookups, breach lookup, LeakRadar lookups, and cached LOLBAS, GTFOBins, and LOLDrivers reference search where enabled. |
 | Assisted operations | **RedSecAI** | Governed assistant backed by local Ollama or an admin-configured compatible model endpoint, with scoped application and MiniTools context and confirmation-gated mutations. |
 | Platform | **Notifications** | Persisted notification center with same-origin or trusted-origin WebSocket delivery. |
-| Platform | **Admin controls** | User, role, permission, MFA, settings, branding, security posture, audit, encrypted backup export, deployment warning, and tool configuration surfaces. |
+| Platform | **Admin controls** | User, role, permission, MFA, settings, branding, platform health, audit, encrypted platform backup export, deployment warning, and tool configuration surfaces. |
 | Platform | **Integrations** | Scoped service accounts, platform webhooks, authenticated interactive OpenAPI/Swagger docs, optional SAML SSO controls, and Chrome extension APIs. |
 
 ## Architecture
@@ -30,7 +30,7 @@ RedSecTools uses:
 - A **Node.js and Express** backend for page routes, API routes, WebSocket behavior, authentication, integrations, and security controls.
 - A **SQLite** database for application state.
 - A **static multi-page frontend** in `public/` for the browser UI.
-- **Docker** and npm-based self-hosted deployment paths are supported.
+- **Docker Compose** is the recommended production deployment path. npm/local execution remains useful for development.
 - **RedSecAI** can use a local Ollama service where configured. Administrators may also configure compatible external or cloud model endpoints when that is appropriate for their environment.
 - Browser-side cryptography is used for protected paste, file share, chat, and vault content areas.
 
@@ -123,13 +123,15 @@ The setup scripts create `.env` values such as a generated admin password and co
 
 ### Docker
 
-The repository includes a Dockerfile and Docker Compose stack. After preparing `.env`, start the application stack with:
+Docker Compose is the default supported production path. After preparing `.env`, start the application stack with:
 
 ```bash
 docker compose up --build
 ```
 
 The Compose stack includes the RedSecTools app, an Ollama-backed RedSecAI sidecar, and a Tor proxy sidecar used by supported threat workflows.
+
+For production deployment details, use [docs/deployment/production.md](docs/deployment/production.md).
 
 ## Configuration
 
@@ -139,7 +141,7 @@ Start with `.env.example`, then complete runtime configuration in Admin where a 
 
 | Area | Variables | Notes |
 | --- | --- | --- |
-| Server | `HOST`, `PORT`, `NODE_ENV`, `DB_PATH` | Control bind behavior, runtime mode, and optional SQLite path override. |
+| Server | `HOST`, `PORT`, `NODE_ENV`, `DB_PATH`, `REDSECTOOLS_BUILD_COMMIT` | Control bind behavior, runtime mode, optional SQLite path override, and displayed build identifier. |
 | Session and proxy security | `COOKIE_SECRET`, `COOKIE_SECURE`, `TRUST_PROXY`, `TRUSTED_PUBLIC_ORIGINS` | Use a strong cookie secret. Enable secure cookies behind HTTPS. Set proxy trust and trusted origins deliberately. |
 | Admin bootstrap | `ADMIN_PASSWORD` | Used for initial admin setup paths where configured. Handle it as a secret. |
 | Feature defaults | `ADMIN_REAUTH_REQUIRED`, `OPENAPI_ENABLED`, `SERVICE_ACCOUNTS_ENABLED`, `WEBHOOKS_ENABLED`, `SSO_ENABLED`, `SSO_REQUIRE_FOR_LOGIN` | Environment defaults for operational feature controls that are also surfaced through Admin settings. Keep SAML defaults disabled until the IdP flow is configured and tested. |
@@ -154,8 +156,9 @@ Start with `.env.example`, then complete runtime configuration in Admin where a 
 | Email | SMTP settings and test controls are configured in Admin rather than through the example environment file. |
 | AI | RedSecAI enablement, endpoint and model settings, diagnostics, and operational limits where exposed. |
 | MiniTools and integrations | Tool enablement plus API keys or limits for configured third-party services such as SecurityTrails and LeakRadar. |
-| Audit and export | Audit event review/export and encrypted database backup export. |
-| Platform presentation | Branding, dashboard and tool settings, security posture information, and deployment warnings. |
+| Audit and export | Audit event review/export and encrypted platform backup export. |
+| Platform operations | Platform health, version/build visibility, schema migration visibility, storage status, worker status, and deployment warnings. |
+| Platform presentation | Branding, dashboard and tool settings. |
 
 Treat service-account tokens, webhook secrets, SMTP credentials, AI credentials, and third-party API keys as secrets. Do not log or publish them.
 
@@ -190,17 +193,16 @@ npm audit --omit=dev
 - Reuse shared UI behavior and styling patterns before creating one-off tool surfaces.
 - Keep browser-side encryption boundaries intact when touching paste, share, chat, or vault workflows.
 
-## Deployment Notes
+## Platform Operations
 
-- Use the setup flow above to create the deployment environment before starting the app.
-- Terminate production traffic over TLS and verify reverse proxy behavior before exposing the service.
-- Keep the SQLite data directory persistent. Docker Compose persists app data through the `redsectools-data` volume.
-- Back up application data deliberately and protect exported backup material. The Admin backup path exports an encrypted database backup, but retention, off-host storage, restore drills, and secret handling remain operational responsibilities.
-- Verify SMTP, RedSecAI endpoint behavior, MiniTools API keys, webhook targets, service-account scopes, and SAML flows before relying on them in production workflows.
-- Monitor health and readiness endpoints at `GET /healthz` and `GET /readyz`.
-- Run post-deploy checks for login, MFA policy, permissions, backup/export behavior, audit logging, page access gates, and any enabled integrations.
+Production deployment, backup, restore, and release operations are documented separately:
 
-The Docker image includes dependencies needed by the supported Reporter PDF flow. Reverse proxies and TLS termination remain deployment concerns outside the app container.
+- [Production deployment guide](docs/deployment/production.md)
+- [Restore runbook](docs/deployment/restore.md)
+- [Release checklist](RELEASE_CHECKLIST.md)
+- [Changelog](CHANGELOG.md)
+
+Runtime checks are available at `GET /healthz`, `GET /readyz`, and `GET /api/version`. Admin > Deployment shows platform health, version/build details, migration state, storage status, worker status, recent warnings, audit events, and encrypted platform backup export.
 
 ## MiniTools Privacy Model
 

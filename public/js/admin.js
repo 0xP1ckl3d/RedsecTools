@@ -63,6 +63,7 @@ function showDashboard() {
 }
 
 function formatTime(unix) {
+  if (typeof unix === "string") return new Date(unix).toLocaleString();
   return new Date(unix * 1000).toLocaleString();
 }
 
@@ -2632,6 +2633,9 @@ const deploymentRefreshBtn = document.getElementById("deployment-refresh-btn");
 const deploymentWarnings = document.getElementById("deployment-warnings");
 const deploymentSummaryGrid = document.getElementById("deployment-summary-grid");
 const deploymentMigrationsBody = document.getElementById("deployment-migrations-body");
+const platformHealthGrid = document.getElementById("platform-health-grid");
+const platformWorkersGrid = document.getElementById("platform-workers-grid");
+const platformWarningList = document.getElementById("platform-warning-list");
 const auditEventsBody = document.getElementById("audit-events-body");
 const auditRefreshBtn = document.getElementById("audit-refresh-btn");
 const auditExportBtn = document.getElementById("audit-export-btn");
@@ -2692,6 +2696,89 @@ function renderDeploymentSummary(data) {
   ].join("");
 }
 
+function formatDuration(seconds) {
+  const value = Math.max(0, Number(seconds) || 0);
+  if (value < 60) return `${Math.floor(value)}s`;
+  if (value < 3600) return `${Math.floor(value / 60)}m ${Math.floor(value % 60)}s`;
+  return `${Math.floor(value / 3600)}h ${Math.floor((value % 3600) / 60)}m`;
+}
+
+function statusBadge(ok, label) {
+  const badgeClass = ok ? "badge-green" : "badge-amber";
+  return `<span class="badge ${badgeClass}">${escapeHtml(label || (ok ? "ok" : "check"))}</span>`;
+}
+
+function renderPlatformHealth(data) {
+  if (!platformHealthGrid || !platformWorkersGrid || !platformWarningList) return;
+  const services = data.services || {};
+  const disk = data.storage?.disk || {};
+  const lolSources = services.lolLookup?.sources || [];
+  const staleLol = lolSources.filter((source) => source.stale || source.lastError).length;
+
+  platformHealthGrid.innerHTML = [
+    deploymentMetric("App Version", data.app?.version || "unknown", data.app?.buildCommit ? `Commit ${data.app.buildCommit}` : "No build commit provided"),
+    deploymentMetric("Runtime", formatDuration(data.app?.uptimeSeconds), `${data.app?.environment || "development"} / ${data.app?.node || ""}`),
+    deploymentMetric("Database", data.database?.connected ? "Connected" : "Failed", `${formatBytes(data.database?.sizeBytes)} / migration ${data.database?.latestMigration || "-"}`),
+    deploymentMetric("Data Directory", formatBytes(data.storage?.dataDirBytes), `${formatBytes(disk.availableBytes)} available`),
+    deploymentMetric("SMTP", services.smtp?.configured ? "Configured" : "Not configured", services.smtp?.host || "Admin > Settings"),
+    deploymentMetric("PDF Renderer", services.pdfRenderer?.executableExists === false ? "Check path" : "Available", services.pdfRenderer?.executablePath || "Default runtime"),
+    deploymentMetric("RedSecAI", services.redsecAi?.enabled ? "Enabled" : "Disabled", services.redsecAi?.model || ""),
+    deploymentMetric("LOL Lookup", staleLol ? `${staleLol} stale source${staleLol === 1 ? "" : "s"}` : "Fresh", `${lolSources.reduce((sum, source) => sum + (source.entryCount || 0), 0)} entries`),
+  ].join("");
+
+  const workerRows = [
+    ...(services.webSockets || []).map((socket) => ({
+      name: socket.name,
+      status: socket.initialized ? "Listening" : "Not started",
+      detail: `${socket.connections || 0} connection${socket.connections === 1 ? "" : "s"} / ${socket.connectedUsers || 0} user${socket.connectedUsers === 1 ? "" : "s"}`,
+      ok: !!socket.initialized,
+    })),
+    {
+      name: "Threat feed worker",
+      status: services.threatFeedWorker?.running ? "Running" : "Stopped",
+      detail: services.threatFeedWorker?.lastError || `Last run ${services.threatFeedWorker?.lastRunAt ? formatTime(services.threatFeedWorker.lastRunAt) : "never"}`,
+      ok: !!services.threatFeedWorker?.running && !services.threatFeedWorker?.lastError,
+    },
+    {
+      name: "Webhook worker",
+      status: services.webhookWorker?.running ? "Running" : "Stopped",
+      detail: services.webhookWorker?.lastError || `Last processed ${services.webhookWorker?.lastProcessed ?? 0}`,
+      ok: !!services.webhookWorker?.running && !services.webhookWorker?.lastError,
+    },
+    {
+      name: "Callback cleanup",
+      status: services.callbackCleanup?.running ? "Running" : "Scheduled",
+      detail: services.callbackCleanup?.lastError || `Last run ${services.callbackCleanup?.lastRunAt ? formatTime(services.callbackCleanup.lastRunAt) : "never"}`,
+      ok: !services.callbackCleanup?.lastError,
+    },
+  ];
+
+  platformWorkersGrid.innerHTML = workerRows.map((row) => `
+    <div class="info-box flex items-start justify-between gap-3">
+      <div>
+        <div class="font-semibold text-primary">${escapeHtml(row.name || "Worker")}</div>
+        <div class="text-xs text-muted mt-1">${escapeHtml(row.detail || "")}</div>
+      </div>
+      ${statusBadge(row.ok, row.status)}
+    </div>
+  `).join("");
+
+  const warnings = data.warnings || [];
+  if (!warnings.length) {
+    platformWarningList.innerHTML = '<div class="info-box text-sm text-muted">No recent platform warnings captured.</div>';
+  } else {
+    platformWarningList.innerHTML = warnings.map((warning) => `
+      <div class="info-box">
+        <div class="flex items-center gap-2">
+          <span class="badge badge-amber">${escapeHtml(warning.level || "warn")}</span>
+          <span class="font-semibold text-sm">${escapeHtml(warning.action || "warning")}</span>
+        </div>
+        <div class="text-xs text-muted mt-1">${escapeHtml(warning.ts || "")}</div>
+      </div>
+    `).join("");
+  }
+}
+
 function renderMigrations(migrations) {
   if (!deploymentMigrationsBody) return;
   if (!migrations?.length) {
@@ -2746,12 +2833,18 @@ async function loadAuditEvents() {
 
 async function loadDeploymentQuality() {
   try {
-    const res = await api("/api/security-posture");
-    if (!res.ok) throw new Error("Posture request failed");
-    const data = await res.json();
+    const [postureRes, healthRes] = await Promise.all([
+      api("/api/security-posture"),
+      api("/api/platform-health"),
+    ]);
+    if (!postureRes.ok) throw new Error("Posture request failed");
+    const data = await postureRes.json();
     renderDeploymentWarnings(data.warnings || []);
     renderDeploymentSummary(data);
     renderMigrations(data.database?.migrations || []);
+    if (healthRes.ok) {
+      renderPlatformHealth(await healthRes.json());
+    }
   } catch {
     if (deploymentWarnings) {
       deploymentWarnings.innerHTML = '<div class="info-box text-sm text-error">Failed to load deployment posture.</div>';

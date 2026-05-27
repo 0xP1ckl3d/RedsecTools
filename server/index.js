@@ -34,6 +34,8 @@ const { initWebSocket } = require("./chat-ws");
 const { initRedSecAiWebSocket } = require("./redsecai-ws");
 const { initNotificationWebSocket } = require("./notification-ws");
 const { initCallbackWebSocket } = require("./callback-ws");
+const { getVersionInfo } = require("./core/platform/version");
+const { markCleanupFailed, markCleanupFinished, markCleanupStarted } = require("./core/platform/runtime-status");
 const {
   deleteExpired, deleteExpiredFiles,
   deleteExpiredSessions, deleteExpiredInvites,
@@ -151,6 +153,11 @@ app.get("/readyz", (req, res) => {
     },
     timestamp: new Date().toISOString(),
   });
+});
+
+app.get("/api/version", (req, res) => {
+  const migrations = listSchemaMigrations();
+  res.json(getVersionInfo({ latestMigration: migrations.slice(-1)[0]?.id || null }));
 });
 
 function pageRequireRedSecAiEnabled(req, res, next) {
@@ -352,34 +359,34 @@ app.use((err, req, res, next) => {
 
 // --- Expired content cleanup (every 10 minutes) ---
 setInterval(() => {
-  const pastes = deleteExpired();
-  const files = deleteExpiredFiles();
-  const sessions = deleteExpiredSessions();
-  const invites = deleteExpiredInvites();
-  const guestLinks = deleteExpiredGuestLinks();
-  const passwordResets = deleteExpiredPasswordResets();
-  const messages = deleteExpiredMessages();
-  const vaultShares = deleteExpiredVaultShares();
-  const pendingLogins = deleteExpiredPendingLogins();
-  const trustedDevices = deleteExpiredTrustedDevices();
-  const adminSessions = deleteExpiredAdminSessions();
-  const extensionSessions = deleteExpiredExtensionSessions();
-  const expiredSurveys = closeExpiredSurveys();
-  const bulletinPurge = runBulletinAutoPurge();
-  const parsedThreatRetentionDays = parseInt(getSetting("threat_alert_retention_days"), 10);
-  const threatRetentionDays = Number.isFinite(parsedThreatRetentionDays) && parsedThreatRetentionDays > 0
-    ? parsedThreatRetentionDays
-    : 14;
-  const threatAlerts = cleanupOldThreatAlerts(threatRetentionDays);
-  const threatArticles = cleanupOldThreatArticles(threatRetentionDays);
-  const expiredNotifications = deleteExpiredNotifications();
-  const callbackCleanup = cleanupExpiredCallbacks();
-  if (shareRouter.cleanupTmp) shareRouter.cleanupTmp();
-  const total = pastes + files + sessions + invites + guestLinks + passwordResets + messages + vaultShares + pendingLogins + trustedDevices + adminSessions + extensionSessions + expiredSurveys + bulletinPurge.deletedBulletins + bulletinPurge.deletedAssets + threatAlerts + threatArticles + expiredNotifications + callbackCleanup;
-  if (total > 0) {
-    console.log(JSON.stringify({
-      ts: new Date().toISOString(),
-      action: "cleanup",
+  const cleanupStartedAt = markCleanupStarted();
+  try {
+    const pastes = deleteExpired();
+    const files = deleteExpiredFiles();
+    const sessions = deleteExpiredSessions();
+    const invites = deleteExpiredInvites();
+    const guestLinks = deleteExpiredGuestLinks();
+    const passwordResets = deleteExpiredPasswordResets();
+    const messages = deleteExpiredMessages();
+    const vaultShares = deleteExpiredVaultShares();
+    const pendingLogins = deleteExpiredPendingLogins();
+    const trustedDevices = deleteExpiredTrustedDevices();
+    const adminSessions = deleteExpiredAdminSessions();
+    const extensionSessions = deleteExpiredExtensionSessions();
+    const expiredSurveys = closeExpiredSurveys();
+    const bulletinPurge = runBulletinAutoPurge();
+    const parsedThreatRetentionDays = parseInt(getSetting("threat_alert_retention_days"), 10);
+    const threatRetentionDays = Number.isFinite(parsedThreatRetentionDays) && parsedThreatRetentionDays > 0
+      ? parsedThreatRetentionDays
+      : 14;
+    const threatAlerts = cleanupOldThreatAlerts(threatRetentionDays);
+    const threatArticles = cleanupOldThreatArticles(threatRetentionDays);
+    const expiredNotifications = deleteExpiredNotifications();
+    const callbackCleanup = cleanupExpiredCallbacks();
+    if (shareRouter.cleanupTmp) shareRouter.cleanupTmp();
+    const total = pastes + files + sessions + invites + guestLinks + passwordResets + messages + vaultShares + pendingLogins + trustedDevices + adminSessions + extensionSessions + expiredSurveys + bulletinPurge.deletedBulletins + bulletinPurge.deletedAssets + threatAlerts + threatArticles + expiredNotifications + callbackCleanup;
+    const summary = {
+      total,
       pastes,
       files,
       sessions,
@@ -399,7 +406,18 @@ setInterval(() => {
       expiredNotifications,
       callbackCleanup,
       bulletinPurge,
-    }));
+    };
+    markCleanupFinished(cleanupStartedAt, summary);
+    if (total > 0) {
+      console.log(JSON.stringify({
+        ts: new Date().toISOString(),
+        action: "cleanup",
+        ...summary,
+      }));
+    }
+  } catch (error) {
+    markCleanupFailed(cleanupStartedAt, error);
+    logWarn("cleanup:failed", { message: error.message });
   }
 }, 10 * 60 * 1000);
 

@@ -95,3 +95,59 @@ test("route protection contracts cover every Express API route", () => {
   const uncovered = routes.filter((route) => !covered(route));
   assert.deepEqual(uncovered, []);
 });
+
+test("high-risk admin write routes have recent-admin-auth enforcement", () => {
+  const adminFiles = [
+    path.join(ROOT, "server", "routes", "admin.js"),
+    path.join(ROOT, "server", "routes", "admin-collab.js"),
+  ];
+  const missing = [];
+
+  for (const filePath of adminFiles) {
+    const source = fs.readFileSync(filePath, "utf8");
+    const routeRegex = /\brouter\.(post|put|delete|patch)\(\s*["'`]([^"'`]+)["'`]([\s\S]*?)\n\);/g;
+    for (const match of source.matchAll(routeRegex)) {
+      const [, method, routePath, middlewareBody] = match;
+      const fullPath = joinRoute("/admin", routePath);
+      if (fullPath === "/admin/login" || fullPath === "/admin/logout") continue;
+      const contract = compiledContracts.find((candidate) =>
+        candidate.methods.includes(method.toUpperCase()) && candidate.regex.test(fullPath)
+      );
+      if (!contract || !contract.freshAdminAuth) {
+        missing.push({ method: method.toUpperCase(), path: fullPath, reason: "contract" });
+      }
+      if (!middlewareBody.includes("requireRecentAdminAuth")) {
+        missing.push({ method: method.toUpperCase(), path: fullPath, reason: "middleware" });
+      }
+    }
+  }
+
+  assert.deepEqual(missing, []);
+});
+
+test("MiniTools API routes require minitools.view and feature flags where applicable", () => {
+  const filePath = path.join(ROOT, "server", "routes", "minitools.js");
+  const source = fs.readFileSync(filePath, "utf8");
+  const routeRegex = /\brouter\.(get|post|put|delete|patch)\(\s*["'`]([^"'`]+)["'`]([\s\S]*?)\n\);/g;
+  const violations = [];
+
+  for (const match of source.matchAll(routeRegex)) {
+    const [, method, routePath, middlewareBody] = match;
+    if (!routePath.startsWith("/minitools/")) continue;
+    const fullPath = joinRoute("/api", routePath);
+    const contract = compiledContracts.find((candidate) =>
+      candidate.methods.includes(method.toUpperCase()) && candidate.regex.test(fullPath)
+    );
+    if (!contract || contract.permission !== "minitools.view") {
+      violations.push({ method: method.toUpperCase(), path: fullPath, reason: "contract" });
+    }
+    if (!middlewareBody.includes("canViewMiniTools")) {
+      violations.push({ method: method.toUpperCase(), path: fullPath, reason: "permission middleware" });
+    }
+    if (routePath !== "/minitools/bootstrap" && !middlewareBody.includes("requireMinitoolEnabled(")) {
+      violations.push({ method: method.toUpperCase(), path: fullPath, reason: "feature flag middleware" });
+    }
+  }
+
+  assert.deepEqual(violations, []);
+});

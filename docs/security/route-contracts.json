@@ -4,6 +4,7 @@
   "contracts": [
     { "id": "public-health", "routePattern": "/healthz", "methods": ["GET"], "auth": "public", "permission": null, "publicLink": false, "rateLimit": "none", "audit": "none", "freshAdminAuth": false },
     { "id": "public-ready", "routePattern": "/readyz", "methods": ["GET"], "auth": "public", "permission": null, "publicLink": false, "rateLimit": "none", "audit": "none", "freshAdminAuth": false },
+    { "id": "public-version", "routePattern": "/api/version", "methods": ["GET"], "auth": "public", "permission": null, "publicLink": false, "rateLimit": "none", "audit": "none", "freshAdminAuth": false },
     { "id": "public-site-theme", "routePattern": "/api/site-theme", "methods": ["GET"], "auth": "public", "permission": null, "publicLink": false, "rateLimit": "none", "audit": "none", "freshAdminAuth": false },
     { "id": "public-auth-sso", "routePattern": "/api/auth/sso/**", "methods": ["GET", "POST"], "auth": "public-sso", "permission": null, "publicLink": false, "rateLimit": "login", "audit": "identity", "freshAdminAuth": false },
     { "id": "public-auth-entry", "routePattern": "/api/auth/{login,login/mfa,login/mfa/setup,login/mfa/setup/verify,register,forgot-password,reset-password,smtp-status}", "methods": ["GET", "POST"], "auth": "public-auth-flow", "permission": null, "publicLink": false, "rateLimit": "auth", "audit": "auth", "freshAdminAuth": false },

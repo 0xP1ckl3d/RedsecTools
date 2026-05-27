@@ -31,6 +31,14 @@ jobs:
           REDSECAI_AUTOSTART: "false"
           REDSECAI_AUTO_PULL: "false"
 
+      - name: Route contracts and migrations
+        run: node --test tests/route-contracts.test.js tests/migrations.test.js
+        env:
+          NODE_ENV: test
+          COOKIE_SECRET: ci-cookie-secret-ci-cookie-secret-32
+          REDSECAI_AUTOSTART: "false"
+          REDSECAI_AUTO_PULL: "false"
+
       - name: Build frontend assets
         run: npm run build
 

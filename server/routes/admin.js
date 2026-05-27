@@ -3,6 +3,7 @@ const { Router } = express;
 const rateLimit = require("express-rate-limit");
 const crypto = require("crypto");
 const http = require("http");
+const os = require("os");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
@@ -40,20 +41,27 @@ const {
 } = require("../database");
 const { sendInviteEmail, sendPasswordResetEmail, sendTestEmail } = require("../email");
 const { buildAbsoluteUrl } = require("../public-origin");
-const { createEncryptedDatabaseBackup } = require("../core/backup");
+const { createEncryptedPlatformBackup } = require("../core/backup");
 const { getCookieSecure } = require("../core/security/cookies");
 const { buildBasePosture } = require("../core/security/posture");
-const { logEvent, redactObject } = require("../core/logger");
+const { getRecentWarnings, logEvent, redactObject } = require("../core/logger");
+const { getVersionInfo } = require("../core/platform/version");
+const { getRuntimeStatus } = require("../core/platform/runtime-status");
 const { parseInteger } = require("../core/validation");
 const { getFeatureFlag, listFeatureFlags } = require("../core/config/feature-flags");
 const { createPlainApiToken, hashApiToken, tokenDisplayPrefix } = require("../middleware/service-auth");
 const { SERVICE_ACCOUNT_SCOPES, isValidServiceAccountScope } = require("../core/integrations/service-account-scopes");
 const { PERMISSION_DEFINITIONS } = require("../access");
 const { assertPublicHttpUrl } = require("../core/security/fetch-targets");
-const { deliverPendingWebhooks, enqueueWebhookEvent } = require("../core/integrations/webhooks");
+const { deliverPendingWebhooks, enqueueWebhookEvent, getWebhookWorkerStatus } = require("../core/integrations/webhooks");
 const { createNotification } = require("../core/notifications");
 const samlAuth = require("../core/auth/saml");
 const redsecAiProvider = require("../modules/redsecai/provider");
+const { getChatWebSocketStatus } = require("../chat-ws");
+const { getNotificationWebSocketStatus } = require("../notification-ws");
+const { getRedSecAiWebSocketStatus } = require("../redsecai-ws");
+const { getCallbackWebSocketStatus } = require("../callback-ws");
+const { getThreatFeedWorkerStatus } = require("../threat-feed-service");
 const {
   LOL_LOOKUP_SOURCES,
   getLolLookupStatus,
@@ -142,6 +150,53 @@ function getDirectorySize(dirPath) {
     }
   } catch {}
   return total;
+}
+
+function getDiskStats(targetPath) {
+  try {
+    const stats = fs.statfsSync(targetPath);
+    return {
+      availableBytes: stats.bavail * stats.bsize,
+      freeBytes: stats.bfree * stats.bsize,
+      totalBytes: stats.blocks * stats.bsize,
+    };
+  } catch {
+    return { availableBytes: null, freeBytes: null, totalBytes: null };
+  }
+}
+
+function getPdfRendererStatus() {
+  const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || "";
+  return {
+    configured: !!executablePath,
+    executablePath: executablePath || null,
+    executableExists: executablePath ? fs.existsSync(executablePath) : null,
+    timeoutMs: parseInt(process.env.REPORTER_PDF_TIMEOUT_MS, 10) || 120000,
+  };
+}
+
+function getSmtpStatus() {
+  const smtp = getSmtpConfig();
+  return {
+    configured: !!smtp.smtpHost,
+    host: smtp.smtpHost || null,
+    port: smtp.smtpPort || null,
+    secure: smtp.smtpSecure === "true",
+    fromConfigured: !!smtp.smtpFrom,
+    userConfigured: !!smtp.smtpUser,
+  };
+}
+
+function getRedSecAiStatus() {
+  const config = redsecAiProvider.getConfig();
+  return {
+    enabled: !!config.enabled,
+    baseUrl: config.baseUrl || null,
+    model: config.model || null,
+    timeoutMs: config.timeoutMs || null,
+    autoStart: !!config.autoStart,
+    autoPull: !!config.autoPull,
+  };
 }
 
 function parseAuditTimestamp(value) {
@@ -454,6 +509,68 @@ router.get("/api/security-posture", requireAdmin, (req, res) => {
     storage: {
       dataBytes: getDirectorySize(path.join(__dirname, "..", "..", "data")),
     },
+  });
+});
+
+// GET /admin/api/platform-health
+router.get("/api/platform-health", requireAdmin, (req, res) => {
+  const dataDir = path.dirname(DB_PATH);
+  const dbStat = (() => {
+    try { return fs.statSync(DB_PATH); } catch { return null; }
+  })();
+  const dbReady = (() => {
+    try {
+      db.prepare("SELECT 1 AS ok").get();
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+  const migrations = listSchemaMigrations();
+  const latestMigration = migrations.slice(-1)[0]?.id || null;
+  const version = getVersionInfo({ latestMigration });
+  const disk = getDiskStats(dataDir);
+  const runtime = getRuntimeStatus();
+  const lolLookup = getLolLookupStatus(db, { getSetting });
+
+  res.json({
+    app: {
+      ...version,
+      platform: `${os.platform()} ${os.release()}`,
+      uptimeSeconds: Math.floor(process.uptime()),
+    },
+    database: {
+      connected: dbReady,
+      path: path.relative(path.join(__dirname, "..", ".."), DB_PATH),
+      sizeBytes: dbStat?.size || 0,
+      latestMigration,
+      migrationCount: migrations.length,
+    },
+    storage: {
+      dataDir: path.relative(path.join(__dirname, "..", ".."), dataDir),
+      dataDirBytes: getDirectorySize(dataDir),
+      disk,
+    },
+    services: {
+      smtp: getSmtpStatus(),
+      pdfRenderer: getPdfRendererStatus(),
+      webSockets: [
+        getChatWebSocketStatus(),
+        getNotificationWebSocketStatus(),
+        getRedSecAiWebSocketStatus(),
+        getCallbackWebSocketStatus(),
+      ],
+      redsecAi: getRedSecAiStatus(),
+      threatFeedWorker: getThreatFeedWorkerStatus(),
+      webhookWorker: getWebhookWorkerStatus(),
+      lolLookup: {
+        settings: lolLookup.settings,
+        sources: lolLookup.sources,
+      },
+      callbackCleanup: runtime.cleanup,
+    },
+    warnings: getRecentWarnings(10),
+    generatedAt: new Date().toISOString(),
   });
 });
 
@@ -1141,7 +1258,12 @@ router.post("/api/webhooks/:id/test", requireAdmin, requireRecentAdminAuth, asyn
 router.post("/api/backup/export", requireAdmin, requireRecentAdminAuth, async (req, res) => {
   const passphrase = req.body?.passphrase;
   try {
-    const backup = await createEncryptedDatabaseBackup({ db, dbPath: DB_PATH, passphrase });
+    const backup = await createEncryptedPlatformBackup({
+      db,
+      dbPath: DB_PATH,
+      passphrase,
+      latestMigration: listSchemaMigrations().slice(-1)[0]?.id || null,
+    });
     auditAdmin(req, {
       category: "deployment",
       action: "backup_export",

@@ -996,9 +996,19 @@ async function scopedApiRequest(req, toolName, args = {}) {
     headers["content-type"] = "application/json";
     init.body = JSON.stringify(normalizedArgs.body && typeof normalizedArgs.body === "object" ? normalizedArgs.body : normalizedArgs);
   }
-  const res = await fetch(url, {
-    ...init,
-  });
+  let res;
+  try {
+    res = await fetch(url, {
+      ...init,
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      status: 502,
+      error: "Scoped API request failed",
+      body: { error: error.message || "fetch failed" },
+    };
+  }
   if (!res.ok) return { ok: false, status: res.status, body: await res.json().catch(() => null) };
   return { ok: true, status: res.status, body: await res.json().catch(() => null) };
 }
@@ -1278,14 +1288,19 @@ async function searchEngageCollection(req, toolName, args = {}, path, arrayKey, 
   const limit = Math.min(50, Math.max(1, parseInt(args.limit, 10) || 10));
   const params = new URLSearchParams();
   if (args.clientId) params.set("clientId", String(args.clientId));
-  const res = await fetch(`${getInternalOrigin(req)}${path}${params.toString() ? `?${params.toString()}` : ""}`, {
-    method: "GET",
-    headers: {
-      cookie: req.headers.cookie || "",
-      accept: "application/json",
-      "user-agent": "RedSecAI scoped internal tool",
-    },
-  });
+  let res;
+  try {
+    res = await fetch(`${getInternalOrigin(req)}${path}${params.toString() ? `?${params.toString()}` : ""}`, {
+      method: "GET",
+      headers: {
+        cookie: req.headers.cookie || "",
+        accept: "application/json",
+        "user-agent": "RedSecAI scoped internal tool",
+      },
+    });
+  } catch (error) {
+    return summarizeResult(toolName, { ok: false, status: 502, body: { error: error.message || "fetch failed" } }, args);
+  }
   const result = {
     ok: res.ok,
     status: res.status,
@@ -1315,16 +1330,21 @@ async function executeEngageNoteCreate(req, args = {}) {
   };
   const path = pathByType[entityType];
   if (!path) return { tool: "engage.note.create", ok: false, status: 400, error: "Unsupported Engage note entity type" };
-  const res = await fetch(`${getInternalOrigin(req)}${path}`, {
-    method: "POST",
-    headers: {
-      cookie: req.headers.cookie || "",
-      accept: "application/json",
-      "content-type": "application/json",
-      "user-agent": "RedSecAI scoped internal tool",
-    },
-    body: JSON.stringify(args.body || {}),
-  });
+  let res;
+  try {
+    res = await fetch(`${getInternalOrigin(req)}${path}`, {
+      method: "POST",
+      headers: {
+        cookie: req.headers.cookie || "",
+        accept: "application/json",
+        "content-type": "application/json",
+        "user-agent": "RedSecAI scoped internal tool",
+      },
+      body: JSON.stringify(args.body || {}),
+    });
+  } catch (error) {
+    return summarizeResult("engage.note.create", { ok: false, status: 502, body: { error: error.message || "fetch failed" } }, args);
+  }
   const result = {
     ok: res.ok,
     status: res.status,

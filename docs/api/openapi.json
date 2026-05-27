@@ -2331,6 +2331,34 @@
     }
   },
   "paths": {
+    "/api/version": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get RedSecTools version and build metadata",
+        "responses": {
+          "200": {
+            "description": "Version metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": { "type": "string" },
+                    "version": { "type": "string" },
+                    "buildCommit": { "type": "string" },
+                    "node": { "type": "string" },
+                    "environment": { "type": "string" },
+                    "latestMigration": { "type": ["string", "null"] }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/api/audit-events": {
       "get": {
         "tags": [
@@ -3492,6 +3520,30 @@
         "responses": {
           "200": {
             "description": "Success"
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          }
+        }
+      }
+    },
+    "/admin/api/platform-health": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get platform health and operational status",
+        "security": [
+          {
+            "AdminCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Platform health status"
           },
           "401": {
             "description": "Not authenticated"

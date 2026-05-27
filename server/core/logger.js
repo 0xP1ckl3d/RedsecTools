@@ -1,4 +1,6 @@
 const SENSITIVE_KEY_PATTERN = /(password|pass|secret|token|cookie|authorization|api[_-]?key|private[_-]?key|totp|recovery|smtpPass|session)/i;
+const RECENT_WARNING_LIMIT = 50;
+const recentWarnings = [];
 
 function redactValue(value) {
   if (Array.isArray(value)) return value.map(redactValue);
@@ -35,15 +37,24 @@ function logEvent(action, req, extra = {}) {
 }
 
 function logWarn(action, extra = {}) {
-  console.warn(JSON.stringify({
+  const entry = {
     ts: new Date().toISOString(),
     level: "warn",
     action,
     ...redactObject(extra),
-  }));
+  };
+  recentWarnings.push(entry);
+  while (recentWarnings.length > RECENT_WARNING_LIMIT) recentWarnings.shift();
+  console.warn(JSON.stringify(entry));
+}
+
+function getRecentWarnings(limit = 10) {
+  const count = Math.min(RECENT_WARNING_LIMIT, Math.max(1, parseInt(limit, 10) || 10));
+  return recentWarnings.slice(-count).reverse();
 }
 
 module.exports = {
+  getRecentWarnings,
   logEvent,
   logWarn,
   redactObject,

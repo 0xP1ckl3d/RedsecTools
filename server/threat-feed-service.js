@@ -1054,12 +1054,35 @@ async function checkAllFeeds() {
 // ---------------------------------------------------------------------------
 
 let feedIntervalHandle = null;
+const feedWorkerStatus = {
+  running: false,
+  intervalSec: null,
+  lastRunAt: null,
+  lastChecked: null,
+  lastAlerts: null,
+  lastError: null,
+};
+
+async function runScheduledFeedCheck() {
+  try {
+    const result = await checkAllFeeds();
+    feedWorkerStatus.lastRunAt = new Date().toISOString();
+    feedWorkerStatus.lastChecked = result.checked;
+    feedWorkerStatus.lastAlerts = result.alerts;
+    feedWorkerStatus.lastError = null;
+    return result;
+  } catch (err) {
+    feedWorkerStatus.lastRunAt = new Date().toISOString();
+    feedWorkerStatus.lastError = err.message;
+    throw err;
+  }
+}
 
 function startFeedFetchInterval() {
   if (feedIntervalHandle) return; // Already running
 
   // Run immediately on start
-  checkAllFeeds().catch((err) => {
+  runScheduledFeedCheck().catch((err) => {
     console.error(JSON.stringify({
       ts: new Date().toISOString(),
       action: "threat_initial_fetch_error",
@@ -1070,10 +1093,12 @@ function startFeedFetchInterval() {
   // Determine check interval from settings (default 30 minutes for the scheduler loop)
   const checkIntervalSec = parseInt(db.getSetting("threat_fetch_interval_seconds"), 10) || 1800;
   const intervalMs = checkIntervalSec * 1000;
+  feedWorkerStatus.running = true;
+  feedWorkerStatus.intervalSec = checkIntervalSec;
 
   feedIntervalHandle = setInterval(async () => {
     try {
-      await checkAllFeeds();
+      await runScheduledFeedCheck();
     } catch (err) {
       console.error(JSON.stringify({
         ts: new Date().toISOString(),
@@ -1099,11 +1124,16 @@ function stopFeedFetchInterval() {
   if (feedIntervalHandle) {
     clearInterval(feedIntervalHandle);
     feedIntervalHandle = null;
+    feedWorkerStatus.running = false;
     console.log(JSON.stringify({
       ts: new Date().toISOString(),
       action: "threat_feed_interval_stopped",
     }));
   }
+}
+
+function getThreatFeedWorkerStatus() {
+  return { ...feedWorkerStatus };
 }
 
 function restartFeedFetchInterval() {
@@ -1247,6 +1277,7 @@ module.exports = {
   checkFeed,
   checkAllFeeds,
   forceRefreshAllFeeds,
+  getThreatFeedWorkerStatus,
   seedDefaults,
   fetchFeedContent,
   extractIOCs,

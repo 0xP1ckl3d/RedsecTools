@@ -7,6 +7,13 @@ const { logWarn } = require("../logger");
 const MAX_ATTEMPTS = 5;
 const MAX_RESPONSE_BYTES = 64 * 1024;
 const DEFAULT_TIMEOUT_MS = 10000;
+const workerStatus = {
+  running: false,
+  intervalMs: null,
+  lastRunAt: null,
+  lastProcessed: null,
+  lastError: null,
+};
 
 function computeWebhookSignature(secret, deliveryId, eventType, body) {
   return `sha256=${crypto
@@ -141,13 +148,27 @@ function enqueueWebhookEvent(database, eventType, payload) {
 }
 
 function startWebhookWorker(database, { intervalMs = 60 * 1000 } = {}) {
+  workerStatus.running = true;
+  workerStatus.intervalMs = intervalMs;
   const timer = setInterval(() => {
-    deliverPendingWebhooks(database).catch((error) => {
-      logWarn("webhook:worker_failed", { message: error.message });
-    });
+    deliverPendingWebhooks(database)
+      .then((processed) => {
+        workerStatus.lastRunAt = new Date().toISOString();
+        workerStatus.lastProcessed = processed;
+        workerStatus.lastError = null;
+      })
+      .catch((error) => {
+        workerStatus.lastRunAt = new Date().toISOString();
+        workerStatus.lastError = error.message;
+        logWarn("webhook:worker_failed", { message: error.message });
+      });
   }, intervalMs);
   timer.unref?.();
   return timer;
+}
+
+function getWebhookWorkerStatus() {
+  return { ...workerStatus };
 }
 
 module.exports = {
@@ -156,5 +177,6 @@ module.exports = {
   deliverPendingWebhooks,
   deliverWebhookDelivery,
   enqueueWebhookEvent,
+  getWebhookWorkerStatus,
   startWebhookWorker,
 };

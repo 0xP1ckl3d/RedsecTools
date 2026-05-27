@@ -8,6 +8,7 @@ const { logWarn } = require("./core/logger");
 
 const COOKIE_SECRET = process.env.COOKIE_SECRET;
 const userConnections = new Map();
+let initialized = false;
 
 function parseCookies(req) {
   return new Promise((resolve, reject) => {
@@ -45,6 +46,7 @@ function pushCallbackEvent(userId, event) {
 
 function initCallbackWebSocket(server) {
   const wss = new WebSocketServer({ noServer: true });
+  initialized = true;
 
   server.on("upgrade", (req, socket, head) => {
     if (req.url !== "/ws/callback") return;
@@ -83,4 +85,15 @@ function initCallbackWebSocket(server) {
   });
 }
 
-module.exports = { initCallbackWebSocket, pushCallbackEvent };
+function getCallbackWebSocketStatus() {
+  let connections = 0;
+  for (const sockets of userConnections.values()) connections += sockets.size;
+  return {
+    name: "Callback MiniTool",
+    initialized,
+    connectedUsers: userConnections.size,
+    connections,
+  };
+}
+
+module.exports = { getCallbackWebSocketStatus, initCallbackWebSocket, pushCallbackEvent };

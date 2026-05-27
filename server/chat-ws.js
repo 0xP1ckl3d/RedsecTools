@@ -6,6 +6,7 @@ const COOKIE_SECRET = process.env.COOKIE_SECRET;
 
 // userId -> Set<ws>
 const userConnections = new Map();
+let initialized = false;
 
 // Heartbeat interval (30s)
 const HEARTBEAT_INTERVAL = 30000;
@@ -141,6 +142,7 @@ function isMemberOf(userId, conversationId) {
  */
 function initWebSocket(server) {
   const wss = new WebSocketServer({ noServer: true });
+  initialized = true;
 
   server.on("upgrade", (req, socket, head) => {
     // Only handle /ws path
@@ -286,4 +288,15 @@ function initWebSocket(server) {
   return wss;
 }
 
-module.exports = { initWebSocket, broadcastToConversation, broadcastToUser };
+function getChatWebSocketStatus() {
+  let connections = 0;
+  for (const sockets of userConnections.values()) connections += sockets.size;
+  return {
+    name: "RedSecTeam",
+    initialized,
+    connectedUsers: userConnections.size,
+    connections,
+  };
+}
+
+module.exports = { initWebSocket, broadcastToConversation, broadcastToUser, getChatWebSocketStatus };

@@ -7,6 +7,7 @@ const { logWarn } = require("./core/logger");
 const COOKIE_SECRET = process.env.COOKIE_SECRET;
 
 const userConnections = new Map();
+let initialized = false;
 
 const HEARTBEAT_INTERVAL = 30000;
 
@@ -82,6 +83,7 @@ function pushUnreadCountToUser(userId) {
 
 function initNotificationWebSocket(server) {
   const wss = new WebSocketServer({ noServer: true });
+  initialized = true;
 
   server.on("upgrade", (req, socket, head) => {
     if (req.url !== "/ws/notifications") return;
@@ -162,7 +164,19 @@ function initNotificationWebSocket(server) {
   return wss;
 }
 
+function getNotificationWebSocketStatus() {
+  let connections = 0;
+  for (const sockets of userConnections.values()) connections += sockets.size;
+  return {
+    name: "Notifications",
+    initialized,
+    connectedUsers: userConnections.size,
+    connections,
+  };
+}
+
 module.exports = {
+  getNotificationWebSocketStatus,
   initNotificationWebSocket,
   pushNotificationToUser,
   pushUnreadCountToUser,
