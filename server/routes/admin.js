@@ -14,7 +14,7 @@ const {
   getFileStats, listFiles, deleteFile, bulkDeleteFiles,
   listUsers, getUserById, deleteUserById, suspendUserById, unsuspendUserById,
   updateUserDetails, getUserByEmail, getUserByUsername,
-  getRoleById,
+  getRoleById, listRoles,
   createInvite, listInvites, markInviteUsed, revokeInvite,
   createPasswordReset,
   getSmtpConfig, setSmtpConfig,
@@ -72,6 +72,7 @@ const {
 
 const router = Router();
 const swaggerUiAssetPath = require("swagger-ui-dist").absolutePath();
+const REPO_ROOT = path.join(__dirname, "..", "..");
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const SITE_PRIMARY_THEMES = new Set(["red", "green", "blue", "orange", "purple"]);
@@ -87,6 +88,32 @@ const WEBHOOK_EVENTS = Object.freeze([
   "webhook.updated",
   "webhook.deleted",
   "webhook.test",
+]);
+const ADMIN_DOCS = Object.freeze({
+  "production": path.join(REPO_ROOT, "docs", "deployment", "production.md"),
+  "restore": path.join(REPO_ROOT, "docs", "deployment", "restore.md"),
+  "release-checklist": path.join(REPO_ROOT, "RELEASE_CHECKLIST.md"),
+  "admin-operations": path.join(REPO_ROOT, "docs", "deployment", "admin-operations.md"),
+  "ui-patterns": path.join(REPO_ROOT, "docs", "development", "ui-patterns.md"),
+});
+const HIGH_RISK_RBAC_PERMISSIONS = Object.freeze([
+  "admin.access",
+  "admin.manage",
+  "users.manage",
+  "roles.manage",
+  "reporter.manage_templates",
+  "reporter.review",
+  "reporter.approve",
+  "engage.manage_all",
+  "engage.commercial",
+  "threat.manage",
+  "redsecai.admin",
+  "ai.admin",
+  "minitools.admin",
+  "minitools.configure",
+  "api.manage",
+  "webhooks.manage",
+  "service_accounts.manage",
 ]);
 
 function adminCookieOptions() {
@@ -499,6 +526,7 @@ router.get("/api/security-posture", requireAdmin, (req, res) => {
     controls: {
       adminReauthRequired: isAdminReauthRequired(),
       adminReauthWindowSeconds: ADMIN_REAUTH_WINDOW_SECONDS,
+      mfaRequired: getSetting("mfa_required") === "true",
       ssoEnabled: sso.enabled,
       ssoProvider: sso.provider,
       openApiEnabled: flags.openApiEnabled,
@@ -574,6 +602,129 @@ router.get("/api/platform-health", requireAdmin, (req, res) => {
   });
 });
 
+router.get("/docs/:docId", requireAdmin, (req, res) => {
+  const docPath = ADMIN_DOCS[req.params.docId];
+  if (!docPath) return res.status(404).send("Document not found");
+  res.setHeader("Cache-Control", "no-store");
+  res.type("text/markdown").sendFile(docPath);
+});
+
+function parseRetentionDays(value, fallback) {
+  return parseInteger(value, { min: 30, max: 3650, fallback });
+}
+
+router.get("/api/deployment-retention", requireAdmin, (req, res) => {
+  res.json({
+    auditEventRetentionDays: parseRetentionDays(getSetting("audit_event_retention_days"), 365),
+    automaticCleanup: false,
+    sensitiveDataNote: "Audit metadata may contain operational and client context after server-side redaction.",
+  });
+});
+
+router.post("/api/deployment-retention", requireAdmin, requireRecentAdminAuth, (req, res) => {
+  const days = parseRetentionDays(req.body?.auditEventRetentionDays, null);
+  if (!days) return res.status(400).json({ error: "Audit event retention must be between 30 and 3650 days" });
+  setSetting("audit_event_retention_days", String(days));
+  auditAdmin(req, {
+    category: "deployment",
+    action: "audit_retention_updated",
+    targetType: "setting",
+    targetId: "audit_event_retention_days",
+    metadata: { days },
+  });
+  res.json({ auditEventRetentionDays: days, automaticCleanup: false });
+});
+
+function buildRbacReview() {
+  const users = listUsers(1, 10000).users || [];
+  const roles = listRoles();
+  const rolesById = new Map(roles.map((role) => [role.id, role]));
+  const userCounts = new Map();
+  for (const user of users) {
+    const key = user.roleId || "__none__";
+    userCounts.set(key, (userCounts.get(key) || 0) + 1);
+  }
+
+  const highRiskSet = new Set(HIGH_RISK_RBAC_PERMISSIONS);
+  const permissionLabel = new Map(PERMISSION_DEFINITIONS.map((definition) => [definition.key, definition.label || definition.key]));
+  const reviewedRoles = roles.map((role) => {
+    const highRiskPermissions = (role.permissions || []).filter((permission) => (
+      highRiskSet.has(permission)
+      || permission.endsWith(".manage")
+      || permission.includes("manage_")
+      || permission.includes("admin")
+      || permission.includes("approve")
+      || permission.includes("review")
+    ));
+    return {
+      id: role.id,
+      key: role.key,
+      name: role.name,
+      userCount: userCounts.get(role.id) || 0,
+      highRiskPermissions,
+      highRiskLabels: highRiskPermissions.map((permission) => permissionLabel.get(permission) || permission),
+    };
+  });
+
+  const adminEquivalentUsers = users.filter((user) => {
+    const role = rolesById.get(user.roleId);
+    const permissions = role?.permissions || [];
+    return role?.key === "admin" || permissions.some((permission) => permission.startsWith("admin.") || permission.includes("roles.manage") || permission.includes("users.manage"));
+  }).map((user) => ({
+    id: user.id,
+    username: user.username,
+    roleName: user.roleName || null,
+  }));
+
+  const usersWithoutMfa = users
+    .filter((user) => !user.suspended && !getUserMFA(user.id)?.enabled)
+    .map((user) => ({ id: user.id, username: user.username, roleName: user.roleName || null }));
+  const usersWithoutRole = users
+    .filter((user) => !user.roleId)
+    .map((user) => ({ id: user.id, username: user.username }));
+  const serviceAccounts = listServiceAccounts().map((account) => {
+    const activeTokens = (account.tokens || []).filter((token) => !token.revokedAt);
+    return {
+      id: account.id,
+      name: account.name,
+      enabled: account.enabled,
+      scopeCount: (account.scopes || []).length,
+      scopes: account.scopes || [],
+      activeTokens: activeTokens.length,
+      expiringTokens: activeTokens.filter((token) => token.expiresAt).length,
+      lastUsedAt: activeTokens.map((token) => token.lastUsedAt).filter(Boolean).sort((a, b) => b - a)[0] || null,
+    };
+  });
+
+  const highRiskRoles = reviewedRoles.filter((role) => role.highRiskPermissions.length > 0);
+  const emptyRoles = reviewedRoles.filter((role) => role.userCount === 0);
+  return {
+    summary: {
+      roleCount: roles.length,
+      emptyRoleCount: emptyRoles.length,
+      highRiskRoleCount: highRiskRoles.length,
+      userCount: users.length,
+      adminEquivalentUsers: adminEquivalentUsers.length,
+      usersWithoutMfa: usersWithoutMfa.length,
+      usersWithoutRole: usersWithoutRole.length,
+      serviceAccountCount: serviceAccounts.length,
+      activeServiceTokens: serviceAccounts.reduce((sum, account) => sum + account.activeTokens, 0),
+    },
+    roles: reviewedRoles,
+    highRiskRoles,
+    emptyRoles,
+    adminEquivalentUsers,
+    usersWithoutMfa,
+    usersWithoutRole,
+    serviceAccounts,
+    highRiskPermissions: HIGH_RISK_RBAC_PERMISSIONS,
+  };
+}
+
+router.get("/api/rbac-review", requireAdmin, (req, res) => {
+  res.json(buildRbacReview());
+});
+
 // GET /admin/api/audit-events
 router.get("/api/audit-events", requireAdmin, (req, res) => {
   const limit = Math.min(500, Math.max(1, parseInt(req.query.limit, 10) || 100));
@@ -594,7 +745,17 @@ router.get("/api/audit-events", requireAdmin, (req, res) => {
 
 // GET /admin/api/audit-events.csv
 router.get("/api/audit-events.csv", requireAdmin, (req, res) => {
-  const data = listAuditEvents({ limit: 500, offset: 0 });
+  const data = listAuditEvents({
+    limit: 500,
+    offset: 0,
+    actorUserId: typeof req.query.actorUserId === "string" && req.query.actorUserId ? req.query.actorUserId : null,
+    category: typeof req.query.category === "string" && req.query.category ? req.query.category : null,
+    action: typeof req.query.action === "string" && req.query.action ? req.query.action : null,
+    outcome: typeof req.query.outcome === "string" && req.query.outcome ? req.query.outcome : null,
+    targetType: typeof req.query.targetType === "string" && req.query.targetType ? req.query.targetType : null,
+    fromTs: parseAuditTimestamp(req.query.from),
+    toTs: parseAuditTimestamp(req.query.to),
+  });
   const headers = ["createdAt", "actorUsername", "actorUserId", "category", "action", "targetType", "targetId", "outcome", "metadata"];
   const rows = data.events.map((event) => headers.map((field) => {
     const value = field === "metadata" ? JSON.stringify(event.metadata) : event[field];
@@ -1269,10 +1430,23 @@ router.post("/api/backup/export", requireAdmin, requireRecentAdminAuth, async (r
       action: "backup_export",
       targetType: "database",
       outcome: "success",
-      metadata: { bytes: backup.length },
+      metadata: { bytes: backup.length, format: backup.manifest?.format, latestMigration: backup.manifest?.latestMigration },
     });
     res.setHeader("Content-Type", "application/octet-stream");
     res.setHeader("Content-Disposition", `attachment; filename="redsectools-backup-${new Date().toISOString().slice(0, 10)}.rsecbackup"`);
+    if (backup.manifest) {
+      const manifestSummary = {
+        format: backup.manifest.format,
+        appVersion: backup.manifest.appVersion,
+        buildCommit: backup.manifest.buildCommit,
+        latestMigration: backup.manifest.latestMigration,
+        fileCount: backup.manifest.fileCount,
+        databasePath: backup.manifest.databasePath,
+        excludedPaths: backup.manifest.excludedPaths,
+        encrypted: backup.manifest.encrypted,
+      };
+      res.setHeader("X-RedSecTools-Backup-Manifest", Buffer.from(JSON.stringify(manifestSummary), "utf8").toString("base64"));
+    }
     res.send(backup);
   } catch (error) {
     auditAdmin(req, {

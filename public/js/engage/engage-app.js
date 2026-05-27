@@ -473,6 +473,10 @@ function renderEngageAbout() {
       <h3 class="text-base font-semibold mb-3">Permission Model</h3>
       <p class="text-secondary leading-relaxed">RedSecEngage uses server-side RBAC. Commercial values, all-client visibility, QA management, assignment, and delivery actions are shown and enforced according to the logged-in user's permissions. Hidden UI is not treated as authorisation.</p>
     </section>
+    <section class="card">
+      <h3 class="text-base font-semibold mb-3">Data Boundary</h3>
+      <p class="text-secondary leading-relaxed">Engage stores client, contact, opportunity, engagement, QA, note, assignment, cross-tool link, and activity data on the server. It does not use browser-side encryption. RedSecAI can receive scoped Engage context for permitted users when enabled, with commercial fields still gated by permissions.</p>
+    </section>
   </div>`;
 }
 

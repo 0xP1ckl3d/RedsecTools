@@ -448,7 +448,7 @@
               <span class="badge badge-gray">Tags</span>
             </div>
             <h2 class="text-lg font-semibold mt-6">Feed Sources</h2>
-            <p>Configure feed sources from RSS feeds, websites, REST APIs, and Tor onion services. Each source runs on its own polling schedule and normalises content into a unified stream for keyword scanning.</p>
+            <p>Configure feed sources from RSS feeds, websites, REST APIs, and Tor onion services. Each source runs on its own polling schedule and normalises content into a unified stream for keyword scanning. Server-side fetches use public-target validation, timeout, redirect, and response-size controls; onion feeds require a configured Tor/SOCKS path.</p>
             <h2 class="text-lg font-semibold mt-6">Keyword Monitoring</h2>
             <p>Define keyword rules using plain text matching or full regular expression patterns. Rules are evaluated against every ingested item and grouped into logical sets for targeted alerting.</p>
             <h2 class="text-lg font-semibold">Alert System</h2>
@@ -457,6 +457,8 @@
             <p>Route alerts to the right people through webhook, email, and Discord notification channels. Each channel can be filtered by criticality level, feed source, or keyword match set.</p>
             <h2 class="text-lg font-semibold">Tags</h2>
             <p>Apply tags to feeds, keywords, and alerts for cross-cutting organisation. Filter dashboards and reports by tag to focus on specific threat categories, campaigns, or operational contexts.</p>
+            <h2 class="text-lg font-semibold">Data and AI boundaries</h2>
+            <p>RedSecThreat stores feed metadata, fetched article summaries/content, alerts, IOCs, tags, notification settings, and feed health. If RedSecAI is enabled, it can receive scoped threat context for permitted users, but it does not receive browser-encrypted paste, share, RedSecTeam, or vault plaintext.</p>
           </div>
         </section>
 

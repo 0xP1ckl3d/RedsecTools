@@ -111,6 +111,7 @@
                 <h2 class="text-lg font-semibold">What is <span data-bp>RedSec</span>AI?</h2>
               </div>
               <p class="text-secondary text-sm leading-relaxed">RedSecAI is a local or Ollama-backed assistant for RedSecTools. It can answer general questions, inspect scoped RedSecTools data through approved tools, and prepare platform actions for you to confirm. It runs under your logged-in session, so role permissions still apply.</p>
+              <p class="text-secondary text-sm leading-relaxed mt-3">Admins configure whether the provider is local or external. External/cloud-compatible endpoints may receive prompts, scoped tool context, and model-visible results, so provider settings should be reviewed before enabling AI for operational use.</p>
             </div>
 
             <div class="grid gap-6 lg:grid-cols-2">
@@ -139,6 +140,7 @@
                   <li><strong class="text-primary">No RBAC bypass</strong> - it cannot perform actions your account is not allowed to perform.</li>
                   <li><strong class="text-primary">No arbitrary backend access</strong> - it can only use the scoped AI tools exposed by RedSecTools.</li>
                   <li><strong class="text-primary">No silent writes</strong> - create, update, delete, assign, publish, and scheduling actions require a confirmation card.</li>
+                  <li><strong class="text-primary">No direct database access</strong> - it uses governed API tools and does not query storage directly.</li>
                 </ul>
               </section>
             </div>

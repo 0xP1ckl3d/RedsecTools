@@ -122,7 +122,8 @@ Operational checks:
 
 - Log in with a normal user account.
 - Open `/admin` while signed in and unlock with `ADMIN_PASSWORD`.
-- Confirm Admin > Deployment shows database connectivity, latest migration, data directory size, worker status, and no unexpected warnings.
+- Confirm **Admin > Server Settings > Deployment** shows database connectivity, latest migration, data directory size, Platform Health, worker status, and no unexpected warnings.
+- Confirm **Admin > Server Settings > Access Controls > RBAC Review** still shows the expected role/user/MFA/service-account state.
 - Confirm the latest migration matches the expected release.
 - Open RedSecPaste, RedSecShare, RedSecTeam, RedSecVault, Reporter, and MiniTools areas that are enabled in the restored deployment.
 - Send a test SMTP email if SMTP is configured.

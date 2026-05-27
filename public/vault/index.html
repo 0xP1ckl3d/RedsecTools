@@ -166,11 +166,17 @@
               <li>AES-256-GCM encryption via Web Crypto API</li>
               <li>PBKDF2 key derivation with 600K iterations (personal vaults)</li>
               <li>RSA-OAEP 2048-bit key wrapping (team vaults, entry sharing)</li>
-              <li>Server stores only opaque ciphertext — zero server-side crypto</li>
+              <li>Plaintext content is encrypted in the browser before being submitted to the server. During normal operation, the server stores opaque ciphertext and does not receive vault plaintext.</li>
               <li>Built-in TOTP code generation using HMAC-SHA1/SHA256/SHA512</li>
               <li>Password generator with configurable length and character sets</li>
               <li>Vault audit log for access tracking</li>
               <li>Entry version history</li>
+            </ul>
+            <h3 class="font-bold text-base mt-6">Limits and admin visibility</h3>
+            <ul class="list-disc list-inside space-y-1 text-muted">
+              <li>Admins can see vault metadata, membership, audit records, and counts, not decrypted entry values during normal operation.</li>
+              <li>RedSecAI is not given vault plaintext or browser-held encryption keys.</li>
+              <li>This model does not protect against a malicious or compromised server that serves modified JavaScript to clients.</li>
             </ul>
             <div class="flex gap-2 mt-6">
               <span class="badge badge-red">AES-256-GCM</span>

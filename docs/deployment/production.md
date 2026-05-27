@@ -97,7 +97,7 @@ WebSocket proxying must be enabled for:
 
 ## SMTP
 
-SMTP is configured after login in Admin > Settings. Use the built-in test control before relying on invites, reset emails, or share notifications.
+SMTP is configured after login in **Admin > Server Settings > SMTP**. Use the built-in test control before relying on invites, reset emails, or share notifications.
 
 ## RedSecAI And Ollama
 
@@ -147,7 +147,8 @@ Store backups off-host and protect the passphrase separately.
    docker compose logs --tail=100 redsectools
    ```
 
-8. Confirm Admin > Deployment shows the expected version, build commit, and latest migration.
+8. Confirm **Admin > Server Settings > Deployment** shows the expected version, build commit, latest migration, deployment posture, platform health, audit events, and encrypted backup controls.
+9. Confirm **Admin > Server Settings > Access Controls > RBAC Review** has no unexpected admin-equivalent users, high-risk roles, or MFA gaps.
 
 ## Rollback
 
@@ -165,7 +166,7 @@ Store backups off-host and protect the passphrase separately.
    docker compose up -d
    ```
 
-5. Check `/readyz`, login, Admin > Deployment, and the latest migration shown in the UI.
+5. Check `/readyz`, login, **Admin > Server Settings > Deployment**, and the latest migration shown in the UI.
 
 Do not roll back application code while keeping a newer migrated database unless the release notes explicitly state that it is safe.
 
@@ -174,7 +175,8 @@ Do not roll back application code while keeping a newer migrated database unless
 - `/healthz` returns `ok`.
 - `/readyz` returns `ready`.
 - Admin login works.
-- Admin > Deployment shows version, build commit, latest migration, database size, data directory size, and worker status.
+- Admin > Server Settings > Deployment shows version, build commit, latest migration, database size, data directory size, readiness checklist, Platform Health, audit events, backup controls, and worker status.
+- Admin > Server Settings > Access Controls shows RBAC Review.
 - SMTP test succeeds if email is required.
 - Reporter PDF generation works if Reporter is enabled.
 - WebSockets connect for RedSecTeam, notifications, RedSecAI, and callback MiniTool where used.

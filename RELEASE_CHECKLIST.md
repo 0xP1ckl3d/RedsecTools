@@ -24,8 +24,13 @@ node --test tests/route-contracts.test.js tests/migrations.test.js
 - `/healthz` returns `ok`.
 - `/readyz` returns `ready`.
 - Admin > Deployment shows version, build commit, latest migration, database status, storage status, worker status, and recent warnings.
+- Admin > Deployment readiness checklist has been reviewed and any warnings are resolved or explicitly accepted.
+- Admin > Deployment audit filters and high-risk quick filters load expected events.
 - Admin backup export completes and includes a manifest.
 - Restore runbook has been exercised against a staging or disposable environment.
+- Admin > Access Controls > RBAC Review has been reviewed for high-risk roles, admin-equivalent users, MFA gaps, service accounts, and empty roles.
+- Admin > Session Security integration toggles for OpenAPI, service accounts, SSO, and webhooks match the release intent.
+- Tool Settings data-boundary and retention notes have been reviewed for enabled modules.
 - SMTP test completed if email is configured.
 - Reporter PDF smoke test completed if Reporter is enabled.
 - WebSocket paths verified behind the reverse proxy.

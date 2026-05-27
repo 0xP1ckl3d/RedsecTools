@@ -5,6 +5,9 @@
 - Standardised Docker Compose as the documented production deployment path.
 - Added `/api/version` for package version, build commit, runtime, environment, and latest migration visibility.
 - Expanded Admin > Deployment with Platform Health covering runtime, database, storage, SMTP, PDF rendering, WebSockets, RedSecAI, workers, LOL Lookup cache state, cleanup state, and recent warnings.
+- Consolidated governance improvements into existing Admin surfaces: Deployment readiness checklist, clearer Platform Health status, audit filters and high-risk quick filters, backup passphrase confirmation and manifest summary, operational docs links, Access Controls RBAC review, and Session Security integration warnings.
+- Added concise data-boundary and retention notes to existing Tool Settings surfaces for MiniTools, RedSecAI, Threat, Reporter, Engage, Share, and Vault.
+- Added Admin operations and UI patterns documentation aligned to the current Admin layout.
 - Upgraded Admin backup export from a database-only export to an encrypted platform archive with manifest metadata and persistent data files.
 - Added production deployment and restore runbooks plus a release checklist.
 - Tightened route-contract tests for undocumented routes, high-risk admin writes, MiniTools permissions, and MiniTools feature-flag middleware.

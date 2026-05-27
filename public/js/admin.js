@@ -277,6 +277,7 @@ function updateAdminVisibleTabs() {
   }
   if (visibleTabs.has("roles")) {
     loadRoles();
+    loadRbacReview();
   }
   if (visibleTabs.has("bulletins")) {
     loadBulletinsAdmin();
@@ -2113,6 +2114,7 @@ const securityOpenApiEnabled = document.getElementById("security-openapi-enabled
 const securityServiceAccountsEnabled = document.getElementById("security-service-accounts-enabled");
 const securityWebhooksEnabled = document.getElementById("security-webhooks-enabled");
 const openApiAdminLink = document.getElementById("openapi-admin-link");
+const deploymentOpenApiDocsLink = document.getElementById("deployment-openapi-docs-link");
 const saveSecurityBtn = document.getElementById("save-security-btn");
 const securityResult = document.getElementById("security-result");
 const ssoEnabled = document.getElementById("sso-enabled");
@@ -2184,6 +2186,7 @@ async function loadSecuritySettings() {
     if (securityServiceAccountsEnabled) securityServiceAccountsEnabled.checked = data.serviceAccountsEnabled || false;
     if (securityWebhooksEnabled) securityWebhooksEnabled.checked = data.webhooksEnabled || false;
     if (openApiAdminLink) openApiAdminLink.classList.toggle("hidden", !data.openApiEnabled);
+    if (deploymentOpenApiDocsLink) deploymentOpenApiDocsLink.classList.toggle("hidden", !data.openApiEnabled);
     serviceAccountDisabled?.classList.toggle("hidden", !!data.serviceAccountsEnabled);
     webhookDisabled?.classList.toggle("hidden", !!data.webhooksEnabled);
   } catch {}
@@ -2409,22 +2412,27 @@ async function loadServiceAccountControls() {
     }
   }
   if (!enabled) {
-    setTableState(serviceAccountsBody, 5, "Service-account API is disabled.", "muted", "py-3");
+    setTableState(serviceAccountsBody, 7, "Service-account API is disabled.", "muted", "py-3");
     return;
   }
   const res = await api("/api/service-accounts").catch(() => null);
   if (!res?.ok) {
-    setTableState(serviceAccountsBody, 5, "Failed to load service accounts.", "error", "py-3");
+    setTableState(serviceAccountsBody, 7, "Failed to load service accounts.", "error", "py-3");
     return;
   }
   const data = await res.json();
   const rows = data.serviceAccounts || [];
   if (!rows.length) {
-    setTableState(serviceAccountsBody, 5, "No service accounts yet.", "muted", "py-3");
+    setTableState(serviceAccountsBody, 7, "No service accounts yet.", "muted", "py-3");
     return;
   }
   serviceAccountsBody.innerHTML = rows.map((account) => {
     const activeTokens = (account.tokens || []).filter((token) => !token.revokedAt);
+    const lastUsed = activeTokens
+      .map((token) => token.lastUsedAt)
+      .filter(Boolean)
+      .sort((a, b) => b - a)[0] || null;
+    const expiries = activeTokens.map((token) => token.expiresAt).filter(Boolean).sort((a, b) => a - b);
     return `
       <tr>
         <td>
@@ -2433,6 +2441,8 @@ async function loadServiceAccountControls() {
         </td>
         <td>${(account.scopes || []).map((scope) => badge(scope, "gray")).join(" ")}</td>
         <td>${activeTokens.length} active</td>
+        <td class="text-xs">${lastUsed ? formatTime(lastUsed) : "Never"}</td>
+        <td class="text-xs">${expiries.length ? formatTime(expiries[0]) : "No expiry"}</td>
         <td>${badge(account.enabled ? "Enabled" : "Disabled", account.enabled ? "green" : "gray")}</td>
         <td class="space-x-2">
           <button type="button" class="btn-secondary text-xs service-edit-btn" data-id="${escapeHtml(account.id)}">Edit Scopes</button>
@@ -2441,7 +2451,7 @@ async function loadServiceAccountControls() {
         </td>
       </tr>
       <tr class="service-account-edit-row hidden" data-edit-row="${safeAttr(account.id)}" data-service-name="${safeAttr(account.name)}" data-service-description="${safeAttr(account.description || "")}" data-service-enabled="${account.enabled ? "true" : "false"}">
-        <td colspan="5">
+        <td colspan="7">
           <div class="info-box space-y-4">
             <p class="text-sm text-muted">Update scopes for ${escapeHtml(account.name)}. Existing tokens keep their token value and use the new scopes immediately.</p>
             <div class="service-account-edit-scopes space-y-3" data-service-edit-scopes>
@@ -2636,12 +2646,30 @@ const deploymentMigrationsBody = document.getElementById("deployment-migrations-
 const platformHealthGrid = document.getElementById("platform-health-grid");
 const platformWorkersGrid = document.getElementById("platform-workers-grid");
 const platformWarningList = document.getElementById("platform-warning-list");
+const platformOverallStatus = document.getElementById("platform-overall-status");
+const platformHealthRefreshed = document.getElementById("platform-health-refreshed");
+const deploymentReadinessList = document.getElementById("deployment-readiness-list");
 const auditEventsBody = document.getElementById("audit-events-body");
 const auditRefreshBtn = document.getElementById("audit-refresh-btn");
 const auditExportBtn = document.getElementById("audit-export-btn");
+const auditFilterCategory = document.getElementById("audit-filter-category");
+const auditFilterAction = document.getElementById("audit-filter-action");
+const auditFilterOutcome = document.getElementById("audit-filter-outcome");
+const auditFilterActor = document.getElementById("audit-filter-actor");
+const auditFilterTargetType = document.getElementById("audit-filter-target-type");
+const auditFilterRange = document.getElementById("audit-filter-range");
+const auditQuickFilters = document.getElementById("audit-quick-filters");
+const auditRetentionDays = document.getElementById("audit-retention-days");
+const auditRetentionSaveBtn = document.getElementById("audit-retention-save-btn");
+const auditRetentionResult = document.getElementById("audit-retention-result");
 const backupPassphrase = document.getElementById("backup-passphrase");
+const backupPassphraseConfirm = document.getElementById("backup-passphrase-confirm");
 const backupExportBtn = document.getElementById("backup-export-btn");
 const backupResult = document.getElementById("backup-result");
+const backupManifestSummary = document.getElementById("backup-manifest-summary");
+const rbacReviewGrid = document.getElementById("rbac-review-grid");
+const rbacReviewDetail = document.getElementById("rbac-review-detail");
+const rbacReviewRefreshBtn = document.getElementById("rbac-review-refresh-btn");
 
 function formatBytes(bytes) {
   const value = Number(bytes) || 0;
@@ -2708,19 +2736,63 @@ function statusBadge(ok, label) {
   return `<span class="badge ${badgeClass}">${escapeHtml(label || (ok ? "ok" : "check"))}</span>`;
 }
 
+function toneBadge(tone, label) {
+  const badgeClass = tone === "good" ? "badge-green" : tone === "bad" ? "badge-red" : tone === "warn" ? "badge-amber" : "badge-gray";
+  return `<span class="badge ${badgeClass}">${escapeHtml(label)}</span>`;
+}
+
+function renderReadinessChecklist(posture, health) {
+  if (!deploymentReadinessList) return;
+  const warnings = posture.warnings || [];
+  const warningCodes = new Set(warnings.map((warning) => warning.code));
+  const controls = posture.controls || {};
+  const services = health?.services || {};
+  const counts = posture.counts || {};
+  const checks = [
+    ["COOKIE_SECRET configured", !warningCodes.has("cookie_secret_missing") && !warningCodes.has("cookie_secret_default"), "Set a strong COOKIE_SECRET before production use."],
+    ["ADMIN_PASSWORD configured", !warningCodes.has("admin_password_missing") && !warningCodes.has("admin_password_default"), "Set a non-default admin unlock password."],
+    ["Trusted public origins configured", !warningCodes.has("trusted_origins_missing"), "Set TRUSTED_PUBLIC_ORIGINS to the deployed HTTPS origin."],
+    ["COOKIE_SECURE appropriate", posture.deployment?.cookieSecure || posture.app?.environment !== "production", "Enable secure cookies behind HTTPS in production."],
+    ["SMTP configured", !!services.smtp?.configured, "Configure SMTP for invites, resets, and notifications."],
+    ["First user exists", (counts.users || 0) > 0, "Create the first user and confirm admin login behaviour."],
+    ["Roles reviewed", true, "Review configured roles and RBAC Review before release."],
+    ["MFA requirement reviewed", controls.mfaRequired || (counts.usersWithoutMfa || 0) === 0, "Require MFA or explicitly accept users without MFA."],
+    ["MiniTool visibility reviewed", true, "Confirm enabled MiniTools match your intended data exposure."],
+    ["Backup export tested", false, "Export a backup and record the verification in the release checklist."],
+    ["Restore validation tested", false, "Run the restore guide against a staging directory or test deployment."],
+    ["RedSecAI provider reviewed", !services.redsecAi?.enabled || !!services.redsecAi?.model, "Confirm model endpoint and data exposure before enabling AI."],
+    ["Integration surfaces intentional", !controls.openApiEnabled && !controls.serviceAccountsEnabled && !controls.webhooksEnabled, "OpenAPI, service accounts, and webhooks should be enabled only when deliberately operated."],
+    ["Deployment warnings reviewed", warnings.length === 0, "Resolve or consciously accept the warnings above."],
+  ];
+  deploymentReadinessList.innerHTML = checks.map(([label, ok, hint]) => `
+    <div class="info-box flex items-start justify-between gap-3">
+      <div>
+        <div class="font-semibold text-primary">${escapeHtml(label)}</div>
+        <div class="text-xs text-muted mt-1">${escapeHtml(hint)}</div>
+      </div>
+      ${toneBadge(ok ? "good" : "warn", ok ? "Ready" : "Review")}
+    </div>
+  `).join("");
+}
+
 function renderPlatformHealth(data) {
   if (!platformHealthGrid || !platformWorkersGrid || !platformWarningList) return;
   const services = data.services || {};
   const disk = data.storage?.disk || {};
   const lolSources = services.lolLookup?.sources || [];
   const staleLol = lolSources.filter((source) => source.stale || source.lastError).length;
+  const critical = !data.database?.connected || disk.availableBytes < 1024 * 1024 * 512;
+  const warning = staleLol > 0 || !services.smtp?.configured || services.pdfRenderer?.executableExists === false || (data.warnings || []).length > 0;
+  const overall = critical ? ["bad", "Degraded"] : warning ? ["warn", "Warning"] : ["good", "Healthy"];
+  if (platformOverallStatus) platformOverallStatus.innerHTML = toneBadge(overall[0], overall[1]);
+  if (platformHealthRefreshed) platformHealthRefreshed.textContent = `Last refreshed ${formatTime(data.generatedAt || new Date().toISOString())}`;
 
   platformHealthGrid.innerHTML = [
     deploymentMetric("App Version", data.app?.version || "unknown", data.app?.buildCommit ? `Commit ${data.app.buildCommit}` : "No build commit provided"),
     deploymentMetric("Runtime", formatDuration(data.app?.uptimeSeconds), `${data.app?.environment || "development"} / ${data.app?.node || ""}`),
-    deploymentMetric("Database", data.database?.connected ? "Connected" : "Failed", `${formatBytes(data.database?.sizeBytes)} / migration ${data.database?.latestMigration || "-"}`),
-    deploymentMetric("Data Directory", formatBytes(data.storage?.dataDirBytes), `${formatBytes(disk.availableBytes)} available`),
-    deploymentMetric("SMTP", services.smtp?.configured ? "Configured" : "Not configured", services.smtp?.host || "Admin > Settings"),
+    deploymentMetric("Database", data.database?.connected ? "Connected" : "Failed", `${data.database?.migrationCount || 0} migrations / latest ${data.database?.latestMigration || "-"}`),
+    deploymentMetric("Data Directory", formatBytes(data.storage?.dataDirBytes), `${formatBytes(disk.availableBytes)} available on disk`),
+    deploymentMetric("SMTP", services.smtp?.configured ? "Configured" : "Not configured", services.smtp?.configured ? services.smtp?.host : "Configure under Server Settings > SMTP"),
     deploymentMetric("PDF Renderer", services.pdfRenderer?.executableExists === false ? "Check path" : "Available", services.pdfRenderer?.executablePath || "Default runtime"),
     deploymentMetric("RedSecAI", services.redsecAi?.enabled ? "Enabled" : "Disabled", services.redsecAi?.model || ""),
     deploymentMetric("LOL Lookup", staleLol ? `${staleLol} stale source${staleLol === 1 ? "" : "s"}` : "Fresh", `${lolSources.reduce((sum, source) => sum + (source.entryCount || 0), 0)} entries`),
@@ -2819,16 +2891,69 @@ function renderAuditEvents(events) {
   }).join("");
 }
 
+function auditQueryString() {
+  const params = new URLSearchParams({ limit: "50" });
+  if (auditFilterCategory?.value.trim()) params.set("category", auditFilterCategory.value.trim());
+  if (auditFilterAction?.value.trim()) params.set("action", auditFilterAction.value.trim());
+  if (auditFilterOutcome?.value) params.set("outcome", auditFilterOutcome.value);
+  if (auditFilterActor?.value.trim()) params.set("actorUserId", auditFilterActor.value.trim());
+  if (auditFilterTargetType?.value.trim()) params.set("targetType", auditFilterTargetType.value.trim());
+  const now = Math.floor(Date.now() / 1000);
+  const ranges = { "1h": 3600, "24h": 86400, "7d": 604800, "30d": 2592000 };
+  if (auditFilterRange?.value && ranges[auditFilterRange.value]) params.set("from", String(now - ranges[auditFilterRange.value]));
+  return params.toString();
+}
+
+const AUDIT_QUICK_FILTERS = [
+  ["Admin logins", { category: "auth", action: "admin_login" }],
+  ["Failed logins", { category: "auth", outcome: "failure" }],
+  ["High-risk admin writes", { category: "admin" }],
+  ["Role changes", { targetType: "role" }],
+  ["User suspension/deletion", { targetType: "user" }],
+  ["MFA resets/disables", { action: "mfa_reset" }],
+  ["Service-account tokens", { targetType: "service_account" }],
+  ["Webhook changes", { targetType: "webhook" }],
+  ["Backup exports", { category: "deployment", action: "backup_export" }],
+  ["SSO settings", { category: "identity" }],
+  ["RedSecAI confirmed actions", { category: "redsecai", action: "action_confirmed" }],
+];
+
+function renderAuditQuickFilters() {
+  if (!auditQuickFilters) return;
+  auditQuickFilters.innerHTML = AUDIT_QUICK_FILTERS.map(([label], index) => `
+    <button type="button" class="btn-secondary text-xs" data-audit-quick-filter="${index}">${escapeHtml(label)}</button>
+  `).join("");
+}
+
+function applyAuditFilter(filter) {
+  if (auditFilterCategory) auditFilterCategory.value = filter.category || "";
+  if (auditFilterAction) auditFilterAction.value = filter.action || "";
+  if (auditFilterOutcome) auditFilterOutcome.value = filter.outcome || "";
+  if (auditFilterActor) auditFilterActor.value = "";
+  if (auditFilterTargetType) auditFilterTargetType.value = filter.targetType || "";
+  if (auditFilterRange) auditFilterRange.value = filter.range || "";
+}
+
 async function loadAuditEvents() {
   if (!auditEventsBody) return;
   try {
-    const res = await api("/api/audit-events?limit=25");
+    const res = await api(`/api/audit-events?${auditQueryString()}`);
     if (!res.ok) throw new Error("Audit request failed");
     const data = await res.json();
     renderAuditEvents(data.events || []);
   } catch {
     auditEventsBody.innerHTML = '<tr><td colspan="5" class="text-error">Failed to load audit events.</td></tr>';
   }
+}
+
+async function loadDeploymentRetention() {
+  if (!auditRetentionDays) return;
+  try {
+    const res = await api("/api/deployment-retention");
+    if (!res.ok) return;
+    const data = await res.json();
+    auditRetentionDays.value = data.auditEventRetentionDays || 365;
+  } catch {}
 }
 
 async function loadDeploymentQuality() {
@@ -2839,17 +2964,23 @@ async function loadDeploymentQuality() {
     ]);
     if (!postureRes.ok) throw new Error("Posture request failed");
     const data = await postureRes.json();
+    if (deploymentOpenApiDocsLink) deploymentOpenApiDocsLink.classList.toggle("hidden", !data.controls?.openApiEnabled);
     renderDeploymentWarnings(data.warnings || []);
     renderDeploymentSummary(data);
     renderMigrations(data.database?.migrations || []);
     if (healthRes.ok) {
-      renderPlatformHealth(await healthRes.json());
+      const health = await healthRes.json();
+      renderPlatformHealth(health);
+      renderReadinessChecklist(data, health);
+    } else {
+      renderReadinessChecklist(data, null);
     }
   } catch {
     if (deploymentWarnings) {
       deploymentWarnings.innerHTML = '<div class="info-box text-sm text-error">Failed to load deployment posture.</div>';
     }
   }
+  await loadDeploymentRetention();
   await loadAuditEvents();
 }
 
@@ -2873,15 +3004,41 @@ auditRefreshBtn?.addEventListener("click", () => {
 });
 
 auditExportBtn?.addEventListener("click", () => {
-  window.location.href = "/admin/api/audit-events.csv";
+  window.location.href = `/admin/api/audit-events.csv?${auditQueryString()}`;
+});
+
+renderAuditQuickFilters();
+auditQuickFilters?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-audit-quick-filter]");
+  if (!button) return;
+  const filter = AUDIT_QUICK_FILTERS[Number(button.dataset.auditQuickFilter)]?.[1] || {};
+  applyAuditFilter(filter);
+  loadAuditEvents();
+});
+[auditFilterCategory, auditFilterAction, auditFilterOutcome, auditFilterActor, auditFilterTargetType, auditFilterRange].forEach((input) => {
+  input?.addEventListener("change", loadAuditEvents);
+});
+
+auditRetentionSaveBtn?.addEventListener("click", async () => {
+  if (!auditRetentionDays || !auditRetentionResult) return;
+  const res = await api("/api/deployment-retention", {
+    method: "POST",
+    body: JSON.stringify({ auditEventRetentionDays: parseInt(auditRetentionDays.value, 10) }),
+  });
+  const data = await res.json().catch(() => ({}));
+  setInlineResult(auditRetentionResult, res.ok ? "Audit retention target saved" : data.error || "Failed to save retention", res.ok);
 });
 
 backupExportBtn?.addEventListener("click", async () => {
   if (!backupResult || !backupPassphrase) return;
   backupExportBtn.disabled = true;
   backupResult.classList.add("hidden");
+  backupManifestSummary?.classList.add("hidden");
 
   try {
+    if (backupPassphrase.value !== backupPassphraseConfirm?.value) {
+      throw new Error("Backup passphrases do not match");
+    }
     const res = await api("/api/backup/export", {
       method: "POST",
       body: JSON.stringify({ passphrase: backupPassphrase.value }),
@@ -2890,12 +3047,28 @@ backupExportBtn?.addEventListener("click", async () => {
       const data = await res.json().catch(() => ({}));
       throw new Error(data.error || "Backup export failed");
     }
+    const manifestHeader = res.headers.get("x-redsectools-backup-manifest");
     const blob = await res.blob();
     downloadBlob(blob, `redsectools-backup-${new Date().toISOString().slice(0, 10)}.rsecbackup`);
     backupPassphrase.value = "";
+    if (backupPassphraseConfirm) backupPassphraseConfirm.value = "";
     backupResult.textContent = "Encrypted backup exported";
     backupResult.className = "text-sm text-accent";
     backupResult.classList.remove("hidden");
+    if (backupManifestSummary && manifestHeader) {
+      const manifest = JSON.parse(atob(manifestHeader));
+      backupManifestSummary.innerHTML = `
+        <p class="font-semibold text-primary mb-2">Backup manifest summary</p>
+        <dl class="grid gap-2 text-xs">
+          <div><dt class="text-muted">Format</dt><dd>${escapeHtml(manifest.format || "-")}</dd></div>
+          <div><dt class="text-muted">App version / commit</dt><dd>${escapeHtml(`${manifest.appVersion || "-"} / ${manifest.buildCommit || "not provided"}`)}</dd></div>
+          <div><dt class="text-muted">Latest migration</dt><dd>${escapeHtml(manifest.latestMigration || "-")}</dd></div>
+          <div><dt class="text-muted">Included</dt><dd>${escapeHtml(`${manifest.fileCount || 0} files plus ${manifest.databasePath || "database"}`)}</dd></div>
+          <div><dt class="text-muted">Excluded</dt><dd>${escapeHtml((manifest.excludedPaths || []).join(", ") || "-")}</dd></div>
+        </dl>
+      `;
+      backupManifestSummary.classList.remove("hidden");
+    }
     loadAuditEvents();
   } catch (error) {
     backupResult.textContent = error.message || "Backup export failed";
@@ -2905,6 +3078,48 @@ backupExportBtn?.addEventListener("click", async () => {
     backupExportBtn.disabled = false;
   }
 });
+
+async function loadRbacReview() {
+  if (!rbacReviewGrid || !rbacReviewDetail) return;
+  try {
+    const res = await api("/api/rbac-review");
+    if (!res.ok) throw new Error("RBAC review failed");
+    const data = await res.json();
+    rbacReviewGrid.innerHTML = [
+      deploymentMetric("Roles", data.summary?.roleCount || 0, `${data.summary?.emptyRoleCount || 0} with no users`),
+      deploymentMetric("Admin-equivalent Users", data.summary?.adminEquivalentUsers || 0, "Users with admin-equivalent permissions"),
+      deploymentMetric("Users Without MFA", data.summary?.usersWithoutMfa || 0, "Active users without enabled MFA"),
+      deploymentMetric("Service Accounts", data.summary?.serviceAccountCount || 0, `${data.summary?.activeServiceTokens || 0} active tokens`),
+      deploymentMetric("High-risk Roles", data.summary?.highRiskRoleCount || 0, "Roles containing sensitive permissions"),
+      deploymentMetric("Fallback Role Gaps", data.summary?.usersWithoutRole || 0, "Users without assigned role"),
+    ].join("");
+    rbacReviewDetail.innerHTML = `
+      <div class="grid gap-3 lg:grid-cols-2">
+        <div class="info-box">
+          <h3 class="font-semibold text-primary mb-2">Users per role</h3>
+          <div class="space-y-1 text-sm">${(data.roles || []).map((role) => `<div class="flex justify-between gap-3"><span>${escapeHtml(role.name)}</span><span>${role.userCount}</span></div>`).join("") || '<p class="text-muted">No roles found.</p>'}</div>
+        </div>
+        <div class="info-box">
+          <h3 class="font-semibold text-primary mb-2">High-risk permissions</h3>
+          <div class="space-y-2 text-sm">${(data.highRiskRoles || []).map((role) => `<div><div class="font-medium">${escapeHtml(role.name)}</div><div>${role.highRiskPermissions.map((permission) => badge(permission, "amber")).join(" ")}</div></div>`).join("") || '<p class="text-muted">No high-risk role permissions detected.</p>'}</div>
+        </div>
+        <div class="info-box">
+          <h3 class="font-semibold text-primary mb-2">Admin-equivalent users</h3>
+          <div class="space-y-1 text-sm">${(data.adminEquivalentUsers || []).map((user) => `<div>${escapeHtml(user.username)} <span class="text-xs text-muted">${escapeHtml(user.roleName || "No role")}</span></div>`).join("") || '<p class="text-muted">None detected.</p>'}</div>
+        </div>
+        <div class="info-box">
+          <h3 class="font-semibold text-primary mb-2">Service account scope summary</h3>
+          <div class="space-y-1 text-sm">${(data.serviceAccounts || []).map((account) => `<div><span class="font-medium">${escapeHtml(account.name)}</span> <span class="text-xs text-muted">${account.scopeCount} scope(s), ${account.activeTokens} active token(s)</span></div>`).join("") || '<p class="text-muted">No service accounts configured.</p>'}</div>
+        </div>
+      </div>
+    `;
+  } catch {
+    rbacReviewGrid.innerHTML = '<div class="info-box text-error">Failed to load RBAC review.</div>';
+    rbacReviewDetail.innerHTML = "";
+  }
+}
+
+rbacReviewRefreshBtn?.addEventListener("click", loadRbacReview);
 
 // ============================================================
 // VAULTS

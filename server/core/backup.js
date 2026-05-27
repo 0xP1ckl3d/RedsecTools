@@ -107,7 +107,9 @@ async function createEncryptedPlatformBackup({ db, dbPath, passphrase, dataDir =
       tag: cipher.getAuthTag().toString("base64"),
       ciphertext: ciphertext.toString("base64"),
     };
-    return Buffer.from(JSON.stringify(output), "utf8");
+    const buffer = Buffer.from(JSON.stringify(output), "utf8");
+    buffer.manifest = manifest;
+    return buffer;
   } finally {
     try { fs.unlinkSync(tempPath); } catch {}
   }

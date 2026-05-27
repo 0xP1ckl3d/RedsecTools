@@ -1148,6 +1148,10 @@
               </div>
               <div class="reporter-guide-body">
                 <p><span data-bp>RedSec</span>Reporter separates content from design. Reports and proposals store structured details, sections, findings, evidence, comments, and generated PDFs. Designs decide how those values are placed into the final PDF.</p>
+                <div class="reporter-guide-callout">
+                  <h3>Data boundary</h3>
+                  <p>Reporter stores report/proposal content, evidence references, comments, templates, designs, and generated PDF/export artefacts on the server. RedSecAI may receive scoped Reporter metadata/content for permitted users when AI is enabled; encrypted paste, share, RedSecTeam, and vault plaintext remains outside the AI context.</p>
+                </div>
                 <div class="reporter-guide-grid">
                   <div class="reporter-guide-callout">
                     <h3>Report designs</h3>

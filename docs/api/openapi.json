@@ -3554,6 +3554,96 @@
         }
       }
     },
+    "/admin/api/deployment-retention": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get deployment retention targets",
+        "security": [
+          {
+            "AdminCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deployment retention settings"
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Update deployment retention targets",
+        "security": [
+          {
+            "AdminCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "auditEventRetentionDays": {
+                    "type": "integer",
+                    "minimum": 30,
+                    "maximum": 3650
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Retention settings updated"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions or recent admin auth required"
+          }
+        }
+      }
+    },
+    "/admin/api/rbac-review": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Get RBAC governance review",
+        "security": [
+          {
+            "AdminCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "RBAC review summary"
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "403": {
+            "description": "Insufficient permissions"
+          }
+        }
+      }
+    },
     "/admin/api/settings/calendar": {
       "get": {
         "tags": [

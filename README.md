@@ -199,10 +199,12 @@ Production deployment, backup, restore, and release operations are documented se
 
 - [Production deployment guide](docs/deployment/production.md)
 - [Restore runbook](docs/deployment/restore.md)
+- [Admin operations guide](docs/deployment/admin-operations.md)
+- [Admin UI patterns guide](docs/development/ui-patterns.md)
 - [Release checklist](RELEASE_CHECKLIST.md)
 - [Changelog](CHANGELOG.md)
 
-Runtime checks are available at `GET /healthz`, `GET /readyz`, and `GET /api/version`. Admin > Deployment shows platform health, version/build details, migration state, storage status, worker status, recent warnings, audit events, and encrypted platform backup export.
+Runtime checks are available at `GET /healthz`, `GET /readyz`, and `GET /api/version`. Admin > Server Settings > Deployment shows deployment posture, release readiness, platform health, version/build details, migration state, storage status, worker status, recent warnings, audit events, operational docs, and encrypted platform backup export. Admin > Server Settings > Access Controls contains RBAC review.
 
 ## MiniTools Privacy Model
 
