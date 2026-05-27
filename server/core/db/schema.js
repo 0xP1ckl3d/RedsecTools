@@ -208,7 +208,9 @@ function initializeBaseSchema(db) {
     iv TEXT NOT NULL,
     key_version INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    expires_at INTEGER NOT NULL
+    expires_at INTEGER NOT NULL,
+    edited_at INTEGER,
+    deleted_at INTEGER
   );
   CREATE INDEX IF NOT EXISTS idx_messages_conv_created ON messages(conversation_id, created_at);
   CREATE INDEX IF NOT EXISTS idx_messages_expires ON messages(expires_at);

@@ -17,6 +17,9 @@ try { db.exec("ALTER TABLE users ADD COLUMN suspended INTEGER NOT NULL DEFAULT 0
 try { db.exec("ALTER TABLE users ADD COLUMN avatar_updated_at INTEGER"); } catch {}
 try { db.exec("ALTER TABLE users ADD COLUMN role_id TEXT"); } catch {}
 try { db.exec("ALTER TABLE invites ADD COLUMN role_id TEXT"); } catch {}
+try { db.exec("ALTER TABLE messages ADD COLUMN edited_at INTEGER"); } catch {}
+try { db.exec("ALTER TABLE messages ADD COLUMN deleted_at INTEGER"); } catch {}
+try { db.exec("CREATE INDEX IF NOT EXISTS idx_messages_deleted_at ON messages(deleted_at)"); } catch {}
 
 // Add needs_rekey column to vault_members (safe migration)
 try { db.exec("ALTER TABLE vault_members ADD COLUMN needs_rekey INTEGER NOT NULL DEFAULT 0"); } catch {}

@@ -54,6 +54,10 @@
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
           <span class="sidebar-nav-text">API Analyzer</span>
         </button>
+        <button type="button" class="sidebar-nav-item" data-minitools-view="secrets-detector">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+          <span class="sidebar-nav-text">Secrets Detector</span>
+        </button>
         <button type="button" class="sidebar-nav-item" data-minitools-view="azure">
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"/></svg>
           <span class="sidebar-nav-text">Azure Mapping</span>
@@ -73,6 +77,14 @@
         <button type="button" class="sidebar-nav-item" data-minitools-view="callback">
           <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
           <span class="sidebar-nav-text">Callback</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-divider"></div>
+      <nav class="sidebar-nav">
+        <button type="button" class="sidebar-nav-item" data-minitools-view="about">
+          <svg class="sidebar-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M12 20.5a8.5 8.5 0 100-17 8.5 8.5 0 000 17z"/></svg>
+          <span class="sidebar-nav-text">About</span>
         </button>
       </nav>
     </aside>
@@ -111,11 +123,13 @@
         <button type="button" class="mobile-tab" data-minitools-view="tls-check">TLS Check</button>
         <button type="button" class="mobile-tab" data-minitools-view="dns-lookup">DNS Intelligence</button>
         <button type="button" class="mobile-tab" data-minitools-view="api-analyzer">API Analyzer</button>
+        <button type="button" class="mobile-tab" data-minitools-view="secrets-detector">Secrets Detector</button>
         <button type="button" class="mobile-tab" data-minitools-view="azure">Azure Mapping</button>
         <button type="button" class="mobile-tab" data-minitools-view="securitytrails">SecurityTrails</button>
         <button type="button" class="mobile-tab" data-minitools-view="breach">Breach Lookup</button>
         <button type="button" class="mobile-tab" data-minitools-view="leakradar">LeakRadar</button>
         <button type="button" class="mobile-tab" data-minitools-view="callback">Callback</button>
+        <button type="button" class="mobile-tab" data-minitools-view="about">About</button>
       </div>
 
       <div class="dashboard-main">
@@ -464,6 +478,42 @@
           <div id="api-analyzer-results" class="mt-4"></div>
         </section>
 
+        <section id="minitools-view-secrets-detector" class="hidden">
+          <h2 class="text-lg font-bold mb-4">Secrets Detector</h2>
+          <p class="text-sm text-muted mb-4">Scan text for leaked secrets, API keys, tokens, private keys, and credentials. All scanning runs entirely in your browser — content and results are never sent to the server.</p>
+          <div class="info-box mb-4">
+            <strong>Privacy:</strong> All scanning runs in your browser. Content and detected values are not sent to the server or stored.
+          </div>
+          <div class="info-box info-box-warning mb-4">
+            <strong>Sensitive data:</strong> Detected secrets are displayed in full. Only use this tool on data you are authorised to review.
+          </div>
+          <div class="grid gap-4 lg:grid-cols-2">
+            <div class="card p-4">
+              <h3 class="text-sm font-bold mb-3">Paste Text</h3>
+              <label for="secrets-detector-input" class="block text-sm font-medium text-muted mb-1">Text to scan for secrets</label>
+              <textarea id="secrets-detector-input" class="input-field w-full min-h-[16rem] font-mono text-xs resize-y" placeholder="Paste text containing potential secrets..." spellcheck="false"></textarea>
+              <div class="flex flex-wrap gap-2 mt-3">
+                <button type="button" id="secrets-detector-scan-btn" class="btn-primary">Scan</button>
+                <button type="button" id="secrets-detector-clear-btn" class="btn-secondary">Clear</button>
+                <button type="button" id="secrets-detector-sample-btn" class="btn-secondary">Load Sample</button>
+              </div>
+            </div>
+            <div class="card p-4">
+              <h3 class="text-sm font-bold mb-3">Upload File</h3>
+              <div id="secrets-detector-dropzone" class="border-2 border-dashed border-[var(--border)] rounded-lg p-8 text-center transition-all duration-150">
+                <svg class="mx-auto h-10 w-10 text-muted mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+                <p id="secrets-detector-dropzone-text" class="text-sm text-muted mb-2">Drag and drop a text file here</p>
+                <label for="secrets-detector-file" class="btn-secondary cursor-pointer inline-block">Browse Files</label>
+                <input type="file" id="secrets-detector-file" accept=".txt,.log,.env,.json,.yaml,.yml,.xml,.ini,.conf,.config,.properties,.ps1,.sh,.js,.ts,.py,.php,.cs,.java,.go,.rb,.sql,.html,.md" class="hidden">
+                <p class="text-xs text-muted mt-2">Text-based files — max 10 MB</p>
+              </div>
+              <div id="secrets-detector-file-info" class="text-xs text-muted mt-2 hidden"></div>
+            </div>
+          </div>
+          <div id="secrets-detector-inline-result" class="mt-2"></div>
+          <div id="secrets-detector-results" class="mt-4"></div>
+        </section>
+
         <section id="minitools-view-callback" class="hidden">
           <h2 class="text-lg font-bold mb-4">Callback</h2>
           <p class="text-sm text-muted mb-4">Generate temporary callback URLs for out-of-band testing — SSRF, webhook validation, blind injection, and server-side request verification. Inbound requests are captured and displayed in real time.</p>
@@ -495,6 +545,441 @@
           </div>
           <div id="callback-urls-list" class="space-y-3"></div>
           <div id="callback-request-viewer" class="mt-4 hidden"></div>
+        </section>
+
+        <section id="minitools-view-about" class="hidden">
+          <h2 class="text-lg font-bold mb-3">About RedSecMiniTools</h2>
+          <p class="text-sm text-muted mb-4">RedSecMiniTools is a collection of focused security utilities for quick analysis, lookup, decoding, and evidence-gathering tasks. Some tools run fully in the browser; others use server-side API calls so keys, network controls, rate limits, and audit behaviour stay under the application.</p>
+
+          <div class="minitools-about-shell">
+            <nav class="minitools-about-tabs" aria-label="MiniTools usage guides">
+              <button type="button" class="minitools-about-tab active" data-minitools-about-tab="cyberchef">CyberChef</button>
+              <button type="button" class="minitools-about-tab" data-minitools-about-tab="jwt-analyzer">JWT Analyzer</button>
+              <button type="button" class="minitools-about-tab" data-minitools-about-tab="header-analyzer">Header Analyzer</button>
+              <button type="button" class="minitools-about-tab" data-minitools-about-tab="cvss">CVSS</button>
+              <button type="button" class="minitools-about-tab" data-minitools-about-tab="lol-lookup">LOL Lookup</button>
+              <button type="button" class="minitools-about-tab" data-minitools-about-tab="security-headers">Security Headers</button>
+              <button type="button" class="minitools-about-tab" data-minitools-about-tab="tls-check">TLS Check</button>
+              <button type="button" class="minitools-about-tab" data-minitools-about-tab="dns-lookup">DNS Intelligence</button>
+              <button type="button" class="minitools-about-tab" data-minitools-about-tab="api-analyzer">API Analyzer</button>
+              <button type="button" class="minitools-about-tab" data-minitools-about-tab="secrets-detector">Secrets Detector</button>
+              <button type="button" class="minitools-about-tab" data-minitools-about-tab="azure">Azure Mapping</button>
+              <button type="button" class="minitools-about-tab" data-minitools-about-tab="securitytrails">SecurityTrails</button>
+              <button type="button" class="minitools-about-tab" data-minitools-about-tab="breach">Breach Lookup</button>
+              <button type="button" class="minitools-about-tab" data-minitools-about-tab="leakradar">LeakRadar</button>
+              <button type="button" class="minitools-about-tab" data-minitools-about-tab="callback">Callback</button>
+            </nav>
+
+            <div class="minitools-about-panels">
+              <article class="minitools-about-panel" data-minitools-about-panel="cyberchef">
+                <h3>CyberChef</h3>
+                <p>CyberChef is the local transform workbench for decoding, encoding, extracting, hashing, and cleaning evidence without sending the input to a server.</p>
+                <div class="minitools-about-grid">
+                  <section class="minitools-about-card">
+                    <h4>Use It For</h4>
+                    <ul>
+                      <li>Chaining repeatable transforms against payloads, logs, tokens, headers, and copied evidence.</li>
+                      <li>Fast Base64, Base64 URL, Base32, hex, URL, HTML entity, ROT13, Caesar, XOR, AES, RC4, JSON, JWT, and URL parsing tasks.</li>
+                      <li>Extracting IPs, IPv6 addresses, URLs, emails, domains, hashes, and simple indicators from raw text.</li>
+                    </ul>
+                  </section>
+                  <section class="minitools-about-card">
+                    <h4>Workflow</h4>
+                    <ul>
+                      <li>Paste text into the input panel, add operations to the recipe, then bake the output.</li>
+                      <li>Use recipe search and categories to find operations quickly; swap input/output when iterating.</li>
+                      <li>Use hashing, HMAC, entropy, line sorting, unique lines, regex match, find/replace, and whitespace cleanup for evidence prep.</li>
+                    </ul>
+                  </section>
+                  <section class="minitools-about-card">
+                    <h4>Privacy And Limits</h4>
+                    <ul>
+                      <li>Transforms run in the browser. Data is not uploaded unless you copy it into another server-backed MiniTool.</li>
+                      <li>The tool is for manipulation and inspection only; it does not execute decoded payloads.</li>
+                    </ul>
+                  </section>
+                </div>
+              </article>
+
+              <article class="minitools-about-panel hidden" data-minitools-about-panel="jwt-analyzer">
+                <h3>JWT Analyzer</h3>
+                <p>JWT Analyzer decodes, edits, rebuilds, and verifies JSON Web Tokens locally for token review and authentication testing notes.</p>
+                <div class="minitools-about-grid">
+                  <section class="minitools-about-card">
+                    <h4>Inputs</h4>
+                    <ul>
+                      <li>Paste a JWT to split the header, payload, and signature.</li>
+                      <li>Decode standard claims such as <code>iss</code>, <code>sub</code>, <code>aud</code>, <code>exp</code>, <code>nbf</code>, <code>iat</code>, <code>jti</code>, <code>scope</code>, <code>scp</code>, and <code>roles</code>.</li>
+                      <li>Azure-style claims such as tenant ID, object ID, app ID, identity provider, and username fields are labelled when present.</li>
+                    </ul>
+                  </section>
+                  <section class="minitools-about-card">
+                    <h4>Verification</h4>
+                    <ul>
+                      <li>Verify HMAC tokens with a shared secret.</li>
+                      <li>Verify RSA, RSASSA-PSS, and ECDSA signatures with PEM or JWK public keys.</li>
+                      <li>Flag obvious risks such as <code>alg: none</code>, missing expiry or audience, and unusually long token lifetime.</li>
+                    </ul>
+                  </section>
+                  <section class="minitools-about-card">
+                    <h4>Important Limits</h4>
+                    <ul>
+                      <li>Decoded claims are not proof of trust. A token is only meaningful when the correct issuer, audience, algorithm, and key are validated by the target system.</li>
+                      <li>Rebuilding a token is for testing and documentation; it does not bypass a correctly verified signature.</li>
+                    </ul>
+                  </section>
+                </div>
+              </article>
+
+              <article class="minitools-about-panel hidden" data-minitools-about-panel="header-analyzer">
+                <h3>Header Analyzer</h3>
+                <p>Header Analyzer is for raw email headers. It reconstructs delivery flow and authentication signals from copied message headers.</p>
+                <div class="minitools-about-grid">
+                  <section class="minitools-about-card">
+                    <h4>Use It For</h4>
+                    <ul>
+                      <li>Paste full email headers from a suspicious message, ticket, or mail client export.</li>
+                      <li>Review Received hops, sender metadata, authentication results, DKIM signatures, and message identifiers.</li>
+                      <li>Build a cleaner summary for phishing triage, client evidence, or escalation notes.</li>
+                    </ul>
+                  </section>
+                  <section class="minitools-about-card">
+                    <h4>Outputs</h4>
+                    <ul>
+                      <li>Delivery path timeline with source and relay information where the headers expose it.</li>
+                      <li>SPF, DKIM, and DMARC result parsing from <code>Authentication-Results</code> style headers.</li>
+                      <li>DKIM selector, domain, algorithm, canonicalisation, signed header, and expiry tags when present.</li>
+                    </ul>
+                  </section>
+                  <section class="minitools-about-card">
+                    <h4>Limits</h4>
+                    <ul>
+                      <li>The tool parses supplied headers; it does not prove that an upstream mail server is truthful.</li>
+                      <li>It does not fetch DKIM public keys or query DNS. Use DNS Intelligence for selector checks.</li>
+                    </ul>
+                  </section>
+                </div>
+              </article>
+
+              <article class="minitools-about-panel hidden" data-minitools-about-panel="cvss">
+                <h3>CVSS Calculator</h3>
+                <p>CVSS Calculator builds CVSS 3.1 and CVSS 4.0 vectors with consistent scoring for findings, tickets, and report evidence.</p>
+                <div class="minitools-about-grid">
+                  <section class="minitools-about-card">
+                    <h4>Workflow</h4>
+                    <ul>
+                      <li>Select CVSS version, set each metric, and review the calculated score and severity.</li>
+                      <li>Copy the vector string into Reporter, issue trackers, or client evidence.</li>
+                      <li>Use environmental and business context outside the calculator when finalising risk.</li>
+                    </ul>
+                  </section>
+                  <section class="minitools-about-card">
+                    <h4>Use It For</h4>
+                    <ul>
+                      <li>Consistent scoring across repeat findings and multiple reviewers.</li>
+                      <li>Quick comparison between CVSS 3.1 and 4.0 language when a client requires a specific version.</li>
+                    </ul>
+                  </section>
+                </div>
+              </article>
+
+              <article class="minitools-about-panel hidden" data-minitools-about-panel="lol-lookup">
+                <h3>LOL Lookup</h3>
+                <p>LOL Lookup is a local reference index for LOLBAS, GTFOBins, and LOLDrivers. It preserves practical commands and metadata from the upstream datasets without doing live lookups on each search.</p>
+                <div class="minitools-about-grid">
+                  <section class="minitools-about-card">
+                    <h4>Search Modes</h4>
+                    <ul>
+                      <li>Quick search: names, descriptions, commands, functions, paths, tags, ATT&amp;CK IDs, vendors, signers, and hashes.</li>
+                      <li>Exact lookup: pasted binary names, driver names, or exact identifiers.</li>
+                      <li>Command lookup: paste a command and identify relevant LOLBAS or GTFOBins entries.</li>
+                      <li>Hash lookup: searches LOLDrivers first for SHA256, SHA1, and MD5 matches.</li>
+                    </ul>
+                  </section>
+                  <section class="minitools-about-card">
+                    <h4>Results</h4>
+                    <ul>
+                      <li>LOLBAS entries show functions, paths, command examples, notes, detections, ATT&amp;CK mappings, and references.</li>
+                      <li>GTFOBins entries show function-specific payloads such as shell, sudo, SUID, file read, file write, upload, download, and command execution.</li>
+                      <li>LOLDrivers entries show filenames, hashes, signer/vendor details, tags, known behaviour, references, and detection or blocklist context when available.</li>
+                    </ul>
+                  </section>
+                  <section class="minitools-about-card">
+                    <h4>Cache And Freshness</h4>
+                    <ul>
+                      <li>Runtime search uses the local database projection only, so upstream outages do not break lookup.</li>
+                      <li>Dataset status shows entry count, last successful sync, last attempt, backup count, stale state, and errors.</li>
+                      <li>Admin refresh validates new source data before replacing the previous known-good dataset.</li>
+                    </ul>
+                  </section>
+                </div>
+              </article>
+
+              <article class="minitools-about-panel hidden" data-minitools-about-panel="security-headers">
+                <h3>Security Headers</h3>
+                <p>Security Headers analyses HTTP response headers for browser-side security controls and practical remediation guidance.</p>
+                <div class="minitools-about-grid">
+                  <section class="minitools-about-card">
+                    <h4>Inputs</h4>
+                    <ul>
+                      <li>Enter a public host or URL. If no scheme is provided, HTTPS is assumed.</li>
+                      <li>Paste raw response headers when you already collected them with curl, Burp, a proxy, or browser dev tools.</li>
+                      <li>Use the sample action to see the expected raw-header format.</li>
+                    </ul>
+                  </section>
+                  <section class="minitools-about-card">
+                    <h4>Checks</h4>
+                    <ul>
+                      <li>Grades CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy, cache controls, disclosure headers, cookies, and related protections.</li>
+                      <li>Labels findings as pass, warn, fail, or info with copy-ready evidence and suggested fixes.</li>
+                    </ul>
+                  </section>
+                  <section class="minitools-about-card">
+                    <h4>Network Safety</h4>
+                    <ul>
+                      <li>URL fetches run server-side through public-target validation, redirect checks, timeout limits, and response-size controls.</li>
+                      <li>Use pasted-header mode when analysing private systems or captured traffic that the server should not fetch.</li>
+                    </ul>
+                  </section>
+                </div>
+              </article>
+
+              <article class="minitools-about-panel hidden" data-minitools-about-panel="tls-check">
+                <h3>TLS Check</h3>
+                <p>TLS Check inspects public TLS endpoints for certificate, DNS, chain, CT, and optional cipher evidence.</p>
+                <div class="minitools-about-grid">
+                  <section class="minitools-about-card">
+                    <h4>Inputs And Options</h4>
+                    <ul>
+                      <li>Enter <code>example.com</code> or <code>example.com:8443</code>; HTTPS scheme is not required.</li>
+                      <li>Enable DNS checks for A/AAAA, NS, MX, CAA, SPF, DMARC, DNSSEC, wildcard DNS, AXFR attempt, and per-IP certificate consistency.</li>
+                      <li>Enable Certificate Transparency for crt.sh names and enable cipher scan only when slower protocol and cipher probing is needed.</li>
+                    </ul>
+                  </section>
+                  <section class="minitools-about-card">
+                    <h4>Outputs</h4>
+                    <ul>
+                      <li>Certificate subject, issuer, SANs, validity, fingerprints, key type/size, signature algorithm, key usage, EKU, TLS version, cipher, ALPN, and chain notes.</li>
+                      <li>Findings for expiry, hostname mismatch, weak protocols, weak ciphers, private/internal SAN leakage, self-signed certificates, and DNS posture issues.</li>
+                      <li>Export JSON, CSV, or Markdown evidence for reports.</li>
+                    </ul>
+                  </section>
+                </div>
+              </article>
+
+              <article class="minitools-about-panel hidden" data-minitools-about-panel="dns-lookup">
+                <h3>DNS Intelligence</h3>
+                <p>DNS Intelligence runs controlled public DNS and lightweight domain posture checks through selectable public resolvers.</p>
+                <div class="minitools-about-grid">
+                  <section class="minitools-about-card">
+                    <h4>Primary Checks</h4>
+                    <ul>
+                      <li>Security DNS Report is selected by default for SPF, DMARC, CAA, DNSSEC, DKIM selector, wildcard DNS, authoritative server, and hygiene checks.</li>
+                      <li>DNS Records supports A, AAAA, MX, TXT, NS, SOA, CAA, SRV, CNAME, PTR, DS, DNSKEY, and RRSIG where available.</li>
+                      <li>Other modes include DNSSEC test, reverse DNS, mail DNS health, resolver consistency, HTTP headers, site availability, DNSBL check, and URL decode.</li>
+                    </ul>
+                  </section>
+                  <section class="minitools-about-card">
+                    <h4>Resolvers And Safety</h4>
+                    <ul>
+                      <li>Basic lookups use selectable public resolvers, with Cloudflare as the default and Google, Quad9, and OpenDNS available.</li>
+                      <li>The tool avoids using the server's internal resolver for normal domain lookups to reduce internal network mapping risk.</li>
+                      <li>Targets are validated and local/private network probing is blocked where the tool could touch network services.</li>
+                    </ul>
+                  </section>
+                  <section class="minitools-about-card">
+                    <h4>Port And Web Checks</h4>
+                    <ul>
+                      <li>Light port check is intentionally limited to common ports only: FTP 21, SSH 22, DNS 53, HTTP 80, HTTPS 443, SMTP 25/587, IMAPS 993, and POP3S 995.</li>
+                      <li>Port status is reported as open, closed, or filtered; it does not do ranges, custom ports, exploit checks, or banner grabbing.</li>
+                      <li>HTTP header and availability checks use safe public-target fetch controls.</li>
+                    </ul>
+                  </section>
+                </div>
+              </article>
+
+              <article class="minitools-about-panel hidden" data-minitools-about-panel="api-analyzer">
+                <h3>API Analyzer</h3>
+                <p>API Analyzer reviews pasted or uploaded API definitions for security testing leads, auth coverage, and exportable test artefacts.</p>
+                <div class="minitools-about-grid">
+                  <section class="minitools-about-card">
+                    <h4>Inputs</h4>
+                    <ul>
+                      <li>Paste or upload OpenAPI, Swagger, or Postman JSON/YAML definitions.</li>
+                      <li>Uploaded definitions are limited to 5 MB.</li>
+                      <li>The analyzer parses the supplied definition only; it does not crawl or call the target API.</li>
+                    </ul>
+                  </section>
+                  <section class="minitools-about-card">
+                    <h4>Finds</h4>
+                    <ul>
+                      <li>Auth schemes, unauthenticated endpoints, destructive methods, file upload/download, bulk actions, callbacks/webhooks, sensitive operations, and sequential or weak object references.</li>
+                      <li>BOLA/IDOR-style candidates, object identifiers, parameter risk, and useful endpoint grouping for testing.</li>
+                      <li>Filters help focus by method, auth state, tag, and risk area.</li>
+                    </ul>
+                  </section>
+                  <section class="minitools-about-card">
+                    <h4>Exports</h4>
+                    <ul>
+                      <li>Export CSV, cURL commands, Burp-friendly requests, Markdown sections, and unauthenticated endpoint lists.</li>
+                      <li>Findings are starting points; validate behaviour against the live API and its real authorisation controls.</li>
+                    </ul>
+                  </section>
+                </div>
+              </article>
+
+              <article class="minitools-about-panel hidden" data-minitools-about-panel="secrets-detector">
+                <h3>Secrets Detector</h3>
+                <p>Secrets Detector scans pasted text or local text files in the browser for likely credentials, tokens, keys, and suspicious auth usage.</p>
+                <div class="minitools-about-grid">
+                  <section class="minitools-about-card">
+                    <h4>Inputs</h4>
+                    <ul>
+                      <li>Paste raw text or upload supported text-based files up to 10 MB.</li>
+                      <li>Use it for config files, logs, source snippets, environment dumps, proxy exports, and ticket attachments.</li>
+                    </ul>
+                  </section>
+                  <section class="minitools-about-card">
+                    <h4>Detection Coverage</h4>
+                    <ul>
+                      <li>Looks for AWS, GitHub, GitLab, Slack, Discord, Google, Stripe, SendGrid, Mailgun, Twilio, OpenAI, Anthropic, NVIDIA, Gemini, JWT, bearer/basic auth, URL credentials, database strings, private keys, PGP blocks, Kubernetes, Docker, npm, and context-based password/token patterns.</li>
+                      <li>Findings are grouped by severity with snippets, context lines, filters, and detail expansion.</li>
+                    </ul>
+                  </section>
+                  <section class="minitools-about-card">
+                    <h4>Privacy And Handling</h4>
+                    <ul>
+                      <li>Scanning runs in the browser. Full secret values can be displayed, copied, or exported, so treat the screen and exports as sensitive.</li>
+                      <li>Results are indicators, not proof that a credential is valid. Confirm ownership and rotate through the proper process.</li>
+                    </ul>
+                  </section>
+                </div>
+              </article>
+
+              <article class="minitools-about-panel hidden" data-minitools-about-panel="azure">
+                <h3>Azure Mapping</h3>
+                <p>Azure Mapping queries public Microsoft discovery endpoints to identify Entra ID tenant information associated with a domain.</p>
+                <div class="minitools-about-grid">
+                  <section class="minitools-about-card">
+                    <h4>Use It For</h4>
+                    <ul>
+                      <li>Map tenant ID, OpenID configuration, token and authorisation endpoints, issuer metadata, and verified domains when exposed.</li>
+                      <li>Support phishing-resistance checks, tenant scoping, identity recon, and report evidence.</li>
+                    </ul>
+                  </section>
+                  <section class="minitools-about-card">
+                    <h4>Limits</h4>
+                    <ul>
+                      <li>The tool uses public unauthenticated discovery endpoints and does not log into the tenant.</li>
+                      <li>Absence of metadata does not prove a domain has no Microsoft identity footprint.</li>
+                    </ul>
+                  </section>
+                </div>
+              </article>
+
+              <article class="minitools-about-panel hidden" data-minitools-about-panel="securitytrails">
+                <h3>SecurityTrails</h3>
+                <p>SecurityTrails queries the configured SecurityTrails account for domain and reverse-IP intelligence from inside RedSecMiniTools.</p>
+                <div class="minitools-about-grid">
+                  <section class="minitools-about-card">
+                    <h4>Modes</h4>
+                    <ul>
+                      <li>Details: domain metadata and DNS intelligence available from SecurityTrails.</li>
+                      <li>Subdomains: known subdomain records for a domain.</li>
+                      <li>Both: details and subdomains in one request flow.</li>
+                      <li>Reverse IP: domains associated with a supplied IP address where the upstream API returns them.</li>
+                    </ul>
+                  </section>
+                  <section class="minitools-about-card">
+                    <h4>Controls</h4>
+                    <ul>
+                      <li>The API key is configured by an administrator and kept server-side.</li>
+                      <li>Requests are authenticated, rate limited, and counted against the user's MiniTools daily quota and upstream account limits.</li>
+                    </ul>
+                  </section>
+                </div>
+              </article>
+
+              <article class="minitools-about-panel hidden" data-minitools-about-panel="breach">
+                <h3>Breach Lookup</h3>
+                <p>Breach Lookup checks a single email address against the configured public breach intelligence source and summarises exposure metadata.</p>
+                <div class="minitools-about-grid">
+                  <section class="minitools-about-card">
+                    <h4>Inputs And Results</h4>
+                    <ul>
+                      <li>Enter one email address.</li>
+                      <li>Review breach names, exposed data classes, breach dates, verification status, password-risk indicators, and timeline information where available.</li>
+                      <li>Use the output for exposure triage, password reset recommendations, and account-risk conversations.</li>
+                    </ul>
+                  </section>
+                  <section class="minitools-about-card">
+                    <h4>Limits</h4>
+                    <ul>
+                      <li>Results depend on the upstream breach data source and may be incomplete or delayed.</li>
+                      <li>A breach hit is evidence of exposure, not proof that the current account is compromised.</li>
+                    </ul>
+                  </section>
+                </div>
+              </article>
+
+              <article class="minitools-about-panel hidden" data-minitools-about-panel="leakradar">
+                <h3>LeakRadar</h3>
+                <p>LeakRadar searches the configured LeakRadar API for domain-related leak intelligence and manages unlocked records through RedSecTools.</p>
+                <div class="minitools-about-grid">
+                  <section class="minitools-about-card">
+                    <h4>Search Types</h4>
+                    <ul>
+                      <li>Employees, customers, third parties, and subdomains are separate upstream endpoints.</li>
+                      <li>Results load 100 records at a time with upstream-aligned pagination and a next-page control when more records are available.</li>
+                      <li>Previous unlocks can be listed globally or filtered by domain, ordered newest first when unlock metadata is present.</li>
+                    </ul>
+                  </section>
+                  <section class="minitools-about-card">
+                    <h4>Unlock Behaviour</h4>
+                    <ul>
+                      <li>Unlock buttons call the server-side API key and update the displayed row immediately with retrieved username/account and password data.</li>
+                      <li>Unlocked records are stored in the database so future searches can automatically show known unlocked values without another previous-unlocks call.</li>
+                    </ul>
+                  </section>
+                  <section class="minitools-about-card">
+                    <h4>Controls</h4>
+                    <ul>
+                      <li>The API key is configured in Admin and kept server-side.</li>
+                      <li>Search and unlock actions are rate limited and should only be used for authorised client or internal investigations.</li>
+                    </ul>
+                  </section>
+                </div>
+              </article>
+
+              <article class="minitools-about-panel hidden" data-minitools-about-panel="callback">
+                <h3>Callback</h3>
+                <p>Callback creates temporary inbound URLs for out-of-band testing and live request capture.</p>
+                <div class="minitools-about-grid">
+                  <section class="minitools-about-card">
+                    <h4>Use It For</h4>
+                    <ul>
+                      <li>SSRF verification, webhook testing, blind injection callbacks, server-side request evidence, and integration troubleshooting.</li>
+                      <li>Create a labelled URL with an expiry from 15 minutes up to 24 hours, then use that URL in the system being tested.</li>
+                    </ul>
+                  </section>
+                  <section class="minitools-about-card">
+                    <h4>Captured Data</h4>
+                    <ul>
+                      <li>Requests are delivered live through WebSocket updates and persisted for review.</li>
+                      <li>Captured evidence can include method, path, query, headers, body, source IP metadata, and timestamps.</li>
+                    </ul>
+                  </section>
+                  <section class="minitools-about-card">
+                    <h4>Handling</h4>
+                    <ul>
+                      <li>Captured headers and bodies can contain cookies, bearer tokens, API keys, or client data.</li>
+                      <li>Revoke or delete callback URLs when testing is complete; expired and revoked URLs are cleaned up automatically after the retention window.</li>
+                    </ul>
+                  </section>
+                </div>
+              </article>
+            </div>
+          </div>
         </section>
       </div>
     </div>

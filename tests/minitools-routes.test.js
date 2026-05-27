@@ -17,6 +17,50 @@ test("MiniTools routes enforce authentication and access attachment on all endpo
   }
 });
 
+test("MiniTools exposes an About tab with per-tool hidden usage panels", () => {
+  assert.ok(frontendPageSource.includes('data-minitools-view="about"'), "MiniTools sidebar/mobile nav must expose About");
+  assert.match(frontendPageSource, /<div class="sidebar-divider"><\/div>\s*<nav class="sidebar-nav">\s*<button type="button" class="sidebar-nav-item" data-minitools-view="about"/, "MiniTools About must be separated from tool tabs by a sidebar divider");
+  assert.ok(frontendSource.includes("initAboutTabs"), "Frontend must initialize MiniTools About subtabs");
+  assert.ok(frontendSource.includes("data-minitools-about-tab"), "Frontend should switch About tool tabs using data attributes");
+
+  const expectedTools = [
+    "cyberchef",
+    "jwt-analyzer",
+    "header-analyzer",
+    "cvss",
+    "lol-lookup",
+    "security-headers",
+    "tls-check",
+    "dns-lookup",
+    "api-analyzer",
+    "secrets-detector",
+    "azure",
+    "securitytrails",
+    "breach",
+    "leakradar",
+    "callback",
+  ];
+
+  for (const tool of expectedTools) {
+    assert.ok(frontendPageSource.includes(`data-minitools-about-tab="${tool}"`), `Missing About tab for ${tool}`);
+    assert.ok(frontendPageSource.includes(`data-minitools-about-panel="${tool}"`), `Missing About panel for ${tool}`);
+  }
+
+  assert.ok(frontendPageSource.includes("Header Analyzer is for raw email headers"), "Header Analyzer About content must describe the actual email-header tool");
+  assert.ok(frontendPageSource.includes("HMAC tokens with a shared secret"), "JWT Analyzer About content must cover local signature verification");
+  assert.ok(frontendPageSource.includes("PEM or JWK public keys"), "JWT Analyzer About content must cover asymmetric key verification");
+  assert.ok(frontendPageSource.includes("Cloudflare as the default"), "DNS Intelligence About content must document the default public resolver");
+  assert.ok(frontendPageSource.includes("FTP 21, SSH 22"), "DNS Intelligence About content must document fixed light-port scope");
+  assert.ok(frontendPageSource.includes("OpenAPI, Swagger, or Postman JSON/YAML"), "API Analyzer About content must document supported definition types");
+  assert.ok(frontendPageSource.includes("Uploaded definitions are limited to 5 MB"), "API Analyzer About content must document upload limits");
+  assert.ok(frontendPageSource.includes("Scanning runs in the browser"), "Secrets Detector About content must document browser-only scanning");
+  assert.ok(frontendPageSource.includes("Full secret values can be displayed"), "Secrets Detector About content must warn about sensitive output handling");
+  assert.ok(frontendPageSource.includes("Reverse IP"), "SecurityTrails About content must include reverse IP mode");
+  assert.ok(frontendPageSource.includes("Results load 100 records at a time"), "LeakRadar About content must document pagination");
+  assert.ok(frontendPageSource.includes("stored in the database"), "LeakRadar About content must document unlocked-record persistence");
+  assert.ok(frontendPageSource.includes("WebSocket updates"), "Callback About content must document live callback capture");
+});
+
 test("MiniTools routes enforce permission checks on all endpoints", () => {
   for (const line of source.split(/\r?\n/).filter((item) => /router\.(get|post)\("\/minitools\//.test(item))) {
     assert.ok(line.includes("canViewMiniTools"), `Missing canViewMiniTools: ${line}`);

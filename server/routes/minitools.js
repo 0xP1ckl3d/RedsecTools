@@ -313,6 +313,7 @@ router.get("/minitools/bootstrap", readLimiter, requireUser, attachUserAccess, c
     jwtAnalyzer: { enabled: isMinitoolEnabled("minitool_jwt_analyzer_enabled") },
     apiAnalyzer: { enabled: isMinitoolEnabled("minitool_api_analyzer_enabled") },
     callback: { enabled: isMinitoolEnabled("minitool_callback_enabled"), expiryOptions: EXPIRY_OPTIONS },
+    secretsDetector: { enabled: isMinitoolEnabled("minitool_secrets_detector_enabled") },
   };
   const anyEnabled = Object.values(tools).some((t) => t.enabled);
   res.json({

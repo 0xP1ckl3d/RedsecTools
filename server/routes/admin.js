@@ -1539,12 +1539,13 @@ router.get("/api/settings/minitools", requireAdmin, (req, res) => {
     jwtAnalyzer: parseEnabled("minitool_jwt_analyzer_enabled"),
     apiAnalyzer: parseEnabled("minitool_api_analyzer_enabled"),
     callback: parseEnabled("minitool_callback_enabled"),
+    secretsDetector: parseEnabled("minitool_secrets_detector_enabled"),
   });
 });
 
 // POST /admin/api/settings/minitools
 router.post("/api/settings/minitools", requireAdmin, requireRecentAdminAuth, (req, res) => {
-  const { cvssEnabled, breachEnabled, azureEnabled, securitytrailsEnabled, securityHeadersEnabled, tlsCheckEnabled, dnsLookupEnabled, leakradarEnabled, lolLookupEnabled, cyberchefEnabled, headerAnalyzerEnabled, jwtAnalyzerEnabled, apiAnalyzerEnabled, callbackEnabled } = req.body || {};
+  const { cvssEnabled, breachEnabled, azureEnabled, securitytrailsEnabled, securityHeadersEnabled, tlsCheckEnabled, dnsLookupEnabled, leakradarEnabled, lolLookupEnabled, cyberchefEnabled, headerAnalyzerEnabled, jwtAnalyzerEnabled, apiAnalyzerEnabled, callbackEnabled, secretsDetectorEnabled } = req.body || {};
   if (cvssEnabled !== undefined) {
     setSetting("minitool_cvss_enabled", cvssEnabled ? "true" : "false");
   }
@@ -1587,11 +1588,14 @@ router.post("/api/settings/minitools", requireAdmin, requireRecentAdminAuth, (re
   if (callbackEnabled !== undefined) {
     setSetting("minitool_callback_enabled", callbackEnabled ? "true" : "false");
   }
+  if (secretsDetectorEnabled !== undefined) {
+    setSetting("minitool_secrets_detector_enabled", secretsDetectorEnabled ? "true" : "false");
+  }
   auditAdmin(req, {
     category: "settings",
     action: "minitools_update",
     targetType: "minitools_settings",
-    metadata: { cvssEnabled, breachEnabled, azureEnabled, securitytrailsEnabled, securityHeadersEnabled, tlsCheckEnabled, dnsLookupEnabled, leakradarEnabled, lolLookupEnabled, cyberchefEnabled, headerAnalyzerEnabled, jwtAnalyzerEnabled, apiAnalyzerEnabled, callbackEnabled },
+    metadata: { cvssEnabled, breachEnabled, azureEnabled, securitytrailsEnabled, securityHeadersEnabled, tlsCheckEnabled, dnsLookupEnabled, leakradarEnabled, lolLookupEnabled, cyberchefEnabled, headerAnalyzerEnabled, jwtAnalyzerEnabled, apiAnalyzerEnabled, callbackEnabled, secretsDetectorEnabled },
   });
   res.json({ success: true });
 });

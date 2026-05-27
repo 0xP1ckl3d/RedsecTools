@@ -155,6 +155,29 @@ async function addAuthLinks(nav) {
 // Auto-initialize when loaded as standalone module
 initBurgerMenu();
 
+function initSidebarPolicyLinks() {
+  document.querySelectorAll(".dashboard-sidebar").forEach((sidebar) => {
+    if (sidebar.querySelector(".sidebar-policy-links")) return;
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "sidebar-policy-links";
+    wrapper.innerHTML = `
+      <a href="/policies#policy=privacy" class="sidebar-policy-link" data-tooltip="Privacy Policy">
+        <svg class="sidebar-policy-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3l7 4v5c0 4.5-2.8 7.7-7 9-4.2-1.3-7-4.5-7-9V7l7-4z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4"/></svg>
+        <span class="sidebar-policy-text">Privacy</span>
+      </a>
+      <a href="/policies#policy=tos" class="sidebar-policy-link" data-tooltip="Terms of Service">
+        <svg class="sidebar-policy-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4h7l4 4v12a1 1 0 01-1 1H7a1 1 0 01-1-1V5a1 1 0 011-1z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 4v5h5M9 13h6M9 17h6"/></svg>
+        <span class="sidebar-policy-text">Terms</span>
+      </a>
+    `;
+
+    sidebar.appendChild(wrapper);
+  });
+}
+
+initSidebarPolicyLinks();
+
 // --- Centralized footer ---
 (function initFooter() {
   const TOOL_NAMES = {

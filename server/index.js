@@ -277,6 +277,7 @@ app.use("/admin", adminCollabRouter);
 // --- Page routes ---
 // Public pages (no auth needed)
 app.get("/login", (req, res) => res.sendFile(page("login.html")));
+app.get("/policies", (req, res) => res.sendFile(page("policies.html")));
 app.get("/register", (req, res) => res.sendFile(page("register.html")));
 app.get("/forgot-password", (req, res) => res.sendFile(page("forgot-password.html")));
 app.get("/reset-password", (req, res) => res.sendFile(page("reset-password.html")));

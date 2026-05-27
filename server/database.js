@@ -321,6 +321,30 @@ const stmts = {
   `),
   getMessagesByConversation: db.prepare("SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC LIMIT ? OFFSET ?"),
   getMessagesBefore: db.prepare("SELECT * FROM messages WHERE conversation_id = ? AND created_at < ? ORDER BY created_at DESC LIMIT ?"),
+  getMessageById: db.prepare("SELECT * FROM messages WHERE id = ?"),
+  updateMessageForSender: db.prepare(`
+    UPDATE messages
+    SET ciphertext = @ciphertext,
+        iv = @iv,
+        key_version = @keyVersion,
+        edited_at = unixepoch(),
+        deleted_at = NULL
+    WHERE id = @id
+      AND conversation_id = @conversationId
+      AND sender_id = @senderId
+      AND deleted_at IS NULL
+  `),
+  deleteMessageForSender: db.prepare(`
+    UPDATE messages
+    SET ciphertext = '',
+        iv = '',
+        edited_at = NULL,
+        deleted_at = unixepoch()
+    WHERE id = @id
+      AND conversation_id = @conversationId
+      AND sender_id = @senderId
+      AND deleted_at IS NULL
+  `),
   countUnreadMessages: db.prepare("SELECT COUNT(*) as total FROM messages WHERE conversation_id = ? AND created_at > ?"),
   deleteExpiredMessages: db.prepare("DELETE FROM messages WHERE expires_at < unixepoch()"),
   deleteMessagesByConversation: db.prepare("DELETE FROM messages WHERE conversation_id = ?"),
@@ -1879,6 +1903,10 @@ const stmts = {
   markNotificationRead: db.prepare(`
     UPDATE notifications SET read_at = unixepoch() WHERE id = ? AND user_id = ?
   `),
+  markNotificationReadByDedupe: db.prepare(`
+    UPDATE notifications SET read_at = unixepoch()
+    WHERE user_id = ? AND dedupe_key = ? AND read_at IS NULL
+  `),
   markAllNotificationsReadByUserId: db.prepare(`
     UPDATE notifications SET read_at = unixepoch() WHERE user_id = ? AND read_at IS NULL
   `),
@@ -3202,6 +3230,27 @@ function getMessages(conversationId, limit = 50, offset = 0) {
 
 function getMessagesBefore(conversationId, before, limit = 50) {
   return stmts.getMessagesBefore.all(conversationId, before, limit);
+}
+
+function getMessageById(id) {
+  return stmts.getMessageById.get(id) || null;
+}
+
+function updateMessageForSender({ id, conversationId, senderId, ciphertext, iv, keyVersion }) {
+  const result = stmts.updateMessageForSender.run({
+    id,
+    conversationId,
+    senderId,
+    ciphertext,
+    iv,
+    keyVersion,
+  });
+  return result.changes > 0 ? getMessageById(id) : null;
+}
+
+function deleteMessageForSender({ id, conversationId, senderId }) {
+  const result = stmts.deleteMessageForSender.run({ id, conversationId, senderId });
+  return result.changes > 0 ? getMessageById(id) : null;
 }
 
 function countUnreadMessages(conversationId, lastReadAt) {
@@ -7264,6 +7313,11 @@ function markNotificationRead(notificationId, userId) {
   return result.changes > 0;
 }
 
+function markNotificationReadByDedupe(userId, dedupeKey) {
+  const result = stmts.markNotificationReadByDedupe.run(userId, dedupeKey);
+  return result.changes;
+}
+
 function markAllNotificationsRead(userId) {
   const result = stmts.markAllNotificationsReadByUserId.run(userId);
   return result.changes;
@@ -7901,6 +7955,9 @@ module.exports = {
   createMessage,
   getMessages,
   getMessagesBefore,
+  getMessageById,
+  updateMessageForSender,
+  deleteMessageForSender,
   countUnreadMessages,
   deleteExpiredMessages,
   // Chat: Avatar
@@ -8278,6 +8335,7 @@ module.exports = {
   getNotificationsByUserId,
   getUnreadNotificationCount,
   markNotificationRead,
+  markNotificationReadByDedupe,
   markAllNotificationsRead,
   getNotificationById,
   deleteExpiredNotifications,

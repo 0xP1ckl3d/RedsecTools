@@ -440,6 +440,42 @@ function renderRecentActivity(activity) {
   </div>`).join("");
 }
 
+function renderEngageAbout() {
+  return `<div class="max-w-5xl mx-auto space-y-6 text-sm">
+    <section class="card">
+      <div class="flex items-center gap-3 mb-4">
+        <svg class="w-6 h-6 text-accent shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M12 20.5a8.5 8.5 0 100-17 8.5 8.5 0 000 17z"/></svg>
+        <h2 class="text-lg font-semibold">What is <span data-bp>RedSec</span>Engage?</h2>
+      </div>
+      <p class="text-secondary leading-relaxed">RedSecEngage is the client, opportunity, engagement, QA, and delivery operations workspace for RedSecTools. It keeps commercial pipeline, delivery scheduling, ownership, activity, and handoff state together so work can move from lead to delivered engagement without losing context.</p>
+    </section>
+    <section class="grid gap-4 md:grid-cols-2">
+      <div class="card">
+        <h3 class="text-base font-semibold mb-3">Core Areas</h3>
+        <ul class="space-y-2 text-secondary">
+          <li><strong class="text-primary">Dashboard</strong> - active work, pipeline value where permitted, blocked work, QA attention, delivery health, and recent activity.</li>
+          <li><strong class="text-primary">Clients</strong> - organisations, contacts, notes, activity, and relationship context.</li>
+          <li><strong class="text-primary">Pipeline</strong> - opportunities, stages, proposal state, expected value, probability, and commercial fields gated by permission.</li>
+          <li><strong class="text-primary">Engagements</strong> - delivery work, status, assigned team, scope, linked Reporter projects, linked Calendar entries, and activity history.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3 class="text-base font-semibold mb-3">Delivery Controls</h3>
+        <ul class="space-y-2 text-secondary">
+          <li><strong class="text-primary">QA Queue</strong> - QA assignment, review state, changes required, and ready-for-delivery workflow.</li>
+          <li><strong class="text-primary">Utilisation</strong> - team allocation and over-allocation visibility for users with the required permissions.</li>
+          <li><strong class="text-primary">Cross-tool links</strong> - engagements can connect to Reporter and Calendar so reporting and scheduling stay aligned.</li>
+          <li><strong class="text-primary">Auditability</strong> - operational actions and activity events are recorded server-side rather than relying on local UI state.</li>
+        </ul>
+      </div>
+    </section>
+    <section class="card">
+      <h3 class="text-base font-semibold mb-3">Permission Model</h3>
+      <p class="text-secondary leading-relaxed">RedSecEngage uses server-side RBAC. Commercial values, all-client visibility, QA management, assignment, and delivery actions are shown and enforced according to the logged-in user's permissions. Hidden UI is not treated as authorisation.</p>
+    </section>
+  </div>`;
+}
+
 // Sidebar + mobile tab switching
 (function initEngageSidebar() {
   const sidebar = document.getElementById("engage-sidebar");
@@ -565,6 +601,7 @@ async function initEngageApp() {
     html += '<div data-engage-section="engagements" class="hidden"><div class="engage-empty">Loading engagements...</div></div>';
     html += '<div data-engage-section="qa" class="hidden"><div class="engage-empty">Loading QA queue...</div></div>';
     html += '<div data-engage-section="utilisation" class="hidden"><div class="engage-empty">Loading utilisation...</div></div>';
+    html += '<div data-engage-section="about" class="hidden">' + renderEngageAbout() + "</div>";
 
     content.innerHTML = html;
 

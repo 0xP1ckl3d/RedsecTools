@@ -45,6 +45,8 @@ window.ChatState = (function () {
     return refreshConversations().then(function () {
       // Set up WebSocket event listeners
       ChatWS.on("message", handleMessage);
+      ChatWS.on("message_edited", handleMessageEdited);
+      ChatWS.on("message_deleted", handleMessageDeleted);
       ChatWS.on("typing", handleTyping);
       ChatWS.on("stop_typing", handleStopTyping);
       ChatWS.on("read", handleRead);
@@ -145,7 +147,7 @@ window.ChatState = (function () {
 
         // Decrypt messages
         return decryptMessages(conversationId, msgs).then(function (decrypted) {
-          notifyStateChange("messages");
+          notifyStateChange("messages", { conversationId: conversationId });
           return decrypted;
         });
       });
@@ -195,6 +197,68 @@ window.ChatState = (function () {
             notifyStateChange("message", { conversationId: conversationId, message: msg });
             return msg;
           });
+      });
+  }
+
+  function editMessage(conversationId, messageId, plaintext) {
+    var key = getLatestKey(conversationId);
+    if (!key) return Promise.reject(new Error("No conversation key available"));
+
+    var conv = conversations.get(conversationId);
+    var keyVersion = conv ? conv.keyVersion : 1;
+
+    return ChatCrypto.encryptMessage(plaintext, key, keyVersion)
+      .then(function (encrypted) {
+        return fetch("/api/chat/conversations/" + conversationId + "/messages/" + messageId, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ciphertext: encrypted.ciphertext,
+            iv: encrypted.iv,
+            keyVersion: keyVersion,
+          }),
+        })
+          .then(function (res) {
+            if (!res.ok) {
+              return res.json().then(function (err) {
+                throw new Error(err.error || "Failed to edit message");
+              });
+            }
+            return res.json();
+          })
+          .then(function (data) {
+            var updated = updateCachedMessage(conversationId, messageId, {
+              ciphertext: encrypted.ciphertext,
+              iv: encrypted.iv,
+              keyVersion: keyVersion,
+              decrypted: plaintext,
+              decryptFailed: false,
+              editedAt: data.editedAt,
+              deletedAt: null,
+            });
+            notifyStateChange("message_updated", { conversationId: conversationId, message: updated });
+            return updated;
+          });
+      });
+  }
+
+  function deleteMessage(conversationId, messageId) {
+    return fetch("/api/chat/conversations/" + conversationId + "/messages/" + messageId, {
+      method: "DELETE",
+    })
+      .then(function (res) {
+        if (!res.ok) {
+          return res.json().then(function (err) {
+            throw new Error(err.error || "Failed to delete message");
+          });
+        }
+        return res.json();
+      })
+      .then(function (data) {
+        var deletedAt = data.deletedAt || Math.floor(Date.now() / 1000);
+        var updated = markCachedMessageDeleted(conversationId, messageId, deletedAt);
+        notifyStateChange("message_deleted", { conversationId: conversationId, messageId: messageId, message: updated });
+        return updated;
       });
   }
 
@@ -374,6 +438,15 @@ window.ChatState = (function () {
 
     for (var i = 0; i < msgs.length; i++) {
       (function (msg) {
+        msg.conversationId = msg.conversationId || conversationId;
+        msg.isOwn = msg.senderId === currentUserId;
+        if (msg.deletedAt) {
+          msg.decrypted = null;
+          msg.decryptFailed = false;
+          results.push(msg);
+          return;
+        }
+
         var cacheKey = conversationId + ":" + msg.keyVersion;
         var convKey = keyCache.get(cacheKey);
 
@@ -393,7 +466,6 @@ window.ChatState = (function () {
           msg.decryptFailed = true;
         }
 
-        msg.isOwn = msg.senderId === currentUserId;
         results.push(msg);
       })(msgs[i]);
     }
@@ -452,6 +524,70 @@ window.ChatState = (function () {
         finalizeIncomingMessage(data, convId, decrypted, decryptFailed);
         return;
       }
+    });
+  }
+
+  function handleMessageEdited(data) {
+    var convId = data.conversationId;
+    var cacheKey = convId + ":" + data.keyVersion;
+    var keyReady = keyCache.has(cacheKey)
+      ? Promise.resolve()
+      : fetch("/api/chat/conversations/" + convId + "/key-epochs")
+          .then(function (res) {
+            if (!res.ok) return;
+            return res.json();
+          })
+          .then(function (epochsData) {
+            if (epochsData) {
+              return cacheConversationKeys(convId, epochsData.keyEpochs);
+            }
+          })
+          .catch(function () {});
+
+    return keyReady.then(function () {
+      var convKey = keyCache.get(cacheKey);
+      var decrypted = null;
+      var decryptFailed = false;
+
+      var finalize = function () {
+        var updated = updateCachedMessage(convId, data.id, {
+          senderId: data.senderId,
+          ciphertext: data.ciphertext,
+          iv: data.iv,
+          keyVersion: data.keyVersion,
+          createdAt: data.createdAt,
+          editedAt: data.editedAt,
+          deletedAt: null,
+          decrypted: decrypted,
+          decryptFailed: decryptFailed,
+          isOwn: data.senderId === currentUserId,
+        });
+        notifyStateChange("message_updated", { conversationId: convId, message: updated });
+      };
+
+      if (convKey) {
+        return ChatCrypto.decryptMessage(data.ciphertext, data.iv, convKey)
+          .then(function (text) {
+            decrypted = text;
+          })
+          .catch(function () {
+            decryptFailed = true;
+          })
+          .then(finalize);
+      }
+
+      decryptFailed = true;
+      finalize();
+      return;
+    });
+  }
+
+  function handleMessageDeleted(data) {
+    var updated = markCachedMessageDeleted(data.conversationId, data.id, data.deletedAt);
+    notifyStateChange("message_deleted", {
+      conversationId: data.conversationId,
+      messageId: data.id,
+      message: updated,
     });
   }
 
@@ -544,6 +680,36 @@ window.ChatState = (function () {
       onlineUsers.delete(data.userId);
     }
     notifyStateChange("presence", data);
+  }
+
+  function updateCachedMessage(conversationId, messageId, patch) {
+    if (!messages.has(conversationId)) messages.set(conversationId, []);
+    var list = messages.get(conversationId);
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].id === messageId) {
+        Object.assign(list[i], patch);
+        return list[i];
+      }
+    }
+
+    var created = Object.assign({
+      id: messageId,
+      conversationId: conversationId,
+      isOwn: patch.senderId === currentUserId,
+    }, patch);
+    list.push(created);
+    return created;
+  }
+
+  function markCachedMessageDeleted(conversationId, messageId, deletedAt) {
+    return updateCachedMessage(conversationId, messageId, {
+      ciphertext: "",
+      iv: "",
+      decrypted: null,
+      decryptFailed: false,
+      deletedAt: deletedAt || Math.floor(Date.now() / 1000),
+      editedAt: null,
+    });
   }
 
   // ── Member Management ──────────────────────────────────────────────────
@@ -653,6 +819,9 @@ window.ChatState = (function () {
     var timestamp = Math.floor(Date.now() / 1000);
     ChatWS.send({ type: "read", conversationId: conversationId, lastReadAt: timestamp });
     unreadCounts.set(conversationId, 0);
+    fetch("/api/chat/conversations/" + conversationId + "/notifications/read", {
+      method: "POST",
+    }).catch(function () {});
     notifyStateChange("unread");
   }
 
@@ -671,6 +840,8 @@ window.ChatState = (function () {
     setCurrentConversation: setCurrentConversation,
     loadMessages: loadMessages,
     sendMessage: sendMessage,
+    editMessage: editMessage,
+    deleteMessage: deleteMessage,
     createDirectConversation: createDirectConversation,
     createGroupConversation: createGroupConversation,
     addMemberToConversation: addMemberToConversation,

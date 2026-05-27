@@ -10,8 +10,10 @@
  */
 (async function () {
   var sharedUi = await import("./ui-components.js");
+  var modalUi = await import("./confirm-modal.js");
   var escapeHtml = sharedUi.escapeHtml;
   var stateBlock = sharedUi.stateBlock;
+  var showConfirmModal = modalUi.showConfirmModal;
 
   // ── DOM References ──────────────────────────────────────────────────────
 
@@ -26,6 +28,8 @@
     messagesContainer: document.getElementById("messages-container"),
     messageInput: document.getElementById("message-input"),
     sendBtn: document.getElementById("send-btn"),
+    editBanner: document.getElementById("chat-edit-banner"),
+    cancelEditBtn: document.getElementById("chat-cancel-edit-btn"),
     typingIndicator: document.getElementById("typing-indicator"),
     typingUser: document.getElementById("typing-user"),
     // Modals
@@ -93,6 +97,16 @@
   var newConvType = "direct"; // "direct" or "group"
   var typingTimeout = null;
   var userScrolledUp = false;
+  var editingMessage = null;
+
+  function setMobileConversationOpen(open) {
+    var chatApp = document.getElementById("chat-app");
+    if (!chatApp) return;
+    chatApp.classList.toggle(
+      "chat-mobile-conversation-open",
+      Boolean(open && window.innerWidth < 768)
+    );
+  }
 
   // ── Emoji Data ────────────────────────────────────────────────────────────
 
@@ -113,12 +127,15 @@
   function formatMessageText(text) {
     if (!text) return "";
     var escaped = escapeHtml(text);
+    var codeBlocks = [];
 
     // Code blocks: ```...``` — must be before inline backticks
     escaped = escaped.replace(/```([\s\S]*?)```/g, function(match, code) {
       // Trim leading/trailing newline from code block content
       var trimmed = code.replace(/^\n/, "").replace(/\n$/, "");
-      return '<div class="chat-code-block">' + trimmed + '</div>';
+      var token = "\u0000CHAT_CODE_BLOCK_" + codeBlocks.length + "\u0000";
+      codeBlocks.push('<pre class="chat-code-block"><code>' + trimmed + '</code></pre>');
+      return token;
     });
 
     // Inline formatting (on escaped HTML — safe from injection)
@@ -158,7 +175,11 @@
     if (inUl) result.push("</ul>");
     if (inOl) result.push("</ol>");
 
-    return result.join("\n").replace(/\n/g, "<br>");
+    var rendered = result.join("\n").replace(/\n/g, "<br>");
+    rendered = rendered.replace(/\u0000CHAT_CODE_BLOCK_(\d+)\u0000/g, function(match, index) {
+      return codeBlocks[Number(index)] || "";
+    });
+    return rendered;
   }
 
   function formatTime(timestamp) {
@@ -244,6 +265,13 @@
     var el = elements.messageInput;
     if (!el) return;
     el.innerHTML = "";
+    if (text) {
+      var lines = String(text).split("\n");
+      for (var i = 0; i < lines.length; i++) {
+        if (i > 0) el.appendChild(document.createElement("br"));
+        el.appendChild(document.createTextNode(lines[i]));
+      }
+    }
     autoGrowEditor();
     el.focus();
   }
@@ -277,7 +305,7 @@
     // Create a temporary element to walk the DOM tree
     var tmp = document.createElement("div");
     tmp.innerHTML = html;
-    return nodeToMarkdown(tmp).trim();
+    return normalizeMessageNewlines(nodeToMarkdown(tmp)).trim();
   }
 
   function nodeToMarkdown(node) {
@@ -314,13 +342,32 @@
         } else if (tag === "br") {
           result += "\n";
         } else if (tag === "div") {
-          result += nodeToMarkdown(child) + "\n";
+          result = appendMarkdownBlock(result, inner);
+        } else if (tag === "p") {
+          result = appendMarkdownBlock(result, inner);
+        } else if (tag === "pre") {
+          result = appendMarkdownBlock(result, "```\n" + child.textContent.replace(/\n$/, "") + "\n```");
         } else {
           result += inner;
         }
       }
     }
     return result;
+  }
+
+  function appendMarkdownBlock(current, blockText) {
+    var next = blockText || "";
+    if (!next && current.endsWith("\n")) return current;
+    var prefix = current && !current.endsWith("\n") ? "\n" : "";
+    return current + prefix + next + "\n";
+  }
+
+  function normalizeMessageNewlines(text) {
+    return String(text || "")
+      .replace(/\r\n?/g, "\n")
+      .replace(/\u00a0/g, " ")
+      .replace(/[ \t]+\n/g, "\n")
+      .replace(/\n{4,}/g, "\n\n\n");
   }
 
   function execFormat(command, value) {
@@ -340,6 +387,15 @@
   function insertInlineCode() {
     var sel = window.getSelection();
     if (!sel || sel.rangeCount === 0) return;
+    var existingCode = findEditorAncestor(function (node) {
+      return node.tagName && node.tagName.toLowerCase() === "code" && !findAncestorTag(node, "pre");
+    });
+    if (existingCode) {
+      unwrapElement(existingCode);
+      elements.messageInput.focus();
+      return;
+    }
+
     var range = sel.getRangeAt(0);
     var text = range.toString();
     if (!text) {
@@ -360,7 +416,96 @@
       range.surroundContents(code);
     }
     elements.messageInput.focus();
-  }  // ── Emoji Picker ─────────────────────────────────────────────────────────
+  }
+
+  function insertCodeBlock() {
+    var sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || !elements.messageInput) return;
+
+    var existingPre = findAncestorTag(sel.anchorNode, "pre");
+    if (existingPre && elements.messageInput.contains(existingPre)) {
+      var exitBlock = document.createElement("div");
+      exitBlock.appendChild(document.createElement("br"));
+      existingPre.parentNode.insertBefore(exitBlock, existingPre.nextSibling);
+      placeCaretAtStart(exitBlock);
+      return;
+    }
+
+    var range = sel.getRangeAt(0);
+    var selectedText = range.toString();
+    var block = findEditorAncestor(function (node) {
+      if (!node.tagName) return false;
+      var tag = node.tagName.toLowerCase();
+      return tag === "div" || tag === "p" || tag === "li";
+    });
+
+    var pre = document.createElement("pre");
+    pre.className = "chat-code-block";
+    var code = document.createElement("code");
+    code.textContent = selectedText || (block && block.textContent) || "";
+    if (!code.textContent) code.appendChild(document.createTextNode(""));
+    pre.appendChild(code);
+
+    if (selectedText) {
+      range.deleteContents();
+      range.insertNode(pre);
+    } else if (block && block !== elements.messageInput) {
+      block.parentNode.replaceChild(pre, block);
+    } else {
+      range.insertNode(pre);
+    }
+    placeCaretAtEnd(code);
+  }
+
+  function findEditorAncestor(predicate) {
+    var sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return null;
+    var node = sel.anchorNode;
+    while (node && node !== elements.messageInput) {
+      if (node.nodeType === Node.ELEMENT_NODE && predicate(node)) return node;
+      node = node.parentNode;
+    }
+    return null;
+  }
+
+  function findAncestorTag(node, tagName) {
+    var wanted = String(tagName || "").toLowerCase();
+    var current = node && node.nodeType === Node.ELEMENT_NODE ? node : node ? node.parentNode : null;
+    while (current && current !== elements.messageInput) {
+      if (current.tagName && current.tagName.toLowerCase() === wanted) return current;
+      current = current.parentNode;
+    }
+    return null;
+  }
+
+  function unwrapElement(el) {
+    var parent = el.parentNode;
+    if (!parent) return;
+    while (el.firstChild) parent.insertBefore(el.firstChild, el);
+    parent.removeChild(el);
+  }
+
+  function placeCaretAtStart(el) {
+    var range = document.createRange();
+    var sel = window.getSelection();
+    range.setStart(el, 0);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    elements.messageInput.focus();
+  }
+
+  function placeCaretAtEnd(el) {
+    var range = document.createRange();
+    var sel = window.getSelection();
+    range.selectNodeContents(el);
+    range.collapse(false);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    elements.messageInput.focus();
+  }
+
+  // ── Emoji Picker ─────────────────────────────────────────────────────────
 
   function initEmojiPicker() {
     if (!elements.emojiCategories || !elements.emojiGrid) return;
@@ -604,10 +749,13 @@
 
     var div = document.createElement("div");
     div.className = "chat-message-bubble " + (msg.isOwn ? "self" : "other");
+    if (msg.deletedAt) div.className += " deleted";
     div.dataset.messageId = msg.id;
 
     var contentHtml;
-    if (embedData) {
+    if (msg.deletedAt) {
+      contentHtml = '<span class="chat-message-deleted">Message deleted</span>';
+    } else if (embedData) {
       if (embedData.type === "vault") {
         contentHtml =
           '<a href="' + escapeHtml(embedData.url) + '" class="chat-embed-card block p-3 rounded border" target="_blank">' +
@@ -628,11 +776,16 @@
       contentHtml = '<span class="text-muted italic">Encrypted message</span>';
     }
 
+    var metaHtml = '<div class="message-time text-xs text-muted mt-1">' +
+      formatTime(msg.createdAt) +
+      (msg.editedAt && !msg.deletedAt ? ' <span class="chat-message-edited">edited</span>' : "") +
+      "</div>";
+
     if (msg.isOwn) {
       div.innerHTML =
         '<div class="message-content own">' +
         '<div class="message-text">' + contentHtml + "</div>" +
-        '<div class="message-time text-xs text-muted mt-1">' + formatTime(msg.createdAt) + "</div>" +
+        metaHtml +
         "</div>";
     } else {
       var senderName = msg.senderUsername || "Unknown";
@@ -640,11 +793,43 @@
         '<div class="sender-name text-xs text-accent mb-1">' + escapeHtml(senderName) + "</div>" +
         '<div class="message-content other">' +
         '<div class="message-text">' + contentHtml + "</div>" +
-        '<div class="message-time text-xs text-muted mt-1">' + formatTime(msg.createdAt) + "</div>" +
+        metaHtml +
         "</div>";
     }
 
+    if (msg.isOwn && !msg.deletedAt) {
+      var actions = document.createElement("div");
+      actions.className = "chat-message-actions";
+      actions.innerHTML =
+        '<button type="button" class="chat-message-action" data-chat-edit-message title="Edit message" aria-label="Edit message">' +
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>' +
+        "</button>" +
+        '<button type="button" class="chat-message-action danger" data-chat-delete-message title="Delete message" aria-label="Delete message">' +
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>' +
+        "</button>";
+      div.appendChild(actions);
+
+      var editButton = actions.querySelector("[data-chat-edit-message]");
+      var deleteButton = actions.querySelector("[data-chat-delete-message]");
+      if (editButton) {
+        editButton.addEventListener("click", function () {
+          startEditingMessage(msg);
+        });
+      }
+      if (deleteButton) {
+        deleteButton.addEventListener("click", function () {
+          deleteOwnMessage(msg);
+        });
+      }
+    }
+
     return div;
+  }
+
+  function renderCurrentMessages(conversationId) {
+    var currentConv = ChatState.getCurrentConversation();
+    if (!currentConv || currentConv.id !== conversationId) return;
+    renderMessages(ChatState.getMessages(conversationId));
   }
 
   function appendNewMessage(msg) {
@@ -732,6 +917,7 @@
         var sidebar = document.getElementById("chat-sidebar");
         if (sidebar) sidebar.classList.add("hidden");
         if (elements.backBtn) elements.backBtn.classList.remove("hidden");
+        setMobileConversationOpen(true);
       }
 
       userScrolledUp = false;
@@ -762,7 +948,12 @@
     });
 
     try {
-      await ChatState.sendMessage(currentConv.id, text);
+      if (editingMessage && editingMessage.conversationId === currentConv.id) {
+        await ChatState.editMessage(currentConv.id, editingMessage.id, text);
+        clearEditingMessage();
+      } else {
+        await ChatState.sendMessage(currentConv.id, text);
+      }
     } catch (err) {
       console.error("Failed to send message:", err);
     } finally {
@@ -1271,6 +1462,7 @@
         var sidebar = document.getElementById("chat-sidebar");
         if (sidebar) sidebar.classList.remove("hidden");
         if (elements.backBtn) elements.backBtn.classList.add("hidden");
+        setMobileConversationOpen(false);
       }
     } catch (err) {
       console.error("Failed to leave conversation:", err);
@@ -2061,6 +2253,12 @@
         sendMessage();
       });
     }
+    if (elements.cancelEditBtn) {
+      elements.cancelEditBtn.addEventListener("click", function () {
+        clearEditingMessage();
+        editorSetText("");
+      });
+    }
 
     // Formatting toolbar buttons (use execCommand on contenteditable)
     var fmtActions = {
@@ -2068,6 +2266,7 @@
       "fmt-italic": function () { execFormat("italic"); },
       "fmt-underline": function () { execFormat("underline"); },
       "fmt-code": function () { insertInlineCode(); },
+      "fmt-code-block": function () { insertCodeBlock(); },
       "fmt-ul": function () { insertList("ul"); },
       "fmt-ol": function () { insertList("ol"); },
     };
@@ -2096,6 +2295,7 @@
           sidebar.classList.remove("hidden");
         }
         elements.backBtn.classList.add("hidden");
+        setMobileConversationOpen(false);
       });
     }
 
@@ -2175,7 +2375,16 @@
         var sidebar = document.getElementById("chat-sidebar");
         if (sidebar) {
           sidebar.classList.toggle("hidden");
+          setMobileConversationOpen(sidebar.classList.contains("hidden"));
         }
+      });
+    }
+
+    var sidebarCollapseBtn = document.getElementById("chat-sidebar-collapse-btn");
+    if (sidebarCollapseBtn) {
+      sidebarCollapseBtn.addEventListener("click", function () {
+        var sidebar = document.getElementById("chat-sidebar");
+        if (sidebar) sidebar.classList.toggle("collapsed");
       });
     }
 
@@ -2384,10 +2593,27 @@
     function showAbout() {
       if (aboutPanel) aboutPanel.classList.remove("hidden");
       if (chatContent) chatContent.classList.add("hidden");
+      if (window.innerWidth < 768) {
+        var sidebar = document.getElementById("chat-sidebar");
+        if (sidebar) sidebar.classList.add("hidden");
+        if (elements.backBtn) elements.backBtn.classList.add("hidden");
+        setMobileConversationOpen(true);
+      }
     }
     function hideAbout() {
       if (aboutPanel) aboutPanel.classList.add("hidden");
       if (chatContent) chatContent.classList.remove("hidden");
+      if (window.innerWidth < 768) {
+        var sidebar = document.getElementById("chat-sidebar");
+        if (ChatState.getCurrentConversation()) {
+          if (sidebar) sidebar.classList.add("hidden");
+          if (elements.backBtn) elements.backBtn.classList.remove("hidden");
+          setMobileConversationOpen(true);
+        } else {
+          if (sidebar) sidebar.classList.remove("hidden");
+          setMobileConversationOpen(false);
+        }
+      }
     }
     if (aboutBtn) {
       aboutBtn.addEventListener("click", showAbout);
@@ -2420,11 +2646,7 @@
       case "messages":
         // Full message list was refreshed — re-render if viewing this conversation
         if (data && data.conversationId) {
-          var currentConv = ChatState.getCurrentConversation();
-          if (currentConv && currentConv.id === data.conversationId) {
-            // Messages are loaded internally; we just re-render the list
-            // ChatState.loadMessages already updated the internal cache
-          }
+          renderCurrentMessages(data.conversationId);
         }
         renderConversationList(
           elements.convSearch ? elements.convSearch.value : ""
@@ -2437,6 +2659,16 @@
           scrollToBottom();
         }
         // Update conversation list for unread ordering
+        renderConversationList(
+          elements.convSearch ? elements.convSearch.value : ""
+        );
+        break;
+
+      case "message_updated":
+      case "message_deleted":
+        if (data && data.conversationId) {
+          renderCurrentMessages(data.conversationId);
+        }
         renderConversationList(
           elements.convSearch ? elements.convSearch.value : ""
         );
@@ -2500,12 +2732,52 @@
     var sidebar = document.getElementById("chat-sidebar");
 
     if (!isMobile) {
+      setMobileConversationOpen(false);
       if (sidebar) {
         sidebar.classList.remove("hidden");
       }
       if (elements.backBtn) {
         elements.backBtn.classList.add("hidden");
       }
+    } else {
+      var aboutPanel = document.getElementById("chat-about-panel");
+      var isAboutOpen = aboutPanel && !aboutPanel.classList.contains("hidden");
+      setMobileConversationOpen(Boolean(ChatState.getCurrentConversation()) || isAboutOpen);
+    }
+  }
+
+  function startEditingMessage(msg) {
+    if (!msg || !msg.isOwn || msg.deletedAt || msg.decrypted == null) return;
+    editingMessage = { id: msg.id, conversationId: msg.conversationId };
+    editorSetText(msg.decrypted);
+    if (elements.editBanner) elements.editBanner.classList.remove("hidden");
+    if (elements.sendBtn) elements.sendBtn.setAttribute("aria-label", "Save edited message");
+  }
+
+  function clearEditingMessage() {
+    editingMessage = null;
+    if (elements.editBanner) elements.editBanner.classList.add("hidden");
+    if (elements.sendBtn) elements.sendBtn.removeAttribute("aria-label");
+  }
+
+  async function deleteOwnMessage(msg) {
+    if (!msg || !msg.isOwn || msg.deletedAt) return;
+    var confirmed = await showConfirmModal({
+      title: "Delete Message",
+      message: "Delete this message from the conversation thread?",
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!confirmed) return;
+
+    try {
+      await ChatState.deleteMessage(msg.conversationId, msg.id);
+      if (editingMessage && editingMessage.id === msg.id) {
+        clearEditingMessage();
+        editorSetText("");
+      }
+    } catch (err) {
+      console.error("Failed to delete message:", err);
     }
   }
 

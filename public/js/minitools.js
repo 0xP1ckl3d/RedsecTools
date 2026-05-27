@@ -42,6 +42,30 @@ function switchView(view) {
   });
 }
 
+function initAboutTabs() {
+  const tabs = document.querySelectorAll("[data-minitools-about-tab]");
+  const panels = document.querySelectorAll("[data-minitools-about-panel]");
+  if (!tabs.length || !panels.length) return;
+
+  function switchAboutTab(tool) {
+    tabs.forEach((tab) => {
+      const isActive = tab.dataset.minitoolsAboutTab === tool;
+      tab.classList.toggle("active", isActive);
+      tab.setAttribute("aria-pressed", String(isActive));
+    });
+    panels.forEach((panel) => {
+      panel.classList.toggle("hidden", panel.dataset.minitoolsAboutPanel !== tool);
+    });
+  }
+
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", () => switchAboutTab(tab.dataset.minitoolsAboutTab));
+  });
+
+  const firstTab = document.querySelector("[data-minitools-about-tab]");
+  if (firstTab) switchAboutTab(firstTab.dataset.minitoolsAboutTab);
+}
+
 function initCvss() {
   const container = document.getElementById("minitools-cvss-container");
   const resultEl = document.getElementById("minitools-cvss-result");
@@ -2149,6 +2173,8 @@ function hideMinitool(tool) {
   document.querySelector(`[data-minitools-view="${tool}"]`)?.remove();
   document.querySelector(`.mobile-tab[data-minitools-view="${tool}"]`)?.remove();
   document.getElementById(`minitools-view-${tool}`)?.remove();
+  document.querySelector(`[data-minitools-about-tab="${tool}"]`)?.remove();
+  document.querySelector(`[data-minitools-about-panel="${tool}"]`)?.remove();
 }
 
 function showFirstEnabledView(excludeTool) {
@@ -3100,9 +3126,708 @@ function buildRawPacket(req) {
   return raw;
 }
 
+// ---------------------------------------------------------------------------
+// Secrets Detector
+// ---------------------------------------------------------------------------
+let secretsDetectorState = {
+  findings: [],
+  filterConfidence: "ALL",
+  filterType: "ALL",
+};
+
+const SECRET_PATTERNS = [
+  { type: "AWS Access Key ID", confidence: "high", pattern: /(?:^|[\s"'`=,:;({\[])AKIA[0-9A-Z]{16}(?![0-9A-Z])/gm, reason: "AWS access key ID prefix" },
+  { type: "AWS Secret Key", confidence: "high", pattern: /(?:aws_secret_access_key|AWS_SECRET_ACCESS_KEY|aws_secret)\s*[=:]\s*['"]?[A-Za-z0-9/+=]{40}['"]?/gi, reason: "AWS secret key assignment" },
+  { type: "GitHub Token", confidence: "high", pattern: /(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{36,255}/g, reason: "GitHub token prefix" },
+  { type: "GitLab Token", confidence: "high", pattern: /glpat-[A-Za-z0-9\-_]{20,}/g, reason: "GitLab personal access token prefix" },
+  { type: "Slack Token", confidence: "high", pattern: /xox[baprs]-[0-9a-zA-Z\-]{10,}/g, reason: "Slack token prefix" },
+  { type: "Slack Webhook", confidence: "high", pattern: /https:\/\/hooks\.slack\.com\/services\/T[A-Z0-9]{8,}\/B[A-Z0-9]{8,}\/[a-zA-Z0-9]{24,}/g, reason: "Slack webhook URL" },
+  { type: "Discord Webhook", confidence: "high", pattern: /https:\/\/(?:discord\.com|discordapp\.com)\/api\/webhooks\/\d+\/[A-Za-z0-9_\-]{60,}/g, reason: "Discord webhook URL" },
+  { type: "Google API Key", confidence: "high", pattern: /AIza[0-9A-Za-z\-_]{35}/g, reason: "Google API key prefix" },
+  { type: "Firebase Key", confidence: "high", pattern: /AIza[0-9A-Za-z\-_]{35}["'\s,}\]]/g, reason: "Firebase config key" },
+  { type: "Stripe Secret Key", confidence: "high", pattern: /sk_live_[0-9a-zA-Z]{24,}/g, reason: "Stripe live secret key prefix" },
+  { type: "Stripe Publishable Key", confidence: "high", pattern: /pk_live_[0-9a-zA-Z]{24,}/g, reason: "Stripe live publishable key prefix" },
+  { type: "SendGrid API Key", confidence: "high", pattern: /SG\.[A-Za-z0-9\-_]{22}\.[A-Za-z0-9\-_]{43}/g, reason: "SendGrid API key prefix" },
+  { type: "Mailgun API Key", confidence: "high", pattern: /key-[a-f0-9]{32}/g, reason: "Mailgun API key prefix" },
+  { type: "Twilio Account SID", confidence: "high", pattern: /AC[a-z0-9]{32}/g, reason: "Twilio account SID prefix" },
+  { type: "Twilio Auth Token", confidence: "high", pattern: /(?:twilio_auth_token|TWILIO_AUTH_TOKEN|twilio_token)\s*[=:]\s*['"]?[a-f0-9]{32}['"]?/gi, reason: "Twilio auth token assignment" },
+  { type: "OpenAI API Key", confidence: "high", pattern: /sk-[A-Za-z0-9]{20}T3BlbkFJ[A-Za-z0-9]{20}/g, reason: "OpenAI API key prefix" },
+  { type: "Anthropic API Key", confidence: "high", pattern: /sk-ant-[A-Za-z0-9\-_]{20,}/g, reason: "Anthropic API key prefix" },
+  { type: "NVIDIA API Key", confidence: "high", pattern: /nvapi-[A-Za-z0-9\-_]{20,}/g, reason: "NVIDIA API key prefix" },
+  { type: "Gemini API Key", confidence: "high", pattern: /(?:GEMINI_API_KEY|gemini_api_key|GOOGLE_AI_API_KEY)\s*[=:]\s*['"]?[A-Za-z0-9\-_]{30,}['"]?/gi, reason: "Gemini API key assignment" },
+  { type: "JWT", confidence: "medium", pattern: /eyJ[A-Za-z0-9\-_]+\.eyJ[A-Za-z0-9\-_]+\.?[A-Za-z0-9\-_]*/g, reason: "JWT structure (header.payload.signature)" },
+  { type: "Bearer Token", confidence: "medium", pattern: /(?:Bearer|bearer)\s+[A-Za-z0-9\-_.~+/]+=*/g, reason: "Authorization bearer token" },
+  { type: "Basic Auth", confidence: "high", pattern: /(?:Basic|basic)\s+[A-Za-z0-9+/]+=*/g, reason: "HTTP Basic auth header" },
+  { type: "URL with Credentials", confidence: "high", pattern: /[a-zA-Z]{2,}:\/\/[^/\s:]+:[^/\s@]+@[^\s"'<>}]+/g, reason: "URL with embedded credentials" },
+  { type: "Postgres Connection String", confidence: "high", pattern: /postgres(?:ql)?:\/\/[^\s"'<>}]+/gi, reason: "PostgreSQL connection string" },
+  { type: "MySQL Connection String", confidence: "high", pattern: /mysql:\/\/[^\s"'<>}]+/gi, reason: "MySQL connection string" },
+  { type: "MSSQL Connection String", confidence: "high", pattern: /(?:Server|Data Source)\s*=[^;]+;.*(?:User\s*ID|UID)\s*=[^;]+;.*(?:Password|PWD)\s*=[^;]+/gi, reason: "MSSQL connection string with credentials" },
+  { type: "MongoDB Connection String", confidence: "high", pattern: /mongodb(?:\+srv)?:\/\/[^\s"'<>}]+/gi, reason: "MongoDB connection string" },
+  { type: "Redis Connection String", confidence: "high", pattern: /rediss?:\/\/[^\s"'<>}]+/gi, reason: "Redis connection string" },
+  { type: "LDAP Connection String", confidence: "high", pattern: /ldap(?:s)?:\/\/[^\s"'<>}]+/gi, reason: "LDAP connection string" },
+  { type: "SMTP Connection String", confidence: "high", pattern: /smtp(?:s)?:\/\/[^\s"'<>}]+/gi, reason: "SMTP connection string with credentials" },
+  { type: "Private Key", confidence: "high", pattern: /-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----/g, reason: "PEM private key block" },
+  { type: "PGP Private Key", confidence: "high", pattern: /-----BEGIN PGP PRIVATE KEY BLOCK-----[\s\S]*?-----END PGP PRIVATE KEY BLOCK-----/g, reason: "PGP private key block" },
+  { type: "Kubernetes Token", confidence: "high", pattern: /eyJ[A-Za-z0-9\-_]+\.eyJ[A-Za-z0-9\-_]+\.?[A-Za-z0-9\-_]*(?:["'\s,}\]]|$)/g, reason: "Kubernetes service account token (JWT)" },
+  { type: "Docker Registry Token", confidence: "medium", pattern: /(?:docker|DOCKER)[_\s]*(?:registry|REGISTRY|auth|AUTH|token|TOKEN)\s*[=:]\s*['"]?[A-Za-z0-9\-_.~+/]+=*['"]?/gi, reason: "Docker registry credential assignment" },
+  { type: "npm Token", confidence: "high", pattern: /(?:\/\/registry\.npmjs\.org\/:(_authToken|_auth))\s*=\s*[A-Za-z0-9\-_.~+/]+=*/g, reason: "npm registry auth token" },
+  { type: "PyPI Token", confidence: "high", pattern: /pypi-[^@\s]+@[A-Za-z0-9\-_]+/g, reason: "PyPI API token prefix" },
+  { type: "NuGet API Key", confidence: "medium", pattern: /(?:NUGET_API_KEY|nuget_api_key|NUGET_KEY)\s*[=:]\s*['"]?[A-Za-z0-9\-_]{30,}['"]?/gi, reason: "NuGet API key assignment" },
+  { type: "Rubygems API Key", confidence: "high", pattern: /rubygems_[A-Za-z0-9]{48}/g, reason: "Rubygems API key prefix" },
+];
+
+function shannonEntropy(str) {
+  if (!str || str.length < 4) return 0;
+  const freq = {};
+  for (let i = 0; i < str.length; i++) freq[str[i]] = (freq[str[i]] || 0) + 1;
+  let e = 0;
+  const len = str.length;
+  for (const c of Object.keys(freq)) { const p = freq[c] / len; e -= p * Math.log2(p); }
+  return e;
+}
+
+function isBoringValue(val) {
+  if (!val || val.length < 2) return true;
+  return /^(true|false|null|undefined|none|empty|default|example|changeme|test|testing|tests?_|localhost|127\.0\.0\.1|0\.0\.0\.0|sample|placeholder|todo|fixme|xxx+|redacted|your[_-]?(?:api[_-]?key|password|secret|token)|put[_-]?your|insert[_-]?|replace[_-]?|enter[_-]?|add[_-]?your|\[.*\]|\$\{.*\}|%[A-Z_]+%|\<.*\>|\{+[\w.]+\}+|process\.env|import\.meta|require\(|N\/A|TBD|FIXME|TODO|XXX|CHANGEME|REPLACE|UPDATE|YOUR_|ENCRYPT|DECRYPT)$/i.test(val);
+}
+
+function buildSnippet(lineText, match, maxLen) {
+  maxLen = maxLen || 150;
+  if (!lineText) return "";
+  const line = lineText.replace(/\t/g, "  ");
+  if (line.length <= maxLen) return line;
+  let center;
+  if (typeof match === "number") center = match;
+  else if (typeof match === "string" && match) center = line.indexOf(match);
+  else center = 0;
+  if (center < 0) center = 0;
+  let start = Math.max(0, center - 40);
+  let end = start + maxLen;
+  if (end > line.length) { end = line.length; start = Math.max(0, end - maxLen); }
+  return (start > 0 ? "..." : "") + line.substring(start, end) + (end < line.length ? "..." : "");
+}
+
+function classifyCredKey(key) {
+  if (/password|passwd|pwd/i.test(key)) return { name: "Password", reason: "password key" };
+  if (/api_?key|apikey|app_?key|application_?key/i.test(key)) return { name: "API Key", reason: "API key" };
+  if (/(?:client|app|consumer|signing)_?secret/i.test(key)) return { name: "Secret", reason: "secret key" };
+  if (/(?:auth|access|refresh|session|bearer|csrf|id)_?token/i.test(key)) return { name: "Token", reason: "token key" };
+  if (/(?:private|secret|signing|encryption)_?key/i.test(key)) return { name: "Private Key", reason: "private key" };
+  if (/connection_?string|database_?url|db_?url|dsn/i.test(key)) return { name: "Connection String", reason: "connection string key" };
+  if (/db_?pass(?:word)?|db_?user|db_?name/i.test(key)) return { name: "Database Credential", reason: "database credential key" };
+  if (/(?:redis|mongo|smtp|ldap|ftp|mysql|postgres|ssh)_?(?:pass|user|url|host|key)/i.test(key)) return { name: "Service Credential", reason: "service credential key" };
+  if (/admin_?pass(?:word)?|admin_?user|root_?pass/i.test(key)) return { name: "Admin Credential", reason: "admin credential key" };
+  if (/user(?:name)?|login/i.test(key)) return { name: "Username", reason: "username key" };
+  if (/^(auth_password|auth_user|auth_token|auth_key|auth_url|auth_credential)$/i.test(key)) return { name: "Credential", reason: "auth key" };
+  return null;
+}
+
+const SD_KNOWN_USERS = /^(admin|root|postgres|sa|administrator|guest|demo|mysql|ubuntu|ec2-user|centos|oracle|sysadmin|service|deploy|www-data|nginx|apache|redis|mongo|elastic|grafana|jenkins|gitlab|runner|docker|ftp|backup|operator)$/i;
+const SD_PASSWORD_STRONG = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{}|;:'",.<>?\/\\`~]).{8,}$/;
+const SD_PASSWORD_MODERATE = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
+const SD_AUTH_LINE = /(?:fetch|axios|http\.|request\(|XMLHttpRequest|\.post\(|\.put\(|\.patch\(|Authorization|Bearer|Basic|x-api-key|WWW-Authenticate|setRequestHeader|\.open\(|requests\.(?:get|post|put|patch|delete|Session)|urllib|http\.client|httplib|curl|wget|sshpass|scp|rsync|ftp|sftp|http\.NewRequest|req\.SetBasicAuth|SetHeader|curl_setopt|file_get_contents|auth=|set_auth|Auth::|api_key|api\.Client|NewClient|HttpClient|WebClient|RestTemplate|OkHttp|Unirest)/i;
+const SD_KEYWORDS = /^(const|let|var|function|return|if|else|for|while|class|import|export|default|new|this|true|false|null|undefined|typeof|instanceof|switch|case|break|continue|try|catch|throw|async|await|yield|from|of|in|delete|void|super|extends|static|get|set|debugger|with|do|finally|def|self|print|lambda|assert|raise|global|nonlocal|pass|elif|except|finally|asyncio|await|func|package|chan|range|make|append|go|select|defer|map|fmt\.|string|int|float|double|bool|char|byte|long|short|public|private|protected|static|final|abstract|interface|implements|extends|throws|synchronized|volatile|transient|native|strictfp|enum|require|include|echo|print|die|array|foreach|endforeach|endwhile|endif|endfor|switchcase|set|local|my|our|sub|unless|until|BEGIN|END|module|end|attr_accessor|attr_reader|attr_writer|do|then|loop|next|redo|retry|BEGIN|END|__FILE__|__LINE__|defined\?|and|or|not|nil)$/i;
+const SD_KV_RE = /(?:(?:const|let|var|String|int|float|double|bool|char|long|byte|short|def|my|our|local|Dim|val|mut)\s+)?(\$?\w+)\s*(?::=|[=:])\s*['"`]([^'"`\n]{2,256})['"`]/gi;
+
+function scanForSecrets(text) {
+  const lines = text.split("\n");
+  const allFindings = [];
+  const valueIndex = new Map();
+
+  // Pre-compute newline offsets for O(log n) line lookup
+  const nlPos = [];
+  for (let i = 0; i < text.length; i++) { if (text[i] === "\n") nlPos.push(i); }
+
+  function getLine(pos) {
+    let lo = 0, hi = nlPos.length - 1;
+    while (lo <= hi) { const mid = (lo + hi) >> 1; if (nlPos[mid] < pos) lo = mid + 1; else hi = mid - 1; }
+    return lo + 1;
+  }
+
+  // Get character offset within a line from absolute text position
+  function lineOff(absPos, lineNum) {
+    const lineStart = lineNum <= 1 ? 0 : (nlPos[lineNum - 2] + 1);
+    return absPos - lineStart;
+  }
+
+  const CONF_RANK = { high: 0, medium: 1, low: 2 };
+
+  function add(f) {
+    const existing = valueIndex.get(f.value);
+    if (existing) {
+      for (const ln of f.lineNumbers) {
+        if (!existing.lineNumbers.includes(ln)) existing.lineNumbers.push(ln);
+      }
+      existing.occurrences += f.occurrences;
+      const newRank = CONF_RANK[f.confidence] ?? 3;
+      const oldRank = CONF_RANK[existing.confidence] ?? 3;
+      if (newRank < oldRank || (newRank === oldRank && f.usageSnippet && !existing.usageSnippet)) {
+        existing.confidence = f.confidence;
+        existing.type = f.type;
+        existing.reason = f.reason;
+        existing.context = f.context;
+        existing.snippet = f.snippet;
+      }
+      // Always preserve cross-reference usage context
+      if (f.usageSnippet && !existing.usageSnippet) {
+        existing.usageSnippet = f.usageSnippet;
+        existing.usageLine = f.usageLine;
+      }
+      return;
+    }
+    valueIndex.set(f.value, f);
+    allFindings.push(f);
+  }
+
+  let m;
+
+  // --- Pass 1: Known vendor token patterns ---
+  for (const { type, confidence, pattern, reason } of SECRET_PATTERNS) {
+    while ((m = pattern.exec(text)) !== null) {
+      const ln = getLine(m.index);
+      add({
+        type, confidence, line: ln, value: m[0], context: "",
+        reason, snippet: buildSnippet(lines[ln - 1], lineOff(m.index, ln)),
+        occurrences: 1, lineNumbers: [ln],
+      });
+    }
+  }
+
+  // --- Pass 2: Credential key-value assignments (string literals) ---
+  SD_KV_RE.lastIndex = 0;
+  while ((m = SD_KV_RE.exec(text)) !== null) {
+    const key = m[1];
+    const val = m[2];
+    if (SD_KEYWORDS.test(key)) continue;
+    if (isBoringValue(val)) continue;
+    // Skip when value is just the key name repeated (placeholder/self-referential)
+    if (key.replace(/^\$/, "").toLowerCase() === val.toLowerCase()) continue;
+    const cls = classifyCredKey(key);
+    if (!cls) continue;
+
+    const ln = getLine(m.index);
+    add({
+      type: cls.name, confidence: "high", line: ln, value: val, context: key,
+      reason: cls.reason, snippet: buildSnippet(lines[ln - 1], lineOff(m.index, ln)),
+      occurrences: 1, lineNumbers: [ln],
+    });
+  }
+
+  // --- Pass 3: Cross-reference — credential keys with variable references ---
+  // Build variable table from any language: JS const/let/var, Python bare, Go :=, PHP $var, etc.
+  // Only store variables that look like they could hold credentials — not generic loop vars or URLs.
+  const varTable = new Map();
+  const VAR_BUILD_RE = /(?:(?:const|let|var|String|int|float|double|bool|char|long|byte|short|def|my|our|local|Dim|val|mut)\s+)?(\$?\w+)\s*(?::=|=)\s*['"`]([^'"`\n]{2,256})['"`]/gi;
+  while ((m = VAR_BUILD_RE.exec(text)) !== null) {
+    const name = m[1];
+    const val = m[2];
+    if (!name || !val) continue;
+    if (isBoringValue(val)) continue;
+    if (SD_KEYWORDS.test(name)) continue;
+    // Skip single/two-char names — almost certainly loop vars or temporaries, not credential holders
+    if (name.replace(/^\$/, "").length < 3) continue;
+    // Skip values that are clearly URLs, paths, or non-secret data
+    if (/^https?:\/\//i.test(val)) continue;
+    if (/^\/[a-z]/i.test(val)) continue;
+    const ln = getLine(m.index);
+    if (!varTable.has(name)) {
+      varTable.set(name, { value: val, line: ln, absPos: m.index, snippet: buildSnippet(lines[ln - 1], lineOff(m.index, ln)) });
+    }
+  }
+
+  // Find credential-key properties whose value is a variable reference (not a string literal)
+  // Matches: password: xyz, password=xyz, auth=(user, pass), -u user:pass, --user=user:pass
+  const CRED_REF_RE = /['"]?(password|passwd|pwd|secret|api_?key|client_?secret|app_?secret|auth_?token|access_?token|refresh_?token|token|private_?key|user(?:name)?|login|email|admin_?pass|db_?pass|db_?user)['"]?\s*[:=]\s*([a-zA-Z_$][\w$]*)\b/gi;
+  while ((m = CRED_REF_RE.exec(text)) !== null) {
+    const key = m[1];
+    const refName = m[2];
+    if (SD_KEYWORDS.test(refName)) continue;
+    if (refName.replace(/^\$/, "").length < 3) continue;
+
+    const varInfo = varTable.get(refName);
+    if (!varInfo) continue;
+
+    const usageLine = getLine(m.index);
+    if (varInfo.absPos >= m.index) continue;
+    // Skip when variable value mirrors the credential key name (placeholder)
+    if (key.toLowerCase() === varInfo.value.toLowerCase()) continue;
+
+    const cls = classifyCredKey(key);
+    if (!cls) continue;
+
+    add({
+      type: cls.name, confidence: "high", line: varInfo.line, value: varInfo.value,
+      context: refName + " → " + key,
+      reason: `variable '${refName}' used as ${cls.reason} on line ${usageLine}`,
+      snippet: varInfo.snippet,
+      usageSnippet: buildSnippet(lines[usageLine - 1], lineOff(m.index, usageLine)),
+      usageLine,
+      occurrences: 1, lineNumbers: [varInfo.line],
+    });
+  }
+
+  // Python-style: auth=(user_var, pass_var)
+  const PY_AUTH_RE = /\bauth\s*=\s*\(\s*([a-zA-Z_]\w*)\s*,\s*([a-zA-Z_]\w*)\s*\)/g;
+  while ((m = PY_AUTH_RE.exec(text)) !== null) {
+    const usageLine = getLine(m.index);
+    for (const refName of [m[1], m[2]]) {
+      if (refName.length < 3) continue;
+      const varInfo = varTable.get(refName);
+      if (!varInfo) continue;
+      if (varInfo.absPos >= m.index) continue;
+      const cls = m[2] === refName ? classifyCredKey("password") : classifyCredKey("username");
+      if (!cls) continue;
+      add({
+        type: cls.name, confidence: "high", line: varInfo.line, value: varInfo.value,
+        context: refName + " → auth tuple",
+        reason: `variable '${refName}' used in auth tuple on line ${usageLine}`,
+        snippet: varInfo.snippet,
+        usageSnippet: buildSnippet(lines[usageLine - 1], lineOff(m.index, usageLine)),
+        usageLine,
+        occurrences: 1, lineNumbers: [varInfo.line],
+      });
+    }
+  }
+
+  // Shell/curl: -u user_var:pass_var  or  --user=user_var:pass_var
+  const CURL_AUTH_RE = /(?:-u\s+|--user=?)\s*([a-zA-Z_]\w*):([a-zA-Z_]\w*)/g;
+  while ((m = CURL_AUTH_RE.exec(text)) !== null) {
+    const usageLine = getLine(m.index);
+    const pairs = [[m[1], "username"], [m[2], "password"]];
+    for (const [refName, keyHint] of pairs) {
+      if (refName.length < 3) continue;
+      const varInfo = varTable.get(refName);
+      if (!varInfo) continue;
+      if (varInfo.absPos >= m.index) continue;
+      const cls = classifyCredKey(keyHint);
+      if (!cls) continue;
+      add({
+        type: cls.name, confidence: "high", line: varInfo.line, value: varInfo.value,
+        context: refName + " → curl auth",
+        reason: `variable '${refName}' used in curl auth on line ${usageLine}`,
+        snippet: varInfo.snippet,
+        usageSnippet: buildSnippet(lines[usageLine - 1], lineOff(m.index, usageLine)),
+        usageLine,
+        occurrences: 1, lineNumbers: [varInfo.line],
+      });
+    }
+  }
+
+  // --- Pass 4: Auth-proximity detection ---
+  const authLineSet = new Set();
+  for (let i = 0; i < lines.length; i++) {
+    if (SD_AUTH_LINE.test(lines[i])) {
+      for (let j = Math.max(0, i - 4); j <= Math.min(lines.length - 1, i + 4); j++) authLineSet.add(j);
+    }
+  }
+
+  for (const li of authLineSet) {
+    const line = lines[li];
+    if (!line) continue;
+    const assignMatch = /(?:(?:const|let|var|def|int|String|float|double|bool|char|long|byte|short|my|our|local|val|mut)\s+)?(\$?\w+)\s*(?::=|=)\s*['"`]([^'"`\n]{2,128})['"`]/i.exec(line);
+    if (!assignMatch) continue;
+    const [, varName, val] = assignMatch;
+    if (SD_KEYWORDS.test(varName)) continue;
+    if (isBoringValue(val)) continue;
+    if (valueIndex.has(val)) continue;
+
+    let type = null;
+    let reason = "";
+    if (SD_PASSWORD_STRONG.test(val)) { type = "Potential Password"; reason = "strong password pattern near auth context"; }
+    else if (SD_PASSWORD_MODERATE.test(val)) { type = "Potential Password"; reason = "password-like pattern near auth context"; }
+    else if (SD_KNOWN_USERS.test(val)) { type = "Potential Username"; reason = "default username near auth context"; }
+    if (!type) continue;
+
+    add({
+      type, confidence: "medium", line: li + 1, value: val, context: varName,
+      reason, snippet: buildSnippet(line, line.indexOf(val)),
+      occurrences: 1, lineNumbers: [li + 1],
+    });
+  }
+
+  // --- Pass 5: Standalone strong passwords / known usernames (any language) ---
+  const VAR_RE = /(?:(?:const|let|var|def|int|String|float|double|bool|char|long|byte|short|my|our|local|val|mut)\s+)?(\$?\w+)\s*(?::=|=)\s*['"`]([^'"`\n]{2,128})['"`]/gi;
+  while ((m = VAR_RE.exec(text)) !== null) {
+    const varName = m[1];
+    const val = m[2];
+    if (!varName || !val) continue;
+    if (isBoringValue(val)) continue;
+    if (SD_KEYWORDS.test(varName)) continue;
+    if (valueIndex.has(val)) continue;
+
+    const ln = getLine(m.index);
+
+    if (SD_PASSWORD_STRONG.test(val)) {
+      add({
+        type: "Potential Password", confidence: "medium", line: ln, value: val, context: varName,
+        reason: "strong password pattern (mixed case + digits + symbols, 8+ chars)",
+        snippet: buildSnippet(lines[ln - 1], lineOff(m.index, ln)),
+        occurrences: 1, lineNumbers: [ln],
+      });
+    } else if (SD_PASSWORD_MODERATE.test(val) && val.length >= 12) {
+      add({
+        type: "Potential Password", confidence: "low", line: ln, value: val, context: varName,
+        reason: "password-like pattern (mixed case + digits, 12+ chars)",
+        snippet: buildSnippet(lines[ln - 1], lineOff(m.index, ln)),
+        occurrences: 1, lineNumbers: [ln],
+      });
+    } else if (SD_KNOWN_USERS.test(val)) {
+      add({
+        type: "Potential Username", confidence: "medium", line: ln, value: val, context: varName,
+        reason: "known default username value",
+        snippet: buildSnippet(lines[ln - 1], lineOff(m.index, ln)),
+        occurrences: 1, lineNumbers: [ln],
+      });
+    }
+  }
+
+  allFindings.sort((a, b) => {
+    return (CONF_RANK[a.confidence] ?? 3) - (CONF_RANK[b.confidence] ?? 3) || a.line - b.line;
+  });
+
+  return allFindings;
+}
+
+const SECRETS_SAMPLE_TEXT = `// --- Obfuscated variable names, real credentials ---
+const zzz = "admin";
+const xyz = "S3cureP@ssw0rd!";
+const a = "sk_live_ABCDEFGHIJKLMNOPQRSTUV";
+
+// Variables used in fetch auth call — cross-reference should link them
+fetch("https://api.example.com/v1/auth/login", {
+  method: "POST",
+  headers: { "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c" },
+  body: JSON.stringify({ username: zzz, password: xyz })
+});
+
+const config = {
+  api_key: "sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij1234567890",
+  secret: "abcdef1234567890abcdef1234567890",
+  db_url: "postgres://admin:s3cretP@ss@db.example.com:5432/production",
+  redis_url: "rediss://:mysecretpassword@redis.example.com:6380/0"
+};
+
+# --- Config file secrets ---
+AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+GITHUB_TOKEN=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij1234
+GITLAB_TOKEN=glpat-abcdefghijklmnopqrstuvwx
+SLACK_TOKEN=xoxb-1234567890-1234567890123-AbCdEfGhIjKlMnOpQrStUvWx
+SENDGRID_KEY=SG.ABCDEFGHIJKLMNOPQRStuvwx.ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh
+
+-----BEGIN RSA PRIVATE KEY-----
+MIIEpAIBAAKCAQEA0Z3VS5JJcds3xfn/yGaTK...
+-----END RSA PRIVATE KEY-----
+
+SMTP_URL=smtp://admin:password123@mail.example.com:587
+npm_token=//registry.npmjs.org/:_authToken=abcdef1234567890abcdef1234567890abcdef
+OPENAI_API_KEY=sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij1234567890
+ANTHROPIC_API_KEY=sk-ant-api03-ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890
+`;
+
+function initSecretsDetector() {
+  const input = document.getElementById("secrets-detector-input");
+  const fileInput = document.getElementById("secrets-detector-file");
+  const dropzone = document.getElementById("secrets-detector-dropzone");
+  const scanBtn = document.getElementById("secrets-detector-scan-btn");
+  const clearBtn = document.getElementById("secrets-detector-clear-btn");
+  const sampleBtn = document.getElementById("secrets-detector-sample-btn");
+  const resultsEl = document.getElementById("secrets-detector-results");
+  const inlineEl = document.getElementById("secrets-detector-inline-result");
+  const fileInfo = document.getElementById("secrets-detector-file-info");
+  if (!input || !scanBtn || !resultsEl) return;
+
+  if (dropzone) {
+    let dragCounter = 0;
+    const dropText = document.getElementById("secrets-detector-dropzone-text");
+    const enterDrop = () => {
+      dragCounter++;
+      dropzone.classList.add("sd-drop-active");
+      if (dropText) dropText.textContent = "Drop file to load into editor";
+    };
+    const leaveDrop = () => {
+      dragCounter--;
+      if (dragCounter <= 0) {
+        dragCounter = 0;
+        dropzone.classList.remove("sd-drop-active");
+        if (dropText) dropText.textContent = "Drag and drop a text file here";
+      }
+    };
+    dropzone.addEventListener("dragenter", (e) => { e.preventDefault(); enterDrop(); });
+    dropzone.addEventListener("dragleave", () => { leaveDrop(); });
+    dropzone.addEventListener("dragover", (e) => { e.preventDefault(); });
+    dropzone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dragCounter = 0;
+      dropzone.classList.remove("sd-drop-active");
+      if (dropText) dropText.textContent = "Drag and drop a text file here";
+      const file = e.dataTransfer?.files?.[0];
+      if (file) loadSecretsFile(file, input, fileInfo, inlineEl);
+    });
+  }
+
+  if (fileInput) {
+    fileInput.addEventListener("change", () => {
+      const file = fileInput.files?.[0];
+      if (file) loadSecretsFile(file, input, fileInfo, inlineEl);
+    });
+  }
+
+  const runScan = () => {
+    const text = input.value;
+    clearInlineResult(inlineEl);
+    if (!text.trim()) {
+      setInlineResult(inlineEl, "Paste or upload text to scan first.", "error");
+      return;
+    }
+    if (text.length > 10 * 1024 * 1024) {
+      setInlineResult(inlineEl, "Input exceeds 10 MB limit.", "error");
+      return;
+    }
+    scanBtn.disabled = true;
+    scanBtn.textContent = "Scanning...";
+    resultsEl.innerHTML = '<div class="text-sm text-muted">Scanning for secrets...</div>';
+
+    setTimeout(() => {
+      const findings = scanForSecrets(text);
+      secretsDetectorState.findings = findings;
+      secretsDetectorState.filterConfidence = "ALL";
+      secretsDetectorState.filterType = "ALL";
+      renderSecretsDetectorResults(findings, resultsEl, text);
+      scanBtn.disabled = false;
+      scanBtn.textContent = "Scan";
+    }, 20);
+  };
+
+  scanBtn.addEventListener("click", runScan);
+  input.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") runScan(); });
+
+  clearBtn.addEventListener("click", () => {
+    input.value = "";
+    resultsEl.innerHTML = "";
+    clearInlineResult(inlineEl);
+    if (fileInfo) fileInfo.classList.add("hidden");
+    if (fileInput) fileInput.value = "";
+    secretsDetectorState.findings = [];
+  });
+
+  sampleBtn.addEventListener("click", () => {
+    input.value = SECRETS_SAMPLE_TEXT;
+    if (fileInfo) {
+      fileInfo.textContent = "Sample data loaded";
+      fileInfo.classList.remove("hidden");
+    }
+  });
+
+  resultsEl.addEventListener("click", (e) => {
+    const copyBtn = e.target.closest("[data-sd-copy]");
+    if (copyBtn) {
+      navigator.clipboard.writeText(copyBtn.dataset.sdCopy || "").then(() => {
+        copyBtn.textContent = "Copied";
+        setTimeout(() => { copyBtn.textContent = "Copy"; }, 1500);
+      });
+      return;
+    }
+    const copyAll = e.target.closest("[data-sd-copy-all]");
+    if (copyAll) {
+      const text = secretsDetectorState.findings.map((f) => f.value).join("\n");
+      navigator.clipboard.writeText(text).then(() => {
+        copyAll.textContent = "Copied";
+        setTimeout(() => { copyAll.textContent = "Copy All Findings"; }, 1500);
+      });
+      return;
+    }
+    const copyReport = e.target.closest("[data-sd-copy-report]");
+    if (copyReport) {
+      const report = secretsDetectorState.findings.map((f) =>
+        `${f.type}\t${f.confidence}\tLine ${f.line}\t${f.reason}\t${f.value.substring(0, 80)}`
+      ).join("\n");
+      navigator.clipboard.writeText(report).then(() => {
+        copyReport.textContent = "Copied";
+        setTimeout(() => { copyReport.textContent = "Copy Report Summary"; }, 1500);
+      });
+      return;
+    }
+    const downloadJson = e.target.closest("[data-sd-download-json]");
+    if (downloadJson) {
+      const json = JSON.stringify(secretsDetectorState.findings.map((f) => ({
+        type: f.type,
+        confidence: f.confidence,
+        line: f.line,
+        value: f.value,
+        context: f.context,
+        reason: f.reason,
+        snippet: f.snippet,
+        occurrences: f.occurrences,
+        lineNumbers: f.lineNumbers,
+      })), null, 2);
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "secrets-detector-findings.json";
+      a.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
+    const sanitise = e.target.closest("[data-sd-sanitise]");
+    if (sanitise) {
+      const original = input.value;
+      let redacted = original;
+      const sorted = [...secretsDetectorState.findings].sort((a, b) => b.value.length - a.value.length);
+      for (const f of sorted) {
+        const esc = f.value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        redacted = redacted.replace(new RegExp(esc, "g"), `[REDACTED:${f.type}]`);
+      }
+      const blob = new Blob([redacted], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "sanitised-text.txt";
+      a.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
+  });
+
+  resultsEl.addEventListener("change", (e) => {
+    const filterEl = e.target.closest("[data-sd-filter]");
+    if (!filterEl) return;
+    const { filterType } = filterEl.dataset;
+    if (filterType === "confidence") secretsDetectorState.filterConfidence = filterEl.value;
+    if (filterType === "type") secretsDetectorState.filterType = filterEl.value;
+    renderSecretsDetectorResults(secretsDetectorState.findings, resultsEl, input.value);
+  });
+}
+
+function loadSecretsFile(file, textarea, fileInfoEl, inlineEl) {
+  if (file.size > 10 * 1024 * 1024) {
+    setInlineResult(inlineEl, "File must be 10 MB or less.", "error");
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    textarea.value = reader.result;
+    if (fileInfoEl) {
+      fileInfoEl.textContent = `Loaded: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+      fileInfoEl.classList.remove("hidden");
+    }
+  };
+  reader.readAsText(file);
+}
+
+function renderSecretsDetectorResults(findings, container, originalText) {
+  const { filterConfidence, filterType } = secretsDetectorState;
+  let filtered = findings;
+  if (filterConfidence !== "ALL") filtered = filtered.filter((f) => f.confidence === filterConfidence);
+  if (filterType !== "ALL") filtered = filtered.filter((f) => f.type === filterType);
+
+  const types = [...new Set(findings.map((f) => f.type))].sort();
+  const highCount = findings.filter((f) => f.confidence === "high").length;
+  const medCount = findings.filter((f) => f.confidence === "medium").length;
+  const lowCount = findings.filter((f) => f.confidence === "low").length;
+
+  if (findings.length === 0) {
+    container.innerHTML = '<div class="sd-empty">No secrets detected.</div>';
+    return;
+  }
+
+  let html = '<div class="sd-toolbar">';
+  html += '<div class="sd-toolbar-left">';
+  html += `<span class="sd-pill sd-pill-hi">${highCount} high</span>`;
+  html += `<span class="sd-pill sd-pill-md">${medCount} med</span>`;
+  html += `<span class="sd-pill sd-pill-lo">${lowCount} low</span>`;
+  html += `<span class="sd-count">${filtered.length} shown</span>`;
+  html += "</div>";
+  html += '<div class="sd-toolbar-right">';
+  html += '<select class="sd-select" data-sd-filter data-filter-type="confidence">';
+  html += '<option value="ALL"' + (filterConfidence === "ALL" ? " selected" : "") + '>All confidence</option>';
+  html += '<option value="high"' + (filterConfidence === "high" ? " selected" : "") + '>High</option>';
+  html += '<option value="medium"' + (filterConfidence === "medium" ? " selected" : "") + '>Medium</option>';
+  html += '<option value="low"' + (filterConfidence === "low" ? " selected" : "") + '>Low</option>';
+  html += "</select>";
+  html += '<select class="sd-select" data-sd-filter data-filter-type="type">';
+  html += '<option value="ALL"' + (filterType === "ALL" ? " selected" : "") + '>All types</option>';
+  for (const t of types) html += `<option value="${escapeHtml(t)}"${filterType === t ? " selected" : ""}>${escapeHtml(t)}</option>`;
+  html += "</select></div></div>";
+
+  html += '<div class="sd-actions-bar">';
+  html += '<button type="button" class="sd-action-btn" data-sd-copy-all>Copy all</button>';
+  html += '<button type="button" class="sd-action-btn" data-sd-copy-report>Copy report</button>';
+  html += '<button type="button" class="sd-action-btn" data-sd-download-json>Export JSON</button>';
+  html += '<button type="button" class="sd-action-btn" data-sd-sanitise>Sanitise</button>';
+  html += "</div>";
+
+  html += '<div class="sd-table-wrap"><table class="sd-table">';
+  html += "<thead><tr>";
+  html += '<th class="sd-th-type">Type</th>';
+  html += '<th class="sd-th-conf">Conf</th>';
+  html += '<th class="sd-th-line">Line</th>';
+  html += '<th class="sd-th-ctx">Context</th>';
+  html += '<th class="sd-th-val">Value</th>';
+  html += '<th class="sd-th-act"></th>';
+  html += "</tr></thead><tbody>";
+
+  for (const f of filtered) {
+    const confCls = f.confidence === "high" ? "sd-c-hi" : f.confidence === "medium" ? "sd-c-md" : "sd-c-lo";
+    const shortVal = f.value.length > 120 ? f.value.substring(0, 120) + "..." : f.value;
+    const ctx = f.context ? escapeHtml(f.context.substring(0, 40)) : '<span class="sd-dash">&mdash;</span>';
+    const extra = f.occurrences > 1 ? ` <span class="sd-occ">+${f.occurrences - 1}</span>` : "";
+
+    // Build focused snippet with the secret highlighted
+    const snipText = f.snippet || "";
+    const valEsc = escapeHtml(f.value.substring(0, 80));
+    const snipEsc = escapeHtml(snipText);
+    // Highlight value in definition snippet — match after quote/separator to avoid partial matches
+    const valRe = valEsc.length > 2 ? new RegExp("(?<=[\"'`=:]\\s*)" + valEsc.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) : null;
+    const highlightedSnip = valRe && valRe.test(snipEsc) ? snipEsc.replace(valRe, '<mark class="sd-hl">$&</mark>') : (snipEsc.indexOf(valEsc) >= 0 ? snipEsc.replace(valEsc, '<mark class="sd-hl">' + valEsc + "</mark>") : snipEsc);
+
+    const rowKey = safeAttr(f.value + ":" + f.line);
+
+    html += `<tr class="sd-row" data-sd-row="${rowKey}">`;
+    html += `<td class="sd-td-type"><span class="sd-type-label">${escapeHtml(f.type)}</span></td>`;
+    html += `<td class="sd-td-conf"><span class="${confCls}">${f.confidence}</span></td>`;
+    html += `<td class="sd-td-line">${f.line}${extra}</td>`;
+    html += `<td class="sd-td-ctx">${ctx}</td>`;
+    html += `<td class="sd-td-val"><code class="sd-val" title="${safeAttr(f.value)}">${escapeHtml(shortVal)}</code></td>`;
+    html += `<td class="sd-td-act"><button type="button" class="sd-copy-sm" data-sd-copy="${safeAttr(f.value)}" title="Copy value">&#x2398;</button></td>`;
+    html += "</tr>";
+
+    // Expandable detail row
+    html += `<tr class="sd-detail-row hidden" data-sd-detail="${rowKey}"><td colspan="6" class="sd-detail-cell">`;
+    html += '<div class="sd-detail-grid">';
+    html += `<div class="sd-detail-label">Reason</div><div>${escapeHtml(f.reason)}</div>`;
+    if (f.lineNumbers.length > 1) html += `<div class="sd-detail-label">Lines</div><div>${f.lineNumbers.join(", ")}</div>`;
+    if (f.usageSnippet) {
+      const usageSnipEsc = escapeHtml(f.usageSnippet);
+      const refName = (f.context || "").split(" → ")[0] || "";
+      const refNameRe = refName ? new RegExp("(?<![a-zA-Z0-9_$])" + refName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?![a-zA-Z0-9_$])", "g") : null;
+      const usageHighlighted = refNameRe ? usageSnipEsc.replace(refNameRe, '<mark class="sd-hl">$&</mark>') : usageSnipEsc;
+      html += `<div class="sd-detail-label">Definition (L${f.line})</div><div class="sd-detail-snip"><code>${highlightedSnip}</code></div>`;
+      html += `<div class="sd-detail-label">Usage (L${f.usageLine})</div><div class="sd-detail-snip"><code>${usageHighlighted}</code></div>`;
+    } else {
+      html += `<div class="sd-detail-label">Snippet</div><div class="sd-detail-snip"><code>${highlightedSnip}</code></div>`;
+    }
+    html += "</div></td></tr>";
+  }
+
+  html += "</tbody></table></div>";
+  container.innerHTML = html;
+
+  // Wire row click to expand detail
+  container.querySelectorAll(".sd-row").forEach((row) => {
+    row.addEventListener("click", (e) => {
+      if (e.target.closest("[data-sd-copy]")) return;
+      const key = row.dataset.sdRow;
+      const detail = container.querySelector(`[data-sd-detail="${key}"]`);
+      if (detail) detail.classList.toggle("hidden");
+    });
+  });
+}
+
 async function init() {
   // Load bootstrap to determine which tools are enabled
-  let enabledTools = { cvss: true, breach: true, azure: true, securitytrails: true, "security-headers": true, "tls-check": true, "dns-lookup": true, leakradar: true, "lol-lookup": true, cyberchef: true, "header-analyzer": true, "jwt-analyzer": true, "api-analyzer": true, callback: true };
+  let enabledTools = { cvss: true, breach: true, azure: true, securitytrails: true, "security-headers": true, "tls-check": true, "dns-lookup": true, leakradar: true, "lol-lookup": true, cyberchef: true, "header-analyzer": true, "jwt-analyzer": true, "api-analyzer": true, callback: true, "secrets-detector": true };
   let dnsTools = [];
   try {
     const data = await api("/minitools/bootstrap");
@@ -3121,6 +3846,7 @@ async function init() {
       "jwt-analyzer": !!data.tools?.jwtAnalyzer?.enabled,
       "api-analyzer": !!data.tools?.apiAnalyzer?.enabled,
       callback: !!data.tools?.callback?.enabled,
+      "secrets-detector": !!data.tools?.secretsDetector?.enabled,
     };
     dnsTools = data.tools?.dnsLookup?.tools || [];
     const st = data.tools?.securitytrails;
@@ -3143,7 +3869,7 @@ async function init() {
   } catch (_) { /* bootstrap optional */ }
 
   // Hide disabled tools from sidebar, mobile tabs, and view sections
-  const allTools = ["cvss", "breach", "azure", "securitytrails", "security-headers", "tls-check", "dns-lookup", "leakradar", "lol-lookup", "cyberchef", "header-analyzer", "jwt-analyzer", "api-analyzer", "callback"];
+  const allTools = ["cvss", "breach", "azure", "securitytrails", "security-headers", "tls-check", "dns-lookup", "leakradar", "lol-lookup", "cyberchef", "header-analyzer", "jwt-analyzer", "api-analyzer", "callback", "secrets-detector"];
   for (const tool of allTools) {
     if (!enabledTools[tool]) {
       hideMinitool(tool);
@@ -3157,6 +3883,7 @@ async function init() {
   }
 
   initSidebar();
+  initAboutTabs();
   if (enabledTools.cvss) initCvss();
   if (enabledTools.breach) initBreach();
   if (enabledTools.azure) initAzure();
@@ -3171,6 +3898,7 @@ async function init() {
   if (enabledTools["lol-lookup"]) initLolLookup();
   if (enabledTools["api-analyzer"]) initApiAnalyzer();
   if (enabledTools.callback) initCallback();
+  if (enabledTools["secrets-detector"]) initSecretsDetector();
 }
 
 init();

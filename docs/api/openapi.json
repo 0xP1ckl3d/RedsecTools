@@ -10123,6 +10123,191 @@
         }
       }
     },
+    "/api/chat/conversations/{id}/messages/{messageId}": {
+      "put": {
+        "tags": [
+          "Chat"
+        ],
+        "summary": "Edit own message",
+        "description": "Replaces the encrypted payload for a message sent by the current user. The server enforces conversation membership and sender ownership, stores ciphertext only, and marks the message as edited.",
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "messageId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationMessageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Message edited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" },
+                    "createdAt": { "type": "integer" },
+                    "editedAt": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "Message not found"
+          },
+          "409": {
+            "description": "Message is deleted or could not be edited"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Chat"
+        ],
+        "summary": "Delete own message",
+        "description": "Marks a message sent by the current user as deleted and clears the stored encrypted payload while leaving a thread tombstone.",
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "messageId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Message deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "id": { "type": "string" },
+                    "deletedAt": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "Message not found"
+          },
+          "409": {
+            "description": "Message could not be deleted"
+          }
+        }
+      }
+    },
+    "/api/chat/conversations/{id}/notifications/read": {
+      "post": {
+        "tags": [
+          "Chat"
+        ],
+        "summary": "Mark conversation notification read",
+        "description": "Clears the generic notification-center unread item for this encrypted conversation for the current user. This does not expose message plaintext.",
+        "security": [
+          {
+            "UserSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conversation notification state cleared",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "markedRead": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
     "/api/chat/conversations/{id}/rekey": {
       "post": {
         "tags": [

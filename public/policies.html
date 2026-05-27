@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <title>RedSecTools — Policies</title>
+  <link rel="icon" href="/assets/favicon.ico" type="image/x-icon">
+  <script src="/js/theme-init.js?v=20260507-ai-calendar"></script>
+  <link rel="stylesheet" href="/css/style.css?v=20260507-ai-calendar">
+</head>
+<body>
+  <div class="policy-page-shell">
+    <header class="policy-header">
+      <div>
+        <a href="/" class="policy-brand">
+          <span class="text-accent" data-bp>RedSec</span><span class="text-secondary">Tools</span>
+        </a>
+        <p class="policy-subtitle">Privacy Policy and Terms of Service for this RedSecTools deployment.</p>
+      </div>
+      <button type="button" class="theme-toggle" id="theme-toggle" title="Toggle theme">
+        <svg class="w-5 h-5 dark-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+        <svg class="w-5 h-5 light-icon hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+      </button>
+    </header>
+
+    <main class="policy-card">
+      <nav class="policy-tabs" aria-label="Policy sections">
+        <button type="button" class="policy-tab active" data-policy-view="privacy">Privacy Policy</button>
+        <button type="button" class="policy-tab" data-policy-view="tos">Terms of Service</button>
+      </nav>
+
+      <section id="policy-view-privacy" class="policy-panel" data-policy-panel="privacy">
+        <p class="policy-updated">Effective date: 26 May 2026</p>
+        <h1>Privacy Policy</h1>
+        <p>This Privacy Policy explains how personal information and workspace data may be handled when you use this RedSecTools deployment. RedSecTools is designed for self-hosted security operations, so the organisation or person operating this instance is responsible for how the service is configured, administered, backed up, monitored, and used.</p>
+
+        <h2>1. Who Is Responsible</h2>
+        <p>The operator of this RedSecTools instance is the controller or responsible party for user accounts, workspace data, retention settings, access decisions, audit review, backups, integrations, and support processes. Users should contact their workspace administrator for privacy requests, account questions, retention requests, or security concerns related to this deployment.</p>
+
+        <h2>2. Information Processed</h2>
+        <p>Depending on how the workspace is used, RedSecTools may process account details such as username, email address, password hash, role and permission assignments, MFA state, trusted device records, invitation status, profile settings, notification preferences, and authentication events.</p>
+        <p>The platform may also process workspace data such as paste and file-share metadata, survey content and responses, wiki pages, calendar entries, threat feeds, reports, proposals, engagement records, MiniTool lookup inputs and results, integration settings, webhook delivery metadata, service-account metadata, and administrative configuration.</p>
+
+        <h2>3. Encrypted Content</h2>
+        <p>RedSecTools is designed so plaintext content is encrypted in the browser before being submitted to the server. During normal operation, the server stores opaque ciphertext and does not receive paste, file, chat, or vault plaintext. This does not protect against a malicious or compromised server that serves modified JavaScript to clients.</p>
+        <p>Encrypted content may still have associated metadata, such as ownership, timestamps, expiry settings, access state, file names where provided, size, route identifiers, and audit events. Workspace administrators may be able to view or export metadata and encrypted records depending on their permissions.</p>
+
+        <h2>4. Logs, Audit Events, and Security Records</h2>
+        <p>RedSecTools records security and operational events to support account protection, incident investigation, compliance review, and system administration. These records may include IP-derived request metadata, user agent information, timestamps, account identifiers, route or action names, success or failure state, administrative changes, API-token activity, webhook activity, SSO events, and security-sensitive workflow events.</p>
+        <p>The application is designed not to log plaintext passwords, recovery codes, TOTP secrets, API tokens, webhook secrets, encryption keys, URL fragment keys, decrypted paste/share/chat/vault content, or other secrets. Operators should preserve that model when adding integrations, proxies, monitoring, or custom logging.</p>
+
+        <h2>5. Cookies and Local Storage</h2>
+        <p>RedSecTools uses signed, HTTP-only cookies for session management and may use browser storage for theme preferences, client-side keys, encrypted-workflow state, and user-interface preferences. Disabling cookies or clearing local browser storage may prevent login, MFA trust, encrypted content access, chat key recovery, or other application features from working correctly.</p>
+
+        <h2>6. External Services and Integrations</h2>
+        <p>Some features may contact third-party or external services if an administrator enables or configures them. Examples may include SMTP providers, SAML identity providers, AI model providers, webhook destinations, threat-intelligence sources, MiniTool API providers, DNS/security lookup services, and browser-accessed public APIs. Data sent to those services is governed by the operator's configuration and the relevant provider's terms and privacy practices.</p>
+        <p>RedSecAI and API-backed MiniTools should be used deliberately. Do not submit secrets, regulated data, client confidential data, or personal information to external AI or third-party APIs unless your organisation has approved that use.</p>
+
+        <h2>7. Data Retention and Deletion</h2>
+        <p>Retention depends on workspace configuration, feature-specific expiry settings, backups, audit requirements, and administrator actions. Some content can expire automatically, be burned after access, or be deleted by authorised users. Audit logs, backups, and security records may be retained separately for operational, legal, or security reasons.</p>
+
+        <h2>8. Access and Administration</h2>
+        <p>Workspace administrators can manage users, roles, permissions, MFA state, security settings, integrations, audit exports, backups, branding, and other deployment controls. Administrators should grant access only to authorised personnel and periodically review roles, service accounts, webhook endpoints, SSO settings, external API keys, and backup handling.</p>
+
+        <h2>9. Security</h2>
+        <p>RedSecTools includes security controls such as authentication, role-based permissions, MFA support, signed cookies, CSP-oriented frontend patterns, audit logging, rate limits, and encrypted workflows for protected content. No system can guarantee absolute security. Users must protect their devices, sessions, MFA factors, recovery codes, browser profiles, downloaded files, exported reports, and any copied secrets or decrypted content.</p>
+
+        <h2>10. User Rights and Requests</h2>
+        <p>Depending on applicable law and the operator's obligations, users may have rights to request access, correction, deletion, restriction, portability, or objection relating to personal information. Requests should be directed to the workspace administrator or organisation operating this deployment.</p>
+
+        <h2>11. Children</h2>
+        <p>RedSecTools is intended for professional security and operational use. It is not intended for children or for use by anyone who is not authorised by the workspace operator.</p>
+
+        <h2>12. Changes</h2>
+        <p>The operator may update this Privacy Policy to reflect legal, operational, security, or product changes. Continued use of the workspace after an update means the updated policy applies from its effective date.</p>
+      </section>
+
+      <section id="policy-view-tos" class="policy-panel hidden" data-policy-panel="tos">
+        <p class="policy-updated">Effective date: 26 May 2026</p>
+        <h1>Terms of Service</h1>
+        <p>These Terms of Service govern access to and use of this RedSecTools deployment. By using this workspace, you agree to follow these Terms, any organisation-specific rules provided by the workspace operator, and all applicable laws and professional obligations.</p>
+
+        <h2>1. Authorised Use Only</h2>
+        <p>RedSecTools is an offensive-security operations workspace. You may use it only if you are authorised by the organisation or person operating this deployment. You must not access, test, scan, attack, monitor, collect data from, or interfere with systems unless you have clear written authorisation and a lawful scope for that activity.</p>
+
+        <h2>2. Account Responsibilities</h2>
+        <p>You are responsible for your account, passwords, MFA factors, recovery codes, browser sessions, API tokens, service-account credentials, downloaded files, exported data, and any activity performed using credentials assigned to you. You must promptly report suspected compromise, unauthorised access, accidental disclosure, lost MFA access, or security incidents to the workspace administrator.</p>
+
+        <h2>3. Acceptable Use</h2>
+        <p>You must not use RedSecTools to perform unlawful activity, unauthorised intrusion, credential theft, harassment, extortion, spam, malware deployment, data exfiltration, privacy violations, or activity outside an approved security-testing scope. You must not attempt to bypass RBAC, MFA, audit logging, rate limits, SSO controls, CSP, encryption workflows, or administrative security controls.</p>
+
+        <h2>4. Confidentiality and Client Data</h2>
+        <p>You must handle client, target, personal, confidential, regulated, and sensitive data according to your organisation's rules, contractual obligations, engagement scope, and applicable law. Do not upload or enter data that you are not authorised to process. Do not expose secrets in comments, reports, AI prompts, webhook payloads, MiniTool lookups, exported files, or external integrations unless specifically approved.</p>
+
+        <h2>5. Encrypted Content and Key Handling</h2>
+        <p>RedSecTools is designed so plaintext content is encrypted in the browser before being submitted to the server. During normal operation, the server stores opaque ciphertext and does not receive paste, file, chat, or vault plaintext. This does not protect against a malicious or compromised server that serves modified JavaScript to clients.</p>
+        <p>You are responsible for protecting any decryption keys, URL fragments, exported credentials, recovery material, downloaded files, and decrypted content made available to your browser or device.</p>
+
+        <h2>6. Integrations, API Access, and Automation</h2>
+        <p>Administrators may enable integrations such as SSO, SMTP, AI providers, webhooks, service accounts, external MiniTool APIs, and threat-intelligence sources. Users and administrators must configure and use those integrations only for authorised purposes, with appropriate scopes, least privilege, rotation, retention, and monitoring.</p>
+
+        <h2>7. Content and Reports</h2>
+        <p>You retain responsibility for the legality, accuracy, quality, confidentiality, and appropriate handling of content you create, upload, import, generate, export, or share through RedSecTools. Report templates, AI-assisted content, lookup results, threat feeds, and MiniTool outputs may require human review before being relied on or delivered to a client.</p>
+
+        <h2>8. Availability and Changes</h2>
+        <p>The operator may modify, suspend, restrict, monitor, update, or discontinue access to the workspace as needed for security, maintenance, legal compliance, incident response, licensing, or operational reasons. Features may depend on configuration, permissions, third-party services, network availability, and local deployment health.</p>
+
+        <h2>9. Suspension and Termination</h2>
+        <p>The operator may suspend or terminate user accounts, revoke sessions, rotate credentials, disable service accounts, restrict permissions, remove content, or preserve records if required for security, compliance, investigation, policy enforcement, or operational reasons.</p>
+
+        <h2>10. Disclaimers</h2>
+        <p>To the maximum extent permitted by law, this RedSecTools deployment is provided for authorised professional use without any guarantee that it will be uninterrupted, error-free, secure against all threats, or suitable for every legal, regulatory, operational, or reporting requirement. Users must apply professional judgment and verify security, legal, and client-facing outputs before relying on them.</p>
+
+        <h2>11. Limitation of Liability</h2>
+        <p>To the maximum extent permitted by law, the operator and its suppliers are not liable for indirect, incidental, special, consequential, exemplary, or punitive damages, or for loss of profits, revenue, goodwill, data, business opportunity, or system availability arising from use of the workspace. Some jurisdictions do not allow certain limitations, so these limits apply only where lawful.</p>
+
+        <h2>12. Indemnity</h2>
+        <p>You are responsible for claims, losses, penalties, costs, or damages arising from your unauthorised use of RedSecTools, breach of these Terms, misuse of credentials or integrations, unlawful testing activity, or handling of data outside your approved authority.</p>
+
+        <h2>13. Governing Rules</h2>
+        <p>These Terms operate together with any written agreement, employment policy, engagement rules of engagement, client contract, acceptable-use policy, and laws applicable to the organisation operating this deployment. If a written agreement conflicts with these Terms, the written agreement controls to the extent of the conflict.</p>
+
+        <h2>14. Changes</h2>
+        <p>The operator may update these Terms from time to time. Continued use of the workspace after an update means you accept the updated Terms from their effective date.</p>
+      </section>
+    </main>
+
+    <footer class="footer policy-footer">&copy; <span class="current-year"></span> <a href="/" class="text-accent hover:underline">RedSec</a> Offensive Security &mdash; Policies</footer>
+  </div>
+  <script type="module" src="/js/policies.js"></script>
+  <script type="module" src="/js/theme.js?v=20260507-ai-calendar"></script>
+</body>
+</html>

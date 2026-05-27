@@ -3,6 +3,7 @@ const rateLimit = require("express-rate-limit");
 const crypto = require("crypto");
 const { requireUser } = require("../middleware/auth");
 const { logEvent } = require("../core/logger");
+const { createNotification, markNotificationReadByDedupe } = require("../core/notifications");
 const { broadcastToConversation, broadcastToUser } = require("../chat-ws");
 const {
   createUserKey,
@@ -27,6 +28,9 @@ const {
   createMessage,
   getMessages,
   getMessagesBefore,
+  getMessageById,
+  updateMessageForSender,
+  deleteMessageForSender,
   countUnreadMessages,
   getUsernamesMap,
 } = require("../database");
@@ -67,10 +71,62 @@ function isValidId(id) {
   return typeof id === "string" && ID_REGEX.test(id);
 }
 
+function validateEncryptedMessagePayload(body) {
+  const { ciphertext, iv, keyVersion } = body || {};
+
+  if (!ciphertext || typeof ciphertext !== "string") {
+    return { error: "ciphertext is required and must be a string" };
+  }
+  if (ciphertext.length > 50 * 1024) {
+    return { status: 413, error: "ciphertext too large (max 50KB)" };
+  }
+  if (!iv || typeof iv !== "string") {
+    return { error: "iv is required and must be a string" };
+  }
+  if (typeof keyVersion !== "number" || keyVersion < 1 || !Number.isInteger(keyVersion)) {
+    return { error: "keyVersion must be an integer >= 1" };
+  }
+
+  return { ciphertext, iv, keyVersion };
+}
+
 // --- Logging ---
 
 function logAction(action, req, extra = {}) {
   logEvent(action, req, extra);
+}
+
+function notifyConversationMembersOfMessage(conversationId, senderId) {
+  let members = [];
+  try {
+    members = getConversationMembers(conversationId);
+  } catch {
+    return;
+  }
+
+  for (const member of members) {
+    if (!member || member.user_id === senderId) continue;
+    try {
+      createNotification({
+        userId: member.user_id,
+        category: "team",
+        action: "message_received",
+        title: "New RedSecTeam message",
+        body: "You received an encrypted message.",
+        linkUrl: "/chat",
+        entityType: "chat_conversation",
+        entityId: conversationId,
+        severity: "info",
+        dedupeKey: `chat:conversation:${conversationId}:${member.user_id}`,
+      });
+    } catch (err) {
+      logEvent("chat:message_notification_error", null, {
+        conversationId,
+        userId: member.user_id,
+        error: err.message,
+      });
+    }
+  }
 }
 
 // ============================================================
@@ -644,24 +700,9 @@ router.post("/conversations/:id/messages", messageCreateLimiter, requireUser, (r
     return res.status(403).json({ error: "Not a member of this conversation" });
   }
 
-  const { ciphertext, iv, keyVersion } = req.body || {};
-
-  // Validate ciphertext
-  if (!ciphertext || typeof ciphertext !== "string") {
-    return res.status(400).json({ error: "ciphertext is required and must be a string" });
-  }
-  if (ciphertext.length > 50 * 1024) {
-    return res.status(413).json({ error: "ciphertext too large (max 50KB)" });
-  }
-
-  // Validate iv
-  if (!iv || typeof iv !== "string") {
-    return res.status(400).json({ error: "iv is required and must be a string" });
-  }
-
-  // Validate keyVersion
-  if (typeof keyVersion !== "number" || keyVersion < 1 || !Number.isInteger(keyVersion)) {
-    return res.status(400).json({ error: "keyVersion must be an integer >= 1" });
+  const payload = validateEncryptedMessagePayload(req.body);
+  if (payload.error) {
+    return res.status(payload.status || 400).json({ error: payload.error });
   }
 
   try {
@@ -670,9 +711,9 @@ router.post("/conversations/:id/messages", messageCreateLimiter, requireUser, (r
       id: messageId,
       conversationId: id,
       senderId: req.user.id,
-      ciphertext,
-      iv,
-      keyVersion,
+      ciphertext: payload.ciphertext,
+      iv: payload.iv,
+      keyVersion: payload.keyVersion,
     });
 
     logAction("chat:message_send", req, { conversationId: id, messageId });
@@ -683,11 +724,13 @@ router.post("/conversations/:id/messages", messageCreateLimiter, requireUser, (r
       id: messageId,
       conversationId: id,
       senderId: req.user.id,
-      ciphertext,
-      iv,
-      keyVersion,
+      ciphertext: payload.ciphertext,
+      iv: payload.iv,
+      keyVersion: payload.keyVersion,
       createdAt: Math.floor(Date.now() / 1000),
     }, req.user.id);
+
+    notifyConversationMembersOfMessage(id, req.user.id);
 
     res.status(201).json({
       id: messageId,
@@ -697,6 +740,127 @@ router.post("/conversations/:id/messages", messageCreateLimiter, requireUser, (r
   } catch (err) {
     logAction("chat:message_send_error", req, { conversationId: id, error: err.message });
     res.status(500).json({ error: "Failed to send message" });
+  }
+});
+
+// PUT /api/chat/conversations/:id/messages/:messageId — Edit own encrypted message
+router.put("/conversations/:id/messages/:messageId", messageCreateLimiter, requireUser, (req, res) => {
+  const { id, messageId } = req.params;
+
+  if (!isValidId(id) || !isValidId(messageId)) {
+    return res.status(400).json({ error: "Invalid conversation or message ID" });
+  }
+
+  const membership = getConversationMember(id, req.user.id);
+  if (!membership) {
+    return res.status(403).json({ error: "Not a member of this conversation" });
+  }
+
+  const existing = getMessageById(messageId);
+  if (!existing || existing.conversation_id !== id) {
+    return res.status(404).json({ error: "Message not found" });
+  }
+  if (existing.sender_id !== req.user.id) {
+    return res.status(403).json({ error: "You can only edit your own messages" });
+  }
+  if (existing.deleted_at) {
+    return res.status(409).json({ error: "Deleted messages cannot be edited" });
+  }
+
+  const payload = validateEncryptedMessagePayload(req.body);
+  if (payload.error) {
+    return res.status(payload.status || 400).json({ error: payload.error });
+  }
+
+  try {
+    const updated = updateMessageForSender({
+      id: messageId,
+      conversationId: id,
+      senderId: req.user.id,
+      ciphertext: payload.ciphertext,
+      iv: payload.iv,
+      keyVersion: payload.keyVersion,
+    });
+
+    if (!updated) {
+      return res.status(409).json({ error: "Message could not be edited" });
+    }
+
+    logAction("chat:message_edit", req, { conversationId: id, messageId });
+
+    broadcastToConversation(id, {
+      type: "message_edited",
+      id: messageId,
+      conversationId: id,
+      senderId: req.user.id,
+      ciphertext: updated.ciphertext,
+      iv: updated.iv,
+      keyVersion: updated.key_version,
+      createdAt: updated.created_at,
+      editedAt: updated.edited_at,
+    });
+
+    res.json({
+      id: messageId,
+      createdAt: updated.created_at,
+      editedAt: updated.edited_at,
+    });
+  } catch (err) {
+    logAction("chat:message_edit_error", req, { conversationId: id, messageId, error: err.message });
+    res.status(500).json({ error: "Failed to edit message" });
+  }
+});
+
+// DELETE /api/chat/conversations/:id/messages/:messageId — Delete own message as thread tombstone
+router.delete("/conversations/:id/messages/:messageId", requireUser, (req, res) => {
+  const { id, messageId } = req.params;
+
+  if (!isValidId(id) || !isValidId(messageId)) {
+    return res.status(400).json({ error: "Invalid conversation or message ID" });
+  }
+
+  const membership = getConversationMember(id, req.user.id);
+  if (!membership) {
+    return res.status(403).json({ error: "Not a member of this conversation" });
+  }
+
+  const existing = getMessageById(messageId);
+  if (!existing || existing.conversation_id !== id) {
+    return res.status(404).json({ error: "Message not found" });
+  }
+  if (existing.sender_id !== req.user.id) {
+    return res.status(403).json({ error: "You can only delete your own messages" });
+  }
+
+  if (existing.deleted_at) {
+    return res.json({ success: true, id: messageId, deletedAt: existing.deleted_at });
+  }
+
+  try {
+    const deleted = deleteMessageForSender({
+      id: messageId,
+      conversationId: id,
+      senderId: req.user.id,
+    });
+
+    if (!deleted) {
+      return res.status(409).json({ error: "Message could not be deleted" });
+    }
+
+    logAction("chat:message_delete", req, { conversationId: id, messageId });
+
+    broadcastToConversation(id, {
+      type: "message_deleted",
+      id: messageId,
+      conversationId: id,
+      senderId: req.user.id,
+      deletedAt: deleted.deleted_at,
+    });
+
+    res.json({ success: true, id: messageId, deletedAt: deleted.deleted_at });
+  } catch (err) {
+    logAction("chat:message_delete_error", req, { conversationId: id, messageId, error: err.message });
+    res.status(500).json({ error: "Failed to delete message" });
   }
 });
 
@@ -738,6 +902,7 @@ router.get("/conversations/:id/messages", requireUser, (req, res) => {
   res.json({
     messages: messages.map((m) => ({
       id: m.id,
+      conversationId: id,
       senderId: m.sender_id,
       senderUsername: usernames.get(m.sender_id) || null,
       ciphertext: m.ciphertext,
@@ -745,8 +910,27 @@ router.get("/conversations/:id/messages", requireUser, (req, res) => {
       keyVersion: m.key_version,
       createdAt: m.created_at,
       expiresAt: m.expires_at,
+      editedAt: m.edited_at || null,
+      deletedAt: m.deleted_at || null,
     })),
   });
+});
+
+// POST /api/chat/conversations/:id/notifications/read — Clear unread notification-center state for a conversation
+router.post("/conversations/:id/notifications/read", requireUser, (req, res) => {
+  const { id } = req.params;
+
+  if (!isValidId(id)) {
+    return res.status(400).json({ error: "Invalid conversation ID" });
+  }
+
+  const membership = getConversationMember(id, req.user.id);
+  if (!membership) {
+    return res.status(403).json({ error: "Not a member of this conversation" });
+  }
+
+  const changes = markNotificationReadByDedupe(req.user.id, `chat:conversation:${id}:${req.user.id}`);
+  res.json({ success: true, markedRead: changes });
 });
 
 // ============================================================
